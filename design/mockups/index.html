@@ -1,0 +1,870 @@
+<title>Tile Windows</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Sora:wght@400;600;700&family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=Archivo:wght@400;600;800&family=Martian+Mono:wght@400;500&display=swap");
+/* Gallery shell, then four mockups. Each mockup owns a token prefix: a- palette, b- canvas, c- scenes, d- rules. */
+:root{
+  --f-shell:"IBM Plex Sans",system-ui,"Segoe UI",sans-serif;
+  --f-a:"IBM Plex Sans",system-ui,"Segoe UI",sans-serif; --f-a-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  --f-b:"Sora",system-ui,"Segoe UI",sans-serif; --f-b-mono:"DM Mono",ui-monospace,Consolas,monospace;
+  --f-c-disp:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif; --f-c:"Figtree",system-ui,"Segoe UI",sans-serif;
+  --f-d:"Archivo","Arial Narrow",system-ui,sans-serif; --f-d-mono:"Martian Mono",ui-monospace,Consolas,monospace;
+
+  --g-bg:#F2F3F5; --g-panel:#FFFFFF; --g-ink:#191C22; --g-muted:#5B6270; --g-line:#D6D9DF; --g-tab:#191C22; --g-tab-ink:#FFFFFF;
+
+  --a-wall1:#C3CEDD; --a-wall2:#E8ECF2; --a-panel:#FBFCFE; --a-ink:#141B26; --a-muted:#566173; --a-line:#D3D9E3; --a-accent:#2F55E4; --a-accent-ink:#FFFFFF; --a-screen:#E3E8EF; --a-hi:#EAF0FF;
+  --a-comms:#7356DB; --a-code:#1B7F67; --a-browse:#C7701F; --a-other:#66768C; --a-warn:#A84B08;
+
+  --b-canvas:#ECEEE9; --b-dot:#C9CEC4; --b-panel:#FFFFFF; --b-ink:#1C211D; --b-muted:#5E665F; --b-line:#D9DCD4; --b-select:#1F6BFF; --b-select-ink:#FFFFFF; --b-screen:#F7F8F5; --b-bezel:#2B302C;
+  --b-comms:#8B5CF6; --b-code:#0E9484; --b-browse:#DC5F0E; --b-other:#73806F;
+
+  --c-bg:#EAF1EF; --c-card:#FFFFFF; --c-ink:#0F2E2D; --c-muted:#4C6461; --c-line:#CCDAD6; --c-accent:#0F5F5B; --c-accent-ink:#FFFFFF; --c-hi:#E3A008; --c-screen:#DFE8E5;
+  --c-comms:#6D5BD0; --c-code:#12807A; --c-browse:#CC651B; --c-other:#6A7C79;
+
+  --d-bg:#F1F3F8; --d-paper:#FFFFFF; --d-ink:#14213D; --d-muted:#54607A; --d-line:#D1D8E4; --d-grid:#E2E7F0; --d-accent:#9B1D5E; --d-accent-ink:#FFFFFF; --d-screen:#E8ECF4; --d-ok:#17754B; --d-warn:#A9500A;
+  --d-comms:#6E56CF; --d-code:#0F7C83; --d-browse:#C2410C; --d-other:#64748B;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --g-bg:#101216; --g-panel:#181B21; --g-ink:#E6E8EC; --g-muted:#9AA1AD; --g-line:#2B2F37; --g-tab:#E6E8EC; --g-tab-ink:#101216;
+  --a-wall1:#0A0E14; --a-wall2:#1B2433; --a-panel:#161B23; --a-ink:#E6EBF2; --a-muted:#8F9AAB; --a-line:#2A323E; --a-accent:#86A2FF; --a-accent-ink:#0B1020; --a-screen:#0F141B; --a-hi:#1E2740;
+  --a-comms:#A48BFF; --a-code:#4CC9A4; --a-browse:#F0A45A; --a-other:#93A2B6; --a-warn:#F0A45A;
+  --b-canvas:#141715; --b-dot:#2B302C; --b-panel:#1C201D; --b-ink:#E8ECE6; --b-muted:#9AA39B; --b-line:#2F3530; --b-select:#5B93FF; --b-select-ink:#0A1226; --b-screen:#232824; --b-bezel:#0B0D0B;
+  --b-comms:#A98BFA; --b-code:#3CCBB8; --b-browse:#F58A45; --b-other:#9DA89A;
+  --c-bg:#0C1615; --c-card:#13211F; --c-ink:#E3EFEC; --c-muted:#8FA8A4; --c-line:#244440; --c-accent:#5CC7BE; --c-accent-ink:#062120; --c-hi:#F2C14E; --c-screen:#0F1C1B;
+  --c-comms:#9F8FF0; --c-code:#4FC7BE; --c-browse:#F09A5B; --c-other:#94A8A4;
+  --d-bg:#0D1322; --d-paper:#141B2D; --d-ink:#E2E8F5; --d-muted:#93A0BA; --d-line:#283350; --d-grid:#1A2338; --d-accent:#F06AA9; --d-accent-ink:#2A0618; --d-screen:#101727; --d-ok:#4ADE9B; --d-warn:#F59E4B;
+  --d-comms:#A391F5; --d-code:#47C1C9; --d-browse:#F7874D; --d-other:#96A3B8;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --g-bg:#101216; --g-panel:#181B21; --g-ink:#E6E8EC; --g-muted:#9AA1AD; --g-line:#2B2F37; --g-tab:#E6E8EC; --g-tab-ink:#101216;
+  --a-wall1:#0A0E14; --a-wall2:#1B2433; --a-panel:#161B23; --a-ink:#E6EBF2; --a-muted:#8F9AAB; --a-line:#2A323E; --a-accent:#86A2FF; --a-accent-ink:#0B1020; --a-screen:#0F141B; --a-hi:#1E2740;
+  --a-comms:#A48BFF; --a-code:#4CC9A4; --a-browse:#F0A45A; --a-other:#93A2B6; --a-warn:#F0A45A;
+  --b-canvas:#141715; --b-dot:#2B302C; --b-panel:#1C201D; --b-ink:#E8ECE6; --b-muted:#9AA39B; --b-line:#2F3530; --b-select:#5B93FF; --b-select-ink:#0A1226; --b-screen:#232824; --b-bezel:#0B0D0B;
+  --b-comms:#A98BFA; --b-code:#3CCBB8; --b-browse:#F58A45; --b-other:#9DA89A;
+  --c-bg:#0C1615; --c-card:#13211F; --c-ink:#E3EFEC; --c-muted:#8FA8A4; --c-line:#244440; --c-accent:#5CC7BE; --c-accent-ink:#062120; --c-hi:#F2C14E; --c-screen:#0F1C1B;
+  --c-comms:#9F8FF0; --c-code:#4FC7BE; --c-browse:#F09A5B; --c-other:#94A8A4;
+  --d-bg:#0D1322; --d-paper:#141B2D; --d-ink:#E2E8F5; --d-muted:#93A0BA; --d-line:#283350; --d-grid:#1A2338; --d-accent:#F06AA9; --d-accent-ink:#2A0618; --d-screen:#101727; --d-ok:#4ADE9B; --d-warn:#F59E4B;
+  --d-comms:#A391F5; --d-code:#47C1C9; --d-browse:#F7874D; --d-other:#96A3B8;
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--g-bg);color:var(--g-ink);font:14px/1.45 var(--f-shell);margin:0}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.wrap{max-width:1380px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+
+/* Shell */
+.g-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin-bottom:14px}
+.g-head h1{font-size:20px;margin:0;letter-spacing:-.01em}
+.g-head p{margin:0;color:var(--g-muted)}
+.g-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:14px}
+.g-tabs a{display:flex;gap:10px;align-items:baseline;padding:9px 12px;border:1px solid var(--g-line);border-radius:4px;background:var(--g-panel);color:var(--g-ink);text-decoration:none;min-width:0}
+.g-tabs a b{font:500 12px var(--f-a-mono);color:var(--g-muted)}
+.g-tabs a span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-tabs a[aria-selected="true"]{background:var(--g-tab);color:var(--g-tab-ink);border-color:var(--g-tab)}
+.g-tabs a[aria-selected="true"] b{color:var(--g-tab-ink)}
+.g-tabs a:focus-visible{outline:2px solid var(--g-ink);outline-offset:2px}
+@media (max-width:640px){.g-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.cap{display:grid;gap:3px;margin:0 0 14px;padding:10px 14px;background:var(--g-panel);border:1px solid var(--g-line);border-radius:4px;font-size:13.5px}
+.cap div{display:grid;grid-template-columns:7.5em minmax(0,1fr);gap:8px}
+.cap dt{font-weight:600;color:var(--g-muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em;padding-top:1px}
+.cap dd{margin:0}
+@media (max-width:520px){.cap div{grid-template-columns:1fr;gap:0}}
+
+/* Shared monitor drawing. Each mockup maps its tokens onto --k-*. */
+.desk-box{overflow-x:auto;max-width:100%}
+.desk{display:flex;align-items:flex-end;gap:14px;min-width:640px;padding:4px 2px 2px}
+.desk.mini{min-width:0;gap:4px;padding:0}
+.mon{min-width:0;display:flex;flex-direction:column;gap:5px}
+.mon-l{display:flex;justify-content:space-between;gap:6px;font-size:11px;color:var(--k-muted);white-space:nowrap;overflow:hidden}
+.mon-l span:first-child{color:var(--k-ink);font-weight:600}
+.scr{display:grid;gap:3px;padding:3px;background:var(--k-screen);border:1px solid var(--k-line);border-radius:3px;position:relative;max-width:100%}
+.mini .scr{gap:1px;padding:1px;border-radius:2px}
+.cell{border:1px dashed var(--k-line);border-radius:2px;min-width:0;min-height:0;position:relative}
+.cell i{position:absolute;right:3px;bottom:1px;font:normal 9px var(--f-a-mono);color:var(--k-muted)}
+.tile{--cat:var(--k-other);display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;min-height:0;overflow:hidden;padding:4px 5px;border-radius:2px;
+  border:1px solid color-mix(in srgb,var(--cat) 55%,transparent);background:color-mix(in srgb,var(--cat) 17%,var(--k-tile));color:var(--k-ink);text-align:left;font-size:10.5px;line-height:1.2;position:relative;z-index:1}
+.mini .tile{padding:0;border:0;background:color-mix(in srgb,var(--cat) 70%,var(--k-tile))}
+.tile b{font:600 9px var(--f-a-mono);padding:1px 4px;border-radius:2px;background:var(--cat);color:var(--k-tile);letter-spacing:.02em}
+.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;max-width:100%}
+.tile.pinned::after{content:"";position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;background:var(--cat)}
+.tile.changed{outline:2px dashed var(--k-accent);outline-offset:-2px}
+.tile.sel{outline:2px solid var(--k-accent);outline-offset:-1px}
+.tile.dim{opacity:.28}
+.cat-comms{--cat:var(--k-comms)} .cat-code{--cat:var(--k-code)} .cat-browse{--cat:var(--k-browse)} .cat-other{--cat:var(--k-other)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
+.over{font-size:12.5px;color:var(--k-muted);margin:6px 0 0;min-height:1.2em}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--k-line);white-space:nowrap}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--k-muted)}
+.badge.custom::before{background:var(--k-accent)}
+.panel :focus-visible{outline:2px solid var(--k-accent);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){.tile{transition:opacity .15s,outline-color .15s}}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* A. Command palette */
+.mock-a{--k-ink:var(--a-ink);--k-muted:var(--a-muted);--k-line:var(--a-line);--k-screen:var(--a-screen);--k-tile:var(--a-panel);--k-accent:var(--a-accent);
+  --k-comms:var(--a-comms);--k-code:var(--a-code);--k-browse:var(--a-browse);--k-other:var(--a-other);font-family:var(--f-a)}
+.a-stage{border-radius:6px;overflow:hidden;background:linear-gradient(160deg,var(--a-wall2),var(--a-wall1));border:1px solid var(--a-line);padding:0 0 28px}
+.a-bar{display:flex;justify-content:flex-end;align-items:center;gap:14px;padding:6px 12px;font:12px var(--f-a-mono);color:var(--a-ink);background:color-mix(in srgb,var(--a-panel) 70%,transparent)}
+.a-tray{display:flex;gap:6px;align-items:center;padding:2px 8px;border-radius:3px;background:var(--a-accent);color:var(--a-accent-ink)}
+.a-tray svg{width:14px;height:14px}
+kbd{font:500 10.5px var(--f-a-mono);padding:1px 5px;border:1px solid currentColor;border-radius:3px;opacity:.85;white-space:nowrap}
+.a-pal{max-width:860px;margin:26px auto 0;width:calc(100% - 24px);background:var(--a-panel);color:var(--a-ink);border:1px solid var(--a-line);border-radius:8px;box-shadow:0 18px 50px -20px color-mix(in srgb,var(--a-wall1) 30%,#000 70%)}
+.a-in{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--a-line)}
+.a-prompt{font:500 20px var(--f-a-mono);color:var(--a-accent)}
+.a-in input{flex:1;min-width:0;border:0;background:transparent;font:500 18px var(--f-a-mono);color:var(--a-ink);padding:4px 0}
+.a-in input:focus-visible{outline:none}
+.a-in:focus-within{box-shadow:inset 0 -2px 0 var(--a-accent)}
+.a-btn{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--a-line);background:var(--a-panel);padding:6px 10px;border-radius:4px;white-space:nowrap}
+.a-btn.pri{background:var(--a-accent);color:var(--a-accent-ink);border-color:var(--a-accent);font-weight:600}
+.a-btn:disabled{opacity:.45;cursor:default}
+.a-parse{margin:0;padding:8px 14px;font:13px var(--f-a-mono);color:var(--a-muted);background:var(--a-hi);min-height:2.4em}
+.a-parse.ok{color:var(--a-ink)} .a-parse.bad{color:var(--a-warn)}
+.a-parse em{font-style:normal;color:var(--a-accent);font-weight:500}
+.a-prev{padding:12px 14px 4px}
+.a-prev h3{font:600 11px var(--f-a);text-transform:uppercase;letter-spacing:.08em;color:var(--a-muted);margin:0 0 6px}
+.a-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:4px 16px;padding:8px 14px 12px;border-top:1px solid var(--a-line);max-height:none}
+.a-grp{min-width:0}
+.a-grp h4{display:flex;align-items:center;gap:6px;margin:6px 0 2px;font:600 11px var(--f-a);text-transform:uppercase;letter-spacing:.08em;color:var(--a-muted)}
+.a-item{display:grid;grid-template-columns:minmax(0,1fr);width:100%;text-align:left;border:0;background:transparent;padding:5px 8px;border-radius:4px}
+.a-item code{font:500 12.5px var(--f-a-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.a-item small{color:var(--a-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.a-item:hover,.a-item.act{background:var(--a-hi)}
+.a-item.act code{color:var(--a-accent)}
+.a-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 14px;border-top:1px solid var(--a-line);font-size:12.5px}
+.a-status{flex:1;min-width:180px;color:var(--a-muted)}
+@media (max-width:520px){.a-in input{font-size:15px}.a-in .a-btn kbd{display:none}.a-pal{width:calc(100% - 16px);margin-top:12px}.a-stage{padding-bottom:8px}}
+.a-keys{display:flex;flex-wrap:wrap;gap:4px 12px;color:var(--a-muted);font-size:12px;padding:0 14px 12px}
+
+/* B. Spatial canvas */
+.mock-b{--k-ink:var(--b-ink);--k-muted:var(--b-muted);--k-line:var(--b-line);--k-screen:var(--b-screen);--k-tile:var(--b-panel);--k-accent:var(--b-select);
+  --k-comms:var(--b-comms);--k-code:var(--b-code);--k-browse:var(--b-browse);--k-other:var(--b-other);font-family:var(--f-b);color:var(--b-ink)}
+.b-app{display:grid;grid-template-columns:210px minmax(0,1fr) 240px;grid-template-areas:"top top top" "rail canvas insp" "status status status";border:1px solid var(--b-line);border-radius:6px;overflow:hidden;background:var(--b-panel)}
+.b-top{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 12px;border-bottom:1px solid var(--b-line)}
+.b-file{font-size:13px;color:var(--b-muted);min-width:0}
+.b-file b{color:var(--b-ink);font-weight:600}
+.b-tools{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.b-btn{border:1px solid var(--b-line);background:var(--b-panel);padding:5px 11px;border-radius:5px;font-size:12.5px}
+.b-btn[aria-pressed="true"]{background:color-mix(in srgb,var(--b-select) 12%,var(--b-panel));border-color:var(--b-select)}
+.b-btn.pri{background:var(--b-select);color:var(--b-select-ink);border-color:var(--b-select);font-weight:600}
+.b-btn:disabled{opacity:.45;cursor:default}
+.b-rail{grid-area:rail;border-right:1px solid var(--b-line);padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.b-insp{grid-area:insp;border-left:1px solid var(--b-line);padding:10px 12px;display:flex;flex-direction:column;gap:8px;min-width:0;font-size:12.5px}
+.b-rail h3,.b-insp h3{font:600 10.5px var(--f-b);text-transform:uppercase;letter-spacing:.1em;color:var(--b-muted);margin:6px 0 2px}
+.b-pre{display:grid;gap:4px;width:100%;text-align:left;border:1px solid transparent;background:transparent;padding:6px;border-radius:5px}
+.b-pre:hover{border-color:var(--b-line)}
+.b-pre[aria-current="true"]{border-color:var(--b-select);background:color-mix(in srgb,var(--b-select) 7%,var(--b-panel))}
+.b-pre strong{font-size:12.5px;font-weight:600}
+.b-pre small{font-size:11px;color:var(--b-muted);line-height:1.3}
+.b-cat{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;padding:4px 6px;border-radius:4px;font-size:12.5px;text-align:left}
+.b-cat .ct{margin-left:auto;font:12px var(--f-b-mono);color:var(--b-muted)}
+.b-cat[aria-pressed="false"]{opacity:.45}
+.b-cat[aria-pressed="false"] .sw{background:transparent;border:1.5px solid var(--cat)}
+.b-canvas{grid-area:canvas;min-width:0;padding:16px;background-color:var(--b-canvas);background-image:radial-gradient(var(--b-dot) 1px,transparent 1.2px);background-size:16px 16px}
+.mock-b .scr{background:var(--b-screen);border:3px solid var(--b-bezel);border-radius:4px}
+.mock-b .mon-l button{border:0;background:transparent;padding:0;font-weight:600;color:var(--b-ink)}
+.mock-b .mon.cur .mon-l button{color:var(--b-select)}
+.mock-b .tile{cursor:grab;touch-action:none;user-select:none}
+.mock-b .dragging .tile{pointer-events:none;opacity:.5}
+.mock-b .cell.drop{background:color-mix(in srgb,var(--b-select) 22%,transparent);border-color:var(--b-select)}
+.mock-b .nogrid .cell{border-color:transparent}
+.mock-b .nogrid .cell i{display:none}
+.ghost{position:fixed;left:0;top:0;pointer-events:none;z-index:50;box-shadow:0 10px 24px -8px color-mix(in srgb,var(--b-ink) 50%,transparent);outline:2px solid var(--b-select)}
+.b-hint{font-size:12px;color:var(--b-muted);margin:10px 0 0}
+.b-field{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.b-field label,.b-field>span:first-child{color:var(--b-muted)}
+.b-field.stack{flex-direction:column;align-items:stretch;gap:4px}
+.b-field.stack select{width:100%}
+.b-insp>*{min-width:0}
+.b-seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--b-line);border-radius:5px;overflow:hidden}
+.b-seg button{border:0;background:transparent;padding:5px 2px;font-size:11.5px}
+.b-seg button[aria-pressed="true"]{background:var(--b-ink);color:var(--b-panel)}
+.step{display:inline-flex;align-items:center;border:1px solid var(--b-line);border-radius:5px;overflow:hidden}
+.step button{border:0;background:transparent;width:26px;height:26px;font-size:14px}
+.step span{min-width:24px;text-align:center;font:500 12.5px var(--f-b-mono)}
+.mock-b select{border:1px solid var(--b-line);border-radius:5px;background:var(--b-panel);padding:4px 6px;max-width:100%;min-width:0;font-size:12px}
+.b-win{display:grid;gap:6px;padding:8px;border:1px solid var(--b-line);border-radius:5px}
+.b-win .t{font-weight:600;font-size:13px;word-break:break-word}
+.b-win .m{color:var(--b-muted);font-size:12px}
+.b-status{grid-area:status;display:flex;flex-wrap:wrap;gap:6px 16px;padding:7px 12px;border-top:1px solid var(--b-line);font:12px var(--f-b-mono);color:var(--b-muted)}
+@media (max-width:980px){.b-app{grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "canvas" "rail" "insp" "status"}
+  .b-rail,.b-insp{border:0;border-top:1px solid var(--b-line)}
+  .b-presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px}}
+
+/* C. Scenes */
+.mock-c{--k-ink:var(--c-ink);--k-muted:var(--c-muted);--k-line:var(--c-line);--k-screen:var(--c-screen);--k-tile:var(--c-card);--k-accent:var(--c-accent);
+  --k-comms:var(--c-comms);--k-code:var(--c-code);--k-browse:var(--c-browse);--k-other:var(--c-other);font-family:var(--f-c);color:var(--c-ink)}
+.c-app{background:var(--c-bg);border:1px solid var(--c-line);border-radius:6px;padding:18px;display:grid;gap:16px}
+.c-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:8px 16px}
+.c-head h3{font:700 30px/1 var(--f-c-disp);letter-spacing:-.02em;margin:0}
+.c-head p{margin:4px 0 0;color:var(--c-muted)}
+.c-now{font-size:13px;color:var(--c-muted)}
+.c-now b{color:var(--c-ink)}
+.c-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:900px){.c-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.c-card{position:relative;display:grid;gap:8px;padding:10px;background:var(--c-card);border:1px solid var(--c-line);border-radius:6px;min-width:0}
+.c-card.sel{border-color:var(--c-accent);box-shadow:inset 0 0 0 1px var(--c-accent)}
+.c-pick{display:grid;gap:6px;text-align:left;border:0;background:transparent;padding:0;min-width:0}
+.c-pick strong{font:700 18px var(--f-c-disp);letter-spacing:-.01em;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.c-pick small{color:var(--c-muted);font-size:12.5px}
+.c-live{font:600 10.5px var(--f-c);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--c-hi);color:var(--c-ink)}
+.c-row{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}
+.tag{font-size:11px;padding:1px 6px;border:1px solid var(--c-line);border-radius:3px;color:var(--c-muted)}
+.c-btn{border:1px solid var(--c-line);background:var(--c-card);padding:5px 12px;border-radius:5px;font-size:13px;font-weight:500}
+.c-btn.pri{background:var(--c-accent);color:var(--c-accent-ink);border-color:var(--c-accent);font-weight:600}
+.c-btn:disabled{opacity:.45;cursor:default}
+.c-detail{background:var(--c-card);border:1px solid var(--c-line);border-radius:6px;padding:14px;display:grid;gap:12px;min-width:0}
+.c-dhead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.c-dhead h4{font:700 22px var(--f-c-disp);margin:0}
+.c-dact{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.c-detail .desk{max-width:1040px}
+.c-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+@media (max-width:900px){.c-cols{grid-template-columns:minmax(0,1fr)}}
+.c-cols h5,.c-log h5{font:600 11px var(--f-c);text-transform:uppercase;letter-spacing:.09em;color:var(--c-muted);margin:0 0 8px}
+.c-gr{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;font-size:13px}
+.mock-c .step{border-color:var(--c-line)} .mock-b .step{border-color:var(--b-line)}
+.mock-c .step button,.mock-d .step button{border:0;background:transparent;width:26px;height:26px;font-size:14px}
+.mock-c .step span{font:600 13px var(--f-c)}
+.mock-c select,.mock-c input[type=time]{border:1px solid var(--c-line);border-radius:5px;background:var(--c-card);padding:4px 6px;min-width:0;max-width:100%}
+.c-trig{display:grid;gap:6px;font-size:13px}
+.c-trig label{display:flex;gap:8px;align-items:center}
+.c-trig input[type=radio]{accent-color:var(--c-accent)}
+.c-days{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 0 24px}
+.c-days button{width:30px;height:28px;border:1px solid var(--c-line);background:var(--c-card);border-radius:4px;font-size:12px;font-weight:600}
+.c-days button[aria-pressed="true"]{background:var(--c-accent);color:var(--c-accent-ink);border-color:var(--c-accent)}
+.c-sched{display:grid;gap:6px}
+.c-sched[hidden]{display:none}
+.c-time{display:flex;gap:8px;align-items:center;margin-left:24px;font-size:13px}
+.c-cat{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;padding:4px 0;font-size:13px;border-bottom:1px solid var(--c-line)}
+.c-cat small{color:var(--c-muted);font-size:12px}
+.c-log{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;align-items:start}
+.c-log ol{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:13px}
+.c-log li{display:grid;grid-template-columns:3.6em minmax(0,1fr);gap:8px}
+.c-log li span:first-child{color:var(--c-muted);font-variant-numeric:tabular-nums}
+.c-status{font-size:13px;color:var(--c-muted);margin:0}
+
+/* D. Rules */
+.mock-d{--k-ink:var(--d-ink);--k-muted:var(--d-muted);--k-line:var(--d-line);--k-screen:var(--d-screen);--k-tile:var(--d-paper);--k-accent:var(--d-accent);
+  --k-comms:var(--d-comms);--k-code:var(--d-code);--k-browse:var(--d-browse);--k-other:var(--d-other);font-family:var(--f-d);color:var(--d-ink)}
+.d-app{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px;padding:14px;border:1px solid var(--d-line);border-radius:4px;
+  background-color:var(--d-bg);background-image:linear-gradient(var(--d-grid) 1px,transparent 1px),linear-gradient(90deg,var(--d-grid) 1px,transparent 1px);background-size:24px 24px}
+@media (max-width:980px){.d-app{grid-template-columns:minmax(0,1fr)}}
+.d-card{background:var(--d-paper);border:1px solid var(--d-line);border-radius:3px;padding:12px;min-width:0}
+.d-title{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-bottom:8px}
+.d-title h3{font:800 20px var(--f-d);text-transform:uppercase;letter-spacing:.03em;margin:0}
+.d-title p{margin:0;color:var(--d-muted);font-size:13px}
+.d-gh{display:flex;align-items:center;gap:8px;margin:12px 0 4px;font:700 12px var(--f-d);text-transform:uppercase;letter-spacing:.1em}
+.d-gh small{font:400 11px var(--f-d-mono);color:var(--d-muted);text-transform:none;letter-spacing:0}
+.d-gh .d-ops{margin-left:auto}
+.d-rules{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.d-rule{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px;border:1px solid var(--d-line);border-radius:3px;background:var(--d-paper)}
+.d-rule.off{opacity:.55}
+.d-n{font:500 11px var(--f-d-mono);width:24px;height:24px;display:grid;place-items:center;border-radius:2px;background:var(--d-ink);color:var(--d-paper);flex:none}
+.d-w{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--d-muted)}
+.mock-d select,.mock-d input[type=text]{border:1px solid var(--d-line);border-radius:2px;background:var(--d-paper);padding:4px 6px;font-size:13px;min-width:0;max-width:100%}
+.mock-d input[type=text]{width:9.5em;font-family:var(--f-d-mono);font-size:11.5px}
+.d-zone,.d-ops button,.d-btn{border:1px solid var(--d-line);background:var(--d-paper);border-radius:2px;padding:4px 8px;font:500 11.5px var(--f-d-mono)}
+.d-zone[aria-expanded="true"]{border-color:var(--d-accent);color:var(--d-accent)}
+.d-ops{display:inline-flex;gap:3px;margin-left:auto}
+.d-ops button{padding:3px 7px}
+.d-ops button:disabled{opacity:.35;cursor:default}
+.d-btn.pri{background:var(--d-accent);color:var(--d-accent-ink);border-color:var(--d-accent);font-family:var(--f-d);font-weight:700;font-size:13px;letter-spacing:.03em;padding:6px 14px}
+.d-btn:disabled{opacity:.45;cursor:default}
+.d-sw{position:relative;display:inline-flex}
+.d-sw input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.d-sw span{width:30px;height:18px;border-radius:9px;background:var(--d-line);position:relative}
+.d-sw span::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--d-paper)}
+.d-sw input:checked+span{background:var(--d-ok)}
+.d-sw input:checked+span::after{left:14px}
+.d-sw input:focus-visible+span{outline:2px solid var(--d-accent);outline-offset:2px}
+.d-res{flex-basis:100%;margin:0 0 0 32px;font:11.5px var(--f-d-mono);color:var(--d-ok)}
+.d-res.warn{color:var(--d-warn)}
+.d-res.muted{color:var(--d-muted)}
+.d-pick{flex-basis:100%;margin-left:32px;display:grid;gap:6px}
+.d-pick-g{display:grid;gap:3px;max-width:340px;padding:3px;background:var(--d-screen);border:1px solid var(--d-line)}
+.d-pick-g button{border:1px dashed var(--d-line);background:var(--d-paper);font:500 11px var(--f-d-mono);min-height:30px;padding:0}
+.d-pick-g button.in{background:color-mix(in srgb,var(--d-accent) 18%,var(--d-paper));border-style:solid;border-color:color-mix(in srgb,var(--d-accent) 40%,var(--d-line))}
+.d-pick-g button[aria-pressed="true"]{background:var(--d-accent);color:var(--d-accent-ink);border:1px solid var(--d-accent)}
+.d-pick small{color:var(--d-muted);font-size:12px}
+.d-empty{font-size:12.5px;color:var(--d-muted);margin:0;padding:6px 8px;border:1px dashed var(--d-line);border-radius:3px}
+.d-fall{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:12px;padding:8px;border:1px solid var(--d-ink);border-radius:3px;font-size:13px}
+.d-add{margin-top:10px}
+.d-zones{display:grid;gap:4px;margin-bottom:10px}
+.d-zr{display:flex;align-items:center;gap:10px;font-size:13px}
+.d-zr>span:first-child{width:6.5em;font-weight:600}
+.mock-d .step{border:1px solid var(--d-line);border-radius:2px;display:inline-flex;align-items:center}
+.mock-d .step span{min-width:22px;text-align:center;font:500 12px var(--f-d-mono)}
+.d-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0}
+.d-status{flex-basis:100%;font:12px var(--f-d-mono);color:var(--d-muted);margin:0}
+.d-table{overflow-x:auto;margin-top:10px}
+.d-table table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:420px}
+.d-table th{text-align:left;font:700 10.5px var(--f-d);text-transform:uppercase;letter-spacing:.1em;color:var(--d-muted);padding:4px 6px;border-bottom:1px solid var(--d-ink)}
+.d-table td{padding:4px 6px;border-bottom:1px solid var(--d-line);vertical-align:top}
+.d-table td:nth-child(2),.d-table td:nth-child(3){font:11.5px var(--f-d-mono)}
+.d-table .warn{color:var(--d-warn)}
+</style>
+
+<div class="wrap">
+  <header class="g-head">
+    <h1>Tile Windows</h1>
+    <p>Four directions for the next version. Same windows, same three monitors. Click around, then pick one.</p>
+  </header>
+  <nav class="g-tabs" role="tablist" aria-label="Mockups">
+    <a href="#a" id="tab-a" role="tab" aria-controls="panel-a"><b>A</b><span>Command palette</span></a>
+    <a href="#b" id="tab-b" role="tab" aria-controls="panel-b"><b>B</b><span>Spatial canvas</span></a>
+    <a href="#c" id="tab-c" role="tab" aria-controls="panel-c"><b>C</b><span>Scenes</span></a>
+    <a href="#d" id="tab-d" role="tab" aria-controls="panel-d"><b>D</b><span>Rule builder</span></a>
+  </nav>
+
+  <!-- A -->
+  <section id="panel-a" class="panel mock-a" role="tabpanel" aria-labelledby="tab-a" hidden>
+    <dl class="cap">
+      <div><dt>Concept</dt><dd>A tray icon and one hotkey open a command line. Type "teams left 2 cols" and the monitors preview the result before anything moves.</dd></div>
+      <div><dt>Suits</dt><dd>Keyboard people who already think in slots and grids, and want nothing between them and a layout.</dd></div>
+      <div><dt>Trades away</dt><dd>Discoverability. New users must learn the words, and odd spans are slower to type than to drag.</dd></div>
+    </dl>
+    <div class="a-stage">
+      <div class="a-bar" aria-hidden="true">
+        <span class="a-tray"><svg viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="0" width="6" height="6"/><rect x="8" y="0" width="6" height="6"/><rect x="0" y="8" width="6" height="6"/><rect x="8" y="8" width="6" height="6" opacity=".45"/></svg>Tile <kbd>Win</kbd><kbd>Alt</kbd><kbd>Space</kbd></span>
+        <span class="num">16:38</span>
+      </div>
+      <div class="a-pal" role="dialog" aria-label="Tile command palette">
+        <div class="a-in">
+          <span class="a-prompt" aria-hidden="true">&rsaquo;</span>
+          <label for="a-cmd" class="vh">Command</label>
+          <input id="a-cmd" value="teams left 2 cols" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="a-list" aria-describedby="a-parse">
+          <button id="a-apply" class="a-btn pri" type="button">Apply <kbd>Enter</kbd></button>
+        </div>
+        <p id="a-parse" class="a-parse"></p>
+        <div class="a-prev">
+          <h3>Preview <span id="a-moves"></span></h3>
+          <div class="desk-box"><div id="a-desk" class="desk"></div></div>
+          <p id="a-over" class="over"></p>
+        </div>
+        <div id="a-list" class="a-list" role="listbox" aria-label="Suggestions"></div>
+        <div class="a-foot">
+          <span id="a-badge" class="badge"></span>
+          <span id="a-status" class="a-status" role="status"></span>
+          <button id="a-undo" class="a-btn" type="button">Undo <kbd>Ctrl Z</kbd></button>
+        </div>
+        <div class="a-keys"><span><kbd>Up</kbd> <kbd>Down</kbd> pick</span><span><kbd>Tab</kbd> complete</span><span><kbd>Enter</kbd> apply</span><span><kbd>Ctrl Z</kbd> undo</span><span><kbd>Esc</kbd> clear</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- B -->
+  <section id="panel-b" class="panel mock-b" role="tabpanel" aria-labelledby="tab-b" hidden>
+    <dl class="cap">
+      <div><dt>Concept</dt><dd>The three monitors as a board. Drag a window onto a cell to pin it, set grids in the inspector, load a layout from the rail.</dd></div>
+      <div><dt>Suits</dt><dd>Visual people and first-time users. It grows straight out of today's sandbox.</dd></div>
+      <div><dt>Trades away</dt><dd>Speed. It is a window you open, not a reflex, and it needs a big screen to feel good.</dd></div>
+    </dl>
+    <div class="b-app">
+      <div class="b-top">
+        <span class="b-file">Layouts / <b id="b-name"></b></span>
+        <span id="b-badge" class="badge"></span>
+        <div class="b-tools">
+          <button id="b-grid" class="b-btn" type="button" aria-pressed="true">Show grid</button>
+          <button id="b-undo" class="b-btn" type="button">Undo</button>
+          <button id="b-apply" class="b-btn pri" type="button">Apply</button>
+        </div>
+      </div>
+      <aside class="b-rail" aria-label="Layouts and categories">
+        <h3>Layouts</h3>
+        <div id="b-presets" class="b-presets"></div>
+        <h3>Categories</h3>
+        <div id="b-cats"></div>
+      </aside>
+      <div class="b-canvas">
+        <div class="desk-box"><div id="b-desk" class="desk"></div></div>
+        <p class="b-hint">Drag a window onto any cell to pin it there. Windows you have not pinned fill the ultrawide in fill order.</p>
+        <p id="b-over" class="over"></p>
+      </div>
+      <aside class="b-insp" aria-label="Inspector">
+        <h3>Monitor</h3>
+        <div id="b-mon" style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px"></div>
+        <h3>Window</h3>
+        <div id="b-win"></div>
+      </aside>
+      <div class="b-status"><span id="b-status" role="status"></span><span id="b-pend"></span></div>
+    </div>
+  </section>
+
+  <!-- C -->
+  <section id="panel-c" class="panel mock-c" role="tabpanel" aria-labelledby="tab-c" hidden>
+    <dl class="cap">
+      <div><dt>Concept</dt><dd>Whole-desk scenes, applied in one click or on their own: on a schedule, when the monitors connect, or when a call starts.</dd></div>
+      <div><dt>Suits</dt><dd>People whose day has repeating modes and who rarely want to fiddle with single windows.</dd></div>
+      <div><dt>Trades away</dt><dd>Per-window control. Edits happen inside a scene, so a one-off tweak means saving or reverting it.</dd></div>
+    </dl>
+    <div class="c-app">
+      <header class="c-head">
+        <div><h3>Scenes</h3><p>One click sets all three monitors. A scene can also apply itself.</p></div>
+        <div class="c-now">On screen now: <b id="c-active"></b></div>
+      </header>
+      <div id="c-cards" class="c-cards"></div>
+      <section class="c-detail" aria-labelledby="c-dname">
+        <div class="c-dhead">
+          <h4 id="c-dname"></h4><span id="c-dtag" class="tag"></span>
+          <div class="c-dact">
+            <button id="c-revert" class="c-btn" type="button">Revert</button>
+            <button id="c-save" class="c-btn" type="button">Save as new scene</button>
+            <button id="c-apply" class="c-btn pri" type="button">Apply scene</button>
+          </div>
+        </div>
+        <div class="desk-box"><div id="c-desk" class="desk"></div></div>
+        <p id="c-over" class="over"></p>
+        <div class="c-cols">
+          <div>
+            <h5>Grids</h5>
+            <div id="c-grids"></div>
+            <div class="c-gr"><label for="c-sort">Ultrawide fill order</label><select id="c-sort"></select></div>
+          </div>
+          <div>
+            <h5>Applies itself</h5>
+            <div class="c-trig" id="c-trig" role="radiogroup" aria-label="Auto-apply trigger"></div>
+          </div>
+          <div>
+            <h5>By category</h5>
+            <div id="c-catlist"></div>
+          </div>
+        </div>
+      </section>
+      <section class="c-detail c-log" aria-label="Recent">
+        <div><h5>Recent</h5><ol id="c-log"></ol></div>
+        <div style="display:grid;gap:6px;justify-items:end"><button id="c-undo" class="c-btn" type="button">Undo</button><p id="c-status" class="c-status" role="status"></p></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- D -->
+  <section id="panel-d" class="panel mock-d" role="tabpanel" aria-labelledby="tab-d" hidden>
+    <dl class="cap">
+      <div><dt>Concept</dt><dd>Plain rules, "when the app is X, put it in zone Y", run top to bottom by category, with a live table of where each window lands and why.</dd></div>
+      <div><dt>Suits</dt><dd>Power users, and anyone who shares a setup across PCs. Rules keep working as windows open and titles change.</dd></div>
+      <div><dt>Trades away</dt><dd>Immediacy. You reason about rules instead of moving boxes, and conflicts need explaining.</dd></div>
+    </dl>
+    <div class="d-app">
+      <div class="d-card">
+        <div class="d-title"><h3>Rules</h3><p>Run top to bottom. The first rule to claim a zone wins.</p></div>
+        <div id="d-rules"></div>
+        <div class="d-fall"><span class="d-n">*</span><span class="d-w">Everything else</span> fills the Ultrawide, sorted by <label for="d-sort" class="vh">Fill order</label><select id="d-sort"></select><span>When it is full, the rest stay where they are.</span></div>
+        <button id="d-add" class="d-btn d-add" type="button">+ Add rule</button>
+      </div>
+      <div class="d-card">
+        <div class="d-title"><h3>Result</h3><span id="d-badge" class="badge"></span></div>
+        <div class="d-zones" id="d-zones"></div>
+        <div class="desk-box"><div id="d-desk" class="desk"></div></div>
+        <p id="d-over" class="over"></p>
+        <div class="d-bar">
+          <button id="d-apply" class="d-btn pri" type="button">Apply</button>
+          <button id="d-undo" class="d-btn" type="button">Undo</button>
+          <button id="d-reset" class="d-btn" type="button">Reset to default rules</button>
+          <p id="d-status" class="d-status" role="status"></p>
+        </div>
+        <div class="d-table"><table><thead><tr><th>Window</th><th>Goes to</th><th>Because</th></tr></thead><tbody id="d-tbody"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(()=>{
+/* ---------- Sample data (invented) ---------- */
+const MONS=[{id:'tall',name:'Portrait',w:1200,h:1920},{id:'wide',name:'Ultrawide',w:4096,h:1728},{id:'laptop',name:'Laptop',w:1536,h:960}];
+const MN={tall:'Portrait',wide:'Ultrawide',laptop:'Laptop'};
+const APPS={claude:{name:'Claude',code:'CL',cat:'code'},chrome:{name:'Chrome',code:'CH',cat:'browse'},teams:{name:'Teams',code:'TM',cat:'comms'},
+  outlook:{name:'Outlook (classic)',code:'OL',cat:'comms'},olk:{name:'Outlook (new)',code:'OL',cat:'comms'},terminal:{name:'Terminal',code:'>_',cat:'code'},explorer:{name:'File Explorer',code:'FX',cat:'other'}};
+const CATS=[['comms','Comms'],['code','Code'],['browse','Browse'],['other','Other']];
+const CN=Object.fromEntries(CATS);
+const WINS=[
+  {id:1,app:'claude',title:'Refactor the grid solver',repo:'tiler'},
+  {id:2,app:'claude',title:'Pin parser edge cases',repo:'tiler'},
+  {id:3,app:'claude',title:'Draft release notes',repo:'docs-site'},
+  {id:4,app:'claude',title:'Claude',repo:''},
+  {id:5,app:'chrome',title:'Pull request 212 · tiler',repo:'tiler'},
+  {id:6,app:'chrome',title:'Quarterly roadmap',repo:''},
+  {id:7,app:'chrome',title:'Build status board',repo:''},
+  {id:8,app:'terminal',title:'pwsh · tiler',repo:'tiler'},
+  {id:9,app:'terminal',title:'pwsh · docs-site watch',repo:'docs-site'},
+  {id:10,app:'explorer',title:'Projects',repo:''},
+  {id:11,app:'explorer',title:'Downloads',repo:''},
+  {id:12,app:'teams',title:'Design sync · Teams',repo:''},
+  {id:13,app:'outlook',title:'Inbox - Outlook',repo:''},
+  {id:14,app:'olk',title:'Calendar · Outlook',repo:''}];
+const WBY=Object.fromEntries(WINS.map(w=>[w.id,w]));
+const catOf=app=>APPS[app].cat;
+const SORTS=[['app','App: Claude, Chrome, then the rest'],['cat','Category'],['title','Title A to Z'],['repo','Repo'],['pos','Where windows sit now']];
+const SN=Object.fromEntries(SORTS);
+/* Mirrors tile.ps1 -Default: portrait Outlook classic over Teams, laptop new Outlook, ultrawide 5x2 Claude, Chrome, rest. */
+const DEFAULT={grids:{tall:{c:1,r:2},wide:{c:5,r:2},laptop:{c:1,r:1}},sort:'app',
+  pins:[{app:'outlook',match:'- Outlook',mon:'tall',slots:[0]},{app:'teams',match:'',mon:'tall',slots:[1]},{app:'olk',match:'',mon:'laptop',slots:[0]}]};
+const PRESETS={
+  Default:{blurb:'Portrait: Outlook and Teams. Laptop: Outlook. Ultrawide: Claude, Chrome, rest.',st:DEFAULT},
+  Focus:{blurb:'Three big columns: the pull request, one Claude, one terminal.',st:{grids:{tall:{c:1,r:2},wide:{c:3,r:1},laptop:{c:1,r:1}},sort:'app',
+    pins:[{win:5,mon:'wide',slots:[0]},{win:1,mon:'wide',slots:[1]},{win:8,mon:'wide',slots:[2]},{app:'outlook',match:'',mon:'tall',slots:[0]},{app:'olk',match:'',mon:'tall',slots:[1]},{app:'teams',match:'',mon:'laptop',slots:[0]}]}},
+  Meetings:{blurb:'Teams takes the left half of the ultrawide. Mail stacks on the portrait.',st:{grids:{tall:{c:1,r:2},wide:{c:4,r:2},laptop:{c:1,r:1}},sort:'cat',
+    pins:[{app:'teams',match:'',mon:'wide',slots:[0,1,4,5]},{app:'outlook',match:'',mon:'tall',slots:[0]},{app:'olk',match:'',mon:'tall',slots:[1]},{win:6,mon:'laptop',slots:[0]}]}},
+  Review:{blurb:'Pull request big on the left, the rest grouped by repo.',st:{grids:{tall:{c:1,r:2},wide:{c:4,r:2},laptop:{c:1,r:1}},sort:'repo',
+    pins:[{win:5,mon:'wide',slots:[0,1,4,5]},{app:'outlook',match:'',mon:'tall',slots:[0]},{app:'teams',match:'',mon:'tall',slots:[1]},{app:'olk',match:'',mon:'laptop',slots:[0]}]}}};
+
+/* ---------- Engine ---------- */
+const clone=o=>JSON.parse(JSON.stringify(o));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function bbox(slots,g){const cs=slots.map(s=>s%g.c),rs=slots.map(s=>Math.floor(s/g.c));
+  const c0=Math.min(...cs),c1=Math.max(...cs),r0=Math.min(...rs),r1=Math.max(...rs),cells=[];
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)cells.push(r*g.c+c);
+  return{c:c0,r:r0,cs:c1-c0+1,rs:r1-r0+1,cells}}
+const RANK={claude:0,chrome:1};const CATRANK={code:0,browse:1,comms:2,other:3};const REPOS=['tiler','docs-site'];
+function sortWins(ws,mode){const k={app:w=>[RANK[w.app]??2],cat:w=>[CATRANK[catOf(w.app)]],title:w=>[w.title.toLowerCase()],
+  repo:w=>[w.repo?REPOS.indexOf(w.repo):9,RANK[w.app]??2],pos:()=>[]}[mode]||(()=>[]);
+  return ws.slice().sort((a,b)=>{const x=k(a),y=k(b);for(let i=0;i<x.length;i++){if(x[i]<y[i])return -1;if(x[i]>y[i])return 1}return a.id-b.id})}
+/* Pins claim cells in list order; the rest fill the ultrawide in sort order; extras stay put. */
+function compute(st){
+  const place={},owner={tall:{},wide:{},laptop:{}},notes=[];
+  st.pins.forEach((p,i)=>{
+    if(p.off){notes[i]='off';return}
+    const g=st.grids[p.mon],slots=p.slots.filter(s=>s<g.c*g.r);
+    const w=WINS.find(x=>!place[x.id]&&(p.win?x.id===p.win:x.app===p.app&&(!p.match||x.title.toLowerCase().includes(p.match.toLowerCase()))));
+    if(!w){notes[i]='nomatch';return}
+    if(!slots.length){notes[i]='offgrid';return}
+    const b=bbox(slots,g),hit=b.cells.find(c=>owner[p.mon][c]!==undefined);
+    if(hit!==undefined){notes[i]='conflict:'+owner[p.mon][hit];return}
+    b.cells.forEach(c=>owner[p.mon][c]=i);place[w.id]={mon:p.mon,...b,pin:i};notes[i]='ok:'+w.id});
+  const g=st.grids.wide,free=[];for(let s=0;s<g.c*g.r;s++)if(owner.wide[s]===undefined)free.push(s);
+  const over=[];let n=0;
+  sortWins(WINS.filter(w=>!place[w.id]),st.sort).forEach(w=>{const s=free.shift();
+    if(s===undefined){over.push(w.id);return}
+    place[w.id]={mon:'wide',c:s%g.c,r:Math.floor(s/g.c),cs:1,rs:1,cells:[s],pin:-1,fill:++n}});
+  return{place,over,notes}}
+const key=p=>p?`${p.mon}${p.c},${p.r},${p.cs},${p.rs}`:'stay';
+const sig=st=>{const R=compute(st);return WINS.map(w=>key(R.place[w.id])).join('|')};
+function changedIds(a,b){const A=compute(a).place,B=compute(b).place;return new Set(WINS.filter(w=>key(A[w.id])!==key(B[w.id])).map(w=>w.id))}
+const DEFSIG=sig(DEFAULT);
+const isDefault=st=>sig(st)===DEFSIG;
+function pinTo(s,p){
+  const g=s.grids[p.mon],cells=new Set(bbox(p.slots,g).cells),R=compute(s);
+  const grabbed=i=>{const n=R.notes[i]||'';return n.startsWith('ok:')?+n.slice(3):0};
+  s.pins=s.pins.filter((q,i)=>{
+    if(p.win?(q.win===p.win||grabbed(i)===p.win):(!q.win&&q.app===p.app&&(q.match||'')===(p.match||'')))return false;
+    if(q.mon===p.mon){const qs=q.slots.filter(x=>x<g.c*g.r);if(qs.length&&bbox(qs,g).cells.some(c=>cells.has(c)))return false}
+    return true});
+  s.pins.unshift(p)}
+const slotText=p=>p.cells.map(x=>x+1).join('+');
+const where=p=>p?`${MN[p.mon]} · slot${p.cells.length>1?'s':''} ${slotText(p)}`:'stays where it is';
+function overText(R){return R.over.length?`Ultrawide is full. Left where they are: ${R.over.map(id=>`${WBY[id].title} (${APPS[WBY[id].app].name})`).join(', ')}.`:'Every window has a place.'}
+function deskHTML(st,o={}){
+  const R=compute(st);
+  const html=MONS.map(m=>{const g=st.grids[m.id];let cells='';
+    if(o.cells)for(let s=0;s<g.c*g.r;s++)cells+=`<div class="cell" data-mon="${m.id}" data-slot="${s}" style="grid-area:${Math.floor(s/g.c)+1}/${s%g.c+1}"><i>${s+1}</i></div>`;
+    const tiles=WINS.filter(w=>R.place[w.id]&&R.place[w.id].mon===m.id).map(w=>{const p=R.place[w.id],a=APPS[w.app];
+      const cls=`tile cat-${a.cat}${p.pin>=0?' pinned':''}${o.sel===w.id?' sel':''}${o.dim&&o.dim.has(a.cat)?' dim':''}${o.changed&&o.changed.has(w.id)?' changed':''}`;
+      const ga=`grid-area:${p.r+1}/${p.c+1}/span ${p.rs}/span ${p.cs}`;
+      return o.mini?`<div class="${cls}" style="${ga}"></div>`
+        :`<${o.btn?'button type="button"':'div'} class="${cls}" data-id="${w.id}" style="${ga}" aria-label="${esc(w.title)}, ${a.name}, ${where(p)}"><b>${a.code}</b><span>${esc(w.title)}</span></${o.btn?'button':'div'}>`}).join('');
+    const label=o.mini?'':`<div class="mon-l">${o.monBtn?`<button type="button" data-mon-pick="${m.id}">${m.name}</button>`:`<span>${m.name}</span>`}<span class="num">${m.w}×${m.h} · ${g.c}×${g.r}</span></div>`;
+    return `<div class="mon${o.cur===m.id?' cur':''}" style="flex:${m.w} 1 0">${label}<div class="scr" style="aspect-ratio:${m.w}/${m.h};grid-template-columns:repeat(${g.c},minmax(0,1fr));grid-template-rows:repeat(${g.r},minmax(0,1fr))">${cells}${tiles}</div></div>`}).join('');
+  return{html,R}}
+function drawDesk(el,st,o){const d=deskHTML(st,o);el.innerHTML=d.html;return d.R}
+/* Undo history. An Undo after Apply moves the windows back too (as in today's sandbox). */
+function makeStore(init,render,L=x=>x){const S={s:clone(init),applied:clone(init),past:[],
+  edit(fn){S.past.push({s:clone(S.s),a:clone(S.applied)});fn(S.s);render()},
+  apply(){const n=changedIds(L(S.applied),L(S.s)).size;S.past.push({s:clone(S.s),a:clone(S.applied),apply:true});S.applied=clone(S.s);render();return n},
+  commit(fn){S.past.push({s:clone(S.s),a:clone(S.applied),apply:true});fn(S.s);const n=changedIds(L(S.applied),L(S.s)).size;S.applied=clone(S.s);render();return n},
+  undo(){const e=S.past.pop();if(!e)return null;const n=e.apply?changedIds(L(S.applied),L(e.a)).size:0;S.s=e.s;S.applied=e.a;render();return{moved:n,apply:!!e.apply}},
+  pending(){return changedIds(L(S.applied),L(S.s)).size}};return S}
+const plural=(n,w)=>`${n} ${w}${n===1?'':'s'}`;
+const badge=(el,st)=>{const d=isDefault(st);el.textContent=d?'Default':'Custom';el.classList.toggle('custom',!d)};
+const sortOptions=sel=>SORTS.map(([v,l])=>`<option value="${v}"${v===sel?' selected':''}>${l}${v==='app'?' (default)':''}</option>`).join('');
+const stepper=(lbl,val,attrs)=>`<span class="step"><button type="button" ${attrs} data-d="-1" aria-label="Fewer ${lbl}">−</button><span class="num">${val}</span><button type="button" ${attrs} data-d="1" aria-label="More ${lbl}">+</button></span>`;
+const clampGrid=(g,k,d)=>{g[k]=Math.max(1,Math.min(k==='c'?8:4,g[k]+d))};
+
+/* ---------- A. Command palette ---------- */
+(()=>{
+  const $=id=>document.getElementById(id);
+  const inp=$('a-cmd'),list=$('a-list');
+  const ALIAS={teams:'teams',team:'teams',outlook:'outlook',mail:'outlook',calendar:'olk',chrome:'chrome',browser:'chrome',claude:'claude',terminal:'terminal',term:'terminal',pwsh:'terminal',explorer:'explorer',files:'explorer'};
+  const MONALIAS={wide:'wide',ultrawide:'wide',laptop:'laptop',portrait:'tall',tall:'tall'};
+  const SUG=[
+    ['Layouts','',[['default','Default setup'],['focus','Focus: three big columns'],['meetings','Meetings: Teams on the left half'],['review','Review: pull request big']]],
+    ['Comms','comms',[['teams left 2 cols','Teams in the left 2 columns'],['outlook top half on portrait','Outlook on top of the portrait'],['teams full on laptop','Teams fills the laptop']]],
+    ['Code','code',[['claude right col','A Claude window in the right column'],['terminal bottom row','Terminal along the bottom row']]],
+    ['Browse','browse',[['chrome:roadmap slot 1','The roadmap tab in slot 1'],['chrome slots 3+8','Chrome spans slots 3 and 8']]],
+    ['Grid and order','',[['grid 6x2','Ultrawide as 6 by 2'],['grid 4x2','Ultrawide as 4 by 2'],['sort by repo','Fill the ultrawide by repo'],['sort by title','Fill the ultrawide by title']]]];
+  let act=-1,items=[];
+  const S=makeStore(DEFAULT,render);
+  function whereSlots(w,g){let m;const all=[...Array(g.c*g.r).keys()];
+    const col=k=>all.filter(s=>s%g.c===k),row=k=>all.filter(s=>Math.floor(s/g.c)===k);
+    if(/^(full|all|fill)$/.test(w))return all;
+    if((m=w.match(/^(left|right) (\d+) ?(col|cols|column|columns)$/))){const n=Math.min(+m[2],g.c),ks=[...Array(n).keys()].map(i=>m[1]==='left'?i:g.c-1-i);return all.filter(s=>ks.includes(s%g.c))}
+    if((m=w.match(/^(left|right) (col|column)$/)))return col(m[1]==='left'?0:g.c-1);
+    if((m=w.match(/^(?:col|column) (\d+)$/)))return +m[1]<=g.c?col(+m[1]-1):[];
+    if((m=w.match(/^(top|bottom) row$/)))return row(m[1]==='top'?0:g.r-1);
+    if((m=w.match(/^row (\d+)$/)))return +m[1]<=g.r?row(+m[1]-1):[];
+    if((m=w.match(/^(top|bottom) half$/))){if(g.r%2)return 'oddr';const h=g.r/2;return all.filter(s=>{const r=Math.floor(s/g.c);return m[1]==='top'?r<h:r>=h})}
+    if((m=w.match(/^(left|right) half$/))){if(g.c%2)return 'oddc';const h=g.c/2;return all.filter(s=>m[1]==='left'?s%g.c<h:s%g.c>=h)}
+    if((m=w.match(/^slots? ([\d+, -]+)$/))){const out=[];m[1].split(/[+, ]+/).forEach(t=>{const r=t.match(/^(\d+)-(\d+)$/);if(r){for(let i=+r[1];i<=+r[2];i++)out.push(i-1)}else if(t)out.push(+t-1)});return out.filter(s=>s>=0&&s<g.c*g.r)}
+    return null}
+  function parse(txt,st){
+    const t=txt.trim().toLowerCase().replace(/\s+/g,' ');
+    if(!t)return{ok:false,msg:'Type an app and a place, like "chrome slot 3".'};
+    if(/^(default|reset)$/.test(t))return{ok:true,desc:'Load the <em>default setup</em>',run:s=>Object.assign(s,clone(DEFAULT))};
+    for(const k in PRESETS)if(t===k.toLowerCase())return{ok:true,desc:`Load the <em>${k}</em> layout`,run:s=>Object.assign(s,clone(PRESETS[k].st))};
+    let m=t.match(/^sort(?: by)? (app|category|title|repo|position)$/);
+    if(m){const v={app:'app',category:'cat',title:'title',repo:'repo',position:'pos'}[m[1]];return{ok:true,desc:`Fill the ultrawide by <em>${SN[v].toLowerCase()}</em>`,run:s=>{s.sort=v}}}
+    let mon='wide';const mm=t.match(/ on (wide|ultrawide|laptop|portrait|tall)$/);if(mm)mon=MONALIAS[mm[1]];
+    const body=mm?t.slice(0,mm.index):t;
+    m=body.match(/^grid (\d+) ?x ?(\d+)$/);
+    if(m){const c=+m[1],r=+m[2];if(c<1||r<1||c>8||r>4)return{ok:false,msg:'Grids go from 1×1 up to 8 columns by 4 rows.'};
+      return{ok:true,desc:`Set the <em>${MN[mon]}</em> grid to <em>${c}×${r}</em>`,run:s=>{s.grids[mon]={c,r}}}}
+    m=body.match(/^([a-z]+)(?::(\S+))?(?: (.+))?$/);
+    if(!m||!ALIAS[m[1]])return{ok:false,msg:`No app called "${esc(m?m[1]:body)}". Try teams, outlook, chrome, claude, terminal or explorer.`};
+    const app=ALIAS[m[1]],match=m[2]||'';
+    if(!m[3])return{ok:false,msg:`Where should ${APPS[app].name} go? Try: left 2 cols, right col, top row, slot 3, full.`};
+    const g=st.grids[mon],slots=whereSlots(m[3],g);
+    if(slots==='oddc')return{ok:false,msg:`${g.c} columns don't split in half. Say "left ${Math.floor(g.c/2)} cols" or "left ${Math.ceil(g.c/2)} cols".`};
+    if(slots==='oddr')return{ok:false,msg:`${g.r} row${g.r>1?'s':''} don't split in half on the ${MN[mon]}. Try "row 1" or "full".`};
+    if(!slots)return{ok:false,msg:`I can't place "${esc(m[3])}". Try: left 2 cols, right col, top row, slot 3, slots 1+2, full.`};
+    if(!slots.length)return{ok:false,msg:`The ${MN[mon]} grid is ${g.c}×${g.r}. That place is outside it.`};
+    const b=bbox(slots,g);
+    return{ok:true,desc:`Pin <em>${APPS[app].name}${match?` "${esc(match)}"`:''}</em> to the <em>${MN[mon]}</em>, slot${b.cells.length>1?'s':''} <em>${b.cells.map(x=>x+1).join('+')}</em> of ${g.c}×${g.r}`,run:s=>pinTo(s,{app,match,mon,slots})}}
+  function preview(){const p=parse(inp.value,S.s),st=clone(S.s);if(p.ok)p.run(st);return{p,st}}
+  function render(){
+    const {p,st}=preview(),ch=changedIds(S.s,st);
+    const el=$('a-parse');el.className='a-parse '+(p.ok?'ok':'bad');el.innerHTML=p.ok?`${p.desc}.`:p.msg;
+    const R=drawDesk($('a-desk'),st,{changed:ch});
+    $('a-moves').textContent=p.ok?`· ${plural(ch.size,'window')} would move`:'· current layout';
+    $('a-over').textContent=overText(R);
+    $('a-apply').disabled=!p.ok||!ch.size;$('a-undo').disabled=!S.past.length;
+    badge($('a-badge'),S.s);renderList()}
+  function renderList(){
+    const q=inp.value.trim().toLowerCase().split(/[\s:]/)[0];
+    let groups=SUG.map(([h,cat,its])=>[h,cat,its.filter(([c,l])=>!q||c.startsWith(q)||c.includes(' '+q)||l.toLowerCase().includes(q))]).filter(g=>g[2].length);
+    if(!groups.length)groups=SUG;
+    items=[];list.innerHTML=groups.map(([h,cat,its])=>`<div class="a-grp" role="group" aria-label="${h}"><h4>${cat?`<i class="sw cat-${cat}"></i>`:''}${h}</h4>${its.map(([c,l])=>{const i=items.push(c)-1;
+      return `<button type="button" role="option" id="a-opt-${i}" class="a-item${i===act?' act':''}" aria-selected="${i===act}" data-cmd="${esc(c)}"><code>${esc(c)}</code><small>${esc(l)}</small></button>`}).join('')}</div>`).join('');
+    if(act>=items.length)act=-1;
+    inp.setAttribute('aria-activedescendant',act>=0?'a-opt-'+act:'')}
+  const status=t=>{$('a-status').textContent=t};
+  function go(){const p=parse(inp.value,S.s);if(!p.ok){status('Nothing applied. Fix the command first.');return}
+    const n=S.commit(p.run);status(n?`Moved ${plural(n,'window')}. Ctrl Z moves them back.`:'Already like that. Nothing moved.')}
+  function undo(){const r=S.undo();status(r?`Moved ${plural(r.moved,'window')} back.`:'Nothing to undo.')}
+  inp.addEventListener('input',()=>{act=-1;render()});
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!items.length)return;act=(act+(e.key==='ArrowDown'?1:-1)+items.length)%items.length;const keep=act;inp.value=items[act];render();act=keep;renderList()}
+    else if(e.key==='Enter'){e.preventDefault();go()}
+    else if(e.key==='Escape'){inp.value='';act=-1;render()}});
+  $('panel-a').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo()}});
+  list.addEventListener('click',e=>{const b=e.target.closest('[data-cmd]');if(!b)return;inp.value=b.dataset.cmd;act=-1;render();inp.focus()});
+  $('a-apply').addEventListener('click',go);$('a-undo').addEventListener('click',undo);
+  status('Showing the default setup. Nothing has moved yet.');render();
+})();
+
+/* ---------- B. Spatial canvas ---------- */
+(()=>{
+  const $=id=>document.getElementById(id);
+  const desk=$('b-desk'),panel=$('panel-b');
+  let sel=12,cur='wide',showGrid=true;const hidden=new Set();
+  const S=makeStore(DEFAULT,render);
+  const status=t=>{$('b-status').textContent=t};
+  const ordinal=n=>n+(n%10===1&&n!==11?'st':n%10===2&&n!==12?'nd':n%10===3&&n!==13?'rd':'th');
+  function presetName(st){const s=sig(st);for(const k in PRESETS)if(sig(PRESETS[k].st)===s)return k;return null}
+  function render(){
+    const st=S.s,R=drawDesk(desk,st,{cells:true,btn:true,monBtn:true,sel,cur,dim:hidden,changed:changedIds(S.applied,st)});
+    desk.classList.toggle('nogrid',!showGrid);
+    $('b-over').textContent=overText(R);
+    const pn=presetName(st);$('b-name').textContent=pn?(pn==='Default'?'Default setup':pn):'Untitled layout';
+    badge($('b-badge'),st);
+    $('b-presets').innerHTML=Object.entries(PRESETS).map(([k,v])=>`<button type="button" class="b-pre" data-pre="${k}" aria-current="${pn===k}"><span class="desk mini">${deskHTML(v.st,{mini:true}).html}</span><strong>${k}</strong><small>${v.blurb}</small></button>`).join('');
+    $('b-cats').innerHTML=CATS.map(([c,l])=>{const ws=WINS.filter(w=>catOf(w.app)===c),apps=[...new Set(ws.map(w=>APPS[w.app].name.replace(/ \(.*\)/,'')))].join(', ');
+      return `<button type="button" class="b-cat cat-${c}" data-cat="${c}" aria-pressed="${!hidden.has(c)}" title="${apps}"><i class="sw"></i>${l}<span class="ct">${ws.length}</span></button>`}).join('')
+      +`<small style="color:var(--b-muted);font-size:11px;padding:2px 6px">Click a category to fade it on the board.</small>`;
+    const g=st.grids[cur];
+    $('b-mon').innerHTML=`<div class="b-seg" role="group" aria-label="Monitor">${MONS.map(m=>`<button type="button" data-mon-pick="${m.id}" aria-pressed="${m.id===cur}">${m.name}</button>`).join('')}</div>
+      <div class="b-field"><span>Columns</span>${stepper('columns',g.c,'data-g="c"')}</div>
+      <div class="b-field"><span>Rows</span>${stepper('rows',g.r,'data-g="r"')}</div>
+      ${cur==='wide'?`<div class="b-field stack"><label for="b-sort">Fill order</label><select id="b-sort">${sortOptions(st.sort)}</select></div>`:`<small style="color:var(--b-muted)">Only the ultrawide fills itself. Drag windows here to pin them.</small>`}`;
+    const w=WBY[sel],p=w&&R.place[w.id];
+    $('b-win').innerHTML=!w?'<p class="b-hint">Click a window to see it here.</p>':`<div class="b-win cat-${catOf(w.app)}">
+      <div style="display:flex;gap:6px;align-items:center"><i class="sw"></i><span class="m">${APPS[w.app].name} · ${CN[catOf(w.app)]}</span></div>
+      <div class="t">${esc(w.title)}</div>
+      <div class="m">${p?(p.pin>=0?'Pinned':'Filled, '+ordinal(p.fill)+' in fill order')+' · '+where(p):'Ultrawide is full. It stays where it is.'}</div>
+      ${p&&p.pin>=0?`<div class="b-field"><span>Width</span>${stepper('columns wide',p.cs,'data-span="cs"')}</div><div class="b-field"><span>Height</span>${stepper('rows tall',p.rs,'data-span="rs"')}</div>`:''}
+      <div class="b-field stack"><label for="b-move">Move to</label><select id="b-move"><option value="">Choose a cell</option>${MONS.map(m=>{const gg=st.grids[m.id];return `<optgroup label="${m.name}">${[...Array(gg.c*gg.r).keys()].map(s=>`<option value="${m.id}:${s}">${m.name} · slot ${s+1}</option>`).join('')}</optgroup>`}).join('')}</select></div>
+      ${p&&p.pin>=0?`<button type="button" class="b-btn" id="b-unpin">Unpin. Let it fill.</button>`:''}</div>`;
+    const n=S.pending();$('b-pend').textContent=n?`${plural(n,'window')} will move on Apply`:'Board matches your screen';
+    $('b-apply').disabled=!n;$('b-undo').disabled=!S.past.length}
+  function pinWin(id,mon,slot,cs,rs){const g=S.s.grids[mon];cs=Math.min(cs||1,g.c);rs=Math.min(rs||1,g.r);
+    const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),slots=[];
+    for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*g.c+c);
+    sel=id;S.edit(s=>pinTo(s,{win:id,mon,slots}));status(`Pinned ${WBY[id].title} to ${where(compute(S.s).place[id])}.`)}
+  let drag=null;
+  desk.addEventListener('pointerdown',e=>{const t=e.target.closest('.tile');if(!t||e.button!==0)return;drag={id:+t.dataset.id,x:e.clientX,y:e.clientY,el:t,moved:false}});
+  addEventListener('pointermove',e=>{if(!drag)return;
+    if(!drag.moved){if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<5)return;
+      const r=drag.el.getBoundingClientRect();drag.moved=true;drag.ox=e.clientX-r.left;drag.oy=e.clientY-r.top;
+      drag.g=drag.el.cloneNode(true);drag.g.classList.add('ghost');drag.g.style.cssText=`width:${r.width}px;height:${r.height}px`;panel.appendChild(drag.g);desk.classList.add('dragging')}
+    drag.g.style.transform=`translate(${e.clientX-drag.ox}px,${e.clientY-drag.oy}px)`;
+    desk.querySelectorAll('.cell.drop').forEach(c=>c.classList.remove('drop'));
+    const c=document.elementFromPoint(e.clientX,e.clientY),cell=c&&c.closest('#b-desk .cell');if(cell)cell.classList.add('drop')});
+  function endDrag(e,cancel){if(!drag)return;const d=drag;drag=null;desk.classList.remove('dragging');if(d.g)d.g.remove();
+    if(cancel){render();return}
+    if(!d.moved){sel=d.id;render();return}
+    const c=document.elementFromPoint(e.clientX,e.clientY),cell=c&&c.closest('#b-desk .cell');
+    if(!cell){render();status('Dropped outside a monitor. Nothing changed.');return}
+    const p=compute(S.s).place[d.id],keep=p&&p.pin>=0&&p.mon===cell.dataset.mon;
+    pinWin(d.id,cell.dataset.mon,+cell.dataset.slot,keep?p.cs:1,keep?p.rs:1)}
+  addEventListener('pointerup',e=>endDrag(e));addEventListener('pointercancel',e=>endDrag(e,true));
+  desk.addEventListener('click',e=>{const t=e.target.closest('.tile');if(t&&e.detail===0){sel=+t.dataset.id;render()}});
+  panel.addEventListener('click',e=>{
+    const t=e.target.closest('button');if(!t||t.classList.contains('tile'))return;
+    if(t.dataset.monPick){cur=t.dataset.monPick;render()}
+    else if(t.dataset.pre){const k=t.dataset.pre;S.edit(s=>Object.assign(s,clone(PRESETS[k].st)));status(`Loaded ${k}. Apply to move the windows.`)}
+    else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
+    else if(t.dataset.g){S.edit(s=>clampGrid(s.grids[cur],t.dataset.g,+t.dataset.d));const g=S.s.grids[cur];status(`${MN[cur]} grid is now ${g.c}×${g.r}.`)}
+    else if(t.dataset.span){const p=compute(S.s).place[sel];const cs=p.cs+(t.dataset.span==='cs'?+t.dataset.d:0),rs=p.rs+(t.dataset.span==='rs'?+t.dataset.d:0);
+      if(cs<1||rs<1)return;pinWin(sel,p.mon,p.r*S.s.grids[p.mon].c+p.c,cs,rs)}
+    else if(t.id==='b-unpin'){const p=compute(S.s).place[sel];S.edit(s=>s.pins.splice(p.pin,1));status(`Unpinned ${WBY[sel].title}. It now fills the ultrawide.`)}
+    else if(t.id==='b-grid'){showGrid=!showGrid;t.setAttribute('aria-pressed',String(showGrid));render()}
+    else if(t.id==='b-undo'){const r=S.undo();status(r?(r.apply?`Moved ${plural(r.moved,'window')} back.`:'Undid the last change.'):'Nothing to undo.')}
+    else if(t.id==='b-apply'){const n=S.apply();status(`Moved ${plural(n,'window')}. Undo moves them back.`)}});
+  panel.addEventListener('change',e=>{
+    if(e.target.id==='b-sort'){S.edit(s=>{s.sort=e.target.value});status(`Fill order: ${SN[S.s.sort]}.`)}
+    if(e.target.id==='b-move'&&e.target.value){const [m,s]=e.target.value.split(':');pinWin(sel,m,+s,1,1)}});
+  status('Default setup loaded. Teams is selected.');render();
+})();
+
+/* ---------- C. Scenes ---------- */
+(()=>{
+  const $=id=>document.getElementById(id);
+  const DAYS=['M','T','W','T','F','S','S'],DAYN=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const TRIG=[['manual','Only when I click Apply'],['time','On a schedule'],['connect','When all 3 monitors connect'],['app','When a Teams call starts']];
+  const mk=(id,name,builtIn,trig,days,time)=>{const st=clone(PRESETS[name].st);return{id,name,builtIn,trig,days,time,st,saved:JSON.stringify(st)}};
+  const init={sel:'default',active:'default',scenes:[mk('default','Default',true,'connect',[0,1,2,3,4],'08:30'),mk('focus','Focus',false,'time',[0,1,2,3],'09:00'),mk('meet','Meetings',false,'app',[0,1,2,3,4],'11:00'),mk('review','Review',false,'manual',[4],'14:00')],
+    log:[{t:'13:02',x:'Default applied. The call ended.'},{t:'11:00',x:'Meetings applied. A Teams call started.'},{t:'09:00',x:'Focus applied on schedule. Moved 9 windows.'},{t:'08:30',x:'Default applied. 3 monitors connected.'}]};
+  const S=makeStore(init,render,c=>c.scenes.find(x=>x.id===c.active).st);
+  const scene=(c,id)=>c.scenes.find(x=>x.id===(id||c.sel));
+  const edited=sc=>JSON.stringify(sc.st)!==sc.saved;
+  const trigText=sc=>sc.trig==='time'?`${sc.days.length===5&&sc.days.every((d,i)=>d===i)?'Mon to Fri':sc.days.map(d=>DAYN[d]).join(', ')||'No days'} at ${sc.time}`:TRIG.find(t=>t[0]===sc.trig)[1];
+  const status=t=>{$('c-status').textContent=t};
+  const now=()=>{const d=new Date();return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`};
+  function render(){
+    const c=S.s,sc=scene(c),act=scene(c,c.active);
+    $('c-active').textContent=act.name+(edited(act)?' (edited)':'');
+    $('c-cards').innerHTML=c.scenes.map(x=>{const on=x.id===c.active&&!changedIds(act.st,x.st).size;return `<article class="c-card${x.id===c.sel?' sel':''}">
+      <button type="button" class="c-pick" data-pick="${x.id}" aria-pressed="${x.id===c.sel}"><span class="desk mini">${deskHTML(x.st,{mini:true}).html}</span>
+      <strong>${esc(x.name)}${x.id===c.active?'<span class="c-live">On screen</span>':''}</strong><small>${esc(trigText(x))}</small></button>
+      <div class="c-row"><span class="tag">${x.builtIn?'Built-in':'Custom'}${edited(x)?' · edited':''}</span><button type="button" class="c-btn${on?'':' pri'}" data-apply="${x.id}" ${on?'disabled':''}>${on?'Applied':'Apply'}</button></div></article>`}).join('');
+    $('c-dname').textContent=sc.name;
+    $('c-dtag').textContent=(sc.builtIn?'Built-in':'Custom')+(edited(sc)?' · edited':'')+(isDefault(sc.st)?' · default layout':'');
+    const ch=changedIds(act.st,sc.st),R=drawDesk($('c-desk'),sc.st,{changed:ch});
+    $('c-over').textContent=(ch.size?`Applying ${sc.name} moves ${plural(ch.size,'window')} (dashed). `:'This is what is on screen now. ')+overText(R);
+    $('c-grids').innerHTML=MONS.map(m=>{const g=sc.st.grids[m.id];return `<div class="c-gr"><span>${m.name} <small style="color:var(--c-muted)">${m.w}×${m.h}</small></span><span>${stepper(m.name+' columns',g.c,`data-m="${m.id}" data-k="c"`)} × ${stepper(m.name+' rows',g.r,`data-m="${m.id}" data-k="r"`)}</span></div>`}).join('');
+    $('c-sort').innerHTML=sortOptions(sc.st.sort);
+    $('c-trig').innerHTML=TRIG.map(([v,l])=>`<label><input type="radio" name="c-trig" value="${v}" ${sc.trig===v?'checked':''}>${l}</label>`).join('')
+      +`<div class="c-sched" ${sc.trig==='time'?'':'hidden'}><div class="c-days" role="group" aria-label="Days">${DAYS.map((d,i)=>`<button type="button" data-day="${i}" aria-pressed="${sc.days.includes(i)}" aria-label="${DAYN[i]}">${d}</button>`).join('')}</div>
+        <div class="c-time"><label for="c-time">At</label><input type="time" id="c-time" value="${sc.time}"></div></div>`;
+    $('c-catlist').innerHTML=CATS.map(([k,l])=>{const ws=WINS.filter(w=>catOf(w.app)===k),mons=[...new Set(ws.map(w=>R.place[w.id]?MN[R.place[w.id].mon]:'stays put'))];
+      return `<div class="c-cat cat-${k}"><i class="sw"></i><span>${l} <small>${[...new Set(ws.map(w=>APPS[w.app].name.replace(/ \(.*\)/,'')))].join(', ')}</small></span><small>${mons.join(', ')}</small></div>`}).join('');
+    $('c-log').innerHTML=c.log.slice(0,5).map(l=>`<li><span>${l.t}</span><span>${esc(l.x)}</span></li>`).join('');
+    $('c-revert').disabled=!edited(sc);$('c-save').textContent=sc.builtIn?'Save as new scene':'Save';$('c-save').disabled=!edited(sc);
+    $('c-apply').disabled=!ch.size&&sc.id===c.active;$('c-undo').disabled=!S.past.length}
+  function applyScene(id){const before=scene(S.s,S.s.active).st,sc=scene(S.s,id),n=changedIds(before,sc.st).size;
+    S.edit(c=>{c.active=id;c.log.unshift({t:now(),x:`${sc.name} applied by hand. Moved ${plural(n,'window')}.`})});
+    S.past[S.past.length-1].apply=true;S.applied=clone(S.s);status(`${sc.name} is on screen. Moved ${plural(n,'window')}.`)}
+  const panel=$('panel-c');
+  panel.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;
+    if(t.dataset.pick){S.s.sel=t.dataset.pick;render()}
+    else if(t.dataset.apply)applyScene(t.dataset.apply);
+    else if(t.id==='c-apply')applyScene(S.s.sel);
+    else if(t.dataset.m){S.edit(c=>clampGrid(scene(c).st.grids[t.dataset.m],t.dataset.k,+t.dataset.d));status('Edited. Revert, save, or apply it as is.')}
+    else if(t.dataset.day){const d=+t.dataset.day;S.edit(c=>{const sc=scene(c);sc.days=sc.days.includes(d)?sc.days.filter(x=>x!==d):[...sc.days,d].sort()})}
+    else if(t.id==='c-revert'){S.edit(c=>{const sc=scene(c);sc.st=JSON.parse(sc.saved)});status('Reverted to the saved scene.')}
+    else if(t.id==='c-save'){const sc=scene(S.s);if(sc.builtIn){const id='s'+S.s.scenes.length;S.edit(c=>{const o=scene(c),n=clone(o);Object.assign(n,{id,name:o.name+' copy',builtIn:false,trig:'manual',saved:JSON.stringify(n.st)});o.st=JSON.parse(o.saved);c.scenes.push(n);c.sel=id});status('Saved as a new scene. The built-in one is unchanged.')}
+      else{S.edit(c=>{const o=scene(c);o.saved=JSON.stringify(o.st)});status(`Saved ${sc.name}.`)}}
+    else if(t.id==='c-undo'){const r=S.undo();status(r?(r.apply?`Undid the apply. Moved ${plural(r.moved,'window')} back.`:'Undid the last edit.'):'Nothing to undo.')}});
+  panel.addEventListener('change',e=>{const t=e.target;
+    if(t.name==='c-trig'){S.edit(c=>{scene(c).trig=t.value});status(`${scene(S.s).name} now applies: ${trigText(scene(S.s)).toLowerCase()}.`)}
+    else if(t.id==='c-time'&&t.value){S.edit(c=>{scene(c).time=t.value})}
+    else if(t.id==='c-sort'){S.edit(c=>{scene(c).st.sort=t.value});status(`Fill order: ${SN[t.value]}.`)}});
+  status('Default is on screen. It applies itself when all 3 monitors connect.');render();
+})();
+
+/* ---------- D. Rule builder ---------- */
+(()=>{
+  const $=id=>document.getElementById(id);
+  const init=clone(DEFAULT);init.catOrder=CATS.map(c=>c[0]);init.pins.push({app:'chrome',match:'roadmap',mon:'wide',slots:[4],off:true});
+  let open=-1;
+  const S=makeStore(init,render);
+  const status=t=>{$('d-status').textContent=t};
+  const resort=s=>{s.pins=s.pins.map((p,i)=>[p,i]).sort((a,b)=>s.catOrder.indexOf(catOf(a[0].app))-s.catOrder.indexOf(catOf(b[0].app))||a[1]-b[1]).map(x=>x[0])};
+  function resultLine(n){if(n==='off')return['muted','Off. Turn it on to use it.'];
+    if(n==='nomatch')return['warn','No open window matches. Nothing happens.'];
+    if(n==='offgrid')return['warn','Its slots are outside this grid.'];
+    if(n.startsWith('conflict:'))return['warn',`Skipped. Rule ${+n.slice(9)+1} already claimed that zone.`];
+    return['',`Places "${WBY[+n.slice(3)].title}"`]}
+  function render(){
+    const s=S.s,R=compute(s);
+    let html='';
+    s.catOrder.forEach((cat,gi)=>{const idx=s.pins.map((p,i)=>i).filter(i=>catOf(s.pins[i].app)===cat);
+      html+=`<h4 class="d-gh cat-${cat}"><i class="sw"></i>${CN[cat]}<small>${plural(idx.length,'rule')}</small><span class="d-ops"><button type="button" data-g="${gi}" data-d="-1" aria-label="Run ${CN[cat]} earlier" ${gi?'':'disabled'}>↑</button><button type="button" data-g="${gi}" data-d="1" aria-label="Run ${CN[cat]} later" ${gi<3?'':'disabled'}>↓</button></span></h4>`;
+      if(!idx.length){html+=`<p class="d-empty">No ${CN[cat].toLowerCase()} rules. ${CN[cat]} windows fill the ultrawide.</p>`;return}
+      html+=`<ol class="d-rules">${idx.map(i=>{const p=s.pins[i],g=s.grids[p.mon],[cls,txt]=resultLine(R.notes[i]||''),slots=p.slots.filter(x=>x<g.c*g.r);
+        const inBox=slots.length?new Set(bbox(slots,g).cells):new Set();
+        return `<li class="d-rule${p.off?' off':''}" data-i="${i}">
+          <span class="d-n">${i+1}</span>
+          <label class="d-sw"><input type="checkbox" data-f="on" ${p.off?'':'checked'} aria-label="Rule ${i+1} on"><span></span></label>
+          <span class="d-w">When</span>
+          <select data-f="app" aria-label="Rule ${i+1} app">${Object.entries(APPS).map(([k,a])=>`<option value="${k}"${k===p.app?' selected':''}>${a.name}</option>`).join('')}</select>
+          <input type="text" data-f="match" value="${esc(p.match||'')}" placeholder="any title" aria-label="Rule ${i+1} title has">
+          <span class="d-w">→</span>
+          <select data-f="mon" aria-label="Rule ${i+1} monitor">${MONS.map(m=>`<option value="${m.id}"${m.id===p.mon?' selected':''}>${m.name}</option>`).join('')}</select>
+          <button type="button" class="d-zone" data-f="zone" aria-expanded="${open===i}">slot${slots.length>1?'s':''} ${slots.map(x=>x+1).join('+')||'none'}</button>
+          <span class="d-ops"><button type="button" data-f="up" aria-label="Move rule ${i+1} up">↑</button><button type="button" data-f="down" aria-label="Move rule ${i+1} down">↓</button><button type="button" data-f="del" aria-label="Delete rule ${i+1}">×</button></span>
+          <p class="d-res ${cls}">${esc(txt)}</p>
+          ${open===i?`<div class="d-pick"><div class="d-pick-g" style="grid-template-columns:repeat(${g.c},1fr)">${[...Array(g.c*g.r).keys()].map(x=>`<button type="button" data-f="cell" data-s="${x}" aria-pressed="${slots.includes(x)}" class="${inBox.has(x)?'in':''}">${x+1}</button>`).join('')}</div><small>${MN[p.mon]} grid ${g.c}×${g.r}. Click cells to add or remove them. The window covers the smallest rectangle around them.</small></div>`:''}
+        </li>`}).join('')}</ol>`});
+    $('d-rules').innerHTML=html;
+    $('d-sort').innerHTML=sortOptions(s.sort);
+    $('d-zones').innerHTML=MONS.map(m=>{const g=s.grids[m.id];return `<div class="d-zr"><span>${m.name}</span>${stepper(m.name+' columns',g.c,`data-zm="${m.id}" data-k="c"`)}<span>×</span>${stepper(m.name+' rows',g.r,`data-zm="${m.id}" data-k="r"`)}</div>`}).join('');
+    drawDesk($('d-desk'),s,{changed:changedIds(S.applied,s)});
+    $('d-over').textContent=overText(R);
+    const order=MONS.map(m=>m.id);
+    $('d-tbody').innerHTML=WINS.slice().sort((a,b)=>{const pa=R.place[a.id],pb=R.place[b.id];return (pa?order.indexOf(pa.mon):9)-(pb?order.indexOf(pb.mon):9)||(pa&&pb?(pa.r-pb.r)||(pa.c-pb.c):0)}).map(w=>{const p=R.place[w.id];
+      return `<tr><td>${esc(w.title)} <small style="color:var(--d-muted)">${APPS[w.app].name}</small></td><td${p?'':' class="warn"'}>${p?where(p):'stays put'}</td><td${p?'':' class="warn"'}>${!p?'Ultrawide is full':p.pin>=0?'Rule '+(p.pin+1):'Fill, '+ordinalish(p.fill)+' by '+SN[s.sort].split(':')[0].toLowerCase()}</td></tr>`}).join('');
+    badge($('d-badge'),s);
+    const n=S.pending();$('d-apply').disabled=!n;$('d-apply').textContent=n?`Apply · ${plural(n,'move')}`:'Apply';$('d-undo').disabled=!S.past.length}
+  const ordinalish=n=>'#'+n;
+  const panel=$('panel-d');
+  panel.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)return;
+    const li=t.closest('.d-rule'),i=li?+li.dataset.i:-1,f=t.dataset.f;
+    if(f==='zone'){open=open===i?-1:i;render()}
+    else if(f==='cell'){const x=+t.dataset.s;S.edit(s=>{const p=s.pins[i];p.slots=p.slots.includes(x)?p.slots.filter(y=>y!==x):[...p.slots,x];if(!p.slots.length)p.slots=[x]})}
+    else if(f==='up'||f==='down'){const s=S.s,cat=catOf(s.pins[i].app),same=s.pins.map((p,k)=>k).filter(k=>catOf(s.pins[k].app)===cat),j=same[same.indexOf(i)+(f==='up'?-1:1)];
+      if(j===undefined){status(`Rule ${i+1} is already ${f==='up'?'first':'last'} in ${CN[cat]}. Move the group with its arrows.`);return}
+      S.edit(s=>{[s.pins[i],s.pins[j]]=[s.pins[j],s.pins[i]]});if(open===i){open=j;render()}status(`Rule moved. It is now rule ${j+1}.`)}
+    else if(f==='del'){S.edit(s=>s.pins.splice(i,1));open=-1;status('Rule deleted. Undo brings it back.')}
+    else if(t.dataset.g!==undefined){const gi=+t.dataset.g,gj=gi+ +t.dataset.d;S.edit(s=>{[s.catOrder[gi],s.catOrder[gj]]=[s.catOrder[gj],s.catOrder[gi]];resort(s)});open=-1;status(`${CN[S.s.catOrder[gj]]} rules now run ${gj<gi?'earlier':'later'}.`)}
+    else if(t.dataset.zm){S.edit(s=>clampGrid(s.grids[t.dataset.zm],t.dataset.k,+t.dataset.d));const g=S.s.grids[t.dataset.zm];status(`${MN[t.dataset.zm]} grid is now ${g.c}×${g.r}.`)}
+    else if(t.id==='d-add'){const nr={app:'chrome',match:'',mon:'wide',slots:[4]};S.edit(s=>{s.pins.push(nr);resort(s)});open=S.s.pins.findIndex(p=>p.app==='chrome'&&!p.match&&!p.off&&p.slots.length===1&&p.slots[0]===4);render();status('Added a rule: Chrome to Ultrawide slot 5. Change its app and zone.')}
+    else if(t.id==='d-apply'){const n=S.apply();status(`Moved ${plural(n,'window')}. Undo moves them back.`)}
+    else if(t.id==='d-undo'){const r=S.undo();open=-1;status(r?(r.apply?`Moved ${plural(r.moved,'window')} back.`:'Undid the last change.'):'Nothing to undo.')}
+    else if(t.id==='d-reset'){S.edit(s=>{Object.assign(s,clone(DEFAULT));s.catOrder=CATS.map(c=>c[0])});open=-1;status('Back to the three default rules. Apply to move the windows.')}});
+  panel.addEventListener('change',e=>{const t=e.target,li=t.closest('.d-rule'),i=li?+li.dataset.i:-1,f=t.dataset.f;
+    if(t.id==='d-sort'){S.edit(s=>{s.sort=t.value});status(`Everything else fills by ${SN[t.value].toLowerCase()}.`);return}
+    if(i<0)return;
+    if(f==='on')S.edit(s=>{s.pins[i].off=!t.checked});
+    else if(f==='app'){S.edit(s=>{s.pins[i].app=t.value;s.pins[i].match='';resort(s)});open=-1}
+    else if(f==='match')S.edit(s=>{s.pins[i].match=t.value.trim()});
+    else if(f==='mon')S.edit(s=>{const p=s.pins[i];p.mon=t.value;const g=s.grids[p.mon];p.slots=p.slots.filter(x=>x<g.c*g.r);if(!p.slots.length)p.slots=[0]})});
+  status('Showing the three default rules. Rule 4 is off.');render();
+})();
+
+/* ---------- Tabs: #a #b #c #d ---------- */
+const TABS=['a','b','c','d'];
+function show(){let h=location.hash.slice(1);if(!TABS.includes(h))h='a';
+  TABS.forEach(t=>{document.getElementById('panel-'+t).hidden=t!==h;document.getElementById('tab-'+t).setAttribute('aria-selected',String(t===h))})}
+addEventListener('hashchange',show);show();
+})();
+</script>
