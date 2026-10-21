@@ -102,7 +102,7 @@ const SAMPLE=(()=>{
   return {monitors,windows};
 })();
 
-let D=null,orig=[],hist=[],els=[],G={x0:0,y0:0,x1:1,y1:1,S:1},Z=0,drag=null,raf=0,live=false,sent=null,appliedAt=0;  // sent: rects last sent to /apply; appliedAt: hist length then
+let D=null,orig=[],hist=[],els=[],G={x0:0,y0:0,x1:1,y1:1,S:1},Z=0,drag=null,raf=0,live=false,sent=null,appliedAt=0,serverDry=false,isBusy=false;  // sent: rects last sent to /apply; appliedAt: hist length then
 const grid={};  // monitor name -> {c,r}
 const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
 const same=(a,b)=>a.x===b.x&&a.y===b.y&&a.w===b.w&&a.h===b.h;
@@ -163,7 +163,7 @@ function place(i){
 function status(){
   const n=changed().length;
   $("cnt").textContent=n?`${n} window${n>1?"s":""} changed`:"Drag a window to change it.";
-  $("undo").disabled=!hist.length;
+  $("undo").disabled=isBusy||!hist.length;
 }
 
 function monOf(r){const cx=r.x+r.w/2,cy=r.y+r.h/2,M=D.monitors,d=m=>Math.hypot(cx-m.x-m.w/2,cy-m.y-m.h/2);
@@ -206,7 +206,7 @@ function frame(){
 }
 const stage=$("stage");
 stage.addEventListener("pointerdown",ev=>{
-  const e=ev.target.closest(".win");if(!e||ev.button!==0||drag)return;
+  const e=ev.target.closest(".win");if(!e||ev.button!==0||drag||isBusy)return;
   ev.preventDefault();e.focus({preventScroll:true});
   try{e.setPointerCapture(ev.pointerId)}catch(_){}
   const i=+e.dataset.i,mode=ev.target.classList.contains("hd")?"size":"move",start=rect(D.windows[i]);
@@ -231,14 +231,14 @@ stage.addEventListener("lostpointercapture",endDrag);
 // Keyboard: arrows move by one cell (10 px with snap off); Shift+arrows resize.
 stage.addEventListener("keydown",ev=>{
   const e=ev.target.closest(".win"),k={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];
-  if(!e||!k)return;ev.preventDefault();
+  if(!e||!k||isBusy)return;ev.preventDefault();
   const i=+e.dataset.i,w=D.windows[i],m=monOf(w),{cw,ch}=cell(m),snap=$("snap").checked,sx=snap?cw:10,sy=snap?ch:10;
   const r=ev.shiftKey?{x:w.x,y:w.y,w:w.w+k[0]*sx,h:w.h+k[1]*sy}:{x:w.x+k[0]*sx,y:w.y+k[1]*sy,w:w.w,h:w.h};
   commit(i,target(r,ev.shiftKey?"size":"move",ev.shiftKey?m:null));
 });
 
 // Undo past a live Apply moves the real windows back at once (decision: undo-moves-windows).
-$("undo").onclick=async()=>{const p=hist.pop();if(!p)return;p.forEach((r,i)=>Object.assign(D.windows[i],r));els.forEach((e,i)=>place(i));status();
+$("undo").onclick=async()=>{if(isBusy)return;const p=hist.pop();if(!p)return;p.forEach((r,i)=>Object.assign(D.windows[i],r));els.forEach((e,i)=>place(i));status();
   if(!live||!sent||hist.length>=appliedAt)return;
   const back=D.windows.filter((w,i)=>!same(w,sent[i]));if(back.length)await post(back,"Moving windows back…")};
 $("reset").onclick=()=>{if(!changed().length)return;hist.push(D.windows.map(rect));orig.forEach((r,i)=>Object.assign(D.windows[i],r));els.forEach((e,i)=>place(i));status()};
@@ -250,10 +250,10 @@ $("sample").onclick=()=>{load(SAMPLE,"sample snapshot");$("msg").textContent=""}
 
 async function refresh(){
   $("cnt").textContent="Reading your windows…";
-  try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);load(await r.json(),"your desktop (live)",true)}
+  try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);serverDry=r.headers.get("X-Dry-Run")==="1";load(await r.json(),"your desktop (live)",true)}
   catch(e){if(!D)load(SAMPLE,"sample snapshot");$("cnt").textContent="Could not read windows: "+e.message}
 }
-$("refresh").onclick=refresh;
+$("refresh").onclick=()=>{if(!isBusy)refresh()};
 
 // Same JSON for the file and for /apply: what tile.ps1 -Place reads.
 const spec=ws=>JSON.stringify(ws.map(({id,app,title,x,y,w,h})=>id?{id,app,title,x,y,w,h}:{app,title,x,y,w,h}));
@@ -271,9 +271,11 @@ $("apply").onclick=async()=>{
   }
   await post(ch,"Moving windows…");
 };
-function busy(b){$("apply").disabled=b;$("undo").disabled=b||!hist.length}
+// While a POST runs, nothing may change the boxes, so `sent` matches what was posted.
+function busy(b){isBusy=b;$("apply").disabled=b;$("refresh").disabled=b;status()}
 async function post(ws,msg){
   $("outcard").hidden=false;$("file-out").hidden=true;$("live-out").hidden=false;busy(true);$("sum").textContent=msg;$("results").textContent="";
+  const next=D.windows.map(rect);  // the rects this POST puts the windows at
   try{
     const r=await fetch("apply",{method:"POST",headers:{"Content-Type":"application/json"},body:spec(ws)});
     if(!r.ok)throw new Error(await r.text());
@@ -281,11 +283,11 @@ async function post(ws,msg){
     for(const x of res){const li=document.createElement("li"),s=document.createElement("span");
       s.className=x.ok&&!/^off size/.test(x.note)?"ok":"bad";s.textContent=x.ok?"✓ ":"✗ ";li.append(s,`${x.app}: ${x.title} — ${x.note}`);$("results").appendChild(li);if(x.ok)ok++}
     $("sum").textContent=`Placed ${ok} of ${res.length}.`;
-    sent=D.windows.map(rect);appliedAt=hist.length;
+    sent=next;appliedAt=hist.length;
     // Moved windows now sit where the page shows them: that is the new baseline.
     if(!res.some(x=>/^dry run/.test(x.note)))D.windows.forEach((w,i)=>{orig[i]=rect(w);place(i)});
   }catch(e){$("sum").textContent="Apply failed: "+e.message}
-  finally{busy(false);status()}
+  finally{busy(false)}
 }
 $("copy").onclick=async()=>{
   try{await navigator.clipboard.writeText($("cmd").textContent);$("cmsg").textContent="Copied."}
@@ -295,14 +297,24 @@ $("quit").onclick=async()=>{try{await fetch("quit",{method:"POST",body:"quit"})}
   live=false;$("livebar").textContent="Server stopped. You can close this tab.";$("refresh").hidden=true};
 
 if(LIVE){$("refresh").hidden=false;$("livebar").hidden=false;
-  refresh().then(async()=>{
-    if(location.hash!=="#selftest-undo")return;  // used by test/run.ps1 against serve.ps1 -DryRun
-    const bodies=[],f=window.fetch;window.fetch=(u,o)=>{if(u==="apply")bodies.push(JSON.parse(o.body));return f(u,o)};
-    const w=D.windows[0],o=rect(w);commit(0,{...o,x:o.x+100});
-    await $("apply").onclick();await $("undo").onclick();
-    const out=document.createElement("pre");out.id="selftest";out.textContent=JSON.stringify({orig:{id:w.id,...o},bodies});document.body.appendChild(out);
-  })}
+  refresh().then(()=>{if(location.hash==="#selftest-undo"&&serverDry)selftest()})}
 else{load(SAMPLE,"sample snapshot");$("offline").open=true}
+
+// Used by test/run.ps1 against serve.ps1 -DryRun only (serverDry), so it never moves a real window.
+async function selftest(){
+  const log=[],f=window.fetch;window.fetch=(u,o)=>{if(u==="apply")log.push(JSON.parse(o.body));return f(u,o)};
+  const mv=()=>{const o=rect(D.windows[0]);commit(0,{...o,x:o.x+100});return o};
+  const run=async fn=>{await refresh();log.length=0;const r=await fn();return {r,bodies:log.slice()}};
+  const out={};
+  out.applyUndo=await run(async()=>{const o=mv();await $("apply").onclick();await $("undo").onclick();return {id:D.windows[0].id,...o}});
+  out.undoNoApply=await run(async()=>{mv();await $("undo").onclick()});
+  out.undoDragAfterApply=await run(async()=>{mv();await $("apply").onclick();for(const dy of [100,200]){const o=rect(D.windows[0]);commit(0,{...o,y:o.y+dy})}await $("undo").onclick()});
+  out.undoAfterRefresh=await run(async()=>{mv();await $("apply").onclick();await refresh();mv();await $("undo").onclick()});
+  out.busy=await run(async()=>{mv();const p=$("apply").onclick(),b=rect(D.windows[1]);
+    els[1].dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
+    const r={undoOff:$("undo").disabled,refreshOff:$("refresh").disabled,kept:same(b,D.windows[1])};await p;return r});
+  const pre=document.createElement("pre");pre.id="selftest";pre.textContent=JSON.stringify(out);document.body.appendChild(pre);
+}
 </script>
 </body>
 </html>

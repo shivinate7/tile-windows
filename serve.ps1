@@ -39,7 +39,7 @@ try {
       $route = $req.HttpMethod + ' ' + $path.Substring($token.Length + 2)
       switch ($route) {
         'GET ' { Send $ctx 200 'text/html' ([IO.File]::ReadAllText($page, [Text.Encoding]::UTF8)) }
-        'GET snapshot' { Send $ctx 200 'application/json' ((& $tile -Json 2>$null) -join '') }
+        'GET snapshot' { if ($DryRun) { $ctx.Response.Headers['X-Dry-Run'] = '1' }; Send $ctx 200 'application/json' ((& $tile -Json 2>$null) -join '') }
         'POST apply' {
           $body = [IO.StreamReader]::new($req.InputStream, [Text.Encoding]::UTF8).ReadToEnd()
           # An empty -Place would fall through to grid tiling, which moves windows.

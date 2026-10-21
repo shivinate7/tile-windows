@@ -9,6 +9,8 @@ $script:fail = 0
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 function Child { & powershell -NoProfile -ExecutionPolicy Bypass -File @args }
 # A string as JSON.stringify writes it (the page's encoder): escape \ and " only.
+# Count of a JSON array; -1 when it is missing (a crashed self-test must not pass).
+function N($x) { if ($null -eq $x) { -1 } else { @($x).Count } }
 function JsStr($s) { '"' + $s.Replace('\', '\\').Replace('"', '\"') + '"' }
 function Status($url, $post) { try { if ($post) { (Invoke-WebRequest -UseBasicParsing $url -Method Post -Body $post).StatusCode } else { (Invoke-WebRequest -UseBasicParsing $url).StatusCode } } catch { [int]$_.Exception.Response.StatusCode } }
 
@@ -55,14 +57,23 @@ try {
   Check 'server refuses a non-array apply' ((Status "${url}apply" ' ') -eq 400)
   Check 'server refuses bad JSON' ((Status "${url}apply" '[{"app":') -eq 400)
 
-  # 5. Undo after a live Apply sends the original rects (decision: undo-moves-windows).
-  #    Headless Edge runs the page's #selftest-undo hook: Apply a moved window, then Undo.
-  $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
-  $dom = Join-Path $tmp 'dom.html'
-  Start-Process $edge -Wait -WindowStyle Hidden -RedirectStandardOutput $dom -RedirectStandardError (Join-Path $tmp 'edge.log') -ArgumentList '--headless', '--disable-gpu', '--no-first-run', "--user-data-dir=$tmp\edge", '--virtual-time-budget=30000', '--dump-dom', "${url}#selftest-undo"
-  $st = if ((Get-Content -Raw -Encoding UTF8 $dom) -match '<pre id="selftest">(.*?)</pre>') { [Net.WebUtility]::HtmlDecode($matches[1]) | ConvertFrom-Json }
-  $o = $st.orig; $b = @($st.bodies)
-  Check 'Apply then Undo sends the original rects' ($b.Count -eq 2 -and $b[0][0].x -eq $o.x + 100 -and $b[1][0].id -eq $o.id -and $b[1][0].x -eq $o.x -and $b[1][0].y -eq $o.y -and $b[1][0].w -eq $o.w -and $b[1][0].h -eq $o.h) ($st | ConvertTo-Json -Compress -Depth 5).Length
+  # 5. Undo (decision: undo-moves-windows). Headless Edge runs the page's #selftest-undo hook,
+  #    which runs only when the server says it is in -DryRun.
+  $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
+  if (-not $edge) { 'SKIP  browser cases (Undo): Microsoft Edge not found in either Program Files folder.' } else {
+    $dom = Join-Path $tmp 'dom.html'
+    Start-Process $edge -Wait -WindowStyle Hidden -RedirectStandardOutput $dom -RedirectStandardError (Join-Path $tmp 'edge.log') -ArgumentList '--headless', '--disable-gpu', '--no-first-run', "--user-data-dir=$tmp\edge", '--virtual-time-budget=60000', '--dump-dom', "${url}#selftest-undo"
+    $st = if ((Get-Content -Raw -Encoding UTF8 $dom) -match '<pre id="selftest">(.*?)</pre>') { [Net.WebUtility]::HtmlDecode($matches[1]) | ConvertFrom-Json }
+    Check 'page self-test ran' ($null -ne $st)
+    $o = $st.applyUndo.r; $b = @($st.applyUndo.bodies)
+    $u = @(if ($b.Count -eq 2) { $b[1] })
+    Check 'Apply then Undo sends the original rects, one window' ($b.Count -eq 2 -and $b[0][0].x -eq $o.x + 100 -and $u.Count -eq 1 -and $u[0].id -eq $o.id -and $u[0].x -eq $o.x -and $u[0].y -eq $o.y -and $u[0].w -eq $o.w -and $u[0].h -eq $o.h) ('n=' + $b.Count + ' u=' + $u.Count + ' ' + ($o | ConvertTo-Json -Compress) + ' ' + (($b | % { @($_)[0] } | Select-Object id, x, y, w, h) | ConvertTo-Json -Compress))
+    Check 'Undo with no Apply sends nothing' ((N $st.undoNoApply.bodies) -eq 0)
+    Check 'Undo of a drag made after Apply sends nothing more' ((N $st.undoDragAfterApply.bodies) -eq 1)
+    Check 'Undo after Refresh sends nothing more' ((N $st.undoAfterRefresh.bodies) -eq 1)
+    $bz = $st.busy.r
+    Check 'Undo, Refresh and moves are off while Apply runs' ($bz.undoOff -and $bz.refreshOff -and $bz.kept) ($bz | ConvertTo-Json -Compress)
+  }
 
   [void](Invoke-WebRequest -UseBasicParsing "${url}quit" -Method Post -Body 'quit')
   Check 'server exits on /quit' ($srv.WaitForExit(5000))
