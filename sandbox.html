@@ -5,184 +5,290 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Desktop Sandbox</title>
 <style>
-:root{--bg:#f5f6f8;--fg:#1c2128;--mut:#5b6573;--card:#fff;--line:#c9d0d9;--mon:#e6eaf0;--grid:#aab4c2;--acc:#1f6feb;--accfg:#fff;--wl:88%;--wc:45%;--wfg:#10161d}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1318;--fg:#e6e9ee;--mut:#9aa5b3;--card:#171c23;--line:#323a45;--mon:#1e252e;--grid:#46505d;--acc:#4c8dff;--accfg:#08101c;--wl:32%;--wc:55%;--wfg:#f3f6fa}}
+:root{--bg:#f5f6f8;--fg:#1c2128;--mut:#5b6573;--card:#fff;--line:#c9d0d9;--mon:#e6eaf0;--grid:#9aa6b6;--acc:#1f6feb;--accfg:#fff;--ok:#1a7f37;--bad:#cf222e;--wl:88%;--wc:45%;--wfg:#10161d}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1318;--fg:#e6e9ee;--mut:#9aa5b3;--card:#171c23;--line:#323a45;--mon:#1e252e;--grid:#4b5563;--acc:#4c8dff;--accfg:#08101c;--ok:#3fb950;--bad:#f85149;--wl:30%;--wc:50%;--wfg:#f3f6fa}}
+:root[data-theme="dark"]{--bg:#0f1318;--fg:#e6e9ee;--mut:#9aa5b3;--card:#171c23;--line:#323a45;--mon:#1e252e;--grid:#4b5563;--acc:#4c8dff;--accfg:#08101c;--ok:#3fb950;--bad:#f85149;--wl:30%;--wc:50%;--wfg:#f3f6fa}
 *{box-sizing:border-box}
 body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,Segoe UI,sans-serif}
-main{max-width:1200px;margin:0 auto}
-h1{font-size:20px;margin:0 0 4px}
-p.sub{margin:0 0 14px;color:var(--mut)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
-textarea,input[type=text],input[type=number]{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px;font:12px/1.4 ui-monospace,Consolas,monospace}
-textarea{height:70px;resize:vertical}
-input[type=number]{width:52px}
-button{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 12px;font:inherit;cursor:pointer}
-button.primary{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:600}
-button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
-.row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:8px}
+main{max-width:1400px;margin:0 auto}
+h1{font-size:20px;margin:0}
+.top{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;margin-bottom:10px}
 .mut{color:var(--mut)}
-#stage{position:relative;width:100%;overflow:hidden;border-radius:8px;border:1px solid var(--line);background:var(--bg);touch-action:pan-y}
-.mon{position:absolute;background:var(--mon);border:1px solid var(--line)}
-.mon>i{position:absolute;left:4px;top:2px;font:normal 11px ui-monospace,Consolas,monospace;color:var(--mut);pointer-events:none}
-.mon>b{position:absolute;border:0 dashed var(--grid);pointer-events:none}
-.win{position:absolute;border:1.5px solid hsl(var(--h) 55% 38%);background:hsl(var(--h) var(--wc) var(--wl) / .92);color:var(--wfg);border-radius:4px;overflow:hidden;cursor:grab;touch-action:none;user-select:none;font-size:11px;line-height:1.25;padding:2px 4px}
-.win.dirty{outline:2px solid var(--acc);outline-offset:0}
-.win.drag{cursor:grabbing;box-shadow:0 4px 14px #0006}
-.win b{display:block;font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:.03em}
-.win span{display:block;overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
-.hd{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;touch-action:none;background:linear-gradient(135deg,transparent 50%,hsl(var(--h) 55% 38%) 50%)}
-pre{margin:8px 0;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px;white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Consolas,monospace}
-#mons label{white-space:nowrap}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+button{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer}
+button.primary{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible,textarea:focus-visible,.win:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+textarea,input{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:5px;font:12px/1.4 ui-monospace,Consolas,monospace}
+textarea{width:100%;height:70px;resize:vertical}
+input[type=number]{width:46px}
+input[type=text]{width:100%}
+.grids label{white-space:nowrap}
+#stage{position:relative;width:100%;overflow:hidden;border-radius:8px;border:1px solid var(--line);background:var(--bg);touch-action:pan-y;margin-bottom:10px}
+.mon{position:absolute;background-color:var(--mon);border:1px solid var(--line);
+  background-image:linear-gradient(to right,var(--grid) 1px,transparent 1px),linear-gradient(to bottom,var(--grid) 1px,transparent 1px);
+  background-size:calc(100% / var(--c)) calc(100% / var(--r))}
+.mon>i{position:absolute;left:4px;bottom:2px;font:normal 11px ui-monospace,Consolas,monospace;color:var(--mut)}
+.win{position:absolute;border:1.5px solid hsl(var(--h) 55% 40%);background:hsl(var(--h) var(--wc) var(--wl) / .93);color:var(--wfg);border-radius:4px;
+  overflow:hidden;cursor:grab;touch-action:none;user-select:none;font-size:11px;line-height:1.25;padding:2px 4px;contain:layout paint}
+.win.dirty{box-shadow:inset 0 0 0 2px var(--acc)}
+.win.drag{cursor:grabbing;will-change:transform;opacity:.85}
+.win b{display:block;font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;overflow:hidden}
+.win span{display:block;overflow:hidden;max-height:3.75em;word-break:break-word}
+.hd{position:absolute;right:0;bottom:0;width:min(14px,30%);height:min(14px,30%);cursor:nwse-resize;background:linear-gradient(135deg,transparent 50%,hsl(var(--h) 55% 40%) 50%)}
+#ghost{position:absolute;left:0;top:0;border:2px dashed var(--acc);border-radius:4px;pointer-events:none;z-index:100000;display:none}
+#results{margin:6px 0 0;padding:0;list-style:none;font-size:13px}
+#results li{padding:2px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}
+#results .ok{color:var(--ok)} #results .bad{color:var(--bad)}
+pre{margin:6px 0;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px;white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Consolas,monospace}
 .msg{color:var(--mut);min-height:1.4em}
+details summary{cursor:pointer}
 </style>
 </head>
 <body>
 <main>
-<h1>Desktop Sandbox</h1>
-<p class="sub">Drag windows, drag the corner to resize, then Apply. Showing: <b id="src">sample snapshot</b>.</p>
+<div class="top"><h1>Desktop Sandbox</h1><span class="mut">Showing: <b id="src">…</b></span>
+  <span class="mut">Drag to move. Drag the corner to resize. Arrow keys move a focused window; Shift resizes.</span></div>
 
 <div class="card">
-  <label for="paste">Paste the output of <code>tile.ps1 -Json</code></label>
-  <textarea id="paste" spellcheck="false" placeholder='{"monitors":[...],"windows":[...]}'></textarea>
-  <div class="row"><button id="load" class="primary">Load</button><button id="sample">Use sample</button><button id="reset">Reset moves</button><span class="msg" id="msg" role="status"></span></div>
-</div>
-
-<div class="card">
-  <div class="row" style="margin-top:0"><label><input type="checkbox" id="snap" checked> Snap to grid</label><span id="mons" class="row" style="margin:0"></span></div>
-</div>
-
-<div id="stage" aria-label="Monitor layout"></div>
-
-<div class="card" style="margin-top:12px">
-  <div class="row" style="margin-top:0"><button id="apply" class="primary">Apply</button><span class="mut" id="cnt"></span></div>
-  <div id="out" hidden>
-    <p class="mut" style="margin:10px 0 4px">1. <b>last-place.json</b> was downloaded. If it is not in Downloads, change the path below.</p>
-    <input type="text" id="path" value="$env:USERPROFILE\Downloads\last-place.json" aria-label="Path of last-place.json">
-    <p class="mut" style="margin:10px 0 0">2. Paste this into Windows PowerShell:</p>
-    <pre id="cmd"></pre>
-    <div class="row" style="margin-top:0"><button id="copy">Copy</button><span class="msg" id="cmsg" role="status"></span></div>
+  <div class="row">
+    <button id="apply" class="primary">Apply</button>
+    <button id="undo" disabled>Undo</button>
+    <button id="reset">Reset</button>
+    <button id="refresh" hidden title="Drops moves you did not apply.">Refresh</button>
+    <label><input type="checkbox" id="snap" checked> Snap to grid</label>
+    <span class="msg" id="cnt" role="status"></span>
   </div>
+  <div class="row grids mut" id="grids" style="margin-top:6px"></div>
+</div>
+
+<div id="stage" aria-label="Monitors and windows"><div id="ghost"></div></div>
+
+<div class="card" id="outcard" hidden>
+  <div id="live-out" hidden><b id="sum"></b><ul id="results"></ul></div>
+  <div id="file-out" hidden>
+    <p class="mut" style="margin:0 0 4px">1. <b>last-place.json</b> was downloaded. If it is not in Downloads, change the path.</p>
+    <input type="text" id="path" value="$env:USERPROFILE\Downloads\last-place.json" aria-label="Path of last-place.json">
+    <p class="mut" style="margin:8px 0 0">2. Paste this into Windows PowerShell:</p>
+    <pre id="cmd"></pre>
+    <div class="row"><button id="copy">Copy</button><span class="msg" id="cmsg" role="status"></span></div>
+  </div>
+</div>
+
+<div class="card">
+  <details id="offline">
+    <summary>Load a snapshot by hand</summary>
+    <p class="mut" style="margin:6px 0">Paste the output of <code>tile.ps1 -Json</code>.</p>
+    <textarea id="paste" spellcheck="false" placeholder='{"monitors":[...],"windows":[...]}'></textarea>
+    <div class="row" style="margin-top:6px"><button id="load">Load</button><button id="sample">Use sample</button><span class="msg" id="msg" role="status"></span></div>
+  </details>
+  <div class="row" id="livebar" hidden style="margin-top:8px"><button id="quit">Stop server</button><span class="mut">Live: Apply moves your windows.</span></div>
 </div>
 </main>
 
 <script>
-const SAMPLE={monitors:[{name:"\\\\.\\DISPLAY1",x:-1536,y:769,w:1536,h:912},{name:"\\\\.\\DISPLAY3",x:4096,y:-1354,w:1200,h:1872},{name:"\\\\.\\DISPLAY2",x:0,y:0,w:4096,h:1680}],
-windows:[
-{app:"claude",title:"Claude",x:0,y:0,w:819,h:840},
-{app:"claude",title:"Sam's notes",x:819,y:0,w:819,h:840},
-{app:"claude",title:"Fix \"quoted\" title bug",x:1638,y:0,w:819,h:840},
-{app:"chrome",title:"Claude Settings Audit - Google Chrome",x:2457,y:0,w:1100,h:1100},
-{app:"chrome",title:"Roadmap - Google Chrome",x:300,y:700,w:1000,h:900},
-{app:"explorer",title:"C:\\Users\\Me\\Documents - File Explorer",x:1800,y:900,w:1200,h:700},
-{app:"ms-teams",title:"Chat | Microsoft Teams",x:4096,y:-1354,w:1200,h:936},
-{app:"olk",title:"Inbox - Outlook",x:-1536,y:769,w:1536,h:912},
-{app:"WindowsTerminal",title:"Windows PowerShell",x:3000,y:1000,w:900,h:600}]};
+"use strict";
 const $=id=>document.getElementById(id);
-let D=null,orig=[],S=1,B=null,mons=[];
-const gridOf={};   // monitor name -> {c,r}
+const LIVE=location.protocol.startsWith("http");
+// Invented sample: 30 windows on three monitors. No real titles.
+const SAMPLE=(()=>{
+  const monitors=[{name:"\\\\.\\DISPLAY1",x:-1536,y:769,w:1536,h:912},{name:"\\\\.\\DISPLAY3",x:4096,y:-1354,w:1200,h:1872},{name:"\\\\.\\DISPLAY2",x:0,y:0,w:4096,h:1680}];
+  const apps=["claude","chrome","explorer","ms-teams","olk","WindowsTerminal"];
+  const names=["Fix \"quoted\" title bug","Sam's notes","Roadmap draft","Budget <Q3> & forecast","Inbox","C:\\Temp\\demo","Build log","Team chat","Weekly plan","It's a \"test\" window"];
+  const windows=[];
+  for(let i=0;i<30;i++){const m=monitors[i<22?2:i<26?1:0];
+    windows.push({app:apps[i%6],title:`${names[i%10]} ${i+1}`,x:m.x+(i*173)%Math.max(1,m.w-700),y:m.y+(i*97)%Math.max(1,m.h-500),w:700,h:500})}
+  return {monitors,windows};
+})();
 
-function load(d,label){
-  if(!d||!Array.isArray(d.monitors)||!d.monitors.length||!Array.isArray(d.windows))throw new Error("Need {monitors:[...], windows:[...]}");
-  D=JSON.parse(JSON.stringify(d));mons=D.monitors;
-  orig=D.windows.map(w=>({x:w.x,y:w.y,w:w.w,h:w.h}));
-  const widest=mons.reduce((a,m)=>m.w>a.w?m:a,mons[0]);
-  for(const m of mons)gridOf[m.name]=m===widest?{c:5,r:2}:m.h>m.w?{c:1,r:2}:{c:2,r:2};
-  $("src").textContent=label;$("out").hidden=true;
-  gridUI();draw();
+let D=null,orig=[],hist=[],els=[],G={x0:0,y0:0,x1:1,y1:1,S:1},Z=0,drag=null,raf=0,live=false;
+const grid={};  // monitor name -> {c,r}
+const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
+const same=(a,b)=>a.x===b.x&&a.y===b.y&&a.w===b.w&&a.h===b.h;
+const changed=()=>D.windows.filter((w,i)=>!same(w,orig[i]));
+
+function load(d,label,isLive){
+  if(!d||!Array.isArray(d.monitors)||!d.monitors.length||!Array.isArray(d.windows))throw new Error("need {monitors:[...], windows:[...]}");
+  D={monitors:d.monitors,windows:d.windows.map(w=>({...w}))};
+  orig=D.windows.map(rect);hist=[];live=!!isLive;
+  const widest=D.monitors.reduce((a,m)=>m.w>a.w?m:a);
+  for(const m of D.monitors)if(!grid[m.name])grid[m.name]=m===widest?{c:5,r:2}:m.h>m.w?{c:1,r:2}:{c:1,r:1};
+  $("src").textContent=label;$("outcard").hidden=true;
+  build();layout();status();
 }
-function gridUI(){
-  $("mons").innerHTML="";
-  mons.forEach((m,i)=>{
+
+function build(){
+  const st=$("stage"),g=$("ghost");st.textContent="";st.appendChild(g);
+  $("grids").textContent="";
+  D.monitors.forEach((m,k)=>{
+    const e=document.createElement("div");e.className="mon";m.el=e;
+    e.innerHTML="<i></i>";e.firstChild.textContent=`Mon ${k+1}  ${m.w}x${m.h}`;
+    st.appendChild(e);gridVars(m);
     const l=document.createElement("label");
-    l.innerHTML=`Mon ${i+1} grid <input type="number" min="1" max="12" aria-label="columns"> x <input type="number" min="1" max="12" aria-label="rows">`;
-    const [c,r]=l.querySelectorAll("input"),g=gridOf[m.name];c.value=g.c;r.value=g.r;
-    c.oninput=r.oninput=()=>{g.c=Math.max(1,+c.value||1);g.r=Math.max(1,+r.value||1);draw()};
-    $("mons").appendChild(l);
+    l.innerHTML=`Mon ${k+1} grid <input type="number" min="1" max="12" aria-label="Mon ${k+1} columns"> x <input type="number" min="1" max="12" aria-label="Mon ${k+1} rows">`;
+    const [c,r]=l.querySelectorAll("input"),gr=grid[m.name];c.value=gr.c;r.value=gr.r;
+    c.oninput=r.oninput=()=>{gr.c=Math.min(12,Math.max(1,+c.value||1));gr.r=Math.min(12,Math.max(1,+r.value||1));gridVars(m)};
+    $("grids").appendChild(l);
   });
-}
-function hue(s){let h=0;for(const ch of s)h=(h*31+ch.charCodeAt(0))%360;return h}
-function monOf(w){const cx=w.x+w.w/2,cy=w.y+w.h/2;
-  return mons.find(m=>cx>=m.x&&cx<m.x+m.w&&cy>=m.y&&cy<m.y+m.h)||mons.reduce((a,m)=>{const d=Math.hypot(cx-(m.x+m.w/2),cy-(m.y+m.h/2));return d<a.d?{m,d}:a},{d:1e18}).m||mons[0]}
-function snapV(v,o,len,n){const s=len/n;return o+Math.round((v-o)/s)*s}
-
-function draw(){
-  const st=$("stage");st.innerHTML="";
-  const x0=Math.min(...mons.map(m=>m.x)),y0=Math.min(...mons.map(m=>m.y));
-  const x1=Math.max(...mons.map(m=>m.x+m.w)),y1=Math.max(...mons.map(m=>m.y+m.h));
-  B={x0,y0,x1,y1};S=st.clientWidth/(x1-x0);st.style.height=Math.round((y1-y0)*S)+"px";
-  mons.forEach((m,i)=>{
-    const e=document.createElement("div");e.className="mon";
-    Object.assign(e.style,{left:(m.x-x0)*S+"px",top:(m.y-y0)*S+"px",width:m.w*S+"px",height:m.h*S+"px"});
-    e.innerHTML=`<i>Mon ${i+1} ${m.w}x${m.h}</i>`;
-    const g=gridOf[m.name];
-    for(let k=1;k<g.c;k++)e.insertAdjacentHTML("beforeend",`<b style="left:${k/g.c*100}%;top:0;bottom:0;border-left-width:1px"></b>`);
-    for(let k=1;k<g.r;k++)e.insertAdjacentHTML("beforeend",`<b style="top:${k/g.r*100}%;left:0;right:0;border-top-width:1px"></b>`);
-    st.appendChild(e);
-  });
-  D.windows.forEach((w,i)=>{
-    const e=document.createElement("div");e.className="win";e.dataset.i=i;e.style.setProperty("--h",hue(w.app));
-    e.title=`${w.app}: ${w.title}\n${w.x},${w.y} ${w.w}x${w.h}`;
-    e.innerHTML=`<b></b><span></span><div class="hd"></div>`;
+  const n=D.windows.length;
+  els=D.windows.map((w,i)=>{
+    const e=document.createElement("div");e.className="win";e.dataset.i=i;e.tabIndex=0;
+    e.style.setProperty("--h",hue(w.app));e.style.zIndex=n-i;  // snapshot order is z-order, top first
+    e.innerHTML="<b></b><span></span><div class=\"hd\"></div>";
     e.firstChild.textContent=w.app;e.children[1].textContent=w.title;
-    place(e,w,i);st.appendChild(e);bind(e,w,i);
+    st.appendChild(e);return e;
   });
-  const n=changed().length;$("cnt").textContent=n?`${n} window${n>1?"s":""} moved`:"No windows moved yet";
+  Z=n;
 }
-function place(e,w,i){
-  Object.assign(e.style,{left:(w.x-B.x0)*S+"px",top:(w.y-B.y0)*S+"px",width:Math.max(w.w*S,18)+"px",height:Math.max(w.h*S,18)+"px"});
-  e.classList.toggle("dirty",isDirty(i));
-}
-function isDirty(i){const w=D.windows[i],o=orig[i];return w.x!==o.x||w.y!==o.y||w.w!==o.w||w.h!==o.h}
-function changed(){return D.windows.filter((w,i)=>isDirty(i))}
+function gridVars(m){const g=grid[m.name];m.el.style.setProperty("--c",g.c);m.el.style.setProperty("--r",g.r)}
+function hue(s){let h=0;for(const ch of s)h=(h*31+ch.charCodeAt(0))%360;return h}
 
-function bind(e,w,i){
-  e.addEventListener("pointerdown",ev=>{
-    ev.preventDefault();e.setPointerCapture(ev.pointerId);e.parentNode.appendChild(e);e.classList.add("drag");
-    const rs=ev.target.classList.contains("hd"),sx=ev.clientX,sy=ev.clientY,s={...w};
-    const mv=ev2=>{
-      let dx=(ev2.clientX-sx)/S,dy=(ev2.clientY-sy)/S,m=monOf(rs?w:{...s,x:s.x+dx,y:s.y+dy}),g=gridOf[m.name],on=$("snap").checked;
-      if(rs){
-        let r=s.x+s.w+dx,b=s.y+s.h+dy;
-        if(on){r=snapV(r,m.x,m.w,g.c);b=snapV(b,m.y,m.h,g.r)}
-        w.w=Math.max(40,Math.round(r-w.x));w.h=Math.max(40,Math.round(b-w.y));
-      }else{
-        let x=s.x+dx,y=s.y+dy;
-        if(on){x=snapV(x,m.x,m.w,g.c);y=snapV(y,m.y,m.h,g.r)}
-        w.x=Math.round(Math.min(Math.max(x,B.x0-w.w+40),B.x1-40));w.y=Math.round(Math.min(Math.max(y,B.y0),B.y1-40));
-      }
-      place(e,w,i);e.title=`${w.app}: ${w.title}\n${w.x},${w.y} ${w.w}x${w.h}`;
-    };
-    const up=()=>{e.classList.remove("drag");e.removeEventListener("pointermove",mv);e.removeEventListener("pointerup",up);e.removeEventListener("pointercancel",up);
-      const n=changed().length;$("cnt").textContent=n?`${n} window${n>1?"s":""} moved`:"No windows moved yet"};
-    e.addEventListener("pointermove",mv);e.addEventListener("pointerup",up);e.addEventListener("pointercancel",up);
-  });
+// The only layout read: the stage width, on load and on resize.
+function layout(){
+  const M=D.monitors,st=$("stage");
+  const x0=Math.min(...M.map(m=>m.x)),y0=Math.min(...M.map(m=>m.y)),x1=Math.max(...M.map(m=>m.x+m.w)),y1=Math.max(...M.map(m=>m.y+m.h));
+  const S=(st.clientWidth-2)/(x1-x0);G={x0,y0,x1,y1,S};
+  st.style.height=Math.round((y1-y0)*S+2)+"px";
+  for(const m of M)Object.assign(m.el.style,{left:(m.x-x0)*S+"px",top:(m.y-y0)*S+"px",width:m.w*S+"px",height:m.h*S+"px"});
+  els.forEach((e,i)=>place(i));
+}
+function place(i){
+  const w=D.windows[i],e=els[i],S=G.S;
+  e.style.transform="";
+  Object.assign(e.style,{left:(w.x-G.x0)*S+"px",top:(w.y-G.y0)*S+"px",width:Math.max(w.w*S,14)+"px",height:Math.max(w.h*S,14)+"px"});
+  e.classList.toggle("dirty",!same(w,orig[i]));
+  e.title=`${w.app}: ${w.title}\n${w.x},${w.y}  ${w.w}x${w.h}`;
+}
+function status(){
+  const n=changed().length;
+  $("cnt").textContent=n?`${n} window${n>1?"s":""} changed`:"Drag a window to change it.";
+  $("undo").disabled=!hist.length;
 }
 
-function parse(t){const a=t.indexOf("{");if(a<0)throw new Error("No JSON object found");return JSON.parse(t.slice(a,t.lastIndexOf("}")+1))}
+function monOf(r){const cx=r.x+r.w/2,cy=r.y+r.h/2,M=D.monitors,d=m=>Math.hypot(cx-m.x-m.w/2,cy-m.y-m.h/2);
+  return M.find(m=>cx>=m.x&&cx<m.x+m.w&&cy>=m.y&&cy<m.y+m.h)||M.reduce((a,m)=>d(m)<d(a)?m:a)}
+const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
+// Cell size rounds like tile.ps1 ([int](width/cols)), so a snapped rect equals a tile.ps1 slot.
+function cell(m){const g=grid[m.name];return {g,cw:Math.round(m.w/g.c),ch:Math.round(m.h/g.r)}}
+// Target rect in screen px for raw rect r. mode "move" keeps the size in whole cells; "size" moves the bottom-right corner.
+function target(r,mode,mon){
+  if(!$("snap").checked){
+    if(mode==="size")return {x:r.x,y:r.y,w:Math.max(40,Math.round(r.w)),h:Math.max(40,Math.round(r.h))};
+    return {x:Math.round(clamp(r.x,G.x0-r.w+40,G.x1-40)),y:Math.round(clamp(r.y,G.y0,G.y1-40)),w:r.w,h:r.h};
+  }
+  const m=mon||monOf(r),{g,cw,ch}=cell(m);
+  if(mode==="size"){
+    const c0=Math.round((r.x-m.x)/cw),r0=Math.round((r.y-m.y)/ch);
+    const c1=clamp(Math.round((r.x+r.w-m.x)/cw),c0+1,g.c),r1=clamp(Math.round((r.y+r.h-m.y)/ch),r0+1,g.r);
+    return {x:r.x,y:r.y,w:Math.max(cw,m.x+c1*cw-r.x),h:Math.max(ch,m.y+r1*ch-r.y)};
+  }
+  const cols=clamp(Math.round(r.w/cw),1,g.c),rows=clamp(Math.round(r.h/ch),1,g.r);
+  const c=clamp(Math.round((r.x-m.x)/cw),0,g.c-cols),rr=clamp(Math.round((r.y-m.y)/ch),0,g.r-rows);
+  return {x:m.x+c*cw,y:m.y+rr*ch,w:cols*cw,h:rows*ch};
+}
+function commit(i,t){
+  const w=D.windows[i];if(same(w,t))return place(i);
+  hist.push(D.windows.map(rect));Object.assign(w,t);place(i);status();
+}
+
+// Drag: pointer capture, transform while moving, one rAF per frame, commit on pointerup.
+const ghost=$("ghost");
+function showGhost(t){const S=G.S;ghost.style.display="block";
+  ghost.style.transform=`translate(${(t.x-G.x0)*S}px,${(t.y-G.y0)*S}px)`;ghost.style.width=t.w*S+"px";ghost.style.height=t.h*S+"px"}
+function rawRect(d){const dx=(d.px-d.sx)/G.S,dy=(d.py-d.sy)/G.S,s=d.start;
+  return d.mode==="size"?{x:s.x,y:s.y,w:s.w+dx,h:s.h+dy}:{x:s.x+dx,y:s.y+dy,w:s.w,h:s.h}}
+function frame(){
+  raf=0;if(!drag)return;const d=drag,r=rawRect(d);
+  if(d.mode==="size"){d.el.style.width=Math.max(r.w*G.S,14)+"px";d.el.style.height=Math.max(r.h*G.S,14)+"px"}
+  else d.el.style.transform=`translate3d(${d.px-d.sx}px,${d.py-d.sy}px,0)`;
+  showGhost(target(r,d.mode,d.mon));
+}
+const stage=$("stage");
+stage.addEventListener("pointerdown",ev=>{
+  const e=ev.target.closest(".win");if(!e||ev.button!==0||drag)return;
+  ev.preventDefault();e.focus({preventScroll:true});
+  try{e.setPointerCapture(ev.pointerId)}catch(_){}
+  const i=+e.dataset.i,mode=ev.target.classList.contains("hd")?"size":"move",start=rect(D.windows[i]);
+  e.style.zIndex=++Z;e.classList.add("drag");  // raise by z-index: re-appending the node would drop the capture
+  drag={i,el:e,mode,start,sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,id:ev.pointerId,mon:mode==="size"?monOf(start):null};
+});
+stage.addEventListener("pointermove",ev=>{
+  if(!drag||ev.pointerId!==drag.id)return;
+  drag.px=ev.clientX;drag.py=ev.clientY;
+  if(!raf)raf=requestAnimationFrame(frame);
+});
+function endDrag(ev){
+  if(!drag||ev.pointerId!==drag.id)return;
+  const d=drag;drag=null;if(raf)cancelAnimationFrame(raf);raf=0;
+  d.el.classList.remove("drag");ghost.style.display="none";
+  if(ev.type==="pointerup"&&Math.abs(d.px-d.sx)+Math.abs(d.py-d.sy)>2)commit(d.i,target(rawRect(d),d.mode,d.mon));else place(d.i);
+}
+stage.addEventListener("pointerup",endDrag);
+stage.addEventListener("pointercancel",endDrag);
+stage.addEventListener("lostpointercapture",endDrag);
+
+// Keyboard: arrows move by one cell (10 px with snap off); Shift+arrows resize.
+stage.addEventListener("keydown",ev=>{
+  const e=ev.target.closest(".win"),k={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];
+  if(!e||!k)return;ev.preventDefault();
+  const i=+e.dataset.i,w=D.windows[i],m=monOf(w),{cw,ch}=cell(m),snap=$("snap").checked,sx=snap?cw:10,sy=snap?ch:10;
+  const r=ev.shiftKey?{x:w.x,y:w.y,w:w.w+k[0]*sx,h:w.h+k[1]*sy}:{x:w.x+k[0]*sx,y:w.y+k[1]*sy,w:w.w,h:w.h};
+  commit(i,target(r,ev.shiftKey?"size":"move",ev.shiftKey?m:null));
+});
+
+$("undo").onclick=()=>{const p=hist.pop();if(!p)return;p.forEach((r,i)=>Object.assign(D.windows[i],r));els.forEach((e,i)=>place(i));status()};
+$("reset").onclick=()=>{if(!changed().length)return;hist.push(D.windows.map(rect));orig.forEach((r,i)=>Object.assign(D.windows[i],r));els.forEach((e,i)=>place(i));status()};
+let rz=0;addEventListener("resize",()=>{if(D&&!rz)rz=requestAnimationFrame(()=>{rz=0;layout()})});
+
+function parse(t){const a=t.indexOf("{");if(a<0)throw new Error("no JSON object found");return JSON.parse(t.slice(a,t.lastIndexOf("}")+1))}
 $("load").onclick=()=>{try{load(parse($("paste").value),"pasted snapshot");$("msg").textContent=""}catch(e){$("msg").textContent="Could not load: "+e.message}};
 $("sample").onclick=()=>{load(SAMPLE,"sample snapshot");$("msg").textContent=""};
-$("reset").onclick=()=>{D.windows.forEach((w,i)=>Object.assign(w,orig[i]));draw()};
-$("snap").onchange=()=>{};
-addEventListener("resize",()=>D&&draw());
 
+async function refresh(){
+  $("cnt").textContent="Reading your windows…";
+  try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);load(await r.json(),"your desktop (live)",true)}
+  catch(e){if(!D)load(SAMPLE,"sample snapshot");$("cnt").textContent="Could not read windows: "+e.message}
+}
+$("refresh").onclick=refresh;
+
+// Same JSON for the file and for /apply: what tile.ps1 -Place reads.
+const spec=ws=>JSON.stringify(ws.map(({id,app,title,x,y,w,h})=>id?{id,app,title,x,y,w,h}:{app,title,x,y,w,h}));
 function cmd(){const p=$("path").value.replace(/["`]/g,"");
   return `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.claude\\skills\\tile-windows\\tile.ps1" -PlaceFile "${p}"`}
 $("path").oninput=()=>{$("cmd").textContent=cmd()};
-$("apply").onclick=()=>{
+$("apply").onclick=async()=>{
   const ch=changed();
-  if(!ch.length){$("cnt").textContent="Nothing moved yet. Drag a window first.";return}
-  const json=JSON.stringify(ch.map(({app,title,x,y,w,h})=>({app,title,x,y,w,h})),null,1);
-  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));a.download="last-place.json";
-  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-  $("cmd").textContent=cmd();$("out").hidden=false;$("cmsg").textContent="";
+  if(!ch.length){$("cnt").textContent="Nothing changed yet. Drag a window first.";return}
+  $("outcard").hidden=false;
+  if(!live){
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([spec(ch)],{type:"application/json"}));a.download="last-place.json";
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+    $("live-out").hidden=true;$("file-out").hidden=false;$("cmd").textContent=cmd();$("cmsg").textContent="";return;
+  }
+  $("file-out").hidden=true;$("live-out").hidden=false;$("apply").disabled=true;$("sum").textContent="Moving windows…";$("results").textContent="";
+  try{
+    const r=await fetch("apply",{method:"POST",headers:{"Content-Type":"application/json"},body:spec(ch)});
+    if(!r.ok)throw new Error(await r.text());
+    const res=[].concat(await r.json());let ok=0;
+    for(const x of res){const li=document.createElement("li"),s=document.createElement("span");
+      s.className=x.ok&&!/^off size/.test(x.note)?"ok":"bad";s.textContent=x.ok?"✓ ":"✗ ";li.append(s,`${x.app}: ${x.title} — ${x.note}`);$("results").appendChild(li);if(x.ok)ok++}
+    $("sum").textContent=`Placed ${ok} of ${res.length}.`;
+    // Moved windows now sit where the page shows them: that is the new baseline. Undo still steps back.
+    if(!res.some(x=>/^dry run/.test(x.note)))D.windows.forEach((w,i)=>{orig[i]=rect(w);place(i)});
+    status();
+  }catch(e){$("sum").textContent="Apply failed: "+e.message}
+  finally{$("apply").disabled=false}
 };
 $("copy").onclick=async()=>{
-  const t=$("cmd").textContent;
-  try{await navigator.clipboard.writeText(t);$("cmsg").textContent="Copied."}
-  catch(e){const r=document.createRange();r.selectNodeContents($("cmd"));const s=getSelection();s.removeAllRanges();s.addRange(r);
-    $("cmsg").textContent=document.execCommand&&document.execCommand("copy")?"Copied.":"Select the text and copy it by hand."}
+  try{await navigator.clipboard.writeText($("cmd").textContent);$("cmsg").textContent="Copied."}
+  catch(e){const r=document.createRange();r.selectNodeContents($("cmd"));const s=getSelection();s.removeAllRanges();s.addRange(r);$("cmsg").textContent="Press Ctrl+C to copy."}
 };
-load(SAMPLE,"sample snapshot");requestAnimationFrame(()=>draw());
+$("quit").onclick=async()=>{try{await fetch("quit",{method:"POST",body:"quit"})}catch(_){}
+  live=false;$("livebar").textContent="Server stopped. You can close this tab.";$("refresh").hidden=true};
+
+if(LIVE){$("refresh").hidden=false;$("livebar").hidden=false;refresh()}
+else{load(SAMPLE,"sample snapshot");$("offline").open=true}
 </script>
 </body>
 </html>

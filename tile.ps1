@@ -3,7 +3,8 @@
 # -Monitor: 'wide' (widest), 'laptop' (smallest), 'tall' (portrait), or a 0-based index.
 # -Pin 'chrome:RFP=1;ms-teams=5+10': put an app's first window (title containing the text after ':', if given) in given slots (spans the box around them).
 # -Json: print monitors + windows as JSON (default -Proc '*'), move nothing.
-# -Place '<json>' / -PlaceFile <path>: move windows to [{app,title,x,y,w,h}] screen rects (match app + title). Honors -DryRun.
+# -Place '<json>' / -PlaceFile <path>: move windows to [{app,title,x,y,w,h,id?}] screen rects (match id, else app + title). Honors -DryRun.
+#   With -Json, print one result per entry as JSON instead of text.
 # Slots number row by row from 1 (top-left).
 # -Cells n: grid with n cells (rows picked for you). Ultrawide default = 10 cells (5x2).
 param([int]$Cols = 0, [int]$Rows = 0, [int]$Cells = 0, [string[]]$Proc = @('claude'), [string]$Monitor = 'wide', [string]$Pin = '', [switch]$List, [switch]$DryRun, [switch]$Json, [string]$Place = '', [string]$PlaceFile = '', [switch]$Default,
@@ -93,14 +94,15 @@ function Move-Win($win, $x, $y, $ww, $hh) {
   $r = New-Object W+RECT; [void][W]::GetWindowRect($win, [ref]$r)
   if ([Math]::Abs(($r.R - $r.L) - $ww) -gt 20 -or [Math]::Abs(($r.B - $r.T) - $hh) -gt 20) {
     Write-Warning ("Off size: '{0}' is {1}x{2}, wanted {3}x{4}." -f ($items | ? { $_.H -eq $win }).Title, ($r.R - $r.L), ($r.B - $r.T), $ww, $hh)
+    "off size: is {0}x{1}" -f ($r.R - $r.L), ($r.B - $r.T)
   }
 }
-if ($Json) {
+if ($Json -and -not ($Place -or $PlaceFile)) {
   # Minimized windows sit at about -25600 (or -32000) and cannot be drawn; leave them out.
   $min = @($items | ? { $_.X -le -20000 }); if ($min) { [Console]::Error.WriteLine("Left out $($min.Count) minimized window(s).") }
   [pscustomobject]@{
     monitors = @($screens | % { [pscustomobject]@{ name = $_.DeviceName; x = $_.WorkingArea.X; y = $_.WorkingArea.Y; w = $_.WorkingArea.Width; h = $_.WorkingArea.Height } })
-    windows  = @($items | ? { $_.X -gt -20000 -and $_.Title -ne 'Program Manager' } | % { [pscustomobject]@{ app = $_.App; title = $_.Title; x = $_.X; y = $_.Y; w = $_.Wd; h = $_.Ht } })
+    windows  = @($items | ? { $_.X -gt -20000 -and $_.Title -ne 'Program Manager' } | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; x = $_.X; y = $_.Y; w = $_.Wd; h = $_.Ht } })
   } | ConvertTo-Json -Depth 4 -Compress
   return
 }
@@ -109,20 +111,24 @@ if ($Place -or $PlaceFile) {
   $raw = if ($PlaceFile) { Get-Content -Raw -Encoding UTF8 -LiteralPath $PlaceFile -ErrorAction Stop } else { $Place }
   $spec = @(ConvertFrom-Json $raw | % { $_ })
   if ($spec.Count -eq 1 -and $spec[0].windows) { $spec = @($spec[0].windows | % { $_ }) }  # accept the whole -Json object
-  $taken = @{}; $ok = 0; $miss = 0
+  $taken = @{}; $ok = 0; $miss = 0; $res = @()
   foreach ($e in $spec) {
     $c = @($items | ? { -not $taken.ContainsKey("$($_.H)") -and $_.App -eq $e.app })
-    $it = @($c | ? { $_.Title -eq $e.title })[0]
+    # id (window handle from -Json) tells apart windows with the same title.
+    $it = if ($e.id) { @($c | ? { [int64]$_.H -eq [int64]$e.id })[0] }
+    if (-not $it) { $it = @($c | ? { $_.Title -eq $e.title })[0] }
     if (-not $it) { $it = @($c | ? { $_.Title.Contains([string]$e.title) })[0] }
-    if (-not $it) { $miss++; Write-Warning "No open window for $($e.app): '$($e.title)'."; continue }
+    if (-not $it) { $miss++; Write-Warning "No open window for $($e.app): '$($e.title)'."; $res += [pscustomobject]@{ app = $e.app; title = $e.title; ok = $false; note = 'no open window' }; continue }
     $taken["$($it.H)"] = 1; $ok++
     $x = [int]$e.x; $y = [int]$e.y; $ww = [int]$e.w; $hh = [int]$e.h
     if ($DryRun) {
       $cur = if ($it.X -eq $x -and $it.Y -eq $y -and $it.Wd -eq $ww -and $it.Ht -eq $hh) { 'at current rect' } else { "from x=$($it.X) y=$($it.Y) $($it.Wd)x$($it.Ht)" }
-      "{0,-9} x={1} y={2} {3}x{4}  [{5}]  {6}" -f $it.App, $x, $y, $ww, $hh, $cur, $it.Title
-    } else { Move-Win $it.H $x $y $ww $hh }
+      if (-not $Json) { "{0,-9} x={1} y={2} {3}x{4}  [{5}]  {6}" -f $it.App, $x, $y, $ww, $hh, $cur, $it.Title }
+      $note = "dry run: $cur"
+    } else { $note = Move-Win $it.H $x $y $ww $hh; if (-not $note) { $note = 'moved' } }
+    $res += [pscustomobject]@{ app = $it.App; title = $it.Title; ok = $true; note = $note }
   }
-  "Placed $ok of $($ok + $miss) ($miss unmatched)."
+  if ($Json) { ConvertTo-Json -InputObject @($res) -Compress } else { "Placed $ok of $($ok + $miss) ($miss unmatched)." }
   return
 }
 
@@ -151,7 +157,7 @@ function Put($win, $slots) {
   $r0 = ($rs | Measure -Min).Minimum; $r1 = ($rs | Measure -Max).Maximum
   $x = $area.X + $c0 * $w; $y = $area.Y + $r0 * $h; $ww = ($c1 - $c0 + 1) * $w; $hh = ($r1 - $r0 + 1) * $h
   if ($DryRun) { "{0,-9} slots {1,-6} x={2} y={3} {4}x{5}  {6}" -f ($items | ? { $_.H -eq $win }).App, (($slots | % { $_ + 1 }) -join '+'), $x, $y, $ww, $hh, ($items | ? { $_.H -eq $win }).Title; return }
-  Move-Win $win $x $y $ww $hh
+  $null = Move-Win $win $x $y $ww $hh
 }
 foreach ($pn in $pins) { if ($pn.Item) { Put $pn.Item.H $pn.Slots } }
 
