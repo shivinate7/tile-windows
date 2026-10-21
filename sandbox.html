@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Desktop Sandbox</title>
+<style>
+:root{--bg:#f5f6f8;--fg:#1c2128;--mut:#5b6573;--card:#fff;--line:#c9d0d9;--mon:#e6eaf0;--grid:#aab4c2;--acc:#1f6feb;--accfg:#fff;--wl:88%;--wc:45%;--wfg:#10161d}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1318;--fg:#e6e9ee;--mut:#9aa5b3;--card:#171c23;--line:#323a45;--mon:#1e252e;--grid:#46505d;--acc:#4c8dff;--accfg:#08101c;--wl:32%;--wc:55%;--wfg:#f3f6fa}}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,Segoe UI,sans-serif}
+main{max-width:1200px;margin:0 auto}
+h1{font-size:20px;margin:0 0 4px}
+p.sub{margin:0 0 14px;color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px}
+textarea,input[type=text],input[type=number]{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px;font:12px/1.4 ui-monospace,Consolas,monospace}
+textarea{height:70px;resize:vertical}
+input[type=number]{width:52px}
+button{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 12px;font:inherit;cursor:pointer}
+button.primary{background:var(--acc);color:var(--accfg);border-color:var(--acc);font-weight:600}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:8px}
+.mut{color:var(--mut)}
+#stage{position:relative;width:100%;overflow:hidden;border-radius:8px;border:1px solid var(--line);background:var(--bg);touch-action:pan-y}
+.mon{position:absolute;background:var(--mon);border:1px solid var(--line)}
+.mon>i{position:absolute;left:4px;top:2px;font:normal 11px ui-monospace,Consolas,monospace;color:var(--mut);pointer-events:none}
+.mon>b{position:absolute;border:0 dashed var(--grid);pointer-events:none}
+.win{position:absolute;border:1.5px solid hsl(var(--h) 55% 38%);background:hsl(var(--h) var(--wc) var(--wl) / .92);color:var(--wfg);border-radius:4px;overflow:hidden;cursor:grab;touch-action:none;user-select:none;font-size:11px;line-height:1.25;padding:2px 4px}
+.win.dirty{outline:2px solid var(--acc);outline-offset:0}
+.win.drag{cursor:grabbing;box-shadow:0 4px 14px #0006}
+.win b{display:block;font-size:10px;opacity:.75;text-transform:uppercase;letter-spacing:.03em}
+.win span{display:block;overflow:hidden;text-overflow:ellipsis;max-height:2.6em}
+.hd{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;touch-action:none;background:linear-gradient(135deg,transparent 50%,hsl(var(--h) 55% 38%) 50%)}
+pre{margin:8px 0;padding:8px;background:var(--bg);border:1px solid var(--line);border-radius:6px;white-space:pre-wrap;word-break:break-all;font:12px/1.4 ui-monospace,Consolas,monospace}
+#mons label{white-space:nowrap}
+.msg{color:var(--mut);min-height:1.4em}
+</style>
+</head>
+<body>
+<main>
+<h1>Desktop Sandbox</h1>
+<p class="sub">Drag windows, drag the corner to resize, then Apply. Showing: <b id="src">sample snapshot</b>.</p>
+
+<div class="card">
+  <label for="paste">Paste the output of <code>tile.ps1 -Json</code></label>
+  <textarea id="paste" spellcheck="false" placeholder='{"monitors":[...],"windows":[...]}'></textarea>
+  <div class="row"><button id="load" class="primary">Load</button><button id="sample">Use sample</button><button id="reset">Reset moves</button><span class="msg" id="msg" role="status"></span></div>
+</div>
+
+<div class="card">
+  <div class="row" style="margin-top:0"><label><input type="checkbox" id="snap" checked> Snap to grid</label><span id="mons" class="row" style="margin:0"></span></div>
+</div>
+
+<div id="stage" aria-label="Monitor layout"></div>
+
+<div class="card" style="margin-top:12px">
+  <div class="row" style="margin-top:0"><button id="apply" class="primary">Apply</button><span class="mut" id="cnt"></span></div>
+  <div id="out" hidden>
+    <p class="mut" style="margin:10px 0 4px">1. <b>last-place.json</b> was downloaded. If it is not in Downloads, change the path below.</p>
+    <input type="text" id="path" value="$env:USERPROFILE\Downloads\last-place.json" aria-label="Path of last-place.json">
+    <p class="mut" style="margin:10px 0 0">2. Paste this into Windows PowerShell:</p>
+    <pre id="cmd"></pre>
+    <div class="row" style="margin-top:0"><button id="copy">Copy</button><span class="msg" id="cmsg" role="status"></span></div>
+  </div>
+</div>
+</main>
+
+<script>
+const SAMPLE={monitors:[{name:"\\\\.\\DISPLAY1",x:-1536,y:769,w:1536,h:912},{name:"\\\\.\\DISPLAY3",x:4096,y:-1354,w:1200,h:1872},{name:"\\\\.\\DISPLAY2",x:0,y:0,w:4096,h:1680}],
+windows:[
+{app:"claude",title:"Claude",x:0,y:0,w:819,h:840},
+{app:"claude",title:"Sam's notes",x:819,y:0,w:819,h:840},
+{app:"claude",title:"Fix \"quoted\" title bug",x:1638,y:0,w:819,h:840},
+{app:"chrome",title:"Claude Settings Audit - Google Chrome",x:2457,y:0,w:1100,h:1100},
+{app:"chrome",title:"Roadmap - Google Chrome",x:300,y:700,w:1000,h:900},
+{app:"explorer",title:"C:\\Users\\Me\\Documents - File Explorer",x:1800,y:900,w:1200,h:700},
+{app:"ms-teams",title:"Chat | Microsoft Teams",x:4096,y:-1354,w:1200,h:936},
+{app:"olk",title:"Inbox - Outlook",x:-1536,y:769,w:1536,h:912},
+{app:"WindowsTerminal",title:"Windows PowerShell",x:3000,y:1000,w:900,h:600}]};
+const $=id=>document.getElementById(id);
+let D=null,orig=[],S=1,B=null,mons=[];
+const gridOf={};   // monitor name -> {c,r}
+
+function load(d,label){
+  if(!d||!Array.isArray(d.monitors)||!d.monitors.length||!Array.isArray(d.windows))throw new Error("Need {monitors:[...], windows:[...]}");
+  D=JSON.parse(JSON.stringify(d));mons=D.monitors;
+  orig=D.windows.map(w=>({x:w.x,y:w.y,w:w.w,h:w.h}));
+  const widest=mons.reduce((a,m)=>m.w>a.w?m:a,mons[0]);
+  for(const m of mons)gridOf[m.name]=m===widest?{c:5,r:2}:m.h>m.w?{c:1,r:2}:{c:2,r:2};
+  $("src").textContent=label;$("out").hidden=true;
+  gridUI();draw();
+}
+function gridUI(){
+  $("mons").innerHTML="";
+  mons.forEach((m,i)=>{
+    const l=document.createElement("label");
+    l.innerHTML=`Mon ${i+1} grid <input type="number" min="1" max="12" aria-label="columns"> x <input type="number" min="1" max="12" aria-label="rows">`;
+    const [c,r]=l.querySelectorAll("input"),g=gridOf[m.name];c.value=g.c;r.value=g.r;
+    c.oninput=r.oninput=()=>{g.c=Math.max(1,+c.value||1);g.r=Math.max(1,+r.value||1);draw()};
+    $("mons").appendChild(l);
+  });
+}
+function hue(s){let h=0;for(const ch of s)h=(h*31+ch.charCodeAt(0))%360;return h}
+function monOf(w){const cx=w.x+w.w/2,cy=w.y+w.h/2;
+  return mons.find(m=>cx>=m.x&&cx<m.x+m.w&&cy>=m.y&&cy<m.y+m.h)||mons.reduce((a,m)=>{const d=Math.hypot(cx-(m.x+m.w/2),cy-(m.y+m.h/2));return d<a.d?{m,d}:a},{d:1e18}).m||mons[0]}
+function snapV(v,o,len,n){const s=len/n;return o+Math.round((v-o)/s)*s}
+
+function draw(){
+  const st=$("stage");st.innerHTML="";
+  const x0=Math.min(...mons.map(m=>m.x)),y0=Math.min(...mons.map(m=>m.y));
+  const x1=Math.max(...mons.map(m=>m.x+m.w)),y1=Math.max(...mons.map(m=>m.y+m.h));
+  B={x0,y0,x1,y1};S=st.clientWidth/(x1-x0);st.style.height=Math.round((y1-y0)*S)+"px";
+  mons.forEach((m,i)=>{
+    const e=document.createElement("div");e.className="mon";
+    Object.assign(e.style,{left:(m.x-x0)*S+"px",top:(m.y-y0)*S+"px",width:m.w*S+"px",height:m.h*S+"px"});
+    e.innerHTML=`<i>Mon ${i+1} ${m.w}x${m.h}</i>`;
+    const g=gridOf[m.name];
+    for(let k=1;k<g.c;k++)e.insertAdjacentHTML("beforeend",`<b style="left:${k/g.c*100}%;top:0;bottom:0;border-left-width:1px"></b>`);
+    for(let k=1;k<g.r;k++)e.insertAdjacentHTML("beforeend",`<b style="top:${k/g.r*100}%;left:0;right:0;border-top-width:1px"></b>`);
+    st.appendChild(e);
+  });
+  D.windows.forEach((w,i)=>{
+    const e=document.createElement("div");e.className="win";e.dataset.i=i;e.style.setProperty("--h",hue(w.app));
+    e.title=`${w.app}: ${w.title}\n${w.x},${w.y} ${w.w}x${w.h}`;
+    e.innerHTML=`<b></b><span></span><div class="hd"></div>`;
+    e.firstChild.textContent=w.app;e.children[1].textContent=w.title;
+    place(e,w,i);st.appendChild(e);bind(e,w,i);
+  });
+  const n=changed().length;$("cnt").textContent=n?`${n} window${n>1?"s":""} moved`:"No windows moved yet";
+}
+function place(e,w,i){
+  Object.assign(e.style,{left:(w.x-B.x0)*S+"px",top:(w.y-B.y0)*S+"px",width:Math.max(w.w*S,18)+"px",height:Math.max(w.h*S,18)+"px"});
+  e.classList.toggle("dirty",isDirty(i));
+}
+function isDirty(i){const w=D.windows[i],o=orig[i];return w.x!==o.x||w.y!==o.y||w.w!==o.w||w.h!==o.h}
+function changed(){return D.windows.filter((w,i)=>isDirty(i))}
+
+function bind(e,w,i){
+  e.addEventListener("pointerdown",ev=>{
+    ev.preventDefault();e.setPointerCapture(ev.pointerId);e.parentNode.appendChild(e);e.classList.add("drag");
+    const rs=ev.target.classList.contains("hd"),sx=ev.clientX,sy=ev.clientY,s={...w};
+    const mv=ev2=>{
+      let dx=(ev2.clientX-sx)/S,dy=(ev2.clientY-sy)/S,m=monOf(rs?w:{...s,x:s.x+dx,y:s.y+dy}),g=gridOf[m.name],on=$("snap").checked;
+      if(rs){
+        let r=s.x+s.w+dx,b=s.y+s.h+dy;
+        if(on){r=snapV(r,m.x,m.w,g.c);b=snapV(b,m.y,m.h,g.r)}
+        w.w=Math.max(40,Math.round(r-w.x));w.h=Math.max(40,Math.round(b-w.y));
+      }else{
+        let x=s.x+dx,y=s.y+dy;
+        if(on){x=snapV(x,m.x,m.w,g.c);y=snapV(y,m.y,m.h,g.r)}
+        w.x=Math.round(Math.min(Math.max(x,B.x0-w.w+40),B.x1-40));w.y=Math.round(Math.min(Math.max(y,B.y0),B.y1-40));
+      }
+      place(e,w,i);e.title=`${w.app}: ${w.title}\n${w.x},${w.y} ${w.w}x${w.h}`;
+    };
+    const up=()=>{e.classList.remove("drag");e.removeEventListener("pointermove",mv);e.removeEventListener("pointerup",up);e.removeEventListener("pointercancel",up);
+      const n=changed().length;$("cnt").textContent=n?`${n} window${n>1?"s":""} moved`:"No windows moved yet"};
+    e.addEventListener("pointermove",mv);e.addEventListener("pointerup",up);e.addEventListener("pointercancel",up);
+  });
+}
+
+function parse(t){const a=t.indexOf("{");if(a<0)throw new Error("No JSON object found");return JSON.parse(t.slice(a,t.lastIndexOf("}")+1))}
+$("load").onclick=()=>{try{load(parse($("paste").value),"pasted snapshot");$("msg").textContent=""}catch(e){$("msg").textContent="Could not load: "+e.message}};
+$("sample").onclick=()=>{load(SAMPLE,"sample snapshot");$("msg").textContent=""};
+$("reset").onclick=()=>{D.windows.forEach((w,i)=>Object.assign(w,orig[i]));draw()};
+$("snap").onchange=()=>{};
+addEventListener("resize",()=>D&&draw());
+
+function cmd(){const p=$("path").value.replace(/["`]/g,"");
+  return `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.claude\\skills\\tile-windows\\tile.ps1" -PlaceFile "${p}"`}
+$("path").oninput=()=>{$("cmd").textContent=cmd()};
+$("apply").onclick=()=>{
+  const ch=changed();
+  if(!ch.length){$("cnt").textContent="Nothing moved yet. Drag a window first.";return}
+  const json=JSON.stringify(ch.map(({app,title,x,y,w,h})=>({app,title,x,y,w,h})),null,1);
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([json],{type:"application/json"}));a.download="last-place.json";
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  $("cmd").textContent=cmd();$("out").hidden=false;$("cmsg").textContent="";
+};
+$("copy").onclick=async()=>{
+  const t=$("cmd").textContent;
+  try{await navigator.clipboard.writeText(t);$("cmsg").textContent="Copied."}
+  catch(e){const r=document.createRange();r.selectNodeContents($("cmd"));const s=getSelection();s.removeAllRanges();s.addRange(r);
+    $("cmsg").textContent=document.execCommand&&document.execCommand("copy")?"Copied.":"Select the text and copy it by hand."}
+};
+load(SAMPLE,"sample snapshot");requestAnimationFrame(()=>draw());
+</script>
+</body>
+</html>
