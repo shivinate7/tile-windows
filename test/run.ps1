@@ -53,10 +53,21 @@ try {
   $res = @($r.Content | ConvertFrom-Json)
   Check 'title survives page -> /apply (dry run)' ($res.Count -eq 1 -and $res[0].ok -and $res[0].title -ceq $title -and $res[0].note -like 'dry run*') $r.Content
   Check 'server refuses a non-array apply' ((Status "${url}apply" ' ') -eq 400)
+  Check 'server refuses bad JSON' ((Status "${url}apply" '[{"app":') -eq 400)
+
+  # 5. Undo after a live Apply sends the original rects (decision: undo-moves-windows).
+  #    Headless Edge runs the page's #selftest-undo hook: Apply a moved window, then Undo.
+  $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
+  $dom = Join-Path $tmp 'dom.html'
+  Start-Process $edge -Wait -WindowStyle Hidden -RedirectStandardOutput $dom -RedirectStandardError (Join-Path $tmp 'edge.log') -ArgumentList '--headless', '--disable-gpu', '--no-first-run', "--user-data-dir=$tmp\edge", '--virtual-time-budget=30000', '--dump-dom', "${url}#selftest-undo"
+  $st = if ((Get-Content -Raw -Encoding UTF8 $dom) -match '<pre id="selftest">(.*?)</pre>') { [Net.WebUtility]::HtmlDecode($matches[1]) | ConvertFrom-Json }
+  $o = $st.orig; $b = @($st.bodies)
+  Check 'Apply then Undo sends the original rects' ($b.Count -eq 2 -and $b[0][0].x -eq $o.x + 100 -and $b[1][0].id -eq $o.id -and $b[1][0].x -eq $o.x -and $b[1][0].y -eq $o.y -and $b[1][0].w -eq $o.w -and $b[1][0].h -eq $o.h) ($st | ConvertTo-Json -Compress -Depth 5).Length
+
   [void](Invoke-WebRequest -UseBasicParsing "${url}quit" -Method Post -Body 'quit')
   Check 'server exits on /quit' ($srv.WaitForExit(5000))
 
-  # 5. -Default -DryRun prints the same as main's tile.ps1 (run back to back; windows can change between runs).
+  # 6. -Default -DryRun prints the same as main's tile.ps1 (run back to back; windows can change between runs).
   $main = Join-Path $tmp 'tile-main.ps1'
   $src = & git -C $root show main:tile.ps1; if ($LASTEXITCODE) { $src = & git -C $root show origin/main:tile.ps1 }
   Set-Content -LiteralPath $main -Encoding ASCII -Value $src

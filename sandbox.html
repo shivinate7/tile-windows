@@ -102,7 +102,7 @@ const SAMPLE=(()=>{
   return {monitors,windows};
 })();
 
-let D=null,orig=[],hist=[],els=[],G={x0:0,y0:0,x1:1,y1:1,S:1},Z=0,drag=null,raf=0,live=false;
+let D=null,orig=[],hist=[],els=[],G={x0:0,y0:0,x1:1,y1:1,S:1},Z=0,drag=null,raf=0,live=false,sent=null,appliedAt=0;  // sent: rects last sent to /apply; appliedAt: hist length then
 const grid={};  // monitor name -> {c,r}
 const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
 const same=(a,b)=>a.x===b.x&&a.y===b.y&&a.w===b.w&&a.h===b.h;
@@ -111,7 +111,7 @@ const changed=()=>D.windows.filter((w,i)=>!same(w,orig[i]));
 function load(d,label,isLive){
   if(!d||!Array.isArray(d.monitors)||!d.monitors.length||!Array.isArray(d.windows))throw new Error("need {monitors:[...], windows:[...]}");
   D={monitors:d.monitors,windows:d.windows.map(w=>({...w}))};
-  orig=D.windows.map(rect);hist=[];live=!!isLive;
+  orig=D.windows.map(rect);hist=[];live=!!isLive;sent=null;appliedAt=0;
   const widest=D.monitors.reduce((a,m)=>m.w>a.w?m:a);
   for(const m of D.monitors)if(!grid[m.name])grid[m.name]=m===widest?{c:5,r:2}:m.h>m.w?{c:1,r:2}:{c:1,r:1};
   $("src").textContent=label;$("outcard").hidden=true;
@@ -237,7 +237,10 @@ stage.addEventListener("keydown",ev=>{
   commit(i,target(r,ev.shiftKey?"size":"move",ev.shiftKey?m:null));
 });
 
-$("undo").onclick=()=>{const p=hist.pop();if(!p)return;p.forEach((r,i)=>Object.assign(D.windows[i],r));els.forEach((e,i)=>place(i));status()};
+// Undo past a live Apply moves the real windows back at once (decision: undo-moves-windows).
+$("undo").onclick=async()=>{const p=hist.pop();if(!p)return;p.forEach((r,i)=>Object.assign(D.windows[i],r));els.forEach((e,i)=>place(i));status();
+  if(!live||!sent||hist.length>=appliedAt)return;
+  const back=D.windows.filter((w,i)=>!same(w,sent[i]));if(back.length)await post(back,"Moving windows back…")};
 $("reset").onclick=()=>{if(!changed().length)return;hist.push(D.windows.map(rect));orig.forEach((r,i)=>Object.assign(D.windows[i],r));els.forEach((e,i)=>place(i));status()};
 let rz=0;addEventListener("resize",()=>{if(D&&!rz)rz=requestAnimationFrame(()=>{rz=0;layout()})});
 
@@ -266,20 +269,24 @@ $("apply").onclick=async()=>{
     document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     $("live-out").hidden=true;$("file-out").hidden=false;$("cmd").textContent=cmd();$("cmsg").textContent="";return;
   }
-  $("file-out").hidden=true;$("live-out").hidden=false;$("apply").disabled=true;$("sum").textContent="Moving windows…";$("results").textContent="";
+  await post(ch,"Moving windows…");
+};
+function busy(b){$("apply").disabled=b;$("undo").disabled=b||!hist.length}
+async function post(ws,msg){
+  $("outcard").hidden=false;$("file-out").hidden=true;$("live-out").hidden=false;busy(true);$("sum").textContent=msg;$("results").textContent="";
   try{
-    const r=await fetch("apply",{method:"POST",headers:{"Content-Type":"application/json"},body:spec(ch)});
+    const r=await fetch("apply",{method:"POST",headers:{"Content-Type":"application/json"},body:spec(ws)});
     if(!r.ok)throw new Error(await r.text());
     const res=[].concat(await r.json());let ok=0;
     for(const x of res){const li=document.createElement("li"),s=document.createElement("span");
       s.className=x.ok&&!/^off size/.test(x.note)?"ok":"bad";s.textContent=x.ok?"✓ ":"✗ ";li.append(s,`${x.app}: ${x.title} — ${x.note}`);$("results").appendChild(li);if(x.ok)ok++}
     $("sum").textContent=`Placed ${ok} of ${res.length}.`;
-    // Moved windows now sit where the page shows them: that is the new baseline. Undo still steps back.
+    sent=D.windows.map(rect);appliedAt=hist.length;
+    // Moved windows now sit where the page shows them: that is the new baseline.
     if(!res.some(x=>/^dry run/.test(x.note)))D.windows.forEach((w,i)=>{orig[i]=rect(w);place(i)});
-    status();
   }catch(e){$("sum").textContent="Apply failed: "+e.message}
-  finally{$("apply").disabled=false}
-};
+  finally{busy(false);status()}
+}
 $("copy").onclick=async()=>{
   try{await navigator.clipboard.writeText($("cmd").textContent);$("cmsg").textContent="Copied."}
   catch(e){const r=document.createRange();r.selectNodeContents($("cmd"));const s=getSelection();s.removeAllRanges();s.addRange(r);$("cmsg").textContent="Press Ctrl+C to copy."}
@@ -287,7 +294,14 @@ $("copy").onclick=async()=>{
 $("quit").onclick=async()=>{try{await fetch("quit",{method:"POST",body:"quit"})}catch(_){}
   live=false;$("livebar").textContent="Server stopped. You can close this tab.";$("refresh").hidden=true};
 
-if(LIVE){$("refresh").hidden=false;$("livebar").hidden=false;refresh()}
+if(LIVE){$("refresh").hidden=false;$("livebar").hidden=false;
+  refresh().then(async()=>{
+    if(location.hash!=="#selftest-undo")return;  // used by test/run.ps1 against serve.ps1 -DryRun
+    const bodies=[],f=window.fetch;window.fetch=(u,o)=>{if(u==="apply")bodies.push(JSON.parse(o.body));return f(u,o)};
+    const w=D.windows[0],o=rect(w);commit(0,{...o,x:o.x+100});
+    await $("apply").onclick();await $("undo").onclick();
+    const out=document.createElement("pre");out.id="selftest";out.textContent=JSON.stringify({orig:{id:w.id,...o},bodies});document.body.appendChild(out);
+  })}
 else{load(SAMPLE,"sample snapshot");$("offline").open=true}
 </script>
 </body>

@@ -9,7 +9,8 @@ param([switch]$NoBrowser, [switch]$DryRun)
 
 $tile = Join-Path $PSScriptRoot 'tile.ps1'
 $page = Join-Path $PSScriptRoot 'sandbox.html'
-$token = -join ((1..32) | % { '{0:x}' -f (Get-Random -Maximum 16) })
+$rb = New-Object byte[] 16; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rb)
+$token = -join ($rb | % { $_.ToString('x2') })
 $probe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $probe.Start(); $port = $probe.LocalEndpoint.Port; $probe.Stop()
 $base = "http://127.0.0.1:$port/"
 $http = [Net.HttpListener]::new(); $http.Prefixes.Add($base); $http.Start()
@@ -43,6 +44,7 @@ try {
           $body = [IO.StreamReader]::new($req.InputStream, [Text.Encoding]::UTF8).ReadToEnd()
           # An empty -Place would fall through to grid tiling, which moves windows.
           if (-not $body.Trim().StartsWith('[')) { Send $ctx 400 'text/plain' 'Body must be a JSON array.'; continue }
+          try { $null = ConvertFrom-Json $body -ErrorAction Stop } catch { Send $ctx 400 'text/plain' "Bad JSON: $($_.Exception.Message)"; continue }
           $dry = $DryRun -or $req.QueryString['dry'] -eq '1'
           Send $ctx 200 'application/json' ((& $tile -Place $body -Json -DryRun:$dry 3>$null) -join '')
         }
