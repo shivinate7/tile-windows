@@ -13,7 +13,7 @@
   --g-bg:#F2F3F5; --g-panel:#FFFFFF; --g-ink:#191C22; --g-muted:#5B6270; --g-line:#D6D9DF; --g-tab:#191C22; --g-tab-ink:#FFFFFF;
 
   --a-wall1:#C3CEDD; --a-wall2:#E8ECF2; --a-panel:#FBFCFE; --a-ink:#141B26; --a-muted:#566173; --a-line:#D3D9E3; --a-accent:#2F55E4; --a-accent-ink:#FFFFFF; --a-screen:#E3E8EF; --a-hi:#EAF0FF;
-  --a-comms:#7356DB; --a-code:#1B7F67; --a-browse:#C7701F; --a-other:#66768C; --a-warn:#A84B08;
+  --a-comms:#7356DB; --a-code:#1B7F67; --a-browse:#C7701F; --a-other:#66768C; --a-warn:#A84B08; --a-shadow:#1A2433;
 
   --b-canvas:#ECEEE9; --b-dot:#C9CEC4; --b-panel:#FFFFFF; --b-ink:#1C211D; --b-muted:#5E665F; --b-line:#D9DCD4; --b-select:#1F6BFF; --b-select-ink:#FFFFFF; --b-screen:#F7F8F5; --b-bezel:#2B302C;
   --b-comms:#8B5CF6; --b-code:#0E9484; --b-browse:#DC5F0E; --b-other:#73806F;
@@ -27,7 +27,7 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --g-bg:#101216; --g-panel:#181B21; --g-ink:#E6E8EC; --g-muted:#9AA1AD; --g-line:#2B2F37; --g-tab:#E6E8EC; --g-tab-ink:#101216;
   --a-wall1:#0A0E14; --a-wall2:#1B2433; --a-panel:#161B23; --a-ink:#E6EBF2; --a-muted:#8F9AAB; --a-line:#2A323E; --a-accent:#86A2FF; --a-accent-ink:#0B1020; --a-screen:#0F141B; --a-hi:#1E2740;
-  --a-comms:#A48BFF; --a-code:#4CC9A4; --a-browse:#F0A45A; --a-other:#93A2B6; --a-warn:#F0A45A;
+  --a-comms:#A48BFF; --a-code:#4CC9A4; --a-browse:#F0A45A; --a-other:#93A2B6; --a-warn:#F0A45A; --a-shadow:#000000;
   --b-canvas:#141715; --b-dot:#2B302C; --b-panel:#1C201D; --b-ink:#E8ECE6; --b-muted:#9AA39B; --b-line:#2F3530; --b-select:#5B93FF; --b-select-ink:#0A1226; --b-screen:#232824; --b-bezel:#0B0D0B;
   --b-comms:#A98BFA; --b-code:#3CCBB8; --b-browse:#F58A45; --b-other:#9DA89A;
   --c-bg:#0C1615; --c-card:#13211F; --c-ink:#E3EFEC; --c-muted:#8FA8A4; --c-line:#244440; --c-accent:#5CC7BE; --c-accent-ink:#062120; --c-hi:#F2C14E; --c-screen:#0F1C1B;
@@ -38,7 +38,7 @@
 :root[data-theme="dark"]{
   --g-bg:#101216; --g-panel:#181B21; --g-ink:#E6E8EC; --g-muted:#9AA1AD; --g-line:#2B2F37; --g-tab:#E6E8EC; --g-tab-ink:#101216;
   --a-wall1:#0A0E14; --a-wall2:#1B2433; --a-panel:#161B23; --a-ink:#E6EBF2; --a-muted:#8F9AAB; --a-line:#2A323E; --a-accent:#86A2FF; --a-accent-ink:#0B1020; --a-screen:#0F141B; --a-hi:#1E2740;
-  --a-comms:#A48BFF; --a-code:#4CC9A4; --a-browse:#F0A45A; --a-other:#93A2B6; --a-warn:#F0A45A;
+  --a-comms:#A48BFF; --a-code:#4CC9A4; --a-browse:#F0A45A; --a-other:#93A2B6; --a-warn:#F0A45A; --a-shadow:#000000;
   --b-canvas:#141715; --b-dot:#2B302C; --b-panel:#1C201D; --b-ink:#E8ECE6; --b-muted:#9AA39B; --b-line:#2F3530; --b-select:#5B93FF; --b-select-ink:#0A1226; --b-screen:#232824; --b-bezel:#0B0D0B;
   --b-comms:#A98BFA; --b-code:#3CCBB8; --b-browse:#F58A45; --b-other:#9DA89A;
   --c-bg:#0C1615; --c-card:#13211F; --c-ink:#E3EFEC; --c-muted:#8FA8A4; --c-line:#244440; --c-accent:#5CC7BE; --c-accent-ink:#062120; --c-hi:#F2C14E; --c-screen:#0F1C1B;
@@ -110,7 +110,7 @@ button{cursor:pointer}
 .a-tray{display:flex;gap:6px;align-items:center;padding:2px 8px;border-radius:3px;background:var(--a-accent);color:var(--a-accent-ink)}
 .a-tray svg{width:14px;height:14px}
 kbd{font:500 10.5px var(--f-a-mono);padding:1px 5px;border:1px solid currentColor;border-radius:3px;opacity:.85;white-space:nowrap}
-.a-pal{max-width:860px;margin:26px auto 0;width:calc(100% - 24px);background:var(--a-panel);color:var(--a-ink);border:1px solid var(--a-line);border-radius:8px;box-shadow:0 18px 50px -20px color-mix(in srgb,var(--a-wall1) 30%,#000 70%)}
+.a-pal{max-width:860px;margin:26px auto 0;width:calc(100% - 24px);background:var(--a-panel);color:var(--a-ink);border:1px solid var(--a-line);border-radius:8px;box-shadow:0 18px 50px -20px var(--a-shadow)}
 .a-in{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--a-line)}
 .a-prompt{font:500 20px var(--f-a-mono);color:var(--a-accent)}
 .a-in input{flex:1;min-width:0;border:0;background:transparent;font:500 18px var(--f-a-mono);color:var(--a-ink);padding:4px 0}
@@ -540,7 +540,7 @@ function compute(st){
   return{place,over,notes}}
 const key=p=>p?`${p.mon}${p.c},${p.r},${p.cs},${p.rs}`:'stay';
 const sig=st=>{const R=compute(st);return WINS.map(w=>key(R.place[w.id])).join('|')};
-function changedIds(a,b){const A=compute(a).place,B=compute(b).place;return new Set(WINS.filter(w=>key(A[w.id])!==key(B[w.id])).map(w=>w.id))}
+function changedIds(a,b){const A=compute(a).place,B=compute(b).place;return new Set(WINS.filter(w=>B[w.id]&&key(A[w.id])!==key(B[w.id])).map(w=>w.id))}
 const DEFSIG=sig(DEFAULT);
 const isDefault=st=>sig(st)===DEFSIG;
 function pinTo(s,p){
