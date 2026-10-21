@@ -31,10 +31,11 @@ try {
     $ar = $http.BeginGetContext($null, $null)
     while (-not $ar.AsyncWaitHandle.WaitOne(250)) {}  # short waits so Ctrl+C gets through
     $ctx = $http.EndGetContext($ar); $req = $ctx.Request
-    $path = $req.Url.AbsolutePath
-    if (-not $path.StartsWith("/$token/")) { Send $ctx 403 'text/plain' 'Forbidden'; continue }
-    $route = $req.HttpMethod + ' ' + $path.Substring($token.Length + 2)
+    # One request's failure (say, the browser hung up) must not stop the server.
     try {
+      $path = $req.Url.AbsolutePath
+      if (-not $path.StartsWith("/$token/")) { Send $ctx 403 'text/plain' 'Forbidden'; continue }
+      $route = $req.HttpMethod + ' ' + $path.Substring($token.Length + 2)
       switch ($route) {
         'GET ' { Send $ctx 200 'text/html' ([IO.File]::ReadAllText($page, [Text.Encoding]::UTF8)) }
         'GET snapshot' { Send $ctx 200 'application/json' ((& $tile -Json 2>$null) -join '') }
@@ -46,11 +47,11 @@ try {
           Send $ctx 200 'application/json' ((& $tile -Place $body -Json -DryRun:$dry 3>$null) -join '')
         }
         'POST quit' {
+          $ctx.Response.KeepAlive = $false  # else Stop() resets the open connection before the client reads 'Bye'
           Send $ctx 200 'text/plain' 'Bye'; $run = $false
-          Start-Sleep -Milliseconds 300  # Stop() resets open connections; give the client time to read 'Bye'
         }
         default { Send $ctx 404 'text/plain' 'Not found' }
       }
-    } catch { Send $ctx 500 'text/plain' "$_" }
+    } catch { try { Send $ctx 500 'text/plain' "$_" } catch {} }
   }
 } finally { $http.Stop(); $http.Close() }

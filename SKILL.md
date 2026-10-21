@@ -93,7 +93,7 @@ Windows that are not pinned fill the open slots row by row. They sort by app (in
 - It prints its URL (127.0.0.1, a free port, a random token) and opens the browser.
 - The page loads the windows from `tile.ps1 -Json`. Refresh loads them again.
 - Apply moves only the changed windows, through `tile.ps1 -Place`, and lists the result per window.
-- The server stops on the page's Stop server button or Ctrl+C. Stop it before you finish.
+- The server stops on the page's Stop server button or Ctrl+C. Stop it before you finish: `curl -s -X POST -d quit "<url>quit"`, or stop the background task.
 - `-DryRun` makes every Apply a dry run. `-NoBrowser` skips opening the browser.
 
 **Offline.** Open `sandbox.html` as a file. A 30-window sample loads.
