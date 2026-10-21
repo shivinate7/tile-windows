@@ -85,10 +85,25 @@ Windows that are not pinned fill the open slots row by row. They sort by app (in
 
 ## Sandbox
 
-`sandbox.html` (this folder) lets the user drag windows on a drawing of their monitors, then click Apply.
+`sandbox.html` (this folder) draws the user's monitors and windows. The user drags windows, then clicks Apply. A window snaps to the monitor's grid (5x2 on the widest, editable on the page). Undo steps back one change.
+
+**Live (default).** Say in one line that a browser tab will open. Then start the server in the background:
+`powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/.claude/skills/tile-windows/serve.ps1)"`
+
+- It prints its URL (127.0.0.1, a free port, a random token) and opens the browser.
+- The page loads the windows from `tile.ps1 -Json`. Refresh loads them again.
+- Apply moves only the changed windows, through `tile.ps1 -Place`, and lists the result per window.
+- After a live Apply, Undo moves the windows back at once (decision: undo-moves-windows). Before any Apply, Undo only moves the boxes.
+- The server stops on the page's Stop server button or Ctrl+C. Stop it before you finish: `curl -s -X POST -d quit "<url>quit"`, or stop the background task.
+- `-DryRun` makes every Apply a dry run. `-NoBrowser` skips opening the browser.
+
+**Offline.** Open `sandbox.html` as a file. A 30-window sample loads.
 
 1. Run `tile.ps1 -Json`. It prints monitors and windows as JSON and moves nothing. Default `-Proc '*'`; `-Proc`/`-Skip` narrow it. Minimized windows are left out.
-2. The user opens `sandbox.html` in a browser, pastes the JSON, and arranges the windows. A sample snapshot loads with no input.
-3. Apply downloads `last-place.json` (moved windows only) and shows the command:
+2. The user pastes the JSON under "Load a snapshot by hand", then arranges the windows.
+3. Apply downloads `last-place.json` (changed windows only) and shows the command:
    `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.claude\skills\tile-windows\tile.ps1" -PlaceFile "$env:USERPROFILE\Downloads\last-place.json"`
-4. `-Place '<json>'` takes the same array inline, but prefer `-PlaceFile`: titles carry quotes and apostrophes. Entries are `{app,title,x,y,w,h}` in screen pixels. Each matches an open window by app plus exact title, else title contains. The last line reports placed and unmatched counts. `-DryRun` prints each move and moves nothing. Claude runs the same command, with `-DryRun` first.
+
+**The place format.** Entries are `{app,title,x,y,w,h}` in screen pixels, plus `id` (the window handle from `-Json`) when known. Each entry matches an open window by `id`, else app plus exact title, else title contains. `-Place '<json>'` takes the array inline, but prefer `-PlaceFile`: titles carry quotes and apostrophes. `-DryRun` prints each move and moves nothing. `-Json` prints one result per entry instead of text. Claude runs `-DryRun` first.
+
+**Check.** `powershell -NoProfile -ExecutionPolicy Bypass -File test\run.ps1` moves no window.
