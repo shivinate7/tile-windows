@@ -1,5 +1,5 @@
 # Tile Windows tray agent: an icon in the notification area.
-#   Menu: Open Tile Windows, Apply scene >, Quit. Double-click opens the app.
+#   Menu: Open Tile Windows, Apply Scene >, Quit. Double-click opens the app.
 #   Applies scenes on their trigger: a schedule (days + time), when the monitor set changes, or when a
 #   Teams call starts (and, if the scene says so, goes back to the scene before when the call ends).
 # -Open: open the app (starts the agent first if it is not running).
@@ -120,7 +120,7 @@ function Stop-App { if ($srv -and -not $srv.HasExited) { try { [void](Invoke-Web
 $menu = New-Object Windows.Forms.ContextMenuStrip
 $openItem = $menu.Items.Add('Open Tile Windows'); $openItem.Font = New-Object Drawing.Font($openItem.Font, [Drawing.FontStyle]::Bold)
 $openItem.add_Click({ Open-App })
-$scenesItem = New-Object Windows.Forms.ToolStripMenuItem 'Apply scene'; [void]$menu.Items.Add($scenesItem)
+$scenesItem = New-Object Windows.Forms.ToolStripMenuItem 'Apply Scene'; [void]$menu.Items.Add($scenesItem)
 [void]$menu.Items.Add('-')
 $quitItem = $menu.Items.Add('Quit'); $quitItem.add_Click({ [Windows.Forms.Application]::Exit() })
 # Rebuild the scene list each time the menu opens, so it follows config.json.

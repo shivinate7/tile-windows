@@ -106,7 +106,7 @@ A scene is a whole-desk layout: one grid per monitor role (`wide`, `tall`, `lapt
 - Dragging a window onto a cell pins it in the selected scene. `tile.ps1` lays out every preview, so the board shows what Apply will do.
 - Apply runs the scene through `tile.ps1 -Scene` and lists the result per window.
 - After a live Apply, Undo moves the windows back at once (decision: undo-moves-windows). Before any Apply, Undo only reverts edits.
-- The server stops on the page's Stop server button or Ctrl+C. Stop it before you finish: `curl -s -X POST -d quit "<url>quit"`, or stop the background task.
+- The server stops on the page's Stop Server button or Ctrl+C. Stop it before you finish: `curl -s -X POST -d quit "<url>quit"`, or stop the background task.
 - `-DryRun` makes every Apply a dry run. `-From test\fixture.json` shows an invented desk (always a dry run). `-NoBrowser` skips opening the browser.
 
 **Offline.** Open `app.html` as a file. A sample loads.

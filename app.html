@@ -213,13 +213,13 @@ dialog form{display:grid;gap:10px}
 </style>
 </head>
 <body>
-<a class="skip" href="#stage">Skip to the board</a>
+<a class="skip" href="#stage">Skip to the Board</a>
 <div class="app">
   <header class="top">
     <h1 class="brand"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1"/><rect x="11" y="3" width="7" height="6" rx="1"/><rect x="2" y="11" width="16" height="6" rx="1"/></svg>Tile Windows</h1>
     <span class="crumb">Scene: <b id="sname">…</b><span id="sedit" class="edited" hidden>Edited</span></span>
     <div class="tools">
-      <label class="switch"><input type="checkbox" id="grid" checked>Grid lines</label>
+      <label class="switch"><input type="checkbox" id="grid" checked>Grid Lines</label>
       <label class="switch">Theme <select id="theme" name="theme"><option value="system">Match Windows</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
       <button id="refresh" class="btn" type="button" title="Read the windows again. This clears Undo." hidden>Refresh</button>
       <button id="undo" class="btn" type="button" disabled>Undo</button>
@@ -253,10 +253,10 @@ dialog form{display:grid;gap:10px}
       <div class="row"><button id="copy" class="btn" type="button">Copy</button><span class="note" id="cmsg" role="status"></span></div>
     </section>
     <details id="offline" class="panel" hidden>
-      <summary>Load a snapshot by hand</summary>
+      <summary>Load a Snapshot by Hand</summary>
       <p class="note" style="margin:6px 0">Paste the output of <code>tile.ps1 -Json</code>. Then drag windows onto cells and click Apply to get a place file.</p>
       <textarea id="paste" name="snapshot" autocomplete="off" spellcheck="false" placeholder='Paste {"monitors":[…],"windows":[…]}…' aria-label="Snapshot JSON"></textarea>
-      <div class="row" style="margin-top:6px"><button id="load" class="btn" type="button">Load</button><button id="sample" class="btn" type="button">Use sample</button><span class="note" id="lmsg" role="status"></span></div>
+      <div class="row" style="margin-top:6px"><button id="load" class="btn" type="button">Load</button><button id="sample" class="btn" type="button">Use Sample</button><span class="note" id="lmsg" role="status"></span></div>
     </details>
   </main>
 
@@ -266,7 +266,7 @@ dialog form{display:grid;gap:10px}
     <section class="isec" aria-labelledby="winh"><h2 id="winh">Window</h2><div id="win"></div></section>
   </aside>
 
-  <footer class="status"><span id="msg" role="status"></span><span id="pend"></span><button id="quit" class="btn ghost" type="button" hidden>Stop server</button></footer>
+  <footer class="status"><span id="msg" role="status"></span><span id="pend"></span><button id="quit" class="btn ghost" type="button" hidden>Stop Server</button></footer>
 </div>
 
 <dialog id="dlg"><form method="dialog" id="dlgform"></form></dialog>
@@ -276,8 +276,8 @@ dialog form{display:grid;gap:10px}
 const $=id=>document.getElementById(id);
 const LIVE=location.protocol.startsWith("http");
 const ROLE={wide:"Ultrawide",tall:"Portrait",laptop:"Laptop"};
-const SORTS=[["app","App order (default)"],["category","Category"],["title","Title A to Z"],["position","Where windows sit now"]];
-const TRIG=[["manual","Only by hand"],["time","On a schedule"],["display","When the monitors change"],["call","When a Teams call starts"]];
+const SORTS=[["app","App Order (Default)"],["category","Category"],["title","Title A to Z"],["position","Where Windows Sit Now"]];
+const TRIG=[["manual","Only When I Click Apply"],["time","On a Schedule"],["display","When the Monitors Change"],["call","When a Teams Call Starts"]];
 const DAYN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DAYORDER=[1,2,3,4,5,6,0];
 const CATS0=[["code","Code"],["browse","Browse"],["comms","Comms"],["other","Other"]];
 // Names people know for the process names the engine uses. Unknown processes show with a capital letter.
@@ -437,7 +437,7 @@ function render(){
   $("sname").textContent=LIVE?(s?s.name:"…"):"Offline snapshot";
   $("sedit").hidden=!(LIVE&&edited(selId));
   $("drybar").hidden=!(LIVE&&serverDry);
-  $("apply").textContent=`${LIVE?verb():"Apply"}${moves?` · ${plural(moves,"move")}`:""}`;$("apply").classList.toggle("dry",LIVE&&serverDry);
+  $("apply").textContent=`${LIVE?verb():"Apply"}${moves?` · ${plural(moves,"Move")}`:""}`;$("apply").classList.toggle("dry",LIVE&&serverDry);
   $("apply").disabled=isBusy||(!LIVE&&!moves);
   $("undo").disabled=isBusy||!hist.length;$("refresh").disabled=isBusy;
   $("undo").title=isBusy?"Wait for the current action to finish.":hist.length?"Undo the last change or "+(LIVE?verb():"Apply")+".":"Nothing to undo yet.";
@@ -483,17 +483,17 @@ function renderInsp(V){
   // Scene first: it is what Apply acts on.
   if(LIVE&&s){
     const t=s.trigger||(s.trigger={type:"manual",days:[1,2,3,4,5],time:"09:00"}),isSaved=!!saved(selId),ed=edited(selId);
-    const why={save:s.builtIn?"Built-in scenes do not change. Use Save as new.":isSaved&&!ed?"No changes to save.":"",
+    const why={save:s.builtIn?"Built-in scenes do not change. Use Save As New.":isSaved&&!ed?"No changes to save.":"",
       revert:!isSaved?"Not saved yet, so nothing to revert to.":!ed?"No changes to revert.":"",del:s.builtIn?"Built-in scenes cannot be deleted.":""};
     $("scenebox").innerHTML=`<h2>Scene</h2>
     <div class="field stack"><label for="sceneName">Name</label><input type="text" id="sceneName" name="sceneName" autocomplete="off" value="${esc(s.name)}" ${s.builtIn?"disabled title=\"Built-in scenes keep their name.\"":""} maxlength="40"></div>
     <fieldset class="trig"><legend>Applies itself</legend>${TRIG.map(([v,l])=>`<label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}>${l}</label>`).join("")}
       ${t.type==="time"?`<div class="days" role="group" aria-label="Days">${DAYORDER.map(d=>`<button type="button" data-day="${d}" aria-pressed="${(t.days||[]).includes(d)}" aria-label="${DAYN[d]}">${DAYN[d][0]}</button>`).join("")}</div>
       <div class="at"><label for="time">At</label><input type="time" id="time" value="${esc(t.time||"09:00")}"></div>`:""}
-      ${t.type==="call"?`<label class="at"><input type="checkbox" id="back" ${t.back?"checked":""}>When the call ends, go back to the scene before</label>`:""}</fieldset>
+      ${t.type==="call"?`<label class="at"><input type="checkbox" id="back" ${t.back?"checked":""}>When the Call Ends, Go Back to the Scene Before</label>`:""}</fieldset>
     <p class="note">${t.type==="manual"?"It changes your windows only when you apply it.":"The tray agent applies it"+(t.type==="time"?" at that time.":t.type==="call"?" when Teams starts using the microphone.":" when a monitor is added or removed.")+" Save to turn it on."}</p>
     <div class="acts"><button type="button" class="btn pri" id="save" ${why.save?`disabled title="${why.save}" aria-describedby="whyoff"`:""}>Save</button>
-      <button type="button" class="btn" id="saveas">Save as new</button>
+      <button type="button" class="btn" id="saveas">Save As New</button>
       <button type="button" class="btn" id="revert" ${why.revert?`disabled title="${why.revert}" aria-describedby="whyoff"`:""}>Revert</button>
       <button type="button" class="btn danger" id="del" ${why.del?`disabled title="${why.del}" aria-describedby="whyoff"`:""}>Delete</button></div>
     <p class="note" id="smsg" role="status">${esc(sceneMsg)}</p>
@@ -517,8 +517,8 @@ function renderInsp(V){
     if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,s.grids[pin.mon].c)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,s.grids[pin.mon].r)}</div>
       <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" name="match" autocomplete="off" placeholder="Any ${esc(appName(w.app))} window…" spellcheck="false"></div>`;
     const mm=LIVE?snap.monitors.filter(q=>q.role&&s.grids[q.role]):snap.monitors;
-    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto"><option value="">Choose a cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(gg.c*gg.r).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
-    if(pin)wh+=`<button type="button" class="btn" id="unpin">Unpin. Let it fill.</button>`;
+    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto"><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(gg.c*gg.r).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
+    if(pin)wh+=`<button type="button" class="btn" id="unpin">Unpin and Let It Fill</button>`;
     $("win").innerHTML=wh+"</div>"}
 }
 
