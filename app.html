@@ -126,7 +126,7 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
   border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);background:color-mix(in srgb,var(--cat) var(--tmix),var(--panel));color:var(--ink);font-size:12px;line-height:1.2;cursor:grab;touch-action:none;contain:layout paint}
 .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
 .tile b{font:600 11px var(--f);padding:1px 5px;border-radius:2px;background:var(--cat);color:var(--panel);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;max-width:100%}
+.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:normal;overflow-wrap:normal;max-width:100%}
 .tile .pinmark{position:absolute;top:3px;right:3px;width:12px;height:12px;color:var(--cat)}
 .tile.pin{border-width:2px;border-color:var(--cat);background:color-mix(in srgb,var(--cat) 34%,var(--panel))}
 .tile.stay{background:transparent;border-style:dashed;border-color:color-mix(in srgb,var(--muted) 60%,transparent);color:var(--muted);z-index:0}
@@ -137,12 +137,17 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .tile:focus-visible{outline:2px solid var(--select);outline-offset:-2px;z-index:5}
 .tile.dim{opacity:.22}
 .tile.drag{cursor:grabbing;z-index:9;opacity:.92;box-shadow:0 12px 26px -10px color-mix(in srgb,var(--ink) 60%,transparent)}
+#drop span{position:absolute;left:50%;top:0;transform:translate(-50%,-50%);padding:2px 8px;border-radius:999px;background:var(--select);color:var(--select-ink);font:600 12px var(--f);white-space:nowrap}
+.tile.swap{outline:2px dashed var(--select);outline-offset:-3px}
 #drop{position:absolute;border:2px solid var(--select);background:color-mix(in srgb,var(--select) 18%,transparent);border-radius:3px;pointer-events:none;display:none;z-index:8}
 @media (prefers-reduced-motion:no-preference){
   .tile{transition:left .22s cubic-bezier(.2,.7,.2,1),top .22s cubic-bezier(.2,.7,.2,1),width .22s,height .22s,opacity .15s}
   .tile.drag,.tile.now,.still .tile{transition:none}
   #drop{transition:left .08s,top .08s,width .08s,height .08s}}
 .hint,.over{font-size:12px;color:var(--muted);margin:0}
+.keys{font-size:12px;color:var(--muted)}
+.keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
+.keys ul{margin:4px 0 0;padding-left:18px}
 .over b{color:var(--ink);font-weight:600}
 .over.warn{background:var(--hi-bg);border-left:3px solid var(--hi);padding:8px 10px;border-radius:4px;color:var(--ink)}
 
@@ -199,23 +204,27 @@ dialog form{display:grid;gap:10px}
 
 /* Zones: a dashed rectangle over the cells it fills; its label opens it in the inspector. */
 .tile.zfill{z-index:2}
-.zone{position:absolute;border:2px dashed var(--cat);border-radius:4px;background:color-mix(in srgb,var(--cat) 8%,transparent);pointer-events:none;z-index:3}
+.zone{position:absolute;border:2px dashed var(--cat);border-radius:4px;background:color-mix(in srgb,var(--cat) 16%,transparent);pointer-events:none;z-index:3}
 .zone.sel{border-style:solid;box-shadow:0 0 0 3px color-mix(in srgb,var(--cat) 35%,transparent)}
-.zone button{pointer-events:auto;position:absolute;left:4px;bottom:4px;border:0;border-radius:3px;padding:2px 7px;background:var(--cat);color:var(--panel);font:600 11px var(--f);cursor:pointer;max-width:calc(100% - 8px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zone button{pointer-events:auto;position:absolute;left:8px;top:100%;transform:translateY(-50%);border:0;border-radius:3px;padding:2px 7px;background:var(--cat);color:var(--panel);font:600 11px var(--f);cursor:pointer;max-width:calc(100% - 8px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #zdraw{position:absolute;display:none;border:2px dashed var(--select);background:color-mix(in srgb,var(--select) 16%,transparent);border-radius:4px;pointer-events:none;z-index:8}
-#zdraw span{position:absolute;left:4px;top:4px;padding:1px 6px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px var(--f)}
+#zdraw span{position:absolute;left:8px;top:100%;transform:translateY(-50%);white-space:nowrap;padding:1px 6px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px var(--f)}
 /* The bay: every window without a cell, by category. It stays where it is on Apply. */
-.bay{display:grid;gap:8px;align-content:start;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);height:clamp(112px,20vh,210px);overflow:auto}
-.bay.drop{border-color:var(--select);box-shadow:0 0 0 2px var(--select)}
+.bay{position:sticky;bottom:0;z-index:6;display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel));height:clamp(104px,18vh,200px);overflow:auto;box-shadow:0 -10px 18px -14px color-mix(in srgb,var(--ink) 40%,transparent),0 23px 0 var(--canvas)}
+.bay.drop{border:2px solid var(--select);background:color-mix(in srgb,var(--select) 12%,var(--panel))}
+.bay.drop #baynote{visibility:hidden}
+.bay.drop::after{content:"Drop to keep this window where it is";position:absolute;right:12px;top:8px;font:600 12px var(--f);color:var(--ink)}
+#baymore{position:sticky;bottom:-8px;margin:0 -12px -8px;padding:4px 12px;text-align:center;font-size:12px;color:var(--ink);background:linear-gradient(transparent,color-mix(in srgb,var(--canvas) 80%,var(--panel)) 40%)}
 .bay h2{margin:0;justify-content:flex-start;gap:10px}
 .bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
 .bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px 12px}
 .bgrp h3{display:flex;gap:6px;align-items:center;margin:0 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .bgrp ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
-.chip{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:color-mix(in srgb,var(--cat) 10%,var(--panel));cursor:grab;touch-action:none;font-size:12px}
+.chip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;touch-action:none;font-size:12px}
 .chip b{font-weight:600}
 .chip span{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chip small{grid-column:1/-1;font-size:11px;color:var(--muted)}
+.chip small{font-size:11px;font-weight:600;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip small.warn{border-color:var(--hi);background:var(--hi-bg);color:var(--ink)}
 .chip.sel{outline:3px solid var(--ink);outline-offset:-1px}
 .chip.drag{position:relative;z-index:20;cursor:grabbing;box-shadow:0 12px 26px -10px color-mix(in srgb,var(--ink) 60%,transparent)}
 .bay .empty{color:var(--muted);font-size:12px;margin:0}
@@ -262,9 +271,13 @@ dialog form{display:grid;gap:10px}
   </aside>
 
   <main class="canvas">
-    <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"></div><div id="zdraw"><span></span></div></div>
-    <section id="bay" class="bay" hidden aria-labelledby="bayh"><h2 id="bayh">Bay <span class="note" id="baynote"></span></h2><div id="bgrps" class="bgrps"></div></section>
+    <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"><span></span></div><div id="zdraw"><span></span></div></div>
     <p id="hint" class="hint"></p>
+    <details id="keys" class="keys"><summary>Keyboard</summary><ul>
+      <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
+      <li>Delete unpins it. K keeps it where it is (off the board).</li>
+      <li>Enter on a window that stays put opens it in the inspector, where Move To places it.</li>
+      <li>Draw Zone in the inspector picks a zone's cells with the keyboard.</li></ul></details>
     <p id="over" class="over"></p>
     <section id="results" class="panel" hidden aria-label="Apply results">
       <div class="phead"><b id="sum"></b><button id="closeres" class="btn ghost" type="button">Close</button></div>
@@ -277,6 +290,7 @@ dialog form{display:grid;gap:10px}
       <pre id="cmd"></pre>
       <div class="row"><button id="copy" class="btn" type="button">Copy</button><span class="note" id="cmsg" role="status"></span></div>
     </section>
+    <section id="bay" class="bay" hidden aria-labelledby="bayh"><h2 id="bayh">Windows That Stay Put <span class="note" id="baynote"></span></h2><div id="bgrps" class="bgrps"></div><p id="baymore" hidden></p></section>
     <details id="offline" class="panel" hidden>
       <summary>Load a Snapshot by Hand</summary>
       <p class="note" style="margin:6px 0">Paste the output of <code>tile.ps1 -Json</code>. Then drag windows onto cells and click Apply to get a place file.</p>
@@ -287,8 +301,8 @@ dialog form{display:grid;gap:10px}
 
   <aside class="insp" aria-label="Inspector">
     <section class="isec" id="scenebox" aria-label="Scene"></section>
-    <section class="isec" id="zonebox" aria-label="Zone"></section>
     <section class="isec" aria-labelledby="monh"><h2 id="monh">Monitor</h2><div id="mon"></div></section>
+    <section class="isec" id="zonebox" aria-label="Zone"></section>
     <section class="isec" aria-labelledby="winh"><h2 id="winh">Window</h2><div id="win"></div></section>
   </aside>
 
@@ -409,13 +423,14 @@ function layout(){
   const M=snap.monitors,stg=$("stage"),cv=stg.parentElement;
   stg.classList.add("still");requestAnimationFrame(()=>requestAnimationFrame(()=>stg.classList.remove("still")));
   const x0=Math.min(...M.map(m=>m.x)),y0=Math.min(...M.map(m=>m.y)),x1=Math.max(...M.map(m=>m.x+m.w)),y1=Math.max(...M.map(m=>m.y+m.h));
-  const narrow=matchMedia("(max-width:760px)").matches,text=$("hint").offsetHeight+$("over").offsetHeight+$("bay").offsetHeight+48;
-  const top=22,W=cv.clientWidth-36,H=Math.max(240,narrow?innerHeight*.6:cv.clientHeight-44-text),S=Math.min(W/(x1-x0),(H-top)/(y1-y0));
+  // When the text below the board does not fit, the board still fits above the sticky list; the text scrolls under it.
+  const narrow=matchMedia("(max-width:760px)").matches,text=$("hint").offsetHeight+$("over").offsetHeight+$("keys").offsetHeight+$("bay").offsetHeight+56;
+  const top=22,W=cv.clientWidth-36,H=Math.max(240,narrow?innerHeight*.6:Math.max(cv.clientHeight-44-text,cv.clientHeight-56-$("bay").offsetHeight)),S=Math.min(W/(x1-x0),(H-top)/(y1-y0));
   G={x0,y0:y0-top/S,S};
   stg.style.width=Math.round((x1-x0)*S)+"px";stg.style.height=Math.round((y1-y0)*S+top+4)+"px";
   for(const m of M){Object.assign(m.el.style,{left:(m.x-G.x0)*S+INSET+"px",top:(m.y-G.y0)*S+"px",width:m.w*S-2*INSET+"px",height:m.h*S+"px"});
     Object.assign(m.lab.style,{left:(m.x-G.x0)*S+INSET+"px",top:(m.y-G.y0)*S+"px",maxWidth:Math.max(m.w*S,60)+"px"})}
-  for(const p of document.querySelectorAll(".canvas>p,.canvas>.bay"))p.style.maxWidth=Math.max(stg.offsetWidth,420)+"px";
+  for(const p of document.querySelectorAll(".canvas>p,.canvas>.bay,.canvas>.keys"))p.style.maxWidth=Math.max(stg.offsetWidth,420)+"px";
 }
 // A screen rect on the board; inside a monitor it keeps clear of the monitor's drawn edge.
 function px(r){const m=monAt(r.x+r.w/2,r.y+r.h/2);let L=(r.x-G.x0)*G.S,T=(r.y-G.y0)*G.S,W=r.w*G.S,H=r.h*G.S;
@@ -432,8 +447,12 @@ function view(){
   return v}
 // In the bay: every window the scene gives no cell. Live only, once the engine has answered.
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
-const BAYWHY={"in the bay":"Taken off the board","zone full":"Zone full","no free cell":"No free cell"};
+const BAYWHY={"in the bay":"Kept off the board","zone full":"Zone full","no free cell":"No free cell"};
 const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized":"Not in this scene";
+const bayWarn=x=>x.why==="zone full"||x.why==="no free cell";
+// Cells as columns and rows, not numbers: "3 columns × 2 rows from column 1, row 1".
+function cellsText(slots,g){const b=bbox(slots,g);return `${plural(b.cs,"column")} × ${plural(b.rs,"row")} from column ${b.c+1}, row ${b.r+1}`}
+const sameWin=(b,w)=>b.id===w.id||(b.app===w.app&&b.title===w.title);
 const zoneName=z=>z.app?appName(z.app):catName(z.cat);
 function render(){
   if(!snap)return;
@@ -473,7 +492,7 @@ function render(){
   $("undo").disabled=isBusy||!hist.length;$("refresh").disabled=isBusy;
   $("undo").title=isBusy?"Wait for the current action to finish.":hist.length?"Undo the last change or "+(LIVE?verb():"Apply")+".":"Nothing to undo yet.";
   $("pend").textContent=moves?`${plural(moves,"window")} will move on ${LIVE?verb():"Apply"}`:"The board matches your screen";
-  $("hint").textContent=LIVE?"Drag a window onto a cell to pin it there, or into the bay to keep it where it is. Unpinned windows fill the "+(s&&s.fill?ROLE[s.fill.mon]||"fill monitor":"fill monitor")+" in fill order. Drag across empty cells, or Shift+drag across any, to draw a zone. Keys: arrows move a focused window one cell, Shift+arrows resize it, Delete unpins, B sends it to the bay.":
+  $("hint").textContent=LIVE?"Drag a window onto a cell to pin it, or down to the list below to keep it where it is. To fill a block of cells with one app, use Draw Zone or Shift+drag across the cells.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   overText(V);renderZones();renderBay(V);renderRail();renderInsp(V);
 }
@@ -483,16 +502,21 @@ function renderZones(){
   (s.zones||[]).forEach((z,i)=>{const m=snap.monitors.find(q=>q.role===z.mon),g=m&&s.grids[z.mon];if(!g)return;
     const sl=z.slots.filter(v=>v<g.c*g.r);if(!sl.length)return;const b=bbox(sl,g),e=document.createElement("div");
     e.className=`zone cat-${z.app?catOf(z.app):z.cat}${selZone===i?" sel":""}`;Object.assign(e.style,px(cellRect(m,g,b.c,b.r,b.cs,b.rs)));
-    e.innerHTML=`<button type="button" data-zone="${i}" aria-pressed="${selZone===i}">${esc(zoneName(z))} Zone</button>`;$("stage").appendChild(e)})}
+    const n=prev()?prev().placed.filter(p=>p.zone===i).length:0;
+    e.innerHTML=`<button type="button" data-zone="${i}" aria-pressed="${selZone===i}" aria-label="${esc(zoneName(z))} zone, ${n} of ${sl.length} cells filled. Open in the inspector.">${esc(zoneName(z))} · ${n} of ${sl.length}</button>`;$("stage").appendChild(e)})}
 function renderBay(V){
   const bay=$("bay");if(!LIVE)return;
   const ws=snap.windows.filter(w=>inBay(V[w.id]));
-  $("baynote").textContent=prev()?`${plural(ws.length,"window")} without a cell. They stay where they are on ${verb()}.`:"";
+  $("baynote").textContent=prev()?`${plural(ws.length,"window")} with no cell. ${verb()} leaves them where they are. Drag one onto a cell to place it.`:"";
   const by=new Map(cfg.categories.map(([c])=>[c,[]]));for(const w of ws){const c=catOf(w.app);if(!by.has(c))by.set(c,[]);by.get(c).push(w)}
   $("bgrps").innerHTML=ws.length?[...by].filter(([,l])=>l.length).map(([c,l])=>`<div class="bgrp cat-${c}"><h3><i class="sw"></i>${esc(catName(c))}</h3><ul>${l.map(w=>
-    `<li><button type="button" class="chip cat-${c}${w.id===selWin?" sel":""}" data-bay="${w.id}" aria-label="${esc(appName(w.app))}: ${esc(w.title)}. ${esc(bayWhy(V[w.id]))}. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(appName(w.app))}</b><span>${esc(w.title)}</span><small>${esc(bayWhy(V[w.id]))}</small></button></li>`).join("")}</ul></div>`).join(""):
-    `<p class="empty">Every window has a cell. Drag a window here to keep it where it is.</p>`}
-function where(x){if(inBay(x))return`in the bay (${bayWhy(x).toLowerCase()}), stays where it is`;if(!x.r)return"minimized, stays minimized";if(x.kind==="left")return"no free cell, stays where it is";
+    `<li><button type="button" class="chip cat-${c}${w.id===selWin?" sel":""}" data-bay="${w.id}" aria-label="${esc(appName(w.app))}: ${esc(w.title)}. ${esc(bayWhy(V[w.id]))}. Stays put. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(appName(w.app))}</b><span>${esc(w.title)}</span>${bayWhy(V[w.id])!=="Not in this scene"?`<small class="${bayWarn(V[w.id])?"warn":""}">${esc(bayWhy(V[w.id]))}</small>`:""}</button></li>`).join("")}</ul></div>`).join(""):
+    `<p class="empty">Every window has a cell. Drag a window here to keep it where it is.</p>`;
+  bayMore()}
+// A scroll cue when the list runs past its box.
+function bayMore(){const b=$("bay"),m=$("baymore"),r=b.getBoundingClientRect(),n=[...b.querySelectorAll(".chip")].filter(c=>c.getBoundingClientRect().bottom>r.bottom-24).length;
+  m.hidden=!n;m.textContent=`${n} more below. Scroll the list.`}
+function where(x){if(inBay(x))return`no cell (${bayWhy(x).toLowerCase()}), stays where it is`;if(!x.r)return"minimized, stays minimized";if(x.kind==="left")return"no free cell, stays where it is";
   if(x.kind==="stay")return LIVE?"not in this scene, stays where it is":"where it is now";
   const p=x.p,m=p?snap.monitors.find(m=>m.role===p.mon):monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2);
   const z=p&&p.zone>=0&&LIVE?(scene().zones||[])[p.zone]:null;
@@ -547,7 +571,7 @@ function renderInsp(V){
   else $("scenebox").innerHTML="";
   const z=LIVE&&s&&selZone!==null?(s.zones||[])[selZone]:null;
   if(z){const cnt=prev()?prev().placed.filter(p=>p.zone===selZone).length:0,over=prev()?prev().left.filter(l=>l.why==="zone full").length:0;
-    $("zonebox").innerHTML=`<h2>Zone</h2><p class="note">${esc(ROLE[z.mon])}, cells ${z.slots.map(v=>v+1).join(", ")}. ${plural(cnt,"window")} in it${over?`; ${over} more in the bay`:""}. A pinned window inside it keeps its cell.</p>
+    $("zonebox").innerHTML=`<h2>Zone</h2><p class="note">${esc(ROLE[z.mon])}: ${esc(cellsText(z.slots,s.grids[z.mon]))}. ${plural(cnt,"window")} in it${over?`; ${over} more stay put`:""}. A pinned window inside it keeps its cell.</p>
       <div class="field stack"><label for="zfill">Fill With</label><select id="zfill" name="zfill">${zoneOpts(z.app?"app:"+z.app:"cat:"+z.cat)}</select></div>
       <div class="acts"><button type="button" class="btn" id="zdone">Done</button><button type="button" class="btn danger" id="zdel">Delete Zone</button></div>`}
   else $("zonebox").innerHTML="";
@@ -556,7 +580,8 @@ function renderInsp(V){
     <p class="note">${m.w}×${m.h} pixels.</p>`;
   if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
     if(s&&s.fill&&s.fill.mon===m.role)h+=`<div class="field stack"><label for="sort">Fill order</label><select id="sort">${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note">Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.</p></div>`;
-    else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`}
+    else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`;
+    if(s)h+=`<button type="button" class="btn" id="zadd">Draw Zone</button><p class="note">A zone fills a block of cells with one app or category. Shift+drag across cells does the same.</p>`}
   else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>`;
   $("mon").innerHTML=h;
   const w=selWin&&winById(selWin),x=w&&V[w.id];
@@ -565,13 +590,13 @@ function renderInsp(V){
     let wh=`<div class="win cat-${catOf(w.app)}"><div class="field" style="min-height:0"><span style="display:flex;gap:6px;align-items:center;color:var(--ink)"><i class="sw"></i>${esc(appName(w.app))}</span>
       ${LIVE?`<select id="wcat" aria-label="Category of ${esc(appName(w.app))}">${cfg.categories.map(([c,l])=>`<option value="${c}"${c===catOf(w.app)?" selected":""}>${esc(l)}</option>`).join("")}</select>`:""}</div>
       <div class="t">${esc(w.title)}</div>
-      <div class="m">${inBay(x)?`In the bay: ${esc(bayWhy(x).toLowerCase())}. It stays where it is. Pick a cell to place it.`:!LIVE?esc(where(x)):pin?"Pinned · "+esc(where(x)):x.kind==="fill"?`Fills ${esc(where(x))}`:esc(where(x)[0].toUpperCase()+where(x).slice(1))}.</div>`;
+      <div class="m">${inBay(x)?`No cell: ${esc(bayWhy(x).toLowerCase())}. It stays where it is. Pick a cell below to place it.`:!LIVE?esc(where(x)):pin?"Pinned · "+esc(where(x)):x.kind==="fill"?`Fills ${esc(where(x))}`:esc(where(x)[0].toUpperCase()+where(x).slice(1))}.</div>`;
     if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,s.grids[pin.mon].c)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,s.grids[pin.mon].r)}</div>
       <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" name="match" autocomplete="off" placeholder="Any ${esc(appName(w.app))} window…" spellcheck="false"></div>`;
     const mm=LIVE?snap.monitors.filter(q=>q.role&&s.grids[q.role]):snap.monitors;
     wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto"><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(gg.c*gg.r).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
     if(pin)wh+=`<button type="button" class="btn" id="unpin">Unpin and Let It Fill</button>`;
-    if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay">Send to Bay</button>`;
+    if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay">Keep Where It Is</button>`;
     $("win").innerHTML=wh+"</div>"}
 }
 
@@ -596,34 +621,54 @@ function pinWin(id,mon,slot,cs=1,rs=1){
   edit(x=>{sl=pinEdit(x,id,mon,slot,cs,rs)},`Pinned ${w.title} to ${monName(mon)} ${cs*rs>1?"cells":"cell"} ${(r0*g.c+c0)+1}${cs*rs>1?"+":""}.`);
 }
 // Pin a window in scene x: it leaves the bay, and any pin on its new cells (or that held it) goes.
-function pinEdit(x,id,mon,slot,cs=1,rs=1){
+// The pin that holds a window now, as an object in scene x, so later edits in the same change do not shift it.
+function pinNow(x,id){const P=prev(),cur=P&&P.placed.find(p=>p.id===id);return cur&&cur.pin>=0?x.pins[cur.pin]:null}
+function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id)){
   const w=winById(id),g=x.grids[mon.role];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
   const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),slots=[];
   for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*g.c+c);
-  const P=prev(),cur=P&&P.placed.find(p=>p.id===id),grab=cur&&cur.pin>=0?x.pins[cur.pin]:null,match=grab?grab.match||"":matchFor(w),cells=new Set(slots);
+  const match=grab?grab.match||"":w.min?w.title:matchFor(w),cells=new Set(slots);
   const covers=q=>{const qs=q.slots.filter(v=>v<g.c*g.r);return q.mon===mon.role&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
   x.pins=x.pins.filter(q=>q!==grab&&!(q.app===w.app&&(q.match||"")===match)&&!covers(q));
   x.pins.unshift({app:w.app,match,mon:mon.role,slots});
-  x.bay=(x.bay||[]).filter(b=>!(b.app===w.app&&b.title===w.title));if(!x.bay.length)delete x.bay;
+  x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));if(!x.bay.length)delete x.bay;
   return slots}
 // Into the bay: its pin goes, and the scene keeps it where it is.
-function bayEdit(x,id){const w=winById(id),P=prev(),cur=P&&P.placed.find(p=>p.id===id);
-  if(cur&&cur.pin>=0)x.pins.splice(cur.pin,1);
-  x.bay=(x.bay||[]).filter(b=>!(b.app===w.app&&b.title===w.title));x.bay.push({app:w.app,title:w.title})}
+function bayEdit(x,id,grab=pinNow(x,id)){const w=winById(id);
+  if(grab)x.pins=x.pins.filter(q=>q!==grab);
+  x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));x.bay.push({id:w.id,app:w.app,title:w.title})}
+// A drops on B's cell. From the list below, B goes there; from a cell, the two trade cells. One edit.
+function swapInto(aId,bId,mon,slot,fromBay){
+  const P=prev(),pa=P.placed.find(p=>p.id===aId),A=winById(aId),B=winById(bId),s=scene(),gA=pinNow(s,aId),gB=pinNow(s,bId);
+  curMon=mon;selWin=aId;optim={id:aId,r:cellRect(mon,s.grids[mon.role],slot%s.grids[mon.role].c,Math.floor(slot/s.grids[mon.role].c),1,1)};
+  return edit(x=>{if(fromBay)bayEdit(x,bId,gB);else pinEdit(x,bId,snap.monitors.find(q=>q.role===pa.mon),pa.slots[0]-1,1,1,gB);
+    pinEdit(x,aId,mon,slot,1,1,gA)},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${appName(A.app)} and ${appName(B.app)}.`)}
+// The window a one-cell drop lands on, if the move would swap.
+function swapTarget(d,t){const P=LIVE&&prev();if(!P||!t||t.cs!==1||t.rs!==1)return null;const pa=P.placed.find(p=>p.id===d.id);
+  const occ=P.placed.find(p=>p.id!==d.id&&p.mon===t.m.role&&p.slots.length===1&&p.slots[0]===t.slot+1);
+  return occ&&(d.fromBay||(pa&&pa.slots.length===1))?occ:null}
 function unplace(id){const w=winById(id);if(selWin===id)optim=null;
-  edit(x=>bayEdit(x,id),`${appName(w.app)}: ${w.title} is in the bay. It stays where it is on ${verb()}.`)}
+  edit(x=>bayEdit(x,id),`${appName(w.app)}: ${w.title} is off the board. ${verb()} leaves it where it is.`)}
 // Zones: a rectangle of cells, filled with one app's or category's windows.
 function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort((a,b)=>appName(a).localeCompare(appName(b)));
   return `<optgroup label="Category">${cfg.categories.map(([c,l])=>`<option value="cat:${c}"${cur==="cat:"+c?" selected":""}>${esc(l)}</option>`).join("")}</optgroup><optgroup label="App">${apps.map(a=>`<option value="app:${esc(a)}"${cur==="app:"+a?" selected":""}>${esc(appName(a))}</option>`).join("")}</optgroup>`}
 const zoneFill=v=>v.startsWith("app:")?{app:v.slice(4)}:{cat:v.slice(4)};
+async function drawZoneDialog(){const m=curMon,g=gridOf(m);if(!g)return;
+  const cellOpts=sel=>[...Array(g.c*g.r).keys()].map(i=>`<option value="${i}"${i===sel?" selected":""}>Column ${i%g.c+1}, Row ${Math.floor(i/g.c)+1}</option>`).join("");
+  const f=await ask(`Draw a Zone on the ${ROLE[m.role]}`,`<p class="note">Pick two corner cells. The zone fills with these windows in fill order; a pin inside it keeps its cell; windows that do not fit stay put.</p>
+    <label class="field stack"><span>From</span><select name="za">${cellOpts(0)}</select></label><label class="field stack"><span>To</span><select name="zb">${cellOpts(g.c*g.r-1)}</select></label>
+    <label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts("cat:code")}</select></label>`,"Add Zone");
+  if(!f)return;const a=+f.za.value,b=+f.zb.value;addZone(m,g,a%g.c,Math.floor(a/g.c),b%g.c,Math.floor(b/g.c),zoneFill(f.zf.value))}
+function addZone(m,g,c0,r0,c1,r1,fill){const a=Math.min(c0,c1),b=Math.min(r0,r1),cs=Math.abs(c1-c0)+1,rs=Math.abs(r1-r0)+1,slots=[];
+  for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*g.c+c);
+  return edit(x=>{x.zones=(x.zones||[]).filter(z=>!(z.mon===m.role&&z.slots.some(v=>slots.includes(v))));x.zones.push({mon:m.role,slots,...fill});selZone=x.zones.length-1},
+    `Added a ${fill.app?appName(fill.app):catName(fill.cat)} zone on the ${ROLE[m.role]}: ${cellsText(slots,g)}.`)}
 async function newZone(m,g,c0,r0,c1,r1){
   const a=Math.min(c0,c1),b=Math.min(r0,r1),cs=Math.abs(c1-c0)+1,rs=Math.abs(r1-r0)+1,slots=[];
   for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*g.c+c);
   const under=snap.windows.find(w=>{const d=drawn[w.id];return d&&monAt(d.x+d.w/2,d.y+d.h/2)===m&&slots.includes(clamp(Math.floor((d.y+d.h/2-m.y)/(m.h/g.r)),0,g.r-1)*g.c+clamp(Math.floor((d.x+d.w/2-m.x)/(m.w/g.c)),0,g.c-1))});
-  const f=await ask(`New Zone: ${cs} × ${rs} on the ${ROLE[m.role]}`,`<p class="note">The zone fills with these windows in fill order. A pin inside it keeps its cell. Windows that do not fit go to the bay.</p><label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts(under?"app:"+under.app:"cat:code")}</select></label>`,"Add Zone");
-  if(!f)return;const fill=zoneFill(f.zf.value);
-  edit(x=>{x.zones=(x.zones||[]).filter(z=>!(z.mon===m.role&&z.slots.some(v=>slots.includes(v))));x.zones.push({mon:m.role,slots,...fill});selZone=x.zones.length-1},
-    `Added a ${fill.app?appName(fill.app):catName(fill.cat)} zone on the ${ROLE[m.role]}, cells ${slots.map(v=>v+1).join(", ")}.`)}
+  const f=await ask(`New Zone: ${plural(cs,"Column")} × ${plural(rs,"Row")} on the ${ROLE[m.role]}`,`<p class="note">The zone fills with these windows in fill order. A pin inside it keeps its cell. Windows that do not fit stay put.</p><label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts(under?"app:"+under.app:"cat:code")}</select></label>`,"Add Zone");
+  if(!f)return;addZone(m,g,c0,r0,c1,r1,zoneFill(f.zf.value))}
 function setGrid(k,d){const m=curMon;
   if(!LIVE){const g=gridOf(m);g[k]=clamp(g[k]+d,1,k==="c"?8:4);m.el.dataset.g="";render();return}
   edit(s=>{const g=s.grids[m.role],o={...g};g[k]=clamp(g[k]+d,1,k==="c"?8:4);
@@ -652,10 +697,13 @@ function cellAt(x,y){const sr=stage.getBoundingClientRect(),sx=(x-sr.left)/G.S+G
   return g?{m,g,c:clamp(Math.floor((sx-m.x)/(m.w/g.c)),0,g.c-1),r:clamp(Math.floor((sy-m.y)/(m.h/g.r)),0,g.r-1)}:null}
 function frame(){raf=0;
   if(zdraw){const z=zdraw,a=Math.min(z.c0,z.c1),b=Math.min(z.r0,z.r1),cs=Math.abs(z.c1-z.c0)+1,rs=Math.abs(z.r1-z.r0)+1,e=$("zdraw");
-    Object.assign(e.style,px(cellRect(z.m,z.g,a,b,cs,rs)));e.style.display="block";e.firstChild.textContent=`${cs} × ${rs}`;return}
+    Object.assign(e.style,px(cellRect(z.m,z.g,a,b,cs,rs)));e.style.display="block";e.firstChild.textContent=`${plural(cs,"column")} × ${plural(rs,"row")}`;return}
   if(!drag)return;const d=drag;d.el.style.transform=`translate3d(${d.px-d.sx}px,${d.py-d.sy}px,0)`;
   const ob=!d.fromBay&&LIVE&&overBay(d.px,d.py);$("bay").classList.toggle("drop",ob);
-  const t=ob?null:target(d);d.t=t;if(t){Object.assign(dropEl.style,px(t.r));dropEl.style.display="block"}else dropEl.style.display="none"}
+  const t=ob?null:target(d);d.t=t;for(const e of stage.querySelectorAll(".tile.swap"))e.classList.remove("swap");
+  if(t){const occ=swapTarget(d,t);Object.assign(dropEl.style,px(t.r));dropEl.style.display="block";
+    dropEl.firstChild.textContent=occ?`Swap with ${appName(winById(occ.id).app)}`:"Place here";if(occ)els.get(occ.id).classList.add("swap")}
+  else dropEl.style.display="none"}
 stage.addEventListener("pointerdown",ev=>{
   const lab=ev.target.closest(".mlab button,.zone button");if(lab||ev.button!==0||drag||zdraw||isBusy)return;
   const e=ev.target.closest(".tile");
@@ -686,11 +734,11 @@ function endZone(ev){
   // A click: Shift+click sets one corner, then the other.
   if(!z.shift){zanchor=null;selZone=null;render();return}
   if(zanchor&&zanchor.m===z.m){const a=zanchor;zanchor=null;newZone(z.m,z.g,a.c,a.r,z.c0,z.r0);return}
-  zanchor={m:z.m,c:z.c0,r:z.r0};status(`Zone corner at ${monName(z.m)} cell ${z.r0*z.g.c+z.c0+1}. Shift+click the other corner.`)}
+  zanchor={m:z.m,c:z.c0,r:z.r0};status(`Zone corner at ${monName(z.m)} column ${z.c0+1}, row ${z.r0+1}. Shift+click the other corner.`)}
 function endDrag(ev){
   if(zdraw&&ev.pointerId===zdraw.pid)return endZone(ev);
   if(!drag||ev.pointerId!==drag.pid)return;
-  const d=drag;drag=null;if(raf)cancelAnimationFrame(raf);raf=0;dropEl.style.display="none";$("bay").classList.remove("drop");
+  const d=drag;drag=null;if(raf)cancelAnimationFrame(raf);raf=0;dropEl.style.display="none";$("bay").classList.remove("drop");for(const e of stage.querySelectorAll(".tile.swap"))e.classList.remove("swap");
   const moved=Math.abs(d.px-d.sx)+Math.abs(d.py-d.sy)>4;
   d.el.classList.remove("drag");d.el.style.transform="";
   requestAnimationFrame(()=>d.el.classList.remove("now"));
@@ -699,12 +747,8 @@ function endDrag(ev){
   if(!d.fromBay&&LIVE&&overBay(d.px,d.py)){unplace(d.id);return}
   const t=target(d);
   if(!t){render();status("Dropped outside a grid. Nothing changed.");return}
-  // Onto a cell another window fills: the two swap. From the bay, the other window goes to the bay.
-  const P=LIVE&&prev(),pa=P&&P.placed.find(p=>p.id===d.id),occ=P&&t.cs===1&&t.rs===1&&P.placed.find(p=>p.id!==d.id&&p.mon===t.m.role&&p.slots.length===1&&p.slots[0]===t.slot+1);
-  if(occ&&(d.fromBay||(pa&&pa.slots.length===1))){const A=winById(d.id),B=winById(occ.id);curMon=t.m;selWin=d.id;optim={id:d.id,r:t.r};
-    edit(x=>{if(d.fromBay){if(occ.pin>=0)x.pins.splice(occ.pin,1);x.bay=(x.bay||[]).filter(b=>!(b.app===B.app&&b.title===B.title));x.bay.push({app:B.app,title:B.title})}
-      else pinEdit(x,occ.id,snap.monitors.find(q=>q.role===pa.mon),pa.slots[0]-1);
-      pinEdit(x,d.id,t.m,t.slot)},d.fromBay?`${appName(A.app)} takes ${monName(t.m)} cell ${t.slot+1}. ${appName(B.app)} goes to the bay.`:`Swapped ${appName(A.app)} and ${appName(B.app)}.`);return}
+  // Onto a cell another window fills: the two swap.
+  const occ=swapTarget(d,t);if(occ){swapInto(d.id,occ.id,t.m,t.slot,d.fromBay);return}
   // Keep a pinned window's size when it moves within its monitor; a new monitor starts at one cell.
   const keep=!LIVE||d.pmon===t.m.role;
   curMon=t.m;pinWin(d.id,t.m,t.slot,keep?t.cs:1,keep?t.rs:1);
@@ -716,7 +760,7 @@ stage.addEventListener("keydown",ev=>{
   const e=ev.target.closest(".tile");if(!e||isBusy)return;const id=+e.dataset.id;
   if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();selWin=id;render();return}
   if((ev.key==="Delete"||ev.key==="Backspace")&&LIVE){ev.preventDefault();unpin(id);return}
-  if((ev.key==="b"||ev.key==="B")&&LIVE&&prev()){ev.preventDefault();unplace(id);return}
+  if((ev.key==="k"||ev.key==="K")&&LIVE&&prev()){ev.preventDefault();unplace(id);return}
   const k={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];if(!k)return;ev.preventDefault();
   const d=drawn[id];if(!d)return;
   const pp=LIVE&&pinOf(id);let m,g,b;
@@ -812,6 +856,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="zdone"){selZone=null;render()}
   else if(t.id==="zdel"){const i=selZone;selZone=null;edit(x=>{x.zones.splice(i,1);if(!x.zones.length)delete x.zones},"Deleted the zone. Its windows fill as before.")}
   else if(t.id==="tobay")unplace(selWin);
+  else if(t.id==="zadd")drawZoneDialog();
   else if(t.dataset.pick){selId=t.dataset.pick;optim=null;selZone=null;zanchor=null;render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}
   else if(t.dataset.apply){selId=t.dataset.apply;render();if(!prevs[selId])await preview(selId);applyScene()}
   else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
@@ -853,17 +898,19 @@ function setTheme(t){if(!["light","dark"].includes(t))t="system";if(t==="system"
 $("theme").onchange=e=>{setTheme(e.target.value);try{localStorage.setItem("tile-theme",e.target.value)}catch(_){}};
 try{setTheme(localStorage.getItem("tile-theme")||"system")}catch(_){setTheme("system")}
 addEventListener("keydown",ev=>{if(ev.key==="Escape"&&(zdraw||zanchor)){zanchor=null;if(zdraw){try{stage.releasePointerCapture(zdraw.pid)}catch(_){}}return}if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
-let rz=0;addEventListener("resize",()=>{if(snap&&!rz)rz=requestAnimationFrame(()=>{rz=0;layout();render()})});
+// The board's size depends on the text and list below it, so lay out again when they change height.
+let rz=0;const relay=()=>{if(snap&&!rz)rz=requestAnimationFrame(()=>{rz=0;layout();render()})};addEventListener("resize",relay);
+{const ro=new ResizeObserver(relay);for(const id of ["hint","over","keys","bay"])ro.observe($(id))}
 
 /* ---------- Offline ---------- */
 function parse(t){const a=t.indexOf("{");if(a<0)throw new Error("no JSON object found");return JSON.parse(t.slice(a,t.lastIndexOf("}")+1))}
 $("load").onclick=()=>{try{setSnap(parse($("paste").value));$("lmsg").textContent="Loaded."}catch(e){$("lmsg").textContent="Could not load: "+e.message}};
 $("sample").onclick=()=>{setSnap(SAMPLE);$("lmsg").textContent="Sample loaded."};
 
-if(LIVE){$("refresh").hidden=false;$("quit").hidden=false;$("editcats").hidden=false;$("bay").hidden=false;status("Reading your windows…");
+if(LIVE){$("refresh").hidden=false;$("quit").hidden=false;$("editcats").hidden=false;$("bay").hidden=false;$("bay").addEventListener("scroll",bayMore);status("Reading your windows…");
   loadAll().then(()=>{if(!snap)return;status(`${scene().name} is selected. Drag windows onto cells, or ${verb().toLowerCase()} a scene from the rail.`);
     if(serverDry&&location.hash==="#selftest-undo")selftestUndo();if(serverDry&&location.hash==="#selftest-scenes")selftestScenes()})}
-else{$("offline").hidden=false;$("offline").open=true;setSnap(SAMPLE);status("Offline. A sample desktop is loaded.")}
+else{$("keys").hidden=true;$("offline").hidden=false;$("offline").open=true;setSnap(SAMPLE);status("Offline. A sample desktop is loaded.")}
 
 /* ---------- Self-tests: run by test/run.ps1 against serve.ps1 -From (always a dry run) ---------- */
 function dump(out){const pre=document.createElement("pre");pre.id="selftest";pre.textContent=JSON.stringify(out);document.body.appendChild(pre)}
@@ -894,6 +941,24 @@ async function selftestScenes(){
   if(zs){selId=zs.id;await preview(zs.id);const id=prev().placed.find(p=>p.zone>=0).id;unplace(id);await preview(zs.id);
     const l=prev().left.find(x=>x.id===id);out.bay={id,why:l&&l.why,chip:!!document.querySelector(`[data-bay="${id}"]`),kept:(scene().bay||[]).length};
     pinWin(id,snap.monitors.find(m=>m.role==="wide"),0);await preview(zs.id);const w=winById(id);out.bay.back=!prev().left.some(x=>x.id===id)&&!(scene().bay||[]).some(b=>b.app===w.app&&b.title===w.title)}
+  if(zs){
+    // Swaps: two pinned windows, then a pinned and a filled one. Each trades cells in one edit.
+    const wide=snap.monitors.find(m=>m.role==="wide"),cell=id=>{const p=prev().placed.find(q=>q.id===id);return p?`${p.mon}:${p.slots.join("+")}`:"none"};
+    const two=async(a,b)=>{const ca=cell(a),cb=cell(b),pb=prev().placed.find(q=>q.id===b),n=hist.length;swapInto(a,b,wide,pb.slots[0]-1,false);await preview(zs.id);
+      return{a:cell(a)===cb,b:cell(b)===ca,oneEdit:hist.length===n+1,pins:scene().pins.length}};
+    selId=zs.id;work[zs.id]=clone(zs);await preview(zs.id);
+    const fills=prev().placed.filter(p=>p.mon==="wide"&&p.pin<0&&p.slots.length===1).map(p=>p.id);
+    pinWin(fills[0],wide,prev().placed.find(q=>q.id===fills[0]).slots[0]-1);await preview(zs.id);
+    pinWin(fills[1],wide,prev().placed.find(q=>q.id===fills[1]).slots[0]-1);await preview(zs.id);
+    out.swapPinned=await two(fills[0],fills[1]);
+    out.swapFilled=await two(fills[0],fills[2]);
+    // A grid resize keeps a zone on its columns and rows.
+    work[zs.id]=clone(zs);await preview(zs.id);curMon=wide;const z0=JSON.stringify(scene().zones.find(z=>z.mon==="wide"&&z.app==="claude").slots);
+    setGrid("c",1);out.remap={before:z0,after:JSON.stringify(scene().zones.find(z=>z.mon==="wide"&&z.app==="claude").slots)};work[zs.id]=clone(zs)}
+  // Stop Server asks first, starting on Cancel; Cancel keeps the server.
+  $("quit").click();await new Promise(r=>setTimeout(r,50));const dl=$("dlg");
+  out.stopAsk={open:dl.open,text:dl.textContent.includes("Stop the Tile Windows server"),cancelFirst:document.activeElement&&document.activeElement.id==="dlgCancel"};
+  $("dlgCancel").click();await new Promise(r=>setTimeout(r,50));out.stopAsk.alive=(await fetch("config",{cache:"no-store"})).ok;
   selId=cfg.scenes[0].id;render();await saveAsNew("Selftest copy");
   out.names=(await (await fetch("config",{cache:"no-store"})).json()).scenes.map(s=>s.name);
   dump(out);

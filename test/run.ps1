@@ -102,6 +102,7 @@ try {
   $c1 = (Invoke-WebRequest -UseBasicParsing "${furl}config").Content
   Check 'config file created on first run, from the starters' ($noFile -and (Test-Path -LiteralPath $fcfg) -and ((ConvertFrom-Json $c1).scenes.id -join ',') -eq 'default,focus,meetings,review')
   # Save a scene with awkward text, read it back byte for byte, then run it through the engine by name.
+  # The fill sorts by title; the minimized 'Claude' (1004) stays minimized, so 'Draft release notes' is first.
   $cfg = ConvertFrom-Json $c1
   $new = ConvertFrom-Json '{"id":"x-1","name":"Late \"night\" — it''s ünïcode","trigger":{"type":"time","days":[1,3],"time":"21:30"},"grids":{"wide":{"c":2,"r":1}},"pins":[{"app":"chrome","match":"It''s a \"quoted\"","mon":"wide","slots":[1]}],"fill":{"mon":"wide","apps":["claude"],"skip":[],"sort":"title"}}'
   $cfg.scenes = @($cfg.scenes) + $new
@@ -112,7 +113,7 @@ try {
   $env:TILE_HOME = Join-Path $fprof '.tile-windows'
   try { $r = (& $tile -Scene 'x-1' -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json } finally { $env:TILE_HOME = $null }
   $p0 = @($r.placed | ? { $_.pin -eq 0 })[0]
-  Check 'a saved scene runs by name through the engine' ($p0.id -eq 1007 -and $p0.x -eq 2048 -and $p0.w -eq 2048 -and @($r.placed | ? { $_.app -eq 'claude' })[0].title -eq 'Claude') ($r | ConvertTo-Json -Compress -Depth 5)
+  Check 'a saved scene runs by name through the engine' ($p0.id -eq 1007 -and $p0.x -eq 2048 -and $p0.w -eq 2048 -and @($r.placed | ? { $_.app -eq 'claude' })[0].title -eq 'Draft release notes' -and -not @($r.placed | ? { $_.id -eq 1004 }).Count) ($r | ConvertTo-Json -Compress -Depth 5)
   Check 'server refuses a config without scenes, and keeps the file' ((Status "${furl}config" '{"scenes":"no"}') -eq 400 -and [IO.File]::ReadAllText($fcfg, $utf8) -ceq $body)
   [void](Post "${furl}config" $c1)
   # A config.json or state.json that does not parse: starters (or an empty log) come back, the bad text
@@ -133,20 +134,45 @@ try {
   [void](Post "${furl}config" $c1)
 
   # Zones and the bay (decision: bay-and-group-zones), through the engine on the fixture. Claude windows in
-  # fill order: 1004 (minimized, sorts first), 1001, 1002 (top row), 1003. Chrome: 1006, 1005 (top row), 1007.
-  function Zr($zones, $pins = '[]', $bay = '[]', $fill = '[]') { (& $tile -Scene "{`"id`":`"z`",`"name`":`"Z`",`"grids`":{`"wide`":{`"c`":5,`"r`":2}},`"pins`":$pins,`"zones`":$zones,`"bay`":$bay,`"fill`":{`"mon`":`"wide`",`"apps`":$fill,`"skip`":[],`"sort`":`"app`"}}" -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json }
+  # fill order: 1001, 1002 (top row), 1003; 1004 is minimized and stays put. Chrome: 1006, 1005 (top row), 1007.
+  function Zr($zones, $pins = '[]', $bay = '[]', $fill = '[]', $skip = '[]', $grids = '{"wide":{"c":5,"r":2}}') { (& $tile -Scene "{`"id`":`"z`",`"name`":`"Z`",`"grids`":$grids,`"pins`":$pins,`"zones`":$zones,`"bay`":$bay,`"fill`":{`"mon`":`"wide`",`"apps`":$fill,`"skip`":$skip,`"sort`":`"app`"}}" -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json }
   function Zp($r) { (@($r.placed) | Sort-Object { $_.slots[0] } | % { "$($_.id)@$($_.slots -join '+')" }) -join ' ' }
   function Zl($r, $why) { (@($r.left) | ? { $_.why -eq $why } | % { $_.id } | Sort-Object) -join ',' }
   $z1 = Zr '[{"mon":"wide","slots":[0,1,5,6],"app":"claude"}]'
-  Check 'zone fills its cells with its app in fill order' ((Zp $z1) -eq '1004@1 1001@2 1002@6 1003@7' -and @($z1.placed | ? { $_.zone -ne 0 }).Count -eq 0) (Zp $z1)
+  Check 'zone fills its cells with its app in fill order' ((Zp $z1) -eq '1001@1 1002@2 1003@6' -and @($z1.placed | ? { $_.zone -ne 0 }).Count -eq 0) (Zp $z1)
   $z2 = Zr '[{"mon":"wide","slots":[0,5],"app":"claude"}]'
-  Check 'zone overflow goes to the bay' ((Zp $z2) -eq '1004@1 1001@6' -and (Zl $z2 'zone full') -eq '1002,1003') "$(Zp $z2) | $(Zl $z2 'zone full')"
+  Check 'zone overflow goes to the bay' ((Zp $z2) -eq '1001@1 1002@6' -and (Zl $z2 'zone full') -eq '1003') "$(Zp $z2) | $(Zl $z2 'zone full')"
   $z3 = Zr '[{"mon":"wide","slots":[0,1,5,6],"app":"claude"}]' '[{"app":"chrome","match":"Pull","mon":"wide","slots":[1]}]'
-  Check 'a pin inside a zone keeps its cell; the zone fills the rest' ((Zp $z3) -eq '1004@1 1005@2 1001@6 1002@7' -and @($z3.placed | ? { $_.id -eq 1005 })[0].pin -eq 0 -and (Zl $z3 'zone full') -eq '1003') "$(Zp $z3) | $(Zl $z3 'zone full')"
+  Check 'a pin inside a zone keeps its cell; the zone fills the rest' ((Zp $z3) -eq '1001@1 1005@2 1002@6 1003@7' -and @($z3.placed | ? { $_.id -eq 1005 })[0].pin -eq 0 -and -not (Zl $z3 'zone full')) "$(Zp $z3) | $(Zl $z3 'zone full')"
   $z4 = Zr '[{"mon":"wide","slots":[2,3],"cat":"browse"}]'
   Check 'a category zone fills with that category' ((Zp $z4) -eq '1006@3 1005@4' -and (Zl $z4 'zone full') -eq '1007') "$(Zp $z4) | $(Zl $z4 'zone full')"
   $z5 = Zr '[]' '[]' '[{"app":"WindowsTerminal","title":"pwsh - tiler"}]' '["*"]'
   Check 'a window in the bay keeps no cell, and fill skips it' (-not @($z5.placed | ? { $_.id -eq 1008 }).Count -and (Zl $z5 'in the bay') -eq '1008' -and @($z5.placed).Count -eq 10) (Zl $z5 'in the bay')
+  # Pins on every monitor beat every zone: a portrait zone runs first but cannot take the window the ultrawide pins.
+  $z6 = Zr '[{"mon":"tall","slots":[0,1],"cat":"browse"}]' '[{"app":"chrome","match":"Pull","mon":"wide","slots":[0]}]' '[]' '[]' '[]' '{"tall":{"c":1,"r":2},"wide":{"c":5,"r":2}}'
+  $tallIds = (@($z6.placed | ? { $_.mon -eq 'tall' } | % { $_.id } | Sort-Object)) -join ','
+  Check 'a pin on one monitor beats a zone on another' (@($z6.placed | ? { $_.id -eq 1005 -and $_.mon -eq 'wide' }).Count -eq 1 -and $tallIds -eq '1006,1007') "$(Zp $z6)"
+  # A category zone leaves out the fill's skipped apps; an app zone names its app, so it does not.
+  $z7 = Zr '[{"mon":"wide","slots":[0,1],"cat":"comms"}]' '[]' '[]' '["*"]' '["ms-teams"]'
+  Check 'a category zone leaves out skipped apps' (@($z7.placed | ? { $_.zone -eq 0 } | % { $_.id }) -join ',' -eq '1013' -and -not @($z7.placed | ? { $_.id -eq 1012 }).Count) "$(Zp $z7)"
+  # Minimized windows stay minimized: no zone or fill takes them; a pin that names one by title does.
+  $z8 = Zr '[{"mon":"wide","slots":[0,1,2,3,4,5,6,7,8,9],"app":"claude"}]' '[]' '[]' '["*"]'
+  $z9 = Zr '[]' '[{"app":"claude","match":"Claude","mon":"wide","slots":[9]}]'
+  Check 'a minimized window stays minimized unless a pin names it' (-not @($z8.placed | ? { $_.id -eq 1004 }).Count -and @($z9.placed | ? { $_.id -eq 1004 -and $_.pin -eq 0 }).Count -eq 1) "$(Zp $z8) | $(Zp $z9)"
+  # Held windows: by handle first (a changed title still holds), else by title text, one window per entry.
+  $zA = Zr '[]' '[]' '[{"id":1009,"app":"WindowsTerminal","title":"an old title"}]' '["*"]'
+  $zB = Zr '[]' '[]' '[{"app":"WindowsTerminal","title":"pwsh"},{"app":"WindowsTerminal","title":"pwsh"}]' '["*"]'
+  Check 'a held window is found by handle, else by title, one each' ((Zl $zA 'in the bay') -eq '1009' -and (Zl $zB 'in the bay') -eq '1008,1009') "$(Zl $zA 'in the bay') | $(Zl $zB 'in the bay')"
+  # A held window never moves, even under a pin or the fill.
+  $zC = Zr '[]' '[{"app":"chrome","match":"Pull","mon":"wide","slots":[0]}]' '[{"id":1005,"app":"chrome","title":"Pull request 212 - Example"}]' '["*"]'
+  Check 'a held window never moves, even under a pin or the fill' (-not @($zC.placed | ? { $_.id -eq 1005 }).Count -and (Zl $zC 'in the bay') -eq '1005' -and @($zC.missing | ? { $_.pin -eq 0 }).Count -eq 1) "$(Zp $zC)"
+  # A window a full zone turns away stays put: the fill does not take it, and no window is both placed and left.
+  $zE = Zr '[{"mon":"tall","slots":[0],"cat":"browse"}]' '[]' '[]' '["*"]' '[]' '{"tall":{"c":1,"r":2},"wide":{"c":8,"r":2}}'
+  $both = @($zE.left | ? { @($zE.placed | % { $_.id }) -contains $_.id })
+  Check 'a window a full zone turns away stays put, and is not also placed' ((Zl $zE 'zone full') -eq '1006,1007' -and -not $both.Count) "$(Zp $zE) | both: $(@($both | % { $_.id }) -join ',')"
+  # Overlaps: a zone over a zone gets only the cells still free.
+  $zD = Zr '[{"mon":"wide","slots":[0,1,5,6],"app":"claude"},{"mon":"wide","slots":[1,2],"cat":"browse"}]'
+  Check 'a zone over another zone gets only the free cells' ((@($zD.placed | ? { $_.zone -eq 1 } | % { "$($_.id)@$($_.slots -join '+')" }) -join ' ') -eq '1006@3' -and (Zl $zD 'zone full') -eq '1005,1007') "$(Zp $zD)"
   # A zone scene round-trips through config.json and runs by name the same as from its JSON.
   $zt = ConvertFrom-Json '{"id":"zt","name":"Zones","trigger":{"type":"manual"},"grids":{"tall":{"c":1,"r":2},"wide":{"c":5,"r":2}},"pins":[{"app":"chrome","match":"Pull","mon":"wide","slots":[1]}],"zones":[{"mon":"wide","slots":[0,1,5,6],"app":"claude"},{"mon":"wide","slots":[2,3,4],"cat":"browse"},{"mon":"tall","slots":[0,1],"cat":"comms"}],"bay":[{"app":"notepad","title":"todo.txt - Notepad"}],"fill":{"mon":"wide","apps":["*"],"skip":[],"sort":"app"}}'
   $zcfg = ConvertFrom-Json $c1; $zcfg.scenes = @($zcfg.scenes) + $zt; $zbody = ConvertTo-Json -Depth 10 -Compress $zcfg
@@ -198,6 +224,12 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $eng = @($zj.placed) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
     $pg = @($ss.drawn.zt) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
     Check 'page preview == engine: a zone scene' ($eng.Count -gt 0 -and ($eng -join ' ') -ceq ($pg -join ' ')) ("engine: $($eng -join ' ') | page: $($pg -join ' ')")
+    $sp = $ss.swapPinned; $sf = $ss.swapFilled
+    Check 'page: two pinned windows swap cells in one edit' ($sp -and $sp.a -and $sp.b -and $sp.oneEdit) ($sp | ConvertTo-Json -Compress)
+    Check 'page: a pinned and a filled window swap cells in one edit' ($sf -and $sf.a -and $sf.b -and $sf.oneEdit) ($sf | ConvertTo-Json -Compress)
+    Check 'page: a wider grid keeps a zone on its columns and rows' ($ss.remap.before -eq '[0,1,5,6]' -and $ss.remap.after -eq '[0,1,6,7]') ($ss.remap | ConvertTo-Json -Compress)
+    $sa = $ss.stopAsk
+    Check 'page: Stop Server asks first, on Cancel, and Cancel keeps the server' ($sa.open -and $sa.text -and $sa.cancelFirst -and $sa.alive) ($sa | ConvertTo-Json -Compress)
     $bb = $ss.bay
     Check 'page: a window sent to the bay leaves the board, shows in the bay, and comes back when placed' ($bb -and $bb.why -eq 'in the bay' -and $bb.chip -and $bb.kept -eq 2 -and $bb.back) ($bb | ConvertTo-Json -Compress)
     Check 'page cell size rounds like tile.ps1 ([int], to even)' ($ss.cell.w -eq [int](1365 / 2) -and $ss.cell.h -eq [int](1001 / 2)) ($ss.cell | ConvertTo-Json -Compress)
@@ -297,21 +329,23 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $un2 = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`" -Purge"; $u2 = $un2.StandardOutput.ReadToEnd() + $un2.StandardError.ReadToEnd(); $un2.WaitForExit()
   Check 'uninstall -Purge removes the scenes too' ($un2.ExitCode -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $iprof '.tile-windows')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk'))) $u2
 
-  # 10. -Default -DryRun prints the same as main's tile.ps1 (run back to back; windows can change between runs).
-  #     -Default now runs the Default scene from scenes.json, so this also proves the scene engine mirrors it.
-  #     It runs main's whole tree: tile.ps1 reads config.ps1 and scenes.json beside it.
+  # 10. -Default places windows as main's tile.ps1 does, on the fixture (a fixed snapshot, so windows cannot
+  #     change between the two runs). It runs main's whole tree: tile.ps1 reads config.ps1 and scenes.json beside it.
+  #     Minimized windows are left out of the snapshot: scenes now leave them minimized (decision: bay-and-group-zones),
+  #     where main restored and tiled them.
   $ref = if ($env:TILE_TEST_MAIN) { $env:TILE_TEST_MAIN } else { 'main' }
   $zip = Join-Path $tmp 'main.zip'; $mainDir = Join-Path $tmp 'main'
   & git -C $root archive -o $zip $ref 2>$null; if ($LASTEXITCODE) { & git -C $root archive -o $zip "origin/$ref" }
   Expand-Archive -LiteralPath $zip -DestinationPath $mainDir
   $main = Join-Path $mainDir 'tile.ps1'
-  $same = $false
-  for ($k = 0; $k -lt 2 -and -not $same; $k++) {
-    $a = (Child $main -Default -DryRun 2>&1 | % { "$_" }) -join "`n"
-    $b = (Child $tile -Default -DryRun 2>&1 | % { "$_" }) -join "`n"
-    $same = $a -ceq $b
-  }
-  Check '-Default -DryRun unchanged from main' $same
+  $nomin = ConvertFrom-Json ([IO.File]::ReadAllText($fixture, $utf8)); $nomin.windows = @($nomin.windows | ? { -not $_.min })
+  $nominPath = Join-Path $tmp 'fixture-nomin.json'; [IO.File]::WriteAllText($nominPath, (ConvertTo-Json -Depth 5 -Compress $nomin), $utf8)
+  $env:TILE_HOME = Join-Path $tmp 'default-home'
+  try {
+    $a = ((Child $main -Default -From $nominPath -Json) -notmatch '^WARNING:' -join '' | ConvertFrom-Json).placed | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
+    $b = ((Child $tile -Default -From $nominPath -Json) -notmatch '^WARNING:' -join '' | ConvertFrom-Json).placed | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
+  } finally { $env:TILE_HOME = $null }
+  Check '-Default places windows as main does (fixture, no minimized windows)' ($a.Count -gt 0 -and ($a -join ' ') -ceq ($b -join ' ')) "main: $($a -join ' ') | this: $($b -join ' ')"
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {

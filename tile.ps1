@@ -162,21 +162,31 @@ if ($Place -or $PlaceFile) {
   return
 }
 
-$missing = @(); $left = @()
+$missing = @(); $left = @(); $roleState = @{}
 # One grid on one monitor. Pinned windows take their slots; the -Proc apps fill the open
 # slots. Emits text (-DryRun), result objects (-Json), or moves windows.
-function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @()) {
+# A scene runs it once per phase on every monitor ('pins', then 'zones', then 'fill'), so a pin on any
+# monitor beats every zone, and every zone beats the fill. In a scene a minimized window stays where it
+# is (in the bay) unless a pin names it by title. -Proc runs (phase 'all') keep the old single pass.
+function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all') {
+  $scene = $phase -ne 'all'
   $all = @(@($pins.App) + @($fill | ? { $pins.App -notcontains $_ }) | ? { $_ })
+  if (-not $script:roleState.ContainsKey("$role")) { $script:roleState["$role"] = @{ used = @{}; pinned = 0 } }
+  $state = $script:roleState["$role"]; $used = $state.used
+  $up = { -not $scene -or $_.X -gt -20000 }  # not minimized (scenes only)
   $its = @(Ranked $all $skip)
   # Pinned windows: first window of each pinned app (leftmost, then topmost).
-  $placed = @(); $used = @{}
-  foreach ($pn in $pins) {
-    $it = $its | ? { $_.App -eq $pn.App -and (-not $pn.Match -or (Contains $_.Title $pn.Match)) -and -not $placed.Contains($_) } | Sort-Object X, Y | Select-Object -First 1
-    $pn | Add-Member -Force Item $it
-    if (-not $it) { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' }; continue }
-    $placed += $it; $pn.Slots | % { $used[$_] = 1 }
+  $placed = @()
+  if ($phase -in 'all', 'pins') {
+    foreach ($pn in $pins) {
+      $it = $its | ? { $_.App -eq $pn.App -and (-not $pn.Match -or (Contains $_.Title $pn.Match)) -and -not $placed.Contains($_) -and ($pn.Match -or (& $up)) } | Sort-Object X, Y | Select-Object -First 1
+      $pn | Add-Member -Force Item $it
+      if (-not $it) { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' }; continue }
+      $placed += $it; $pn.Slots | % { $used[$_] = 1 }
+    }
+    $state.pinned = $placed.Count
   }
-  $free = @($its | ? { $placed -notcontains $_ -and ($fill -contains $_.App -or ($fill -contains '*' -and $all -notcontains $_.App)) -and $_.Title -ne 'Program Manager' })
+  $free = @($its | ? { $placed -notcontains $_ -and ($fill -contains $_.App -or ($fill -contains '*' -and $all -notcontains $_.App)) -and $_.Title -ne 'Program Manager' -and (& $up) })
 
   # Auto grid sized to fit, unless -Cols/-Rows given.
   $need = $free.Count + $used.Count
@@ -188,17 +198,18 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   $w = [int]($area.W / $Cols); $h = [int]($area.H / $Rows)
 
   # Fill order. app: in -Proc order, then -Order, then current position (top row first, left to right),
-  # so re-running keeps your arrangement. Zones use the same order.
+  # so re-running keeps your arrangement. A zone ranks apps by their place in the fill list.
   $ord = @($order -split '\|' | ? { $_ })
   function OrdIdx($t) { for ($k = 0; $k -lt $ord.Count; $k++) { if (Contains $t $ord[$k]) { return $k } }; $ord.Count }
   function CatIdx($a) { $c = if ($script:cats) { $script:cats.$a }; $i = [array]::IndexOf($script:catOrder, [string]$c); if ($i -lt 0) { $script:catOrder.Count } else { $i } }
+  function FillIdx($a) { for ($k = 0; $k -lt @($fill).Count; $k++) { if (@($fill)[$k] -eq $a -or (@($fill)[$k] -eq '*' -and @($fill) -notcontains $a)) { return $k } }; @($fill).Count }
   $row = { [Math]::Floor(($_.Y - $area.Y + $h / 2) / $h) }
-  $keys = switch ($sort) {
+  function KeysFor($rank) { switch ($sort) {
     'title'    { 'Title', $row, 'X' }
     'position' { $row, 'X' }
-    'category' { { CatIdx $_.App }, 'Rank', { OrdIdx $_.Title }, $row, 'X' }
-    default    { 'Rank', { OrdIdx $_.Title }, $row, 'X' }
-  }
+    'category' { { CatIdx $_.App }, $rank, { OrdIdx $_.Title }, $row, 'X' }
+    default    { $rank, { OrdIdx $_.Title }, $row, 'X' }
+  } }
 
   function Put($it, $slots, $pin, $zone = -1) {
     $cs = $slots | % { $_ % $Cols }; $rs = $slots | % { [Math]::Floor($_ / $Cols) }
@@ -214,25 +225,31 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
     if ($DryRun) { "{0,-9} slots {1,-6} x={2} y={3} {4}x{5}  {6}" -f $it.App, (($slots | % { $_ + 1 }) -join '+'), $x, $y, $ww, $hh, $it.Title; return }
     $null = Move-Win $it.H $x $y $ww $hh
   }
-  foreach ($pn in $pins) { if ($pn.Item) { Put $pn.Item $pn.Slots $pn.Index } }
+  if ($phase -in 'all', 'pins') { foreach ($pn in $pins) { if ($pn.Item) { Put $pn.Item $pn.Slots $pn.Index } } }
 
-  # Zones: each takes its cells (pins already won theirs) and fills them with its app's or category's
-  # windows in fill order, row by row. Windows that do not fit go to the bay.
-  foreach ($z in $zones) {
-    $cand = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.Title -ne 'Program Manager' -and $(if ($z.App) { $_.App -eq $z.App } else { $(if ($script:cats -and $script:cats.($_.App)) { [string]$script:cats.($_.App) } else { 'other' }) -eq $z.Cat }) } | Sort-Object $keys)
-    $zc = @($z.Slots | Sort-Object | ? { -not $used.ContainsKey($_) }); $z.Slots | % { $used[$_] = 1 }
-    $k = [Math]::Min($cand.Count, $zc.Count)
-    for ($i = 0; $i -lt $k; $i++) { Put $cand[$i] @($zc[$i]) (-1) $z.Index }
-    foreach ($it in ($cand | Select-Object -Skip $k)) { $script:claimed["$($it.H)"] = 1; $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = 'zone full' } }
+  # Zones: each takes its cells (pins on every monitor already won theirs) and fills them with its app's
+  # or category's windows in fill order, row by row. A category zone leaves out skipped apps, as the fill
+  # does for '*'. Windows that do not fit go to the bay.
+  if ($phase -eq 'zones') {
+    $zkeys = KeysFor { FillIdx $_.App }
+    foreach ($z in $zones) {
+      $cand = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.Title -ne 'Program Manager' -and (& $up) -and $(if ($z.App) { $_.App -eq $z.App } else { $a = $_.App; -not ($skip | ? { $a -like $_ }) -and $(if ($script:cats -and $script:cats.$a) { [string]$script:cats.$a } else { 'other' }) -eq $z.Cat }) } | Sort-Object $zkeys)
+      $zc = @($z.Slots | Sort-Object | ? { -not $used.ContainsKey($_) }); $z.Slots | % { $used[$_] = 1 }
+      $k = [Math]::Min($cand.Count, $zc.Count)
+      for ($i = 0; $i -lt $k; $i++) { Put $cand[$i] @($zc[$i]) (-1) $z.Index }
+      foreach ($it in ($cand | Select-Object -Skip $k)) { $script:claimed["$($it.H)"] = 1; $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = 'zone full' } }
+    }
   }
 
   # Free windows fill the open slots row by row.
-  $free = @($free | ? { -not $script:claimed.ContainsKey("$($_.H)") } | Sort-Object $keys)
-  $open = @(0..($Cols * $Rows - 1) | ? { -not $used.ContainsKey($_) })
-  $n = [Math]::Min($free.Count, $open.Count)
-  for ($i = 0; $i -lt $n; $i++) { Put $free[$i] @($open[$i]) (-1) }
-  $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = 'no free cell' } })
-  if (-not $Json) { "Grid ${Cols}x${Rows} ($w x $h per slot): pinned $($placed.Count), tiled $n of $($free.Count) others." }
+  if ($phase -in 'all', 'fill') {
+    $free = @($free | ? { -not $script:claimed.ContainsKey("$($_.H)") } | Sort-Object (KeysFor 'Rank'))
+    $open = @(0..($Cols * $Rows - 1) | ? { -not $used.ContainsKey($_) })
+    $n = [Math]::Min($free.Count, $open.Count)
+    for ($i = 0; $i -lt $n; $i++) { Put $free[$i] @($open[$i]) (-1) }
+    $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = 'no free cell' } })
+    if (-not $Json) { "Grid ${Cols}x${Rows} ($w x $h per slot): pinned $($state.pinned), tiled $n of $($free.Count) others." }
+  }
 }
 
 # App -> category for -Sort category: the scene's map, else the starters'.
@@ -245,11 +262,13 @@ if (-not $sc) {
   return
 }
 
-# A scene: one pass per monitor role, portrait, then laptop, then ultrawide.
-$roles = Roles; $out = @()
-# The bay: windows the owner took off the board stay where they are (or stay minimized).
+# A scene: pins on every monitor, then zones, then the fill; each phase runs portrait, laptop, ultrawide.
+$roles = Roles; $out = @(); $passes = @()
+# The bay: windows the owner took off the board never move. Held by window handle for this session,
+# else by app and title text, one window per entry.
 foreach ($b in @($sc.bay | ? { $_ })) {
-  $it = @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and $_.App -eq [string]$b.app -and $_.Title -eq [string]$b.title })[0]
+  $it = if ($b.id) { @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and [int64]$_.H -eq [int64]$b.id })[0] }
+  if (-not $it -and $b.title) { $it = @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and $_.App -eq [string]$b.app -and (Contains $_.Title ([string]$b.title)) })[0] }
   if ($it) { $claimed["$($it.H)"] = 1; $left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = 'in the bay' } }
 }
 foreach ($role in 'tall', 'laptop', 'wide') {
@@ -270,10 +289,13 @@ foreach ($role in 'tall', 'laptop', 'wide') {
   if (-not $ps.Count -and -not $isFill -and -not $zs.Count) { continue }
   $scr = $roles[$role]
   if (-not $scr) { Write-Warning "No $role monitor. That part of the scene is skipped."; $missing += @($ps | % { [pscustomobject]@{ pin = $_.Index; app = $_.App; match = $_.Match; why = "no $role monitor" } }); continue }
-  $fl = if ($isFill) { @($sc.fill.apps) } else { @() }
-  $sk = if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }
-  $srt = if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }
-  if ($Json) { $out += @(Pass $scr $gc $gr 0 $fl $ps $sk ([string]$sc.fill.order) $srt ($role -eq 'wide') $role $zs) }
-  else { Pass $scr $gc $gr 0 $fl $ps $sk ([string]$sc.fill.order) $srt ($role -eq 'wide') $role $zs }
+  $passes += [pscustomobject]@{ Scr = $scr; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Role = $role
+    Skip = $(if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }); Sort = $(if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }) }
+}
+foreach ($phase in 'pins', 'zones', 'fill') {
+  foreach ($q in $passes) {
+    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase
+    if ($Json) { $out += @($r) } else { $r }
+  }
 }
 if ($Json) { ConvertTo-Json -Depth 6 -Compress ([pscustomobject]@{ placed = @($out); missing = @($missing); left = @($left) }) }
