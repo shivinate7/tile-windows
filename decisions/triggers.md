@@ -2,7 +2,7 @@
 
 **Question.** Which triggers apply scenes on their own?
 
-**Ruling (2026-10-22, owner, after an interview over 16 researched ideas).** Every trigger can be turned off per scene. The owner tests each one and disables what he dislikes.
+**Ruling (2026-10-22, owner, after an interview over 16 researched ideas).** Every trigger can be turned off per scene. The owner tests each one and disables any they dislike.
 
 Build:
 - **Schedules.** The schedule trigger exists. Add a guard: skip a scheduled apply during a call.
