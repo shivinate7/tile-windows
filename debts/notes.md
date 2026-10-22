@@ -19,9 +19,20 @@ Low findings. Each becomes a debt only after a real incident.
 
 ## From PR 2 review round 3 (2026-10-22)
 
-- Debt: "Stop Server" in the app footer stops with no ask. Add an ask that names the act. (design round 3, row 1)
 - `app.html` 321/526: a later toast clears `noteUp`, so a recovery note can return on every load until dismissed.
 - `serve.ps1` 37: `Get-TileNote` reads `note.txt` with no lock; a dismiss racing a read can drop that one reply.
 - `config.ps1` 34: the note file grows by one line per recovery until dismissed.
 - `install.ps1` 37: a failed delete of `app.old-<pid>` is never cleaned up by later installs.
 - Design round 3 rows 2 to 9 (`design/reviews/app-round3.md`).
+- `tile.ps1` Zones fill after all pins, in monitor order (portrait, laptop, then ultrawide). A zone on an earlier monitor can take a window a later zone wants.
+- `tile.ps1` A window that stays put is held by handle and app for the session. A saved scene holds it by app and exact title, so a window whose title changed rejoins the fill next session.
+- `app.html` A swap writes two pins, so the swapped windows stop following their zone's fill order. The offline page has no bay or zones.
+
+## From PR 6 review round 3 (2026-10-22)
+
+- Debt: Draw Zone is hard to find. Add an armed state and a hint that names zones. (bay design round 3, row 1)
+- Debt: one act has four names (pin, keep put, stay put, keep where it is). Pick one verb. (bay design round 3, row 2)
+- Saving a scene drops Stay Put entries for windows that are closed at save time; when reopened, they rejoin the fill and an automatic apply can move them.
+- After Save, a scene with Stay Put entries can still show as edited until refresh.
+- Under 240px of board height the list flows below the board; dragging onto it then needs a scroll.
+- Bay design round 3 rows 3 to 9.
