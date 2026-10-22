@@ -160,9 +160,21 @@ try {
   $z9 = Zr '[]' '[{"app":"claude","match":"Claude","mon":"wide","slots":[9]}]'
   Check 'a minimized window stays minimized unless a pin names it' (-not @($z8.placed | ? { $_.id -eq 1004 }).Count -and @($z9.placed | ? { $_.id -eq 1004 -and $_.pin -eq 0 }).Count -eq 1) "$(Zp $z8) | $(Zp $z9)"
   # Held windows: by handle first (a changed title still holds), else by title text, one window per entry.
+  # Held windows: by handle together with app (a changed title still holds), else by app and exact title, one
+  # window per entry. A stale handle that now names another app's window holds nothing; a partial title holds nothing.
   $zA = Zr '[]' '[]' '[{"id":1009,"app":"WindowsTerminal","title":"an old title"}]' '["*"]'
-  $zB = Zr '[]' '[]' '[{"app":"WindowsTerminal","title":"pwsh"},{"app":"WindowsTerminal","title":"pwsh"}]' '["*"]'
-  Check 'a held window is found by handle, else by title, one each' ((Zl $zA 'in the bay') -eq '1009' -and (Zl $zB 'in the bay') -eq '1008,1009') "$(Zl $zA 'in the bay') | $(Zl $zB 'in the bay')"
+  $zB = Zr '[]' '[]' '[{"app":"WindowsTerminal","title":"pwsh - tiler"},{"app":"WindowsTerminal","title":"pwsh - docs watch"}]' '["*"]'
+  Check 'a held window is found by handle and app, else by exact title, one each' ((Zl $zA 'in the bay') -eq '1009' -and (Zl $zB 'in the bay') -eq '1008,1009') "$(Zl $zA 'in the bay') | $(Zl $zB 'in the bay')"
+  $zF = Zr '[]' '[]' '[{"id":1005,"app":"claude","title":"a closed window"},{"app":"claude","title":"grid"}]' '["*"]'
+  Check 'a stale handle or a partial title holds no window' (-not (Zl $zF 'in the bay')) "$(Zl $zF 'in the bay')"
+  # Zones on a monitor without the fill still leave out skipped apps and rank by the scene's fill order.
+  $zG = Zr '[{"mon":"tall","slots":[0,1],"cat":"comms"}]' '[]' '[]' '["*"]' '["ms-teams"]' '{"tall":{"c":1,"r":2},"wide":{"c":5,"r":2}}'
+  Check 'a zone off the fill monitor leaves out skipped apps' ((@($zG.placed | ? { $_.mon -eq 'tall' } | % { $_.id }) -join ',') -eq '1013') "$(Zp $zG)"
+  $zH = Zr '[{"mon":"tall","slots":[0],"cat":"other"}]' '[]' '[]' '["notepad","*"]' '[]' '{"tall":{"c":1,"r":2},"wide":{"c":5,"r":2}}'
+  Check 'a zone off the fill monitor ranks by the fill order' ((@($zH.placed | ? { $_.mon -eq 'tall' } | % { $_.id }) -join ',') -eq '1014') "$(Zp $zH)"
+  # A pin picks a visible window before a minimized one.
+  $zI = Zr '[]' '[{"app":"claude","match":"e","mon":"wide","slots":[0]}]'
+  Check 'a pin picks a visible window before a minimized one' (@($zI.placed | ? { $_.pin -eq 0 })[0].id -eq 1001) "$(Zp $zI)"
   # A held window never moves, even under a pin or the fill.
   $zC = Zr '[]' '[{"app":"chrome","match":"Pull","mon":"wide","slots":[0]}]' '[{"id":1005,"app":"chrome","title":"Pull request 212 - Example"}]' '["*"]'
   Check 'a held window never moves, even under a pin or the fill' (-not @($zC.placed | ? { $_.id -eq 1005 }).Count -and (Zl $zC 'in the bay') -eq '1005' -and @($zC.missing | ? { $_.pin -eq 0 }).Count -eq 1) "$(Zp $zC)"
@@ -230,6 +242,8 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     Check 'page: a wider grid keeps a zone on its columns and rows' ($ss.remap.before -eq '[0,1,5,6]' -and $ss.remap.after -eq '[0,1,6,7]') ($ss.remap | ConvertTo-Json -Compress)
     $sa = $ss.stopAsk
     Check 'page: Stop Server asks first, on Cancel, and Cancel keeps the server' ($sa.open -and $sa.text -and $sa.cancelFirst -and $sa.alive) ($sa | ConvertTo-Json -Compress)
+    $sb = @($ss.saveBay)
+    Check 'page: a saved scene keeps only list entries that match an open window, without handles' ($sb.Count -eq 1 -and $sb[0].title -eq 'pwsh - docs watch' -and -not ($sb[0].PSObject.Properties.Name -contains 'id')) ($ss.saveBay | ConvertTo-Json -Compress)
     $bb = $ss.bay
     Check 'page: a window sent to the bay leaves the board, shows in the bay, and comes back when placed' ($bb -and $bb.why -eq 'in the bay' -and $bb.chip -and $bb.kept -eq 2 -and $bb.back) ($bb | ConvertTo-Json -Compress)
     Check 'page cell size rounds like tile.ps1 ([int], to even)' ($ss.cell.w -eq [int](1365 / 2) -and $ss.cell.h -eq [int](1001 / 2)) ($ss.cell | ConvertTo-Json -Compress)
@@ -333,7 +347,8 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   #     change between the two runs). It runs main's whole tree: tile.ps1 reads config.ps1 and scenes.json beside it.
   #     Minimized windows are left out of the snapshot: scenes now leave them minimized (decision: bay-and-group-zones),
   #     where main restored and tiled them.
-  $ref = if ($env:TILE_TEST_MAIN) { $env:TILE_TEST_MAIN } else { 'main' }
+  # A fixed ref: TILE_TEST_MAIN, else where this branch left main, so new commits on main cannot move the check.
+  $ref = if ($env:TILE_TEST_MAIN) { $env:TILE_TEST_MAIN } else { $mb = & git -C $root merge-base HEAD main 2>$null; if (-not $mb) { $mb = & git -C $root merge-base HEAD origin/main }; $mb }
   $zip = Join-Path $tmp 'main.zip'; $mainDir = Join-Path $tmp 'main'
   & git -C $root archive -o $zip $ref 2>$null; if ($LASTEXITCODE) { & git -C $root archive -o $zip "origin/$ref" }
   Expand-Archive -LiteralPath $zip -DestinationPath $mainDir

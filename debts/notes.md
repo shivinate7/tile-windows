@@ -25,5 +25,5 @@ Low findings. Each becomes a debt only after a real incident.
 - `install.ps1` 37: a failed delete of `app.old-<pid>` is never cleaned up by later installs.
 - Design round 3 rows 2 to 9 (`design/reviews/app-round3.md`).
 - `tile.ps1` Zones fill after all pins, in monitor order (portrait, laptop, then ultrawide). A zone on an earlier monitor can take a window a later zone wants.
-- `tile.ps1` A window that stays put is held by its handle for the session, then by title text. After a restart of that app, a held window whose title changed rejoins the fill.
+- `tile.ps1` A window that stays put is held by handle and app for the session. A saved scene holds it by app and exact title, so a window whose title changed rejoins the fill next session.
 - `app.html` A swap writes two pins, so the swapped windows stop following their zone's fill order. The offline page has no bay or zones.

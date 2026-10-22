@@ -175,11 +175,11 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   $state = $script:roleState["$role"]; $used = $state.used
   $up = { -not $scene -or $_.X -gt -20000 }  # not minimized (scenes only)
   $its = @(Ranked $all $skip)
-  # Pinned windows: first window of each pinned app (leftmost, then topmost).
+  # Pinned windows: first window of each pinned app (visible first, then leftmost, then topmost).
   $placed = @()
   if ($phase -in 'all', 'pins') {
     foreach ($pn in $pins) {
-      $it = $its | ? { $_.App -eq $pn.App -and (-not $pn.Match -or (Contains $_.Title $pn.Match)) -and -not $placed.Contains($_) -and ($pn.Match -or (& $up)) } | Sort-Object X, Y | Select-Object -First 1
+      $it = $its | ? { $_.App -eq $pn.App -and (-not $pn.Match -or (Contains $_.Title $pn.Match)) -and -not $placed.Contains($_) -and ($pn.Match -or (& $up)) } | Sort-Object { $_.X -le -20000 }, X, Y | Select-Object -First 1
       $pn | Add-Member -Force Item $it
       if (-not $it) { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' }; continue }
       $placed += $it; $pn.Slots | % { $used[$_] = 1 }
@@ -202,7 +202,7 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   $ord = @($order -split '\|' | ? { $_ })
   function OrdIdx($t) { for ($k = 0; $k -lt $ord.Count; $k++) { if (Contains $t $ord[$k]) { return $k } }; $ord.Count }
   function CatIdx($a) { $c = if ($script:cats) { $script:cats.$a }; $i = [array]::IndexOf($script:catOrder, [string]$c); if ($i -lt 0) { $script:catOrder.Count } else { $i } }
-  function FillIdx($a) { for ($k = 0; $k -lt @($fill).Count; $k++) { if (@($fill)[$k] -eq $a -or (@($fill)[$k] -eq '*' -and @($fill) -notcontains $a)) { return $k } }; @($fill).Count }
+  function FillIdx($a, $f) { for ($k = 0; $k -lt @($f).Count; $k++) { if (@($f)[$k] -eq $a -or (@($f)[$k] -eq '*' -and @($f) -notcontains $a)) { return $k } }; @($f).Count }
   $row = { [Math]::Floor(($_.Y - $area.Y + $h / 2) / $h) }
   function KeysFor($rank) { switch ($sort) {
     'title'    { 'Title', $row, 'X' }
@@ -231,9 +231,9 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # or category's windows in fill order, row by row. A category zone leaves out skipped apps, as the fill
   # does for '*'. Windows that do not fit go to the bay.
   if ($phase -eq 'zones') {
-    $zkeys = KeysFor { FillIdx $_.App }
+    $zkeys = KeysFor { FillIdx $_.App $script:zFill }
     foreach ($z in $zones) {
-      $cand = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.Title -ne 'Program Manager' -and (& $up) -and $(if ($z.App) { $_.App -eq $z.App } else { $a = $_.App; -not ($skip | ? { $a -like $_ }) -and $(if ($script:cats -and $script:cats.$a) { [string]$script:cats.$a } else { 'other' }) -eq $z.Cat }) } | Sort-Object $zkeys)
+      $cand = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.Title -ne 'Program Manager' -and (& $up) -and $(if ($z.App) { $_.App -eq $z.App } else { $a = $_.App; -not ($script:zSkip | ? { $a -like $_ }) -and $(if ($script:cats -and $script:cats.$a) { [string]$script:cats.$a } else { 'other' }) -eq $z.Cat }) } | Sort-Object $zkeys)
       $zc = @($z.Slots | Sort-Object | ? { -not $used.ContainsKey($_) }); $z.Slots | % { $used[$_] = 1 }
       $k = [Math]::Min($cand.Count, $zc.Count)
       for ($i = 0; $i -lt $k; $i++) { Put $cand[$i] @($zc[$i]) (-1) $z.Index }
@@ -264,11 +264,13 @@ if (-not $sc) {
 
 # A scene: pins on every monitor, then zones, then the fill; each phase runs portrait, laptop, ultrawide.
 $roles = Roles; $out = @(); $passes = @()
-# The bay: windows the owner took off the board never move. Held by window handle for this session,
-# else by app and title text, one window per entry.
+# Zones on every monitor rank by the scene's fill list and leave out its skipped apps.
+$zFill = @($sc.fill.apps); $zSkip = @($Skip + @($sc.fill.skip) | ? { $_ })
+# Windows that stay put never move. Held by window handle and app (the page sends a handle only within
+# its session; saved scenes drop it), else by app and exact title, one window per entry.
 foreach ($b in @($sc.bay | ? { $_ })) {
-  $it = if ($b.id) { @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and [int64]$_.H -eq [int64]$b.id })[0] }
-  if (-not $it -and $b.title) { $it = @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and $_.App -eq [string]$b.app -and (Contains $_.Title ([string]$b.title)) })[0] }
+  $it = if ($b.id) { @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and [int64]$_.H -eq [int64]$b.id -and $_.App -eq [string]$b.app })[0] }
+  if (-not $it -and $b.title) { $it = @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and $_.App -eq [string]$b.app -and $_.Title -ceq [string]$b.title })[0] }
   if ($it) { $claimed["$($it.H)"] = 1; $left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = 'in the bay' } }
 }
 foreach ($role in 'tall', 'laptop', 'wide') {

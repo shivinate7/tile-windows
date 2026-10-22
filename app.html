@@ -115,7 +115,7 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 #stage{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .mon{position:absolute;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
 .mon.cur{outline:2px dashed var(--ink);outline-offset:4px}
-.mon .cell{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);border-radius:2px;position:relative;min-width:0;min-height:0}
+.mon .cell{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);background:color-mix(in srgb,var(--ink) 6%,transparent);border-radius:2px;position:relative;min-width:0;min-height:0}
 .mon .cell i{position:absolute;right:3px;bottom:1px;font:normal 11px var(--f-mono);color:var(--muted)}
 .mon .empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:6px;font-size:12px;color:var(--muted);pointer-events:none}
 .nogrid .mon .cell{border-color:transparent} .nogrid .mon .cell i{display:none}
@@ -136,15 +136,23 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .tile.sel{outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent);z-index:4}
 .tile:focus-visible{outline:2px solid var(--select);outline-offset:-2px;z-index:5}
 .tile.dim{opacity:.22}
-.tile.drag{cursor:grabbing;z-index:9;opacity:.92;box-shadow:0 12px 26px -10px color-mix(in srgb,var(--ink) 60%,transparent)}
-#drop span{position:absolute;left:50%;top:0;transform:translate(-50%,-50%);padding:2px 8px;border-radius:999px;background:var(--select);color:var(--select-ink);font:600 12px var(--f);white-space:nowrap}
-.tile.swap{outline:2px dashed var(--select);outline-offset:-3px}
-#drop{position:absolute;border:2px solid var(--select);background:color-mix(in srgb,var(--select) 18%,transparent);border-radius:3px;pointer-events:none;display:none;z-index:8}
+.tile.drag{cursor:grabbing;opacity:.45;outline:2px dashed var(--muted);outline-offset:-2px}
+/* While dragging, a small chip follows the pointer, so the target and its neighbours stay readable. */
+#ghost{position:fixed;z-index:50;pointer-events:none;display:none;max-width:240px;padding:3px 8px;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);color:var(--ink);font:600 12px var(--f);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 8px 18px -8px color-mix(in srgb,var(--ink) 60%,transparent)}
+.tile.ztake{outline:2px dashed var(--select);outline-offset:-3px}
+.tile .stayput{display:none;position:absolute;right:3px;bottom:3px;padding:2px 6px;border:1px solid var(--ink);border-radius:3px;background:var(--panel);color:var(--ink);font:600 11px var(--f);cursor:pointer}
+.tile.sel .stayput{display:block}
+#drop span,#dest span{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);width:max-content;max-width:calc(100% - 8px);text-align:center;padding:2px 8px;border-radius:999px;background:var(--select);color:var(--select-ink);font:600 12px var(--f)}
+.tile.swap{outline:3px solid var(--select);outline-offset:-3px}
+#dest{position:absolute;border:2px dashed var(--select);border-radius:3px;pointer-events:none;display:none;z-index:8}
+#drop{position:absolute;border:3px solid var(--select);background:color-mix(in srgb,var(--select) 26%,transparent);border-radius:3px;pointer-events:none;display:none;z-index:8}
 @media (prefers-reduced-motion:no-preference){
   .tile{transition:left .22s cubic-bezier(.2,.7,.2,1),top .22s cubic-bezier(.2,.7,.2,1),width .22s,height .22s,opacity .15s}
   .tile.drag,.tile.now,.still .tile{transition:none}
   #drop{transition:left .08s,top .08s,width .08s,height .08s}}
 .hint,.over{font-size:12px;color:var(--muted);margin:0}
+.boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
+.boardbar .hint{margin:0;flex:1 1 300px}
 .keys{font-size:12px;color:var(--muted)}
 .keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
 .keys ul{margin:4px 0 0;padding-left:18px}
@@ -206,28 +214,31 @@ dialog form{display:grid;gap:10px}
 .tile.zfill{z-index:2}
 .zone{position:absolute;border:2px dashed var(--cat);border-radius:4px;background:color-mix(in srgb,var(--cat) 16%,transparent);pointer-events:none;z-index:3}
 .zone.sel{border-style:solid;box-shadow:0 0 0 3px color-mix(in srgb,var(--cat) 35%,transparent)}
+.zone .zx{left:auto;right:8px;padding:2px 6px}
+.zone [data-zone]{max-width:calc(100% - 44px)}
 .zone button{pointer-events:auto;position:absolute;left:8px;top:100%;transform:translateY(-50%);border:0;border-radius:3px;padding:2px 7px;background:var(--cat);color:var(--panel);font:600 11px var(--f);cursor:pointer;max-width:calc(100% - 8px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #zdraw{position:absolute;display:none;border:2px dashed var(--select);background:color-mix(in srgb,var(--select) 16%,transparent);border-radius:4px;pointer-events:none;z-index:8}
 #zdraw span{position:absolute;left:8px;top:100%;transform:translateY(-50%);white-space:nowrap;padding:1px 6px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px var(--f)}
 /* The bay: every window without a cell, by category. It stays where it is on Apply. */
-.bay{position:sticky;bottom:0;z-index:6;display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel));height:clamp(104px,18vh,200px);overflow:auto;box-shadow:0 -10px 18px -14px color-mix(in srgb,var(--ink) 40%,transparent),0 23px 0 var(--canvas)}
-.bay.drop{border:2px solid var(--select);background:color-mix(in srgb,var(--select) 12%,var(--panel))}
-.bay.drop #baynote{visibility:hidden}
-.bay.drop::after{content:"Drop to keep this window where it is";position:absolute;right:12px;top:8px;font:600 12px var(--f);color:var(--ink)}
-#baymore{position:sticky;bottom:-8px;margin:0 -12px -8px;padding:4px 12px;text-align:center;font-size:12px;color:var(--ink);background:linear-gradient(transparent,color-mix(in srgb,var(--canvas) 80%,var(--panel)) 40%)}
+.bay{position:sticky;bottom:0;z-index:6;display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel));box-shadow:0 -10px 18px -14px color-mix(in srgb,var(--ink) 40%,transparent),0 23px 0 var(--canvas)}
+.bay.all,.bay.flow{position:static}
+.bay.drop{outline:3px solid var(--select);outline-offset:-2px}
+.bfoot{display:flex;gap:8px 12px;align-items:stretch;flex-wrap:wrap}
+.bfoot .btn{min-height:32px}
+.dropslot{flex:1 1 220px;display:flex;align-items:center;justify-content:center;min-height:32px;padding:4px 8px;border:1px dashed var(--muted);border-radius:5px;color:var(--muted);font-size:12px;text-align:center}
+.bay.drop .dropslot{outline:2px solid var(--select);outline-offset:-1px;background:color-mix(in srgb,var(--select) 14%,var(--panel));color:var(--ink);font-weight:600}
 .bay h2{margin:0;justify-content:flex-start;gap:10px}
 .bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
-.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px 12px}
+.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
 .bgrp h3{display:flex;gap:6px;align-items:center;margin:0 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .bgrp ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
-.chip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;touch-action:none;font-size:12px}
-.chip b{font-weight:600}
+.chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;touch-action:none;font-size:12px}
+.chip b{font-weight:600;white-space:nowrap}
 .chip span{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chip small{font-size:11px;font-weight:600;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
-.chip small.warn{border-color:var(--hi);background:var(--hi-bg);color:var(--ink)}
+.chip small{grid-column:1/-1;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip.sel{outline:3px solid var(--ink);outline-offset:-1px}
-.chip.drag{position:relative;z-index:20;cursor:grabbing;box-shadow:0 12px 26px -10px color-mix(in srgb,var(--ink) 60%,transparent)}
-.bay .empty{color:var(--muted);font-size:12px;margin:0}
+.chip:focus-visible span{white-space:normal;overflow-wrap:anywhere}
+.chip.drag{cursor:grabbing;opacity:.45}
 @media (pointer:coarse){.chip{min-height:44px}}
 
 /* Below 1180px the scenes become a strip over the canvas, so the canvas keeps its width. */
@@ -271,13 +282,14 @@ dialog form{display:grid;gap:10px}
   </aside>
 
   <main class="canvas">
-    <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"><span></span></div><div id="zdraw"><span></span></div></div>
-    <p id="hint" class="hint"></p>
+    <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"><span></span></div><div id="dest"><span></span></div><div id="zdraw"><span></span></div></div><div id="ghost" aria-hidden="true"></div>
+    <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" hidden>Draw Zone</button>
     <details id="keys" class="keys"><summary>Keyboard</summary><ul>
       <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
       <li>Delete unpins it. K keeps it where it is (off the board).</li>
       <li>Enter on a window that stays put opens it in the inspector, where Move To places it.</li>
-      <li>Draw Zone in the inspector picks a zone's cells with the keyboard.</li></ul></details>
+      <li>Draw Zone picks a zone's cells with the keyboard.</li>
+      <li>Esc cancels a drag or a zone you are drawing.</li></ul></details></div>
     <p id="over" class="over"></p>
     <section id="results" class="panel" hidden aria-label="Apply results">
       <div class="phead"><b id="sum"></b><button id="closeres" class="btn ghost" type="button">Close</button></div>
@@ -290,7 +302,7 @@ dialog form{display:grid;gap:10px}
       <pre id="cmd"></pre>
       <div class="row"><button id="copy" class="btn" type="button">Copy</button><span class="note" id="cmsg" role="status"></span></div>
     </section>
-    <section id="bay" class="bay" hidden aria-labelledby="bayh"><h2 id="bayh">Windows That Stay Put <span class="note" id="baynote"></span></h2><div id="bgrps" class="bgrps"></div><p id="baymore" hidden></p></section>
+    <section id="bay" class="bay" hidden aria-labelledby="bayh"><h2 id="bayh">Windows That Stay Put <span class="note" id="baynote"></span></h2><div id="bgrps" class="bgrps"></div><div class="bfoot"><button type="button" class="btn ghost" id="baymore" hidden></button><div id="dropslot" class="dropslot"></div></div></section>
     <details id="offline" class="panel" hidden>
       <summary>Load a Snapshot by Hand</summary>
       <p class="note" style="margin:6px 0">Paste the output of <code>tile.ps1 -Json</code>. Then drag windows onto cells and click Apply to get a place file.</p>
@@ -406,14 +418,14 @@ async function previewAll(){await preview(selId);for(const s of cfg.scenes)if(s.
 
 /* ---------- Drawing ---------- */
 function build(){
-  const stg=$("stage"),drop=$("drop"),zd=$("zdraw");stg.textContent="";stg.append(drop,zd);els.clear();
+  const stg=$("stage"),drop=$("drop"),dest=$("dest"),zd=$("zdraw");stg.textContent="";stg.append(drop,dest,zd);els.clear();
   for(const m of snap.monitors){
     const e=document.createElement("div");e.className="mon";m.el=e;stg.appendChild(e);
     const l=document.createElement("div");l.className="mlab";m.lab=l;stg.appendChild(l);
   }
   for(const w of snap.windows){
     const e=document.createElement("div");e.className="tile";e.tabIndex=0;e.setAttribute("role","button");e.dataset.id=w.id;
-    e.innerHTML="<b></b><span></span>";e.firstChild.textContent=appName(w.app);e.children[1].textContent=w.title;
+    e.innerHTML=`<b></b><span></span>${LIVE?'<button type="button" class="stayput" tabindex="-1">Stay Put</button>':""}`;e.firstChild.textContent=appName(w.app);e.children[1].textContent=w.title;
     stg.appendChild(e);els.set(w.id,e);
   }
 }
@@ -423,14 +435,17 @@ function layout(){
   const M=snap.monitors,stg=$("stage"),cv=stg.parentElement;
   stg.classList.add("still");requestAnimationFrame(()=>requestAnimationFrame(()=>stg.classList.remove("still")));
   const x0=Math.min(...M.map(m=>m.x)),y0=Math.min(...M.map(m=>m.y)),x1=Math.max(...M.map(m=>m.x+m.w)),y1=Math.max(...M.map(m=>m.y+m.h));
-  // When the text below the board does not fit, the board still fits above the sticky list; the text scrolls under it.
-  const narrow=matchMedia("(max-width:760px)").matches,text=$("hint").offsetHeight+$("over").offsetHeight+$("keys").offsetHeight+$("bay").offsetHeight+56;
-  const top=22,W=cv.clientWidth-36,H=Math.max(240,narrow?innerHeight*.6:Math.max(cv.clientHeight-44-text,cv.clientHeight-56-$("bay").offsetHeight)),S=Math.min(W/(x1-x0),(H-top)/(y1-y0));
+  // When the text below the board does not fit, the board and its action bar still fit above the sticky list;
+  // the notes scroll under it.
+  // The list stays in view below the board unless that leaves the board under 240px; then it flows below.
+  const bay=$("bay"),fit=cv.clientHeight-62-bay.offsetHeight-$("bbar").offsetHeight;bay.classList.toggle("flow",fit<240);
+  const narrow=matchMedia("(max-width:760px)").matches,text=$("bbar").offsetHeight+$("over").offsetHeight+$("bay").offsetHeight+56;
+  const top=22,W=cv.clientWidth-36,H=Math.max(240,narrow?innerHeight*.6:Math.max(cv.clientHeight-44-text,bay.classList.contains("flow")||bay.classList.contains("all")?0:fit)),S=Math.min(W/(x1-x0),(H-top)/(y1-y0));
   G={x0,y0:y0-top/S,S};
   stg.style.width=Math.round((x1-x0)*S)+"px";stg.style.height=Math.round((y1-y0)*S+top+4)+"px";
   for(const m of M){Object.assign(m.el.style,{left:(m.x-G.x0)*S+INSET+"px",top:(m.y-G.y0)*S+"px",width:m.w*S-2*INSET+"px",height:m.h*S+"px"});
     Object.assign(m.lab.style,{left:(m.x-G.x0)*S+INSET+"px",top:(m.y-G.y0)*S+"px",maxWidth:Math.max(m.w*S,60)+"px"})}
-  for(const p of document.querySelectorAll(".canvas>p,.canvas>.bay,.canvas>.keys"))p.style.maxWidth=Math.max(stg.offsetWidth,420)+"px";
+  for(const p of document.querySelectorAll(".canvas>p"))p.style.maxWidth=Math.max(stg.offsetWidth,420)+"px";
 }
 // A screen rect on the board; inside a monitor it keeps clear of the monitor's drawn edge.
 function px(r){const m=monAt(r.x+r.w/2,r.y+r.h/2);let L=(r.x-G.x0)*G.S,T=(r.y-G.y0)*G.S,W=r.w*G.S,H=r.h*G.S;
@@ -447,9 +462,8 @@ function view(){
   return v}
 // In the bay: every window the scene gives no cell. Live only, once the engine has answered.
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
-const BAYWHY={"in the bay":"Kept off the board","zone full":"Zone full","no free cell":"No free cell"};
-const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized":"Not in this scene";
-const bayWarn=x=>x.why==="zone full"||x.why==="no free cell";
+const BAYWHY={"in the bay":"You kept it here","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column"};
+const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized: it stays minimized":"Not in this scene";
 // Cells as columns and rows, not numbers: "3 columns × 2 rows from column 1, row 1".
 function cellsText(slots,g){const b=bbox(slots,g);return `${plural(b.cs,"column")} × ${plural(b.rs,"row")} from column ${b.c+1}, row ${b.r+1}`}
 const sameWin=(b,w)=>b.id===w.id||(b.app===w.app&&b.title===w.title);
@@ -492,7 +506,8 @@ function render(){
   $("undo").disabled=isBusy||!hist.length;$("refresh").disabled=isBusy;
   $("undo").title=isBusy?"Wait for the current action to finish.":hist.length?"Undo the last change or "+(LIVE?verb():"Apply")+".":"Nothing to undo yet.";
   $("pend").textContent=moves?`${plural(moves,"window")} will move on ${LIVE?verb():"Apply"}`:"The board matches your screen";
-  $("hint").textContent=LIVE?"Drag a window onto a cell to pin it, or down to the list below to keep it where it is. To fill a block of cells with one app, use Draw Zone or Shift+drag across the cells.":
+  $("zadd").hidden=!(LIVE&&s);
+  $("hint").textContent=LIVE?"Drag a window to a cell to pin it, or to the list to keep it put.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   overText(V);renderZones();renderBay(V);renderRail();renderInsp(V);
 }
@@ -503,19 +518,20 @@ function renderZones(){
     const sl=z.slots.filter(v=>v<g.c*g.r);if(!sl.length)return;const b=bbox(sl,g),e=document.createElement("div");
     e.className=`zone cat-${z.app?catOf(z.app):z.cat}${selZone===i?" sel":""}`;Object.assign(e.style,px(cellRect(m,g,b.c,b.r,b.cs,b.rs)));
     const n=prev()?prev().placed.filter(p=>p.zone===i).length:0;
-    e.innerHTML=`<button type="button" data-zone="${i}" aria-pressed="${selZone===i}" aria-label="${esc(zoneName(z))} zone, ${n} of ${sl.length} cells filled. Open in the inspector.">${esc(zoneName(z))} · ${n} of ${sl.length}</button>`;$("stage").appendChild(e)})}
+    e.innerHTML=`<button type="button" data-zone="${i}" aria-pressed="${selZone===i}" title="Edit this zone" aria-label="${esc(zoneName(z))} zone, ${n} of ${sl.length} cells filled. Edit it in the inspector.">${esc(zoneName(z))} zone · ${n} of ${sl.length} filled</button><button type="button" class="zx" data-zdel="${i}" title="Remove this zone" aria-label="Remove the ${esc(zoneName(z))} zone">✕</button>`;$("stage").appendChild(e)})}
+// One or two rows per category until "Show more", so the list never cuts a row in half.
+let bayAll=false;
 function renderBay(V){
   const bay=$("bay");if(!LIVE)return;
-  const ws=snap.windows.filter(w=>inBay(V[w.id]));
-  $("baynote").textContent=prev()?`${plural(ws.length,"window")} with no cell. ${verb()} leaves them where they are. Drag one onto a cell to place it.`:"";
+  const ws=snap.windows.filter(w=>inBay(V[w.id]));let more=0;
+  $("baynote").textContent=prev()?`${plural(ws.length,"window")}. ${verb()} leaves them where they are.`:"";
   const by=new Map(cfg.categories.map(([c])=>[c,[]]));for(const w of ws){const c=catOf(w.app);if(!by.has(c))by.set(c,[]);by.get(c).push(w)}
-  $("bgrps").innerHTML=ws.length?[...by].filter(([,l])=>l.length).map(([c,l])=>`<div class="bgrp cat-${c}"><h3><i class="sw"></i>${esc(catName(c))}</h3><ul>${l.map(w=>
-    `<li><button type="button" class="chip cat-${c}${w.id===selWin?" sel":""}" data-bay="${w.id}" aria-label="${esc(appName(w.app))}: ${esc(w.title)}. ${esc(bayWhy(V[w.id]))}. Stays put. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(appName(w.app))}</b><span>${esc(w.title)}</span>${bayWhy(V[w.id])!=="Not in this scene"?`<small class="${bayWarn(V[w.id])?"warn":""}">${esc(bayWhy(V[w.id]))}</small>`:""}</button></li>`).join("")}</ul></div>`).join(""):
-    `<p class="empty">Every window has a cell. Drag a window here to keep it where it is.</p>`;
-  bayMore()}
-// A scroll cue when the list runs past its box.
-function bayMore(){const b=$("bay"),m=$("baymore"),r=b.getBoundingClientRect(),n=[...b.querySelectorAll(".chip")].filter(c=>c.getBoundingClientRect().bottom>r.bottom-24).length;
-  m.hidden=!n;m.textContent=`${n} more below. Scroll the list.`}
+  $("bgrps").innerHTML=[...by].filter(([,l])=>l.length).map(([c,l])=>`<div class="bgrp cat-${c}"><h3><i class="sw"></i>${esc(catName(c))}</h3><ul>${l.map((w,k)=>{const why=bayWhy(V[w.id]),hide=!bayAll&&k>=(innerHeight<820?1:2);if(hide)more++;
+    return `<li${hide?" hidden":""}><button type="button" class="chip cat-${c}${w.id===selWin?" sel":""}" data-bay="${w.id}" title="${esc(appName(w.app))}: ${esc(w.title)}" aria-label="${esc(appName(w.app))}: ${esc(w.title)}. ${esc(why)}. Stays put. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(appName(w.app))}</b><span>${esc(w.title)}</span>${why!=="Not in this scene"?`<small>${esc(why)}</small>`:""}</button></li>`}).join("")}</ul></div>`).join("");
+  bay.classList.toggle("all",bayAll);
+  const m=$("baymore");m.hidden=!more&&!bayAll;m.textContent=bayAll?"Show Fewer":`Show ${more} More`;
+  $("dropslot").textContent=dropText()}
+const dropText=(w,c)=>w?`Release to keep ${appName(w.app)}: ${w.title} here, under ${catName(c)}`:"Drag a window here to keep it where it is";
 function where(x){if(inBay(x))return`no cell (${bayWhy(x).toLowerCase()}), stays where it is`;if(!x.r)return"minimized, stays minimized";if(x.kind==="left")return"no free cell, stays where it is";
   if(x.kind==="stay")return LIVE?"not in this scene, stays where it is":"where it is now";
   const p=x.p,m=p?snap.monitors.find(m=>m.role===p.mon):monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2);
@@ -571,7 +587,7 @@ function renderInsp(V){
   else $("scenebox").innerHTML="";
   const z=LIVE&&s&&selZone!==null?(s.zones||[])[selZone]:null;
   if(z){const cnt=prev()?prev().placed.filter(p=>p.zone===selZone).length:0,over=prev()?prev().left.filter(l=>l.why==="zone full").length:0;
-    $("zonebox").innerHTML=`<h2>Zone</h2><p class="note">${esc(ROLE[z.mon])}: ${esc(cellsText(z.slots,s.grids[z.mon]))}. ${plural(cnt,"window")} in it${over?`; ${over} more stay put`:""}. A pinned window inside it keeps its cell.</p>
+    $("zonebox").innerHTML=`<h2>Zone</h2><p class="note">${esc(ROLE[z.mon])}: ${esc(cellsText(z.slots,s.grids[z.mon]))}. ${cnt} of ${z.slots.length} cells filled${over?`; ${over} more stay put`:""}.</p>
       <div class="field stack"><label for="zfill">Fill With</label><select id="zfill" name="zfill">${zoneOpts(z.app?"app:"+z.app:"cat:"+z.cat)}</select></div>
       <div class="acts"><button type="button" class="btn" id="zdone">Done</button><button type="button" class="btn danger" id="zdel">Delete Zone</button></div>`}
   else $("zonebox").innerHTML="";
@@ -581,7 +597,7 @@ function renderInsp(V){
   if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
     if(s&&s.fill&&s.fill.mon===m.role)h+=`<div class="field stack"><label for="sort">Fill order</label><select id="sort">${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note">Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.</p></div>`;
     else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`;
-    if(s)h+=`<button type="button" class="btn" id="zadd">Draw Zone</button><p class="note">A zone fills a block of cells with one app or category. Shift+drag across cells does the same.</p>`}
+}
   else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>`;
   $("mon").innerHTML=h;
   const w=selWin&&winById(selWin),x=w&&V[w.id];
@@ -697,15 +713,20 @@ function cellAt(x,y){const sr=stage.getBoundingClientRect(),sx=(x-sr.left)/G.S+G
   return g?{m,g,c:clamp(Math.floor((sx-m.x)/(m.w/g.c)),0,g.c-1),r:clamp(Math.floor((sy-m.y)/(m.h/g.r)),0,g.r-1)}:null}
 function frame(){raf=0;
   if(zdraw){const z=zdraw,a=Math.min(z.c0,z.c1),b=Math.min(z.r0,z.r1),cs=Math.abs(z.c1-z.c0)+1,rs=Math.abs(z.r1-z.r0)+1,e=$("zdraw");
-    Object.assign(e.style,px(cellRect(z.m,z.g,a,b,cs,rs)));e.style.display="block";e.firstChild.textContent=`${plural(cs,"column")} × ${plural(rs,"row")}`;return}
-  if(!drag)return;const d=drag;d.el.style.transform=`translate3d(${d.px-d.sx}px,${d.py-d.sy}px,0)`;
-  const ob=!d.fromBay&&LIVE&&overBay(d.px,d.py);$("bay").classList.toggle("drop",ob);
-  const t=ob?null:target(d);d.t=t;for(const e of stage.querySelectorAll(".tile.swap"))e.classList.remove("swap");
-  if(t){const occ=swapTarget(d,t);Object.assign(dropEl.style,px(t.r));dropEl.style.display="block";
-    dropEl.firstChild.textContent=occ?`Swap with ${appName(winById(occ.id).app)}`:"Place here";if(occ)els.get(occ.id).classList.add("swap")}
+    const r=cellRect(z.m,z.g,a,b,cs,rs);Object.assign(e.style,px(r));e.style.display="block";let n=0;
+    for(const [id,d] of Object.entries(drawn)){const x=d.x+d.w/2,y=d.y+d.h/2,in_=x>r.x&&x<r.x+r.w&&y>r.y&&y<r.y+r.h&&d.kind!=="stay";els.get(+id).classList.toggle("ztake",in_);if(in_)n++}
+    e.firstChild.textContent=`${plural(cs,"column")} × ${plural(rs,"row")} · ${n?`covers ${plural(n,"window")}`:"empty cells"} · Esc cancels`;return}
+  if(!drag)return;const d=drag,w=winById(d.id),gh=$("ghost"),dest=$("dest");
+  if(Math.abs(d.px-d.sx)+Math.abs(d.py-d.sy)>4){gh.className=`cat-${catOf(w.app)}`;gh.textContent=`${appName(w.app)}: ${w.title}`;Object.assign(gh.style,{left:d.px+14+"px",top:d.py-34+"px",display:"block"})}
+  const ob=!d.fromBay&&LIVE&&overBay(d.px,d.py);$("bay").classList.toggle("drop",ob);$("dropslot").textContent=ob?dropText(w,catOf(w.app)):dropText();
+  const t=ob?null:target(d);d.t=t;for(const e of stage.querySelectorAll(".tile.swap"))e.classList.remove("swap");dest.style.display="none";
+  if(t){const occ=swapTarget(d,t),o=occ&&appName(winById(occ.id).app);Object.assign(dropEl.style,px(t.r));dropEl.style.display="block";
+    const nar=parseFloat(px(t.r).width)<110;  // narrow cells get short labels
+    dropEl.firstChild.textContent=!occ?(nar?"Here":"Place here"):nar?"Swap":d.fromBay?`Swap: ${o} goes to the list`:`Swap with ${o}`;
+    if(occ){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=nar?o:`${o} moves here`}}}
   else dropEl.style.display="none"}
 stage.addEventListener("pointerdown",ev=>{
-  const lab=ev.target.closest(".mlab button,.zone button");if(lab||ev.button!==0||drag||zdraw||isBusy)return;
+  const lab=ev.target.closest(".mlab button,.zone button,.tile .stayput");if(lab||ev.button!==0||drag||zdraw||isBusy)return;
   const e=ev.target.closest(".tile");
   // Zone drawing: from an empty cell, or with Shift from anywhere on a grid.
   if(LIVE&&(!e||ev.shiftKey)){const c=cellAt(ev.clientX,ev.clientY);if(!c)return;ev.preventDefault();
@@ -727,7 +748,8 @@ function move(ev){
   if(zdraw&&ev.pointerId===zdraw.pid){const c=cellAt(ev.clientX,ev.clientY);if(c&&c.m===zdraw.m){zdraw.c1=c.c;zdraw.r1=c.r}if(!raf)raf=requestAnimationFrame(frame);return}
   if(!drag||ev.pointerId!==drag.pid)return;drag.px=ev.clientX;drag.py=ev.clientY;if(!raf)raf=requestAnimationFrame(frame)}
 function endZone(ev){
-  const z=zdraw;zdraw=null;if(raf)cancelAnimationFrame(raf);raf=0;$("zdraw").style.display="none";
+  const z=zdraw;zdraw=null;if(raf)cancelAnimationFrame(raf);raf=0;$("zdraw").style.display="none";for(const e of stage.querySelectorAll(".tile.ztake"))e.classList.remove("ztake");
+  if(!z)return;
   if(ev.type!=="pointerup")return;
   const still=z.c0===z.c1&&z.r0===z.r1&&Math.abs(ev.clientX-z.sx)+Math.abs(ev.clientY-z.sy)<5;
   if(!still){zanchor=null;newZone(z.m,z.g,z.c0,z.r0,z.c1,z.r1);return}
@@ -738,7 +760,7 @@ function endZone(ev){
 function endDrag(ev){
   if(zdraw&&ev.pointerId===zdraw.pid)return endZone(ev);
   if(!drag||ev.pointerId!==drag.pid)return;
-  const d=drag;drag=null;if(raf)cancelAnimationFrame(raf);raf=0;dropEl.style.display="none";$("bay").classList.remove("drop");for(const e of stage.querySelectorAll(".tile.swap"))e.classList.remove("swap");
+  const d=drag;drag=null;if(raf)cancelAnimationFrame(raf);raf=0;dropEl.style.display="none";$("dest").style.display="none";$("ghost").style.display="none";$("bay").classList.remove("drop");$("dropslot").textContent=dropText();for(const e of stage.querySelectorAll(".tile.swap"))e.classList.remove("swap");
   const moved=Math.abs(d.px-d.sx)+Math.abs(d.py-d.sy)>4;
   d.el.classList.remove("drag");d.el.style.transform="";
   requestAnimationFrame(()=>d.el.classList.remove("now"));
@@ -834,9 +856,12 @@ $("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("cmd").tex
 async function saveConfig(next,msg){
   const r=await post("config",next);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
   cfg=next;status(msg);sceneMsg=msg;render();return true}
+// A saved scene keeps only list entries that match an open window, by app and exact title: a window
+// handle means nothing in the next session.
+function forSave(s){s=clone(s);if(s.bay){s.bay=s.bay.filter(b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title))).map(b=>({app:b.app,title:(winById(b.id)||b).title}));if(!s.bay.length)delete s.bay}return s}
 async function saveScene(){const s=scene();if(s.builtIn)return;const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId);
-  if(i>=0)next.scenes[i]=clone(s);else next.scenes.push(clone(s));await saveConfig(next,`Saved ${s.name}.`)}
-async function saveAsNew(name){const s=clone(scene()),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
+  if(i>=0)next.scenes[i]=forSave(s);else next.scenes.push(forSave(s));await saveConfig(next,`Saved ${s.name}.`)}
+async function saveAsNew(name){const s=forSave(scene()),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
   Object.assign(s,{id,name:base.slice(0,40),builtIn:false});delete s.blurb;
   const next=clone(cfg);next.scenes.push(s);
   if(saved(selId))work[selId]=clone(saved(selId));work[id]=clone(s);
@@ -844,7 +869,7 @@ async function saveAsNew(name){const s=clone(scene()),base=(name||"").trim()||s.
 // A dialog. A destructive one starts on Cancel.
 function ask(title,body,ok,danger){return new Promise(res=>{const d=$("dlg"),f=$("dlgform");
   f.innerHTML=`<h2>${esc(title)}</h2>${body}<div class="row" style="justify-content:flex-end"><button class="btn" value="" id="dlgCancel">Cancel</button><button class="btn ${danger?"danger solid":"pri"}" value="ok">${esc(ok)}</button></div>`;
-  d.onclose=()=>res(d.returnValue==="ok"?f:null);d.returnValue="";d.showModal();
+  const cv=$("stage").parentElement,st=cv.scrollTop;d.onclose=()=>{cv.scrollTop=st;res(d.returnValue==="ok"?f:null)};d.returnValue="";d.showModal();
   (danger?$("dlgCancel"):f.querySelector("input,select")||f.querySelector(".pri")).focus()})}
 
 /* ---------- Events ---------- */
@@ -854,7 +879,9 @@ document.addEventListener("click",async ev=>{
   else if(t.dataset.bay){selWin=+t.dataset.bay;render();requestAnimationFrame(()=>{const m=$("moveto");if(m)m.focus()})}
   else if(t.dataset.zone!==undefined){selZone=+t.dataset.zone;render()}
   else if(t.id==="zdone"){selZone=null;render()}
-  else if(t.id==="zdel"){const i=selZone;selZone=null;edit(x=>{x.zones.splice(i,1);if(!x.zones.length)delete x.zones},"Deleted the zone. Its windows fill as before.")}
+  else if(t.id==="zdel"||t.dataset.zdel!==undefined){const i=t.id==="zdel"?selZone:+t.dataset.zdel;selZone=null;edit(x=>{x.zones.splice(i,1);if(!x.zones.length)delete x.zones},"Removed the zone. Its windows fill as before.")}
+  else if(t.classList.contains("stayput"))unplace(+t.closest(".tile").dataset.id);
+  else if(t.id==="baymore"){bayAll=!bayAll;render()}
   else if(t.id==="tobay")unplace(selWin);
   else if(t.id==="zadd")drawZoneDialog();
   else if(t.dataset.pick){selId=t.dataset.pick;optim=null;selZone=null;zanchor=null;render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}
@@ -897,17 +924,17 @@ async function editCats(){
 function setTheme(t){if(!["light","dark"].includes(t))t="system";if(t==="system")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme=t;$("theme").value=t}
 $("theme").onchange=e=>{setTheme(e.target.value);try{localStorage.setItem("tile-theme",e.target.value)}catch(_){}};
 try{setTheme(localStorage.getItem("tile-theme")||"system")}catch(_){setTheme("system")}
-addEventListener("keydown",ev=>{if(ev.key==="Escape"&&(zdraw||zanchor)){zanchor=null;if(zdraw){try{stage.releasePointerCapture(zdraw.pid)}catch(_){}}return}if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
+addEventListener("keydown",ev=>{if(ev.key==="Escape"&&(zdraw||zanchor)){zanchor=null;const z=zdraw;if(z){endZone({type:"cancel"});try{stage.releasePointerCapture(z.pid)}catch(_){}}status("Zone drawing canceled. Nothing changed.");return}if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
 // The board's size depends on the text and list below it, so lay out again when they change height.
 let rz=0;const relay=()=>{if(snap&&!rz)rz=requestAnimationFrame(()=>{rz=0;layout();render()})};addEventListener("resize",relay);
-{const ro=new ResizeObserver(relay);for(const id of ["hint","over","keys","bay"])ro.observe($(id))}
+{const ro=new ResizeObserver(relay);for(const id of ["bbar","over","bay"])ro.observe($(id))}
 
 /* ---------- Offline ---------- */
 function parse(t){const a=t.indexOf("{");if(a<0)throw new Error("no JSON object found");return JSON.parse(t.slice(a,t.lastIndexOf("}")+1))}
 $("load").onclick=()=>{try{setSnap(parse($("paste").value));$("lmsg").textContent="Loaded."}catch(e){$("lmsg").textContent="Could not load: "+e.message}};
 $("sample").onclick=()=>{setSnap(SAMPLE);$("lmsg").textContent="Sample loaded."};
 
-if(LIVE){$("refresh").hidden=false;$("quit").hidden=false;$("editcats").hidden=false;$("bay").hidden=false;$("bay").addEventListener("scroll",bayMore);status("Reading your windows…");
+if(LIVE){$("refresh").hidden=false;$("quit").hidden=false;$("editcats").hidden=false;$("bay").hidden=false;status("Reading your windows…");
   loadAll().then(()=>{if(!snap)return;status(`${scene().name} is selected. Drag windows onto cells, or ${verb().toLowerCase()} a scene from the rail.`);
     if(serverDry&&location.hash==="#selftest-undo")selftestUndo();if(serverDry&&location.hash==="#selftest-scenes")selftestScenes()})}
 else{$("keys").hidden=true;$("offline").hidden=false;$("offline").open=true;setSnap(SAMPLE);status("Offline. A sample desktop is loaded.")}
@@ -938,6 +965,7 @@ async function selftestScenes(){
     out.drawn[s.id]=Object.entries(drawn).filter(([,d])=>d.kind==="pin"||d.kind==="fill"||d.kind==="zone").map(([id,d])=>({id:+id,x:d.x,y:d.y,w:d.w,h:d.h}))}
   // Into the bay and back: the scene records it, the engine leaves it, the bay shows it; placing it takes it out.
   const zs=cfg.scenes.find(s=>(s.zones||[]).length);
+  out.saveBay=forSave({bay:[{id:1009,app:"WindowsTerminal",title:"pwsh - docs watch"},{id:5,app:"claude",title:"A closed window"}]}).bay;
   if(zs){selId=zs.id;await preview(zs.id);const id=prev().placed.find(p=>p.zone>=0).id;unplace(id);await preview(zs.id);
     const l=prev().left.find(x=>x.id===id);out.bay={id,why:l&&l.why,chip:!!document.querySelector(`[data-bay="${id}"]`),kept:(scene().bay||[]).length};
     pinWin(id,snap.monitors.find(m=>m.role==="wide"),0);await preview(zs.id);const w=winById(id);out.bay.back=!prev().left.some(x=>x.id===id)&&!(scene().bay||[]).some(b=>b.app===w.app&&b.title===w.title)}
