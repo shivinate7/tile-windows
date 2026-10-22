@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tile Windows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap">
+<style>
+/* Tokens from mockup B (canvas) and C (scenes). */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#5E665F; --line:#D9DCD4; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#8B5CF6; --code:#0E9484; --browse:#DC5F0E; --other:#73806F; --hi:#E3A008; --hi-ink:#1C211D; --ok:#17754B; --bad:#B42318;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#9AA39B; --line:#2F3530; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#9DA89A; --hi:#F2C14E; --hi-ink:#141715; --ok:#4ADE9B; --bad:#F97066; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#9AA39B; --line:#2F3530; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#9DA89A; --hi:#F2C14E; --hi-ink:#141715; --ok:#4ADE9B; --bad:#F97066; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.app{min-height:100%;display:grid;grid-template-columns:232px minmax(0,1fr) 264px;grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"top top top" "rail canvas insp" "status status status";background:var(--panel)}
+.top{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:9px 16px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font:700 15px var(--f-disp);letter-spacing:-.01em}
+.brand svg{width:20px;height:20px;color:var(--select)}
+.crumb{color:var(--muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--ink);font-weight:600}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap;color:var(--ink)}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--muted)}
+.badge.on::before{background:var(--select)} .badge.warn::before{background:var(--hi)}
+.tools{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.btn{border:1px solid var(--line);background:var(--panel);padding:6px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:color-mix(in srgb,var(--ink) 35%,var(--line))}
+.btn[aria-pressed="true"]{background:color-mix(in srgb,var(--select) 12%,var(--panel));border-color:var(--select)}
+.btn.pri{background:var(--select);color:var(--select-ink);border-color:var(--select);font-weight:600}
+.btn.pri:hover:not(:disabled){filter:brightness(1.08)}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.45;cursor:default}
+.icon{display:inline-grid;place-items:center;width:30px;height:30px;padding:0}
+.icon svg{width:16px;height:16px}
+
+.rail,.insp{min-width:0;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:auto}
+.rail{grid-area:rail;border-right:1px solid var(--line)}
+.insp{grid-area:insp;border-left:1px solid var(--line)}
+h2{font:600 10.5px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:8px 0 0;display:flex;align-items:center;justify-content:space-between;gap:6px}
+h2:first-child{margin-top:0}
+h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;padding:2px 8px;font-size:11.5px}
+
+/* Scene cards */
+.cards{display:grid;gap:6px}
+.card{position:relative;display:grid;gap:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.card.sel{border-color:var(--select);box-shadow:inset 0 0 0 1px var(--select)}
+.pick{display:grid;gap:5px;border:0;background:transparent;padding:0;text-align:left;min-width:0;border-radius:4px}
+.pick strong{font:700 15px var(--f-disp);letter-spacing:-.01em;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pick small{color:var(--muted);font-size:11.5px}
+.when{display:flex;gap:5px;align-items:center;font-size:11.5px;color:var(--ink)}
+.when svg{width:12px;height:12px;color:var(--select);flex:none}
+.live{font:600 9.5px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.tag{font-size:10.5px;padding:1px 6px;border:1px solid var(--line);border-radius:3px;color:var(--muted)}
+.mini{position:relative;height:46px;border-radius:4px;background:var(--canvas);overflow:hidden}
+.mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
+.mini b{position:absolute;background:color-mix(in srgb,var(--cat) 70%,var(--panel));border-radius:1px}
+
+.cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
+.legend{display:grid;gap:2px}
+.lg{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;padding:4px 6px;border-radius:4px;text-align:left}
+.lg:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
+.lg .ct{margin-left:auto;font:12px var(--f-mono);color:var(--muted)}
+.lg[aria-pressed="false"]{opacity:.5}
+.lg[aria-pressed="false"] .sw{background:transparent;border:1.5px solid var(--cat)}
+.recent{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:11.5px}
+.recent li{display:grid;gap:1px}
+.recent span{color:var(--muted);font:11px var(--f-mono)}
+
+/* Canvas */
+.canvas{grid-area:canvas;min-width:0;padding:18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;gap:12px}
+#stage{position:relative;width:100%;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.mon{position:absolute;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
+.mon.cur{box-shadow:0 0 0 2px var(--select)}
+.mon .cell{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);border-radius:2px;position:relative;min-width:0;min-height:0}
+.mon .cell i{position:absolute;right:3px;bottom:1px;font:normal 9px var(--f-mono);color:var(--muted)}
+.nogrid .mon .cell{border-color:transparent} .nogrid .mon .cell i{display:none}
+.mlab{position:absolute;display:flex;gap:6px;align-items:baseline;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;transform:translateY(-100%);padding-bottom:3px}
+.mlab button{border:0;background:transparent;padding:0;font-weight:600;color:var(--ink);font-size:11.5px}
+.mlab button[aria-pressed="true"]{color:var(--select)}
+.tile{--cat:var(--other);position:absolute;display:flex;flex-direction:column;align-items:flex-start;gap:2px;overflow:hidden;padding:3px 5px;border-radius:3px;
+  border:1px solid color-mix(in srgb,var(--cat) 60%,transparent);background:color-mix(in srgb,var(--cat) 22%,var(--panel));color:var(--ink);font-size:10.5px;line-height:1.2;cursor:grab;touch-action:none;contain:layout paint}
+.tile b{font:500 9px var(--f-mono);padding:1px 4px;border-radius:2px;background:var(--cat);color:var(--panel);letter-spacing:.02em;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;max-width:100%}
+.tile.pin::after{content:"";position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--cat)}
+.tile.stay{background:color-mix(in srgb,var(--cat) 6%,transparent);border-style:dashed;color:var(--muted);z-index:0}
+.tile.stay b{background:color-mix(in srgb,var(--cat) 45%,var(--panel))}
+.tile.pin,.tile.fill{z-index:2}
+.tile.moves{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--select) 55%,transparent)}
+.tile.sel{outline:2px solid var(--select);outline-offset:-1px;z-index:4}
+.tile.dim{opacity:.22}
+.tile.drag{cursor:grabbing;z-index:9;opacity:.9;box-shadow:0 12px 26px -10px color-mix(in srgb,var(--ink) 60%,transparent)}
+#drop{position:absolute;border:2px solid var(--select);background:color-mix(in srgb,var(--select) 18%,transparent);border-radius:3px;pointer-events:none;display:none;z-index:8}
+@media (prefers-reduced-motion:no-preference){
+  .tile{transition:left .22s cubic-bezier(.2,.7,.2,1),top .22s cubic-bezier(.2,.7,.2,1),width .22s,height .22s,opacity .15s}
+  .tile.drag,.tile.now{transition:none}
+  #drop{transition:left .08s,top .08s,width .08s,height .08s}}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.over{font-size:12px;color:var(--muted);margin:0}
+.over b{color:var(--ink);font-weight:600}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+#results ul{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:2px;font-size:12px;max-height:220px;overflow:auto}
+#results li{display:grid;grid-template-columns:1.2em minmax(0,1fr);gap:4px;overflow-wrap:anywhere}
+#results .ok{color:var(--ok)} #results .bad{color:var(--bad)} #results .mut{color:var(--muted)}
+.phead{display:flex;align-items:center;gap:8px}
+.phead b{font-weight:600}
+.phead .btn{margin-left:auto}
+pre{margin:6px 0;padding:8px;background:var(--canvas);border:1px solid var(--line);border-radius:6px;white-space:pre-wrap;word-break:break-all;font:11.5px/1.4 var(--f-mono)}
+textarea,input[type=text],input[type=time],select{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-width:0;max-width:100%}
+textarea{width:100%;height:76px;resize:vertical;font:11.5px/1.4 var(--f-mono)}
+input[type=text]{width:100%}
+details summary{cursor:pointer;font-weight:600}
+
+/* Inspector */
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;border:0;background:transparent;padding:6px 2px;font-size:11.5px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.field{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:30px}
+.field>label,.field>span:first-child{color:var(--muted)}
+.field.stack{flex-direction:column;align-items:stretch;gap:4px}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.step button{border:0;background:transparent;width:28px;height:28px;font-size:15px}
+.step button:disabled{opacity:.35;cursor:default}
+.step span{min-width:26px;text-align:center;font:500 12.5px var(--f-mono)}
+.win{display:grid;gap:7px;padding:9px;border:1px solid var(--line);border-radius:8px}
+.win .t{font-weight:600;font-size:13px;word-break:break-word}
+.win .m{color:var(--muted);font-size:12px}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.trig{display:grid;gap:6px}
+.trig label{display:flex;gap:8px;align-items:center}
+.trig input[type=radio]{accent-color:var(--select);margin:0}
+.days{display:flex;flex-wrap:wrap;gap:3px;margin-left:22px}
+.days button{width:28px;height:28px;border:1px solid var(--line);background:var(--panel);border-radius:5px;font-size:11.5px;font-weight:600;padding:0}
+.days button[aria-pressed="true"]{background:var(--select);color:var(--select-ink);border-color:var(--select)}
+.at{display:flex;gap:8px;align-items:center;margin-left:22px}
+.note{font-size:11.5px;color:var(--muted);margin:0}
+
+.status{grid-area:status;display:flex;flex-wrap:wrap;gap:4px 18px;padding:7px 16px;border-top:1px solid var(--line);font:11.5px var(--f-mono);color:var(--muted);align-items:center}
+.status #msg{color:var(--ink)}
+.status .btn{margin-left:auto;font:11.5px var(--f)}
+
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:16px;width:min(460px,calc(100vw - 32px));max-height:min(640px,calc(100vh - 32px))}
+dialog::backdrop{background:color-mix(in srgb,#000 40%,transparent)}
+dialog h3{font:700 18px var(--f-disp);margin:0 0 8px}
+dialog form{display:grid;gap:10px}
+.catrows{display:grid;gap:2px;max-height:360px;overflow:auto}
+.catrow{display:grid;grid-template-columns:auto minmax(0,1fr) 120px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid var(--line)}
+.catrow code{font:12px var(--f-mono);overflow:hidden;text-overflow:ellipsis}
+
+@media (max-width:1180px){.app{grid-template-columns:212px minmax(0,1fr) 244px}.canvas{padding:14px}}
+@media (max-width:900px){
+  .app{grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "canvas" "rail" "insp" "status"}
+  .rail,.insp{border:0;border-top:1px solid var(--line);overflow:visible}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <span class="brand"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1"/><rect x="11" y="3" width="7" height="6" rx="1"/><rect x="2" y="11" width="16" height="6" rx="1"/></svg>Tile Windows</span>
+    <span class="crumb">Scene: <b id="sname">…</b></span>
+    <span id="sbadge" class="badge">Saved</span>
+    <span id="mode" class="badge">…</span>
+    <div class="tools">
+      <button id="grid" class="btn" type="button" aria-pressed="true">Show grid</button>
+      <button id="theme" class="btn icon" type="button" aria-label="Theme: system"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11A5.5 5.5 0 0 0 8 2.5z" fill="currentColor"/></svg></button>
+      <button id="refresh" class="btn" type="button" title="Read the windows again. Clears Undo." hidden>Refresh</button>
+      <button id="undo" class="btn" type="button" disabled>Undo</button>
+      <button id="apply" class="btn pri" type="button">Apply</button>
+    </div>
+  </header>
+
+  <aside class="rail" aria-label="Scenes and categories">
+    <h2>Scenes <button id="newscene" class="btn" type="button" hidden>Save as new</button></h2>
+    <div id="cards" class="cards"></div>
+    <h2>Categories <button id="editcats" class="btn" type="button" hidden>Edit</button></h2>
+    <div id="legend" class="legend"></div>
+    <p class="note">Click a category to fade it on the board.</p>
+    <div id="recentbox" hidden><h2>Recent</h2><ol id="recent" class="recent"></ol></div>
+  </aside>
+
+  <main class="canvas">
+    <div id="stage" aria-label="Monitors and windows"><div id="drop"></div></div>
+    <p id="hint" class="hint"></p>
+    <p id="over" class="over"></p>
+    <section id="results" class="panel" hidden aria-label="Apply results">
+      <div class="phead"><b id="sum"></b><button id="closeres" class="btn ghost" type="button">Close</button></div>
+      <ul id="reslist"></ul>
+    </section>
+    <section id="fileout" class="panel" hidden aria-label="Apply by hand">
+      <p class="note" style="margin:0 0 4px">1. <b>last-place.json</b> was downloaded. If it is not in Downloads, change the path.</p>
+      <input type="text" id="path" value="$env:USERPROFILE\Downloads\last-place.json" aria-label="Path of last-place.json">
+      <p class="note" style="margin:8px 0 0">2. Paste this into Windows PowerShell:</p>
+      <pre id="cmd"></pre>
+      <div class="row"><button id="copy" class="btn" type="button">Copy</button><span class="note" id="cmsg" role="status"></span></div>
+    </section>
+    <details id="offline" class="panel" hidden>
+      <summary>Load a snapshot by hand</summary>
+      <p class="note" style="margin:6px 0">Paste the output of <code>tile.ps1 -Json</code>. Then drag windows onto cells and click Apply to get a place file.</p>
+      <textarea id="paste" spellcheck="false" placeholder='{"monitors":[...],"windows":[...]}' aria-label="Snapshot JSON"></textarea>
+      <div class="row" style="margin-top:6px"><button id="load" class="btn" type="button">Load</button><button id="sample" class="btn" type="button">Use sample</button><span class="note" id="lmsg" role="status"></span></div>
+    </details>
+  </main>
+
+  <aside class="insp" aria-label="Inspector">
+    <h2>Monitor</h2>
+    <div id="mon"></div>
+    <h2>Window</h2>
+    <div id="win"></div>
+    <div id="scenebox"></div>
+  </aside>
+
+  <footer class="status"><span id="msg" role="status"></span><span id="pend"></span><button id="quit" class="btn ghost" type="button" hidden>Stop server</button></footer>
+</div>
+
+<dialog id="dlg"><form method="dialog" id="dlgform"></form></dialog>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const LIVE=location.protocol.startsWith("http");
+const ROLE={wide:"Ultrawide",tall:"Portrait",laptop:"Laptop"};
+const SORTS=[["app","App order (default)"],["category","Category"],["title","Title A to Z"],["position","Where windows sit now"]];
+const TRIG=[["manual","Only when I click Apply"],["time","On a schedule"],["display","When the monitors change"]];
+const DAYN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DAYORDER=[1,2,3,4,5,6,0];
+const CATS0=[["code","Code"],["browse","Browse"],["comms","Comms"],["other","Other"]];
+// The offline page cannot read scenes.json (file://), so it keeps a copy of its map. test/run.ps1 checks they match.
+const OFFLINE_CATS={"claude":"code","Code":"code","WindowsTerminal":"code","powershell":"code","pwsh":"code","devenv":"code","chrome":"browse","msedge":"browse","firefox":"browse","brave":"browse","ms-teams":"comms","olk":"comms","outlook":"comms","slack":"comms","Zoom":"comms"};
+// Invented sample for the offline page: no real titles.
+const SAMPLE={monitors:[{name:"\\\\.\\DISPLAY1",role:"laptop",x:-1536,y:769,w:1536,h:912},{name:"\\\\.\\DISPLAY2",role:"wide",x:0,y:0,w:4096,h:1680},{name:"\\\\.\\DISPLAY3",role:"tall",x:4096,y:-1354,w:1200,h:1872}],
+  windows:[["claude","Refactor the grid solver",0,0],["claude","Pin parser edge cases",819,0],["chrome","Quarterly roadmap",1638,0],["chrome","It's a \"quoted\" <test>",2457,0],["WindowsTerminal","pwsh - tiler",0,840],
+    ["explorer","Projects",1638,840],["ms-teams","Team chat",4096,-418],["outlook","Inbox - Outlook",4096,-1354],["olk","Calendar",-1536,769],["notepad","todo.txt - Notepad",2900,700]]
+    .map(([app,title,x,y],i)=>({id:i+1,app,title,x,y,w:x>=4096?1200:x<0?1536:819,h:x>=4096?936:x<0?912:840}))};
+
+let snap=null,cfg={scenes:[],cats:LIVE?{}:OFFLINE_CATS,categories:CATS0},work={},selId=null,prevs={},pseq={},selWin=null,curMon=null,hist=[],isBusy=false,serverDry=false,
+  st={active:"",log:[]},hidden=new Set(),showGrid=true,G={x0:0,y0:0,S:1},els=new Map(),drawn={},optim=null,drag=null,raf=0,
+  offRects=null,offOrig=null,offGrids={};
+const clone=o=>JSON.parse(JSON.stringify(o));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
+const same=(a,b)=>a&&b&&a.x===b.x&&a.y===b.y&&a.w===b.w&&a.h===b.h;
+const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
+const status=t=>{$("msg").textContent=t};
+const scene=()=>work[selId];
+const saved=id=>cfg.scenes.find(s=>s.id===id);
+const edited=id=>!!work[id]&&JSON.stringify(work[id])!==JSON.stringify(saved(id));
+const withCats=s=>({...s,cats:cfg.cats,categories:cfg.categories});
+const catOf=app=>{const c=cfg.cats&&Object.keys(cfg.cats).find(k=>k.toLowerCase()===String(app).toLowerCase());return c?cfg.cats[c]:"other"};
+const catName=c=>(cfg.categories.find(x=>x[0]===c)||[c,c])[1];
+const monName=m=>m.role?ROLE[m.role]:`Monitor ${snap.monitors.indexOf(m)+1}`;
+const winById=id=>snap.windows.find(w=>w.id===id);
+const prev=()=>prevs[selId];
+const ordinal=n=>n+(n%10===1&&n%100!==11?"st":n%10===2&&n%100!==12?"nd":n%10===3&&n%100!==13?"rd":"th");
+const post=(u,b)=>fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:typeof b==="string"?b:JSON.stringify(b)});
+
+/* ---------- Grids and cells (display and hit-testing only; the engine places windows) ---------- */
+function gridOf(m){if(LIVE)return m.role&&scene()?scene().grids[m.role]:null;
+  if(!offGrids[m.name])offGrids[m.name]=m.role==="wide"?{c:5,r:2}:m.h>m.w?{c:1,r:2}:{c:1,r:1};return offGrids[m.name]}
+// Cell size rounds like tile.ps1 ([int](width/cols)).
+function cellRect(m,g,c0,r0,cs,rs){const cw=Math.round(m.w/g.c),ch=Math.round(m.h/g.r);return{x:m.x+c0*cw,y:m.y+r0*ch,w:cs*cw,h:rs*ch}}
+function bbox(slots,g){const cs=slots.map(s=>s%g.c),rs=slots.map(s=>Math.floor(s/g.c));
+  const c0=Math.min(...cs),c1=Math.max(...cs),r0=Math.min(...rs),r1=Math.max(...rs),cells=[];
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)cells.push(r*g.c+c);return{c:c0,r:r0,cs:c1-c0+1,rs:r1-r0+1,cells}}
+function monAt(x,y){return snap.monitors.find(m=>x>=m.x&&x<m.x+m.w&&y>=m.y&&y<m.y+m.h)}
+const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
+
+/* ---------- Loading ---------- */
+async function loadAll(){
+  try{
+    const [s,c,t]=await Promise.all([fetch("snapshot",{cache:"no-store"}),fetch("config",{cache:"no-store"}),fetch("state",{cache:"no-store"})]);
+    if(!s.ok||!c.ok)throw new Error("server said "+(s.ok?c.status:s.status));
+    serverDry=s.headers.get("X-Dry-Run")==="1";
+    cfg=await c.json();if(t.ok)st=await t.json();
+    for(const x of cfg.scenes)if(!work[x.id])work[x.id]=clone(x);
+    if(!selId||!work[selId])selId=(cfg.scenes.find(x=>x.id===st.active)||cfg.scenes[0]).id;
+    setSnap(await s.json());await previewAll();
+  }catch(e){status("Could not reach the server: "+e.message)}
+}
+async function refresh(){if(isBusy)return;status("Reading your windows…");
+  try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);hist=[];prevs={};setSnap(await r.json());await previewAll();status("Windows read again.")}
+  catch(e){status("Could not read windows: "+e.message)}}
+function setSnap(d){
+  if(!d||!Array.isArray(d.monitors)||!d.monitors.length||!Array.isArray(d.windows))throw new Error("need {monitors:[...], windows:[...]}");
+  snap={monitors:d.monitors,windows:d.windows.map(w=>({...w}))};
+  if(!LIVE){offOrig=snap.windows.map(rect);offRects=snap.windows.map(rect);hist=[]}
+  if(!snap.monitors.includes(curMon))curMon=snap.monitors.find(m=>m.role==="wide")||snap.monitors[0];
+  if(selWin&&!winById(selWin))selWin=null;
+  build();layout();render();
+}
+async function preview(id){
+  const n=pseq[id]=(pseq[id]||0)+1;
+  try{const r=await post("preview",withCats(work[id]));if(!r.ok)throw new Error(await r.text());const j=await r.json();
+    if(pseq[id]!==n)return;prevs[id]=j;if(id===selId)optim=null;render()}
+  catch(e){status("Preview failed: "+e.message)}}
+async function previewAll(){await preview(selId);for(const s of cfg.scenes)if(s.id!==selId)await preview(s.id);
+  for(const id in work)if(!saved(id)&&id!==selId)await preview(id)}
+
+/* ---------- Drawing ---------- */
+function build(){
+  const stg=$("stage"),drop=$("drop");stg.textContent="";stg.appendChild(drop);els.clear();
+  for(const m of snap.monitors){
+    const e=document.createElement("div");e.className="mon";m.el=e;stg.appendChild(e);
+    const l=document.createElement("div");l.className="mlab";m.lab=l;stg.appendChild(l);
+  }
+  for(const w of snap.windows){
+    const e=document.createElement("div");e.className="tile";e.tabIndex=0;e.setAttribute("role","button");e.dataset.id=w.id;
+    e.innerHTML="<b></b><span></span>";e.firstChild.textContent=w.app;e.children[1].textContent=w.title;
+    stg.appendChild(e);els.set(w.id,e);
+  }
+}
+// The only layout read: the stage width, on load and on resize.
+function layout(){
+  const M=snap.monitors,stg=$("stage"),x0=Math.min(...M.map(m=>m.x)),y0=Math.min(...M.map(m=>m.y)),x1=Math.max(...M.map(m=>m.x+m.w)),y1=Math.max(...M.map(m=>m.y+m.h));
+  const top=20,S=Math.min(stg.clientWidth/(x1-x0),Math.max(260,innerHeight-260)/(y1-y0));G={x0:x0-(stg.clientWidth/S-(x1-x0))/2,y0:y0-top/S,S};
+  stg.style.height=Math.round((y1-y0)*S+top+4)+"px";
+  for(const m of M){Object.assign(m.el.style,{left:(m.x-G.x0)*S+"px",top:(m.y-G.y0)*S+"px",width:m.w*S+"px",height:m.h*S+"px"});
+    Object.assign(m.lab.style,{left:(m.x-G.x0)*S+"px",top:(m.y-G.y0)*S+"px",maxWidth:m.w*S+"px"})}
+}
+const px=r=>({left:(r.x-G.x0)*G.S+"px",top:(r.y-G.y0)*G.S+"px",width:Math.max(r.w*G.S,10)+"px",height:Math.max(r.h*G.S,10)+"px"});
+// Where each window goes: the engine's preview (live) or the edited rects (offline).
+function view(){
+  const v={},P=prev();
+  snap.windows.forEach((w,i)=>{v[w.id]={w,r:LIVE?(w.min?null:rect(w)):(w.min&&same(offRects[i],offOrig[i])?null:offRects[i]),kind:"stay",p:null}});
+  if(LIVE&&P){for(const p of P.placed){const x=v[p.id];if(x){x.r=rect(p);x.kind=p.pin>=0?"pin":"fill";x.p=p}}for(const l of P.left)if(v[l.id])v[l.id].kind="left"}
+  if(!LIVE)snap.windows.forEach((w,i)=>{v[w.id].kind=same(offRects[i],offOrig[i])?"fill":"pin"});
+  if(optim&&v[optim.id]){v[optim.id].r=optim.r;v[optim.id].kind="pin"}
+  return v}
+function render(){
+  if(!snap)return;
+  const V=view(),s=LIVE?scene():null;drawn={};
+  $("stage").classList.toggle("nogrid",!showGrid);
+  for(const m of snap.monitors){
+    const g=gridOf(m),e=m.el;e.classList.toggle("cur",m===curMon);
+    const want=g?`${g.c}x${g.r}`:"";
+    if(e.dataset.g!==want){e.dataset.g=want;e.innerHTML="";
+      if(g){e.style.gridTemplateColumns=`repeat(${g.c},minmax(0,1fr))`;e.style.gridTemplateRows=`repeat(${g.r},minmax(0,1fr))`;
+        for(let i=0;i<g.c*g.r;i++){const c=document.createElement("div");c.className="cell";c.innerHTML=`<i>${i+1}</i>`;e.appendChild(c)}}}
+    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${g.c}×${g.r}${s&&s.fill&&s.fill.mon===m.role?" · fills":""} · `:""}${m.w}×${m.h}</span>`;
+  }
+  let moves=0;
+  for(const w of snap.windows){
+    const e=els.get(w.id),x=V[w.id];if(drag&&drag.id===w.id)continue;
+    e.className=`tile cat-${catOf(w.app)} ${x.kind}`;
+    if(!x.r){e.hidden=true;continue}
+    e.hidden=false;Object.assign(e.style,px(x.r));drawn[w.id]={x:x.r.x,y:x.r.y,w:x.r.w,h:x.r.h,kind:x.kind};
+    const mv=(x.kind==="pin"||x.kind==="fill")&&!same(x.r,w);if(mv)moves++;
+    e.classList.toggle("moves",mv);e.classList.toggle("sel",w.id===selWin);e.classList.toggle("dim",hidden.has(catOf(w.app)));
+    e.setAttribute("aria-label",`${w.title}, ${w.app}, ${where(x)}`);
+    e.title=`${w.app}: ${w.title}\n${where(x)}`;
+  }
+  // Header
+  $("sname").textContent=LIVE?(s?s.name:"…"):"Offline snapshot";
+  const ed=LIVE&&edited(selId);$("sbadge").hidden=!LIVE;$("sbadge").textContent=ed?"Edited":"Saved";$("sbadge").className="badge"+(ed?" warn":"");
+  $("mode").textContent=!LIVE?"Offline":serverDry?"Dry run":"Live";$("mode").className="badge"+(LIVE&&!serverDry?" on":"");
+  $("mode").title=!LIVE?"Apply downloads a place file.":serverDry?"Apply only shows what would move.":"Apply moves your windows.";
+  $("apply").textContent=moves?`Apply · ${plural(moves,"move")}`:"Apply";
+  $("apply").disabled=isBusy||(!LIVE&&!moves);
+  $("undo").disabled=isBusy||!hist.length;$("refresh").disabled=isBusy;
+  $("pend").textContent=moves?`${plural(moves,"window")} will move on Apply`:"The board matches your screen";
+  $("hint").textContent=LIVE?"Drag a window onto a cell to pin it there. Unpinned windows fill the "+(s&&s.fill?ROLE[s.fill.mon]||"fill monitor":"fill monitor")+" in fill order. Arrow keys move a focused window by one cell; Shift+arrows resize it; Delete unpins.":
+    "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
+  overText(V);renderRail();renderInsp(V);
+}
+function where(x){if(!x.r)return"minimized, stays minimized";if(x.kind==="left")return"no free cell, stays where it is";
+  if(x.kind==="stay")return LIVE?"not in this scene, stays where it is":"where it is now";
+  const p=x.p,m=p?snap.monitors.find(m=>m.role===p.mon):monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2);
+  return `${m?monName(m):"?"}${p?` · slot${p.slots.length>1?"s":""} ${p.slots.join("+")}`:""}`}
+function overText(V){const P=prev(),o=$("over");if(!LIVE||!P){o.textContent="";return}
+  const parts=[];
+  if(P.left.length)parts.push(`<b>No free cell</b> for ${P.left.map(l=>esc(l.title)).slice(0,4).join(", ")}${P.left.length>4?` and ${P.left.length-4} more`:""}. They stay where they are.`);
+  if(P.missing.length)parts.push(`<b>Not open:</b> ${[...new Set(P.missing.map(m=>esc(m.app)+(m.match?` "${esc(m.match)}"`:"")+(m.why!=="no open window"?` (${esc(m.why)})`:"")))].join(", ")}.`);
+  o.innerHTML=parts.join(" ")||"Every window in this scene has a place."}
+
+function miniHTML(P){const M=snap.monitors,x0=Math.min(...M.map(m=>m.x)),y0=Math.min(...M.map(m=>m.y)),x1=Math.max(...M.map(m=>m.x+m.w)),y1=Math.max(...M.map(m=>m.y+m.h));
+  const S=Math.min(196/(x1-x0),42/(y1-y0)),ox=(196-(x1-x0)*S)/2+3,oy=(42-(y1-y0)*S)/2+2,b=r=>`left:${ox+(r.x-x0)*S}px;top:${oy+(r.y-y0)*S}px;width:${Math.max(r.w*S-1,2)}px;height:${Math.max(r.h*S-1,2)}px`;
+  return M.map(m=>`<i style="${b(m)}"></i>`).join("")+(P?P.placed.map(p=>`<b class="cat-${catOf(p.app)}" style="${b(p)}"></b>`).join(""):"")}
+function trigText(s){const t=s.trigger||{type:"manual"};if(t.type==="time"){const d=DAYORDER.filter(x=>(t.days||[]).includes(x));
+  return `${d.length===5&&[1,2,3,4,5].every(x=>d.includes(x))?"Mon to Fri":d.length===7?"Every day":d.map(x=>DAYN[x]).join(", ")||"No days"} at ${t.time||"09:00"}`}
+  return t.type==="display"?"When the monitors change":"By hand"}
+function renderRail(){
+  if(LIVE){
+    const ids=[...cfg.scenes.map(s=>s.id),...Object.keys(work).filter(id=>!saved(id))];
+    $("cards").innerHTML=ids.map(id=>{const s=work[id],on=id===st.active;return `<article class="card${id===selId?" sel":""}">
+      <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini" aria-hidden="true">${miniHTML(prevs[id])}</span>
+      <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
+      ${(s.trigger||{}).type&&s.trigger.type!=="manual"?`<span class="when"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="6" cy="6" r="4.8"/><path d="M6 3.4V6l1.8 1.2"/></svg>${esc(trigText(s))}</span>`:""}</button>
+      <div class="crow"><span class="tag">${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}</span><button type="button" class="btn${id===selId?" pri":""}" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="Apply ${esc(s.name)}">Apply</button></div></article>`}).join("");
+  }else $("cards").innerHTML=`<p class="note">Scenes need the app server. Start it with <code>serve.ps1</code> or from the Start menu.</p>`;
+  const counts={};for(const w of snap.windows){const c=catOf(w.app);counts[c]=(counts[c]||0)+1}
+  $("legend").innerHTML=cfg.categories.map(([c,l])=>`<button type="button" class="lg cat-${c}" data-cat="${c}" aria-pressed="${!hidden.has(c)}"><i class="sw"></i>${esc(l)}<span class="ct">${counts[c]||0}</span></button>`).join("");
+  $("recentbox").hidden=!(LIVE&&st.log&&st.log.length);
+  if(st.log)$("recent").innerHTML=st.log.slice(0,5).map(l=>`<li><span>${esc(l.t)}</span>${esc(l.x)}</li>`).join("");
+}
+const stepper=(lbl,val,attrs,min,max)=>`<span class="step"><button type="button" ${attrs} data-d="-1" aria-label="Fewer ${lbl}" ${val<=min?"disabled":""}>−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" ${attrs} data-d="1" aria-label="More ${lbl}" ${val>=max?"disabled":""}>+</button></span>`;
+function renderInsp(V){
+  const s=LIVE?scene():null,m=curMon,g=gridOf(m);
+  const mons=LIVE?snap.monitors.filter(x=>x.role):snap.monitors;
+  let h=`<div class="seg" role="group" aria-label="Monitor">${mons.map(x=>`<button type="button" data-mon="${snap.monitors.indexOf(x)}" aria-pressed="${x===m}">${esc(monName(x))}</button>`).join("")}</div>`;
+  if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
+    if(s&&s.fill&&s.fill.mon===m.role)h+=`<div class="field stack"><label for="sort">Fill order</label><select id="sort">${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note">Fills with: ${esc((s.fill.apps||[]).map(a=>a==="*"?"everything else":a).join(", ")||"nothing")}.</p></div>`;
+    else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`}
+  else h+=`<p class="note">${LIVE?"This monitor has no grid in this scene.":""}</p>`;
+  $("mon").innerHTML=h;
+  // Window
+  const w=selWin&&winById(selWin),x=w&&V[w.id];
+  if(!w)$("win").innerHTML=`<p class="note">Click a window to see it here.</p>`;
+  else{const p=x.p,pin=LIVE&&p&&p.pin>=0?s.pins[p.pin]:null,box=pin?bbox(pin.slots,s.grids[pin.mon]):null;
+    let wh=`<div class="win cat-${catOf(w.app)}"><div class="field" style="min-height:0"><span style="display:flex;gap:6px;align-items:center"><i class="sw"></i>${esc(w.app)}</span>
+      ${LIVE?`<select id="wcat" aria-label="Category of ${esc(w.app)}">${cfg.categories.map(([c,l])=>`<option value="${c}"${c===catOf(w.app)?" selected":""}>${esc(l)}</option>`).join("")}</select>`:""}</div>
+      <div class="t">${esc(w.title)}</div>
+      <div class="m">${!LIVE?esc(where(x)):pin?"Pinned · "+esc(where(x)):x.kind==="fill"?`Fills, ${ordinal(p.slots[0])} cell · ${esc(where(x))}`:esc(where(x)[0].toUpperCase()+where(x).slice(1))}.</div>`;
+    if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,s.grids[pin.mon].c)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,s.grids[pin.mon].r)}</div>
+      <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" placeholder="any ${esc(w.app)} window" spellcheck="false"></div>`;
+    const mm=LIVE?snap.monitors.filter(q=>q.role&&s.grids[q.role]):snap.monitors;
+    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto"><option value="">Choose a cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(gg.c*gg.r).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
+    if(pin)wh+=`<button type="button" class="btn" id="unpin">Unpin. Let it fill.</button>`;
+    $("win").innerHTML=wh+"</div>"}
+  // Scene settings
+  if(!LIVE||!s){$("scenebox").innerHTML="";return}
+  const t=s.trigger||(s.trigger={type:"manual",days:[1,2,3,4,5],time:"09:00"}),isSaved=!!saved(selId);
+  $("scenebox").innerHTML=`<h2>Scene</h2>
+    <div class="field stack"><label for="sceneName">Name</label><input type="text" id="sceneName" value="${esc(s.name)}" ${s.builtIn?"disabled":""} maxlength="40"></div>
+    <div class="trig" role="radiogroup" aria-label="Applies itself">${TRIG.map(([v,l])=>`<label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}>${l}</label>`).join("")}
+      ${t.type==="time"?`<div class="days" role="group" aria-label="Days">${DAYORDER.map(d=>`<button type="button" data-day="${d}" aria-pressed="${(t.days||[]).includes(d)}" aria-label="${DAYN[d]}">${DAYN[d][0]}</button>`).join("")}</div>
+      <div class="at"><label for="time">At</label><input type="time" id="time" value="${esc(t.time||"09:00")}"></div>`:""}</div>
+    <p class="note">${t.type==="manual"?"Applies only when you click Apply.":"The tray agent applies it"+(t.type==="time"?" at that time.":" when a monitor is added or removed.")+" Save to turn it on."}</p>
+    <div class="row"><button type="button" class="btn pri" id="save" ${(isSaved&&!edited(selId))||s.builtIn?"disabled":""}>Save</button>
+      <button type="button" class="btn" id="saveas">Save as new</button>
+      <button type="button" class="btn" id="revert" ${isSaved&&edited(selId)?"":"disabled"}>Revert</button>
+      <button type="button" class="btn danger" id="del" ${s.builtIn?"disabled":""}>Delete</button></div>
+    ${s.builtIn?`<p class="note">The built-in Default matches <code>tile.ps1 -Default</code>. Save your changes as a new scene.</p>`:""}`;
+}
+
+/* ---------- Editing scenes ---------- */
+function edit(fn,msg){if(isBusy)return false;hist.push({k:"edit",id:selId,s:clone(scene())});fn(scene());if(msg)status(msg);render();preview(selId);return true}
+const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
+function pinWin(id,mon,slot,cs=1,rs=1){
+  const w=winById(id);
+  if(!LIVE){const i=snap.windows.indexOf(w),g=gridOf(mon);cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
+    const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),t=cellRect(mon,g,c0,r0,cs,rs);
+    if(same(t,offRects[i]))return render();hist.push({k:"rects",r:offRects.map(rect)});offRects[i]=t;selWin=id;render();status(`Moved ${w.title} to ${monName(mon)} cell ${r0*g.c+c0+1}.`);return}
+  const s=scene(),g=s.grids[mon.role];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
+  const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),slots=[];
+  for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*g.c+c);
+  const P=prev(),cur=P&&P.placed.find(p=>p.id===id),grab=cur&&cur.pin>=0?s.pins[cur.pin]:null,match=grab?grab.match||"":matchFor(w),cells=new Set(slots);
+  optim={id,r:cellRect(mon,g,c0,r0,cs,rs)};selWin=id;
+  // Drop the pin that held this window and any pin on the cells it now covers.
+  const covers=q=>{const qs=q.slots.filter(v=>v<g.c*g.r);return q.mon===mon.role&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
+  edit(x=>{x.pins=x.pins.filter(q=>q!==grab&&!(q.app===w.app&&(q.match||"")===match)&&!covers(q));
+    x.pins.unshift({app:w.app,match,mon:mon.role,slots})},`Pinned ${w.title} to ${monName(mon)} ${slots.length>1?"cells":"cell"} ${slots.map(v=>v+1).join("+")}.`);
+}
+function setGrid(k,d){const m=curMon;
+  if(!LIVE){const g=gridOf(m);g[k]=clamp(g[k]+d,1,k==="c"?8:4);m.el.dataset.g="";render();return}
+  edit(s=>{const g=s.grids[m.role],o={...g};g[k]=clamp(g[k]+d,1,k==="c"?8:4);
+    // Keep each pin on the same column and row; drop cells past the new edge.
+    for(const p of s.pins)if(p.mon===m.role)p.slots=p.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+    s.pins=s.pins.filter(p=>p.slots.length)},`${monName(m)} grid: ${scene().grids[m.role].c+(k==="c"?d:0)}×${scene().grids[m.role].r+(k==="r"?d:0)}.`)}
+function pinOf(id){const P=prev(),p=P&&P.placed.find(q=>q.id===id);return p&&p.pin>=0?{p,pin:scene().pins[p.pin]}:null}
+
+/* ---------- Drag: pointer capture, transform while moving, one rAF per frame ---------- */
+const stage=$("stage"),dropEl=$("drop");
+function target(d){
+  const sx=(d.px-stage.getBoundingClientRect().left)/G.S+G.x0,sy=(d.py-stage.getBoundingClientRect().top)/G.S+G.y0,m=monAt(sx,sy),g=m&&gridOf(m);
+  if(!g)return null;
+  const cw=m.w/g.c,ch=m.h/g.r,cs=Math.min(d.cs,g.c),rs=Math.min(d.rs,g.r);
+  let c,r;
+  if(cs===1&&rs===1){c=Math.floor((sx-m.x)/cw);r=Math.floor((sy-m.y)/ch)}
+  else{const tx=d.start.x+(d.px-d.sx)/G.S,ty=d.start.y+(d.py-d.sy)/G.S;c=Math.round((tx-m.x)/cw);r=Math.round((ty-m.y)/ch)}
+  c=clamp(c,0,g.c-cs);r=clamp(r,0,g.r-rs);return{m,g,slot:r*g.c+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)}}
+function spanOf(id,start){const pp=LIVE&&pinOf(id);if(pp){const b=bbox(pp.pin.slots,scene().grids[pp.pin.mon]);return[b.cs,b.rs,pp.pin.mon]}
+  if(!LIVE){const m=monAt(start.x+start.w/2,start.y+start.h/2),g=m&&gridOf(m);if(g)return[clamp(Math.round(start.w/(m.w/g.c)),1,g.c),clamp(Math.round(start.h/(m.h/g.r)),1,g.r),null]}
+  return[1,1,null]}
+function frame(){raf=0;if(!drag)return;const d=drag;d.el.style.transform=`translate3d(${d.px-d.sx}px,${d.py-d.sy}px,0)`;
+  const t=target(d);d.t=t;if(t){Object.assign(dropEl.style,px(t.r));dropEl.style.display="block"}else dropEl.style.display="none"}
+stage.addEventListener("pointerdown",ev=>{
+  const lab=ev.target.closest(".mlab button");if(lab)return;
+  const e=ev.target.closest(".tile");if(!e||ev.button!==0||drag||isBusy)return;
+  ev.preventDefault();e.focus({preventScroll:true});
+  try{e.setPointerCapture(ev.pointerId)}catch(_){}
+  const id=+e.dataset.id,d=drawn[id];if(!d)return;const start={x:d.x,y:d.y,w:d.w,h:d.h},[cs,rs,pmon]=spanOf(id,start);
+  e.classList.add("drag","now");
+  drag={id,el:e,start,cs,rs,pmon,sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,pid:ev.pointerId,t:null};
+});
+stage.addEventListener("pointermove",ev=>{if(!drag||ev.pointerId!==drag.pid)return;drag.px=ev.clientX;drag.py=ev.clientY;if(!raf)raf=requestAnimationFrame(frame)});
+function endDrag(ev){
+  if(!drag||ev.pointerId!==drag.pid)return;
+  const d=drag;drag=null;if(raf)cancelAnimationFrame(raf);raf=0;dropEl.style.display="none";
+  const moved=Math.abs(d.px-d.sx)+Math.abs(d.py-d.sy)>4;
+  d.el.classList.remove("drag");d.el.style.transform="";
+  requestAnimationFrame(()=>d.el.classList.remove("now"));
+  if(ev.type!=="pointerup"){render();return}
+  if(!moved){selWin=d.id;const w=winById(d.id),dw=drawn[d.id],m=dw&&monAt(dw.x+dw.w/2,dw.y+dw.h/2);if(m&&gridOf(m))curMon=m;render();return}
+  const t=target(d);
+  if(!t){render();status("Dropped outside a grid. Nothing changed.");return}
+  // Keep a pinned window's size when it moves within its monitor; a new monitor starts at one cell.
+  const keep=!LIVE||d.pmon===t.m.role;
+  curMon=t.m;pinWin(d.id,t.m,t.slot,keep?t.cs:1,keep?t.rs:1);
+}
+stage.addEventListener("pointerup",endDrag);stage.addEventListener("pointercancel",endDrag);stage.addEventListener("lostpointercapture",endDrag);
+
+// Keyboard: arrows move a window one cell; Shift+arrows resize; Enter selects; Delete unpins.
+stage.addEventListener("keydown",ev=>{
+  const e=ev.target.closest(".tile");if(!e||isBusy)return;const id=+e.dataset.id;
+  if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();selWin=id;render();return}
+  if((ev.key==="Delete"||ev.key==="Backspace")&&LIVE){ev.preventDefault();unpin(id);return}
+  const k={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];if(!k)return;ev.preventDefault();
+  const d=drawn[id];if(!d)return;
+  const pp=LIVE&&pinOf(id);let m,g,b;
+  if(pp){m=snap.monitors.find(q=>q.role===pp.pin.mon);g=gridOf(m);b=bbox(pp.pin.slots,g)}
+  else{m=monAt(d.x+d.w/2,d.y+d.h/2);g=m&&gridOf(m);if(!g)return;const cw=m.w/g.c,ch=m.h/g.r;
+    b={c:clamp(Math.floor((d.x+d.w/2-m.x)/cw),0,g.c-1),r:clamp(Math.floor((d.y+d.h/2-m.y)/ch),0,g.r-1),cs:1,rs:1};
+    if(!LIVE){const[cs,rs]=spanOf(id,d);b.cs=cs;b.rs=rs;b.c=clamp(Math.round((d.x-m.x)/cw),0,g.c-cs);b.r=clamp(Math.round((d.y-m.y)/ch),0,g.r-rs)}}
+  let{c,r,cs,rs}=b;
+  if(ev.shiftKey){cs=clamp(cs+k[0],1,g.c-c);rs=clamp(rs+k[1],1,g.r-r)}else{c=clamp(c+k[0],0,g.c-cs);r=clamp(r+k[1],0,g.r-rs)}
+  curMon=m;pinWin(id,m,r*g.c+c,cs,rs);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));
+});
+function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.");return}
+  edit(s=>{s.pins.splice(pp.p.pin,1)},`Unpinned ${winById(id).title}. It fills if its app is in the fill list.`)}
+
+/* ---------- Apply, Undo, results ---------- */
+function busy(b){isBusy=b;render()}
+function showResults(sum,rows){$("fileout").hidden=true;$("results").hidden=false;$("sum").textContent=sum;
+  $("reslist").innerHTML=rows.map(([cls,txt])=>`<li><span class="${cls}">${cls==="ok"?"✓":cls==="bad"?"✗":"·"}</span><span>${esc(txt)}</span></li>`).join("")}
+async function applyScene(){
+  const s=scene();if(!s||isBusy)return;
+  busy(true);showResults(`Applying ${s.name}…`,[]);
+  try{
+    const r=await post("scene",withCats(s));if(!r.ok)throw new Error(await r.text());const res=await r.json();
+    const moved=res.placed.filter(p=>!same(p,p.from)),dry=res.placed.some(p=>/^dry run/.test(p.note));
+    const rows=res.placed.map(p=>[p.ok&&!/^off size/.test(p.note)?"ok":"bad",`${p.app}: ${p.title} — ${same(p,p.from)?"already there":p.note}`])
+      .concat(res.missing.map(m=>["bad",`${m.app}${m.match?` "${m.match}"`:""} — ${m.why}`]),res.left.map(l=>["mut",`${l.app}: ${l.title} — no free cell, stays`]));
+    showResults(`${dry?"Dry run: would move":"Moved"} ${plural(moved.length,"window")} for ${s.name}.`,rows);
+    // Undo moves these back (decision: undo-moves-windows). A minimized window has no rect to go back to.
+    hist.push({k:"apply",back:moved.filter(p=>p.from.x>-20000).map(p=>({id:p.id,app:p.app,title:p.title,...p.from}))});
+    if(!dry){st.active=selId;try{const t=await fetch("state",{cache:"no-store"});if(t.ok)st=await t.json()}catch(_){}
+      const sn=await fetch("snapshot",{cache:"no-store"});if(sn.ok){setSnap(await sn.json());prevs={};await previewAll()}}
+    else st.active=selId;
+  }catch(e){showResults("Apply failed: "+e.message,[])}
+  finally{busy(false)}
+}
+async function placeBack(back){
+  busy(true);showResults("Moving windows back…",[]);
+  try{const r=await post("apply",back);if(!r.ok)throw new Error(await r.text());const res=[].concat(await r.json());
+    showResults(`Put back ${res.filter(x=>x.ok).length} of ${res.length}.`,res.map(x=>[x.ok&&!/^off size/.test(x.note)?"ok":"bad",`${x.app}: ${x.title} — ${x.note}`]));
+    if(!res.some(x=>/^dry run/.test(x.note))){const sn=await fetch("snapshot",{cache:"no-store"});if(sn.ok){setSnap(await sn.json());prevs={};await previewAll()}}}
+  catch(e){showResults("Undo failed: "+e.message,[])}
+  finally{busy(false)}}
+$("apply").onclick=async()=>{
+  if(LIVE)return applyScene();
+  const ch=snap.windows.map((w,i)=>({...w,...offRects[i]})).filter((w,i)=>!same(offRects[i],offOrig[i]));
+  if(!ch.length){status("Nothing changed yet. Drag a window first.");return}
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([spec(ch)],{type:"application/json"}));a.download="last-place.json";
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  $("results").hidden=true;$("fileout").hidden=false;$("cmd").textContent=cmd();$("cmsg").textContent="";
+};
+$("undo").onclick=async()=>{if(isBusy)return;const e=hist.pop();if(!e)return;
+  if(e.k==="rects"){offRects=e.r;render();status("Undid the last move.");return}
+  if(e.k==="edit"){selId=e.id;work[e.id]=e.s;optim=null;render();preview(selId);status("Undid the last change.");return}
+  if(e.k==="apply"){if(e.back.length)await placeBack(e.back);else status("That Apply moved nothing.")}};
+$("refresh").onclick=()=>refresh();
+$("closeres").onclick=()=>{$("results").hidden=true};
+// Same JSON for the file and for /apply: what tile.ps1 -Place reads.
+const spec=ws=>JSON.stringify(ws.map(({id,app,title,x,y,w,h})=>id?{id,app,title,x,y,w,h}:{app,title,x,y,w,h}));
+function cmd(){const p=$("path").value.replace(/["`]/g,"");
+  return `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.tile-windows\\app\\tile.ps1" -PlaceFile "${p}"`}
+$("path").oninput=()=>{$("cmd").textContent=cmd()};
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("cmd").textContent);$("cmsg").textContent="Copied."}
+  catch(e){const r=document.createRange();r.selectNodeContents($("cmd"));const s=getSelection();s.removeAllRanges();s.addRange(r);$("cmsg").textContent="Press Ctrl+C to copy."}};
+
+/* ---------- Saving scenes ---------- */
+async function saveConfig(next,msg){
+  const r=await post("config",next);if(!r.ok){status("Save failed: "+await r.text());return false}
+  cfg=next;status(msg);render();return true}
+async function saveScene(){const s=scene();if(s.builtIn)return;const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId);
+  if(i>=0)next.scenes[i]=clone(s);else next.scenes.push(clone(s));await saveConfig(next,`Saved ${s.name}.`)}
+async function saveAsNew(name){const s=clone(scene()),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
+  Object.assign(s,{id,name:base.slice(0,40),builtIn:false});delete s.blurb;
+  const next=clone(cfg);next.scenes.push(s);
+  if(saved(selId))work[selId]=clone(saved(selId));work[id]=clone(s);
+  if(await saveConfig(next,`Saved as ${s.name}.`)){selId=id;render();await preview(id)}}
+function ask(title,body,ok){return new Promise(res=>{const d=$("dlg"),f=$("dlgform");
+  f.innerHTML=`<h3>${esc(title)}</h3>${body}<div class="row" style="justify-content:flex-end"><button class="btn" value="">Cancel</button><button class="btn pri" value="ok">${esc(ok)}</button></div>`;
+  d.onclose=()=>res(d.returnValue==="ok"?f:null);d.returnValue="";d.showModal();const i=f.querySelector("input,select");(i||f.querySelector(".pri")).focus()})}
+
+/* ---------- Events ---------- */
+document.addEventListener("click",async ev=>{
+  const t=ev.target.closest("button");if(!t||t.classList.contains("tile"))return;
+  if(t.dataset.mon!==undefined){curMon=snap.monitors[+t.dataset.mon];render()}
+  else if(t.dataset.pick){selId=t.dataset.pick;optim=null;if(selWin&&!snap.windows.some(w=>w.id===selWin))selWin=null;render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. Apply to move the windows.`)}
+  else if(t.dataset.apply){selId=t.dataset.apply;render();if(!prevs[selId])await preview(selId);applyScene()}
+  else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
+  else if(t.dataset.g){setGrid(t.dataset.g,+t.dataset.d)}
+  else if(t.dataset.span){const pp=pinOf(selWin);if(!pp)return;const g=scene().grids[pp.pin.mon],b=bbox(pp.pin.slots,g);
+    const cs=b.cs+(t.dataset.span==="cs"?+t.dataset.d:0),rs=b.rs+(t.dataset.span==="rs"?+t.dataset.d:0);
+    pinWin(selWin,snap.monitors.find(q=>q.role===pp.pin.mon),b.r*g.c+b.c,clamp(cs,1,g.c-b.c),clamp(rs,1,g.r-b.r))}
+  else if(t.dataset.day){const d=+t.dataset.day;edit(s=>{const x=s.trigger;x.days=(x.days||[]).includes(d)?x.days.filter(v=>v!==d):[...(x.days||[]),d].sort()})}
+  else if(t.id==="unpin")unpin(selWin);
+  else if(t.id==="grid"){showGrid=!showGrid;t.setAttribute("aria-pressed",String(showGrid));render()}
+  else if(t.id==="theme")cycleTheme();
+  else if(t.id==="save")saveScene();
+  else if(t.id==="saveas"||t.id==="newscene"){const f=await ask("Save as a new scene",`<label class="field stack"><span>Name</span><input type="text" name="n" value="${esc(scene().name)} copy" maxlength="40" required></label>`,"Save");if(f)saveAsNew(f.n.value)}
+  else if(t.id==="revert"){edit(s=>{Object.keys(s).forEach(k=>delete s[k]);Object.assign(s,clone(saved(selId)))},"Reverted to the saved scene.")}
+  else if(t.id==="del"){const s=scene();if(s.builtIn)return;const f=await ask(`Delete ${s.name}?`,`<p class="note">The scene and its schedule go away. Your windows do not move.</p>`,"Delete");if(!f)return;
+    const next=clone(cfg);next.scenes=next.scenes.filter(x=>x.id!==selId);
+    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){delete work[selId];delete prevs[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
+  else if(t.id==="editcats")editCats();
+  else if(t.id==="quit"){try{await post("quit","quit")}catch(_){}document.body.innerHTML='<p style="padding:24px;font:15px system-ui">Server stopped. You can close this tab.</p>'}
+});
+document.addEventListener("change",ev=>{const t=ev.target;
+  if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
+  else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
+  else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});
+  else if(t.id==="time"&&t.value)edit(s=>{s.trigger.time=t.value});
+  else if(t.id==="match")edit(s=>{const pp=pinOf(selWin);if(pp)s.pins[pp.p.pin].match=t.value.trim()},"Pin now matches any title containing that text.");
+  else if(t.id==="sceneName"&&t.value.trim())edit(s=>{s.name=t.value.trim().slice(0,40)});
+  else if(t.id==="wcat"){const w=winById(selWin),next=clone(cfg);next.cats[w.app]=t.value;saveConfig(next,`${w.app} is now ${catName(t.value)}.`).then(ok=>{if(ok){prevs={};previewAll()}})}
+});
+async function editCats(){
+  const apps=[...new Set([...snap.windows.map(w=>w.app),...Object.keys(cfg.cats)])].sort((a,b)=>a.localeCompare(b));
+  const f=await ask("Categories",`<p class="note">Each app gets one category. It sets the color on the board and the Category fill order.</p><div class="catrows">${apps.map((a,i)=>`<div class="catrow cat-${catOf(a)}"><i class="sw"></i><code title="${esc(a)}">${esc(a)}</code><select name="c${i}" aria-label="Category of ${esc(a)}">${cfg.categories.map(([c,l])=>`<option value="${c}"${c===catOf(a)?" selected":""}>${esc(l)}</option>`).join("")}</select></div>`).join("")}</div>`,"Save");
+  if(!f)return;const next=clone(cfg);next.cats={};apps.forEach((a,i)=>{const v=f["c"+i].value;if(v!=="other"||cfg.cats[a])next.cats[a]=v});
+  if(await saveConfig(next,"Categories saved.")){prevs={};previewAll()}}
+
+/* ---------- Theme ---------- */
+const THEMES=["system","light","dark"];
+function setTheme(t){if(t==="system")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme=t;$("theme").setAttribute("aria-label","Theme: "+t);$("theme").title="Theme: "+t}
+function cycleTheme(){const cur=document.documentElement.dataset.theme||"system",n=THEMES[(THEMES.indexOf(cur)+1)%3];setTheme(n);try{localStorage.setItem("tile-theme",n)}catch(_){}}
+try{setTheme(localStorage.getItem("tile-theme")||"system")}catch(_){setTheme("system")}
+addEventListener("keydown",ev=>{if(ev.key==="Escape"&&drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}});
+let rz=0;addEventListener("resize",()=>{if(snap&&!rz)rz=requestAnimationFrame(()=>{rz=0;layout();render()})});
+
+/* ---------- Offline ---------- */
+function parse(t){const a=t.indexOf("{");if(a<0)throw new Error("no JSON object found");return JSON.parse(t.slice(a,t.lastIndexOf("}")+1))}
+$("load").onclick=()=>{try{setSnap(parse($("paste").value));$("lmsg").textContent="Loaded."}catch(e){$("lmsg").textContent="Could not load: "+e.message}};
+$("sample").onclick=()=>{setSnap(SAMPLE);$("lmsg").textContent="Sample loaded."};
+
+if(LIVE){$("refresh").hidden=false;$("quit").hidden=false;$("newscene").hidden=false;$("editcats").hidden=false;status("Reading your windows…");
+  loadAll().then(()=>{if(!snap)return;status(`${scene().name} is selected. Drag windows onto cells, or apply a scene from the rail.`);
+    if(serverDry&&location.hash==="#selftest-undo")selftestUndo();if(serverDry&&location.hash==="#selftest-scenes")selftestScenes()})}
+else{$("offline").hidden=false;$("offline").open=true;setSnap(SAMPLE);status("Offline. A sample desktop is loaded.")}
+
+/* ---------- Self-tests: run by test/run.ps1 against serve.ps1 -From (always a dry run) ---------- */
+function dump(out){const pre=document.createElement("pre");pre.id="selftest";pre.textContent=JSON.stringify(out);document.body.appendChild(pre)}
+async function selftestUndo(){
+  const log=[],f=window.fetch;window.fetch=(u,o)=>{if(u==="scene"||u==="apply")log.push(JSON.parse(o.body));return f(u,o)};
+  const w0=snap.windows[0],w1=snap.windows[1];
+  // A scene with one pin and no fill moves exactly one window.
+  const run=async fn=>{await refresh();work.selftest={id:"selftest",name:"Selftest",grids:clone(work[cfg.scenes[0].id].grids),pins:[],fill:{mon:"wide",apps:[],skip:[],sort:"app"},trigger:{type:"manual",days:[],time:"09:00"}};
+    selId="selftest";await preview("selftest");log.length=0;const r=await fn();return{r,bodies:log.slice()}};
+  const wide=()=>snap.monitors.find(m=>m.role==="wide");
+  const mv=async slot=>{pinWin(w0.id,wide(),slot);await preview(selId)};
+  const out={};
+  out.applyUndo=await run(async()=>{await mv(9);await $("apply").onclick();await $("undo").onclick();return{id:w0.id,...rect(w0)}});
+  out.undoNoApply=await run(async()=>{await mv(9);await $("undo").onclick()});
+  out.undoDragAfterApply=await run(async()=>{await mv(9);await $("apply").onclick();await mv(8);await mv(7);await $("undo").onclick()});
+  out.undoAfterRefresh=await run(async()=>{await mv(9);await $("apply").onclick();await refresh();await mv(8);await $("undo").onclick()});
+  out.busy=await run(async()=>{await mv(9);const before=JSON.stringify(scene()),p=$("apply").onclick();
+    els.get(w1.id).dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
+    const r={undoOff:$("undo").disabled,refreshOff:$("refresh").disabled,kept:JSON.stringify(scene())===before};await p;return r});
+  dump(out);
+}
+async function selftestScenes(){
+  const out={drawn:{},names:[]};
+  for(const s of cfg.scenes){selId=s.id;await preview(s.id);
+    out.drawn[s.id]=Object.entries(drawn).filter(([,d])=>d.kind==="pin"||d.kind==="fill").map(([id,d])=>({id:+id,x:d.x,y:d.y,w:d.w,h:d.h}))}
+  selId=cfg.scenes[0].id;render();await saveAsNew("Selftest copy");
+  out.names=(await (await fetch("config",{cache:"no-store"})).json()).scenes.map(s=>s.name);
+  dump(out);
+}
+</script>
+</body>
+</html>
