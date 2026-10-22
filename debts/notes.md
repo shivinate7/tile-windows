@@ -24,3 +24,6 @@ Low findings. Each becomes a debt only after a real incident.
 - `config.ps1` 34: the note file grows by one line per recovery until dismissed.
 - `install.ps1` 37: a failed delete of `app.old-<pid>` is never cleaned up by later installs.
 - Design round 3 rows 2 to 9 (`design/reviews/app-round3.md`).
+- `tile.ps1` A zone fills in its monitor's pass (portrait, laptop, then ultrawide). A fill or zone on an earlier monitor can take a window a later zone wants.
+- `tile.ps1` A minimized window can still get a cell from a fill or zone, as before. The bay shows it only when it has no cell.
+- `app.html` A swap writes two pins, so the swapped windows stop following their zone's fill order. The offline page has no bay or zones.
