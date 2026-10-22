@@ -68,10 +68,14 @@ Run the checks. They move no window and use a temp profile:
 powershell -NoProfile -ExecutionPolicy Bypass -File test\run.ps1
 ```
 
-To work on the page without your real windows, serve the invented sample in [test/fixture.json](test/fixture.json). Every Apply is then a dry run:
+To work on the page without your real windows, serve the invented sample in [test/fixture.json](test/fixture.json). Every Apply is then a dry run, and scenes you save go to a throwaway folder in `%TEMP%`, not your real ones:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File serve.ps1 -From test\fixture.json
 ```
+
+The tests never touch your profile: they run with a temp `USERPROFILE`. Set `TILE_HOME` to keep scenes in another folder.
+
+If `config.json` or `state.json` stops parsing, the app keeps it as `config.json.bad` (or `state.json.bad`), starts from the starter scenes (or an empty log), and says so on the page.
 
 The decisions behind the app are in [decisions/](decisions/).

@@ -10,13 +10,14 @@
 #   POST /<token>/quit      stop the server
 # Prints the URL as its first line, opens the browser (unless -NoBrowser), stops on Ctrl+C or /quit.
 # -DryRun: every apply is a dry run (for tests). -From <snapshot.json>: show that snapshot instead of
-# the live desktop; implies -DryRun.
+# the live desktop; implies -DryRun, and keeps scenes in a throwaway folder under %TEMP% (unless TILE_HOME
+# is set), so a sample session never writes your real scenes.
 param([switch]$NoBrowser, [switch]$DryRun, [string]$From = '')
 
 $tile = Join-Path $PSScriptRoot 'tile.ps1'
 $page = Join-Path $PSScriptRoot 'app.html'
+if ($From) { $From = (Resolve-Path -LiteralPath $From).Path; $DryRun = [switch]$true; if (-not $env:TILE_HOME) { $env:TILE_HOME = $sampleHome = Join-Path $env:TEMP "tile-windows-sample-$PID" } }
 . (Join-Path $PSScriptRoot 'config.ps1')
-if ($From) { $From = (Resolve-Path -LiteralPath $From).Path; $DryRun = [switch]$true }
 $rb = New-Object byte[] 16; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($rb)
 $token = -join ($rb | % { $_.ToString('x2') })
 $probe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $probe.Start(); $port = $probe.LocalEndpoint.Port; $probe.Stop()
@@ -31,6 +32,8 @@ function Send($ctx, [int]$code, [string]$type, [string]$body) {
   $b = [Text.Encoding]::UTF8.GetBytes($body)
   $ctx.Response.StatusCode = $code; $ctx.Response.ContentType = "$type; charset=utf-8"
   $ctx.Response.Headers['Cache-Control'] = 'no-store'; $ctx.Response.ContentLength64 = $b.Length
+  # A read that recovered from a bad file says so once; the page shows it.
+  if ($script:TileNote) { $ctx.Response.Headers['X-Tile-Note'] = [Uri]::EscapeDataString($script:TileNote); $script:TileNote = '' }
   $ctx.Response.OutputStream.Write($b, 0, $b.Length); $ctx.Response.Close()
 }
 # A JSON body of the given kind ('[' or '{'), or $null after answering 400.
@@ -92,4 +95,4 @@ try {
       }
     } catch { try { Send $ctx 500 'text/plain' "$_" } catch {} }
   }
-} finally { $http.Stop(); $http.Close() }
+} finally { $http.Stop(); $http.Close(); if ($sampleHome) { Remove-Item -LiteralPath $sampleHome -Recurse -Force -ErrorAction SilentlyContinue } }

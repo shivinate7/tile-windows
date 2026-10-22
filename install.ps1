@@ -9,15 +9,25 @@ param([switch]$NoStartup, [switch]$NoLaunch)
 & {
   $ErrorActionPreference = 'Stop'
   $files = 'tile.ps1', 'serve.ps1', 'app.html', 'config.ps1', 'scenes.json', 'tray.ps1', 'uninstall.ps1', 'SKILL.md', 'README.md'
-  $app = Join-Path $env:USERPROFILE '.tile-windows\app'
+  $home_ = Join-Path $env:USERPROFILE '.tile-windows'; $app = Join-Path $home_ 'app'
   $src = if ($env:TILE_SOURCE) { $env:TILE_SOURCE } elseif ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'tile.ps1'))) { $PSScriptRoot }
-  New-Item -ItemType Directory -Force -Path $app | Out-Null
-  if ($src) { foreach ($f in $files) { Copy-Item -LiteralPath (Join-Path $src $f) -Destination (Join-Path $app $f) -Force } }
-  else {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    foreach ($f in $files) { Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/shivinate7/tile-windows/main/$f" -OutFile (Join-Path $app $f) }
-  }
-  Get-ChildItem -LiteralPath $app | Unblock-File
+  # Stage the new copy beside the old one; a failed download leaves the old install as it was.
+  $new = Join-Path $home_ "app.new-$PID"
+  New-Item -ItemType Directory -Force -Path $new | Out-Null
+  try {
+    if ($src) { foreach ($f in $files) { Copy-Item -LiteralPath (Join-Path $src $f) -Destination (Join-Path $new $f) -Force } }
+    else {
+      [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+      foreach ($f in $files) { Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/shivinate7/tile-windows/main/$f" -OutFile (Join-Path $new $f) }
+    }
+    Get-ChildItem -LiteralPath $new | Unblock-File
+  } catch { Remove-Item -LiteralPath $new -Recurse -Force -ErrorAction SilentlyContinue; throw }
+  # A running tray agent holds the old code: ask it to quit, and wait for it, before the swap.
+  . (Join-Path $new 'tray.ps1') -Lib
+  try { [void][Threading.EventWaitHandle]::OpenExisting((TrayName 'Quit')).Set() } catch [Threading.WaitHandleCannotBeOpenedException] {}
+  for ($i = 0; $i -lt 50; $i++) { $m = $null; if (-not [Threading.Mutex]::TryOpenExisting((TrayName 'Agent'), [ref]$m)) { break }; $m.Dispose(); Start-Sleep -Milliseconds 100 }
+  if (Test-Path -LiteralPath $app) { Remove-Item -LiteralPath $app -Recurse -Force }
+  Rename-Item -LiteralPath $new -NewName 'app'
 
   $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'

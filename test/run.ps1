@@ -20,7 +20,8 @@ function Profile($name) { $p = Join-Path $tmp $name; New-Item -ItemType Director
 function Start-Child($prof, $argLine, $extra = @{}) {
   $psi = New-Object Diagnostics.ProcessStartInfo 'powershell', "-NoProfile -ExecutionPolicy Bypass $argLine"
   $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.CreateNoWindow = $true
-  if ($prof) { $psi.EnvironmentVariables['USERPROFILE'] = $prof; $psi.EnvironmentVariables['APPDATA'] = Join-Path $prof 'AppData\Roaming' }
+  if (-not $prof) { $prof = $env:USERPROFILE }
+  $psi.EnvironmentVariables['USERPROFILE'] = $prof; $psi.EnvironmentVariables['APPDATA'] = Join-Path $prof 'AppData\Roaming'
   foreach ($k in $extra.Keys) { $psi.EnvironmentVariables[$k] = $extra[$k] }
   [Diagnostics.Process]::Start($psi)
 }
@@ -38,10 +39,13 @@ function SelfTest($url, $hook) {
 $starters = [IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json
 function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $s | Add-Member -Force cats $starters.cats; $s | Add-Member -Force categories $starters.categories; ConvertTo-Json -Depth 10 -Compress $s }
 
-$form = $null; $srv = $null; $fsrv = $null; $tray = $null
-$realHome = Join-Path $env:USERPROFILE '.tile-windows'; $realLink = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Tile Windows.lnk'
-$realBefore = "$(Test-Path -LiteralPath $realHome)|$(if (Test-Path -LiteralPath $realHome) { (Get-ChildItem -Recurse -Force -LiteralPath $realHome | % { "$($_.FullName)@$($_.LastWriteTimeUtc.Ticks)" }) -join ',' })|$(Test-Path -LiteralPath $realLink)"
+$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tray = $null
+# The whole run, and every child it starts, uses a temp profile: the real one is never named.
+$saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME }
+$env:USERPROFILE = Profile 'run'; $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'; $env:TILE_HOME = $null
 try {
+  . (Join-Path $root 'config.ps1')
+  Check 'the run and its children use a temp profile' ($env:USERPROFILE.StartsWith($tmp) -and $env:APPDATA.StartsWith($tmp) -and $TileHome.StartsWith($tmp)) "$env:USERPROFILE | $TileHome"
   # 1. Snapshot JSON parses (in-process, as serve.ps1 calls it).
   $snapText = (& $tile -Json 2>$null) -join ''
   $snap = $snapText | ConvertFrom-Json
@@ -86,7 +90,13 @@ try {
 
   # 5. Config (one home: %USERPROFILE%\.tile-windows\config.json), against a fixture server.
   $fprof = Profile 'fix'; $fcfg = Join-Path $fprof '.tile-windows\config.json'
-  $fsrv = Start-Child $fprof "-File `"$serve`" -NoBrowser -From `"$fixture`""
+  # A -From server without TILE_HOME keeps its scenes in a throwaway folder, never in the profile.
+  $sprof = Profile 'sample'; $ssrv = Start-Child $sprof "-File `"$serve`" -NoBrowser -From `"$fixture`""; $surl = $ssrv.StandardOutput.ReadLine()
+  $sc1 = (Invoke-WebRequest -UseBasicParsing "${surl}config").Content; $shome = Join-Path $env:TEMP "tile-windows-sample-$($ssrv.Id)"
+  $sbefore = Test-Path -LiteralPath (Join-Path $shome 'config.json')
+  [void](Invoke-WebRequest -UseBasicParsing "${surl}quit" -Method Post -Body 'quit'); [void]$ssrv.WaitForExit(5000)
+  Check 'a -From (sample) server never writes the profile, and cleans up' ($sc1 -and $sbefore -and -not (Test-Path -LiteralPath (Join-Path $sprof '.tile-windows')) -and -not (Test-Path -LiteralPath $shome))
+  $fsrv = Start-Child $fprof "-File `"$serve`" -NoBrowser -From `"$fixture`"" @{ TILE_HOME = (Join-Path $fprof '.tile-windows') }
   $furl = $fsrv.StandardOutput.ReadLine()
   $noFile = -not (Test-Path -LiteralPath $fcfg)
   $c1 = (Invoke-WebRequest -UseBasicParsing "${furl}config").Content
@@ -99,12 +109,36 @@ try {
   $ok = (Status "${furl}config" $null) -eq 200 -and (Post "${furl}config" $body) -eq 'Saved'
   $back = (Invoke-WebRequest -UseBasicParsing "${furl}config").Content
   Check 'scene save/load round trip (server)' ($ok -and $back -ceq $body -and [IO.File]::ReadAllText($fcfg, $utf8) -ceq $body)
-  $env:USERPROFILE, $real = $fprof, $env:USERPROFILE
-  try { $r = (& $tile -Scene 'x-1' -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json } finally { $env:USERPROFILE = $real }
+  $env:TILE_HOME = Join-Path $fprof '.tile-windows'
+  try { $r = (& $tile -Scene 'x-1' -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json } finally { $env:TILE_HOME = $null }
   $p0 = @($r.placed | ? { $_.pin -eq 0 })[0]
   Check 'a saved scene runs by name through the engine' ($p0.id -eq 1007 -and $p0.x -eq 2048 -and $p0.w -eq 2048 -and @($r.placed | ? { $_.app -eq 'claude' })[0].title -eq 'Claude') ($r | ConvertTo-Json -Compress -Depth 5)
   Check 'server refuses a config without scenes, and keeps the file' ((Status "${furl}config" '{"scenes":"no"}') -eq 400 -and [IO.File]::ReadAllText($fcfg, $utf8) -ceq $body)
   [void](Post "${furl}config" $c1)
+  # A config.json or state.json that does not parse: starters (or an empty log) come back, the bad text
+  # is kept as .bad, and the page is told.
+  [IO.File]::WriteAllText($fcfg, '{"scenes":[{bad', $utf8); $fst = Join-Path $fprof '.tile-windows\state.json'; [IO.File]::WriteAllText($fst, 'nope', $utf8)
+  $rc = Invoke-WebRequest -UseBasicParsing "${furl}config"; $rs = Invoke-WebRequest -UseBasicParsing "${furl}state"
+  Check 'a bad config.json falls back to the starters, keeps .bad, and says so' (((ConvertFrom-Json $rc.Content).scenes.id -join ',') -eq 'default,focus,meetings,review' -and [IO.File]::ReadAllText("$fcfg.bad", $utf8) -ceq '{"scenes":[{bad' -and [Uri]::UnescapeDataString($rc.Headers['X-Tile-Note']) -like 'config.json could not be read*')
+  Check 'a bad state.json gives an empty log, keeps .bad, and says so' (@((ConvertFrom-Json $rs.Content).log).Count -eq 0 -and [IO.File]::ReadAllText("$fst.bad", $utf8) -ceq 'nope' -and [Uri]::UnescapeDataString($rs.Headers['X-Tile-Note']) -like 'state.json could not be read*')
+  [IO.File]::WriteAllText($fst, '[1,2', $utf8); $env:TILE_HOME = Join-Path $fprof '.tile-windows'
+  try { . (Join-Path $root 'config.ps1'); $threw = $false; try { Add-TileLog 'focus' 'after a move' 3>$null } catch { $threw = $true }; $st2 = ConvertFrom-Json (Get-TileStateText) } finally { $env:TILE_HOME = $null; . (Join-Path $root 'config.ps1') }
+  Check 'Add-TileLog on a bad state.json does not throw and starts a fresh log' (-not $threw -and $st2.active -eq 'focus' -and @($st2.log).Count -eq 1)
+  [void](Post "${furl}config" $c1)
+
+  # Writers in three processes at once: every write lands whole, no temp file is left behind.
+  $whome = Join-Path $tmp 'writers'; $wjob = Join-Path $tmp 'writer.ps1'
+  Set-Content -LiteralPath $wjob -Encoding ASCII -Value @"
+. '$(Join-Path $root 'config.ps1')'; `$ErrorActionPreference = 'Stop'
+`$starters = [IO.File]::ReadAllText('$(Join-Path $root 'scenes.json')')
+1..25 | % { Add-TileLog "w`$PID" "entry `$_" 3>&1 | % { throw "`$_" }; [void](Get-TileStateText); Save-TileConfigText `$starters }
+'ok'
+"@
+  $ws = @(1..3 | % { Start-Child $null "-File `"$wjob`"" @{ TILE_HOME = $whome } })
+  $wout = @($ws | % { $_.StandardOutput.ReadToEnd().Trim() + $_.StandardError.ReadToEnd().Trim() })
+  $ws | % { $_.WaitForExit() }
+  $wst = try { ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $whome 'state.json'))) } catch { $null }
+  Check 'three processes writing config and log at once: all writes land, no temp files left' (($wout -join ',') -eq 'ok,ok,ok' -and @($wst.log).Count -eq 20 -and @(Get-ChildItem -LiteralPath $whome -Filter '*.tmp').Count -eq 0) ($wout -join ' | ')
 
   # 6. Browser cases: headless Edge runs the page's self-test hooks, which run only when the server is a dry run.
   if (-not $edge) { 'SKIP  browser cases: Microsoft Edge not found in either Program Files folder.' } else {
@@ -128,6 +162,7 @@ try {
       $pg = @($ss.drawn.$id) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
       Check "page preview == engine: $id" ($eng.Count -gt 0 -and ($eng -join ' ') -ceq ($pg -join ' ')) ("engine: $($eng -join ' ') | page: $($pg -join ' ')")
     }
+    Check 'page cell size rounds like tile.ps1 ([int], to even)' ($ss.cell.w -eq [int](1365 / 2) -and $ss.cell.h -eq [int](1001 / 2)) ($ss.cell | ConvertTo-Json -Compress)
     Check 'page Save as new writes the scene to config.json' (@($ss.names) -contains 'Selftest copy' -and ([IO.File]::ReadAllText($fcfg, $utf8)).Contains('"Selftest copy"')) (@($ss.names) -join ',')
   }
   [void](Invoke-WebRequest -UseBasicParsing "${furl}quit" -Method Post -Body 'quit')
@@ -149,14 +184,27 @@ try {
   Check 'tray: display scenes and the monitor key' ((@(Get-DisplayScenes $tc).id -join ',') -eq 'c' -and (Get-MonitorKey @([pscustomobject]@{ DeviceName = 'B'; Bounds = [Drawing.Rectangle]::new(0, 0, 10, 20) }, [pscustomobject]@{ DeviceName = 'A'; Bounds = [Drawing.Rectangle]::new(-5, 1, 3, 4) })) -eq 'A=3x4@-5,1;B=10x20@0,0')
   $cases = @(ConvertFrom-Json (Get-Content -Raw (Join-Path $PSScriptRoot 'teams-call.json')) | % { $_ })
   $bad = @($cases | ? { (Test-TeamsCall $_.mic $_.wins) -ne $_.call } | % { $_.case })
-  Check 'tray: Teams call detection, every fixture case' ($cases.Count -eq 9 -and $bad.Count -eq 0) ($bad -join '; ')
+  Check 'tray: Teams call detection, every fixture case' ($cases.Count -eq 11 -and $bad.Count -eq 0) ($bad -join '; ')
   $cc = ConvertFrom-Json '{"scenes":[{"id":"work","trigger":{"type":"manual"}},{"id":"meet","trigger":{"type":"call","back":true}}]}'
   $s1 = Step-CallTrigger $false $true $cc 'work' ''; $s2 = Step-CallTrigger $true $true $cc 'meet' $s1.back; $s3 = Step-CallTrigger $true $false $cc 'meet' $s2.back
   $cc.scenes[1].trigger.back = $false; $s4 = Step-CallTrigger $true $false $cc 'meet' 'work'
   Check 'tray: call start applies the call scene; call end goes back only when asked' ($s1.apply -eq 'meet' -and $s1.back -eq 'work' -and $s2.apply -eq '' -and $s3.apply -eq 'work' -and $s4.apply -eq '') (($s1, $s2, $s3, $s4 | ConvertTo-Json -Compress))
+  $tt = ConvertFrom-Json '{"scenes":[{"id":"a","trigger":{"type":"time","days":[1],"time":"09:00"}},{"id":"c","trigger":{"type":"display"}},{"id":"c2","trigger":{"type":"display"}},{"id":"work","trigger":{"type":"manual"}},{"id":"meet","trigger":{"type":"call","back":true}}]}'
+  function Ids($x) { (@($x) | % { $_.id }) -join ',' }
+  $ts = New-TrayState
+  $r1 = Ids (Step-Tray $ts $mon9 $tt $null $null ''); $r2 = Ids (Step-Tray $ts $mon9.AddSeconds(20) $tt $null $null '')
+  Check 'tray tick: a scheduled scene fires once in its minute' ($r1 -eq 'a' -and $r2 -eq '') "$r1 / $r2"
+  $ts = New-TrayState; $d = [datetime]'2026-10-20 10:00'
+  $k1 = Ids (Step-Tray $ts $d $tt 'A' $null ''); $k2 = Ids (Step-Tray $ts $d $tt 'B' $null ''); $k3 = Ids (Step-Tray $ts $d $tt 'B' $null ''); $k4 = Ids (Step-Tray $ts $d $tt $null $null '')
+  Check 'tray tick: a monitor change applies the first display scene, once' ($k1 -eq '' -and $k2 -eq 'c' -and $k3 -eq '' -and $k4 -eq '') "$k1 / $k2 / $k3 / $k4"
+  $ts = New-TrayState
+  $c = @(@($false, 'work'), @($true, 'work'), @($true, 'work'), @($false, 'meet'), @($true, 'meet'), @($false, 'meet'), @($false, 'meet')) | % { Ids (Step-Tray $ts $d $tt $null $_[0] $_[1]) }
+  Check 'tray tick: a call starts and ends only after 2 readings agree, then goes back' (($c -join '/') -eq '//meet////work') ($c -join '/')
+  $ts = New-TrayState; $m1 = Ids (Step-Tray $ts $d $tt $null $true 'meet'); $m2 = Ids (Step-Tray $ts $d $tt $null $true 'meet')
+  Check 'tray tick: starting mid-call applies nothing' ($m1 -eq '' -and $m2 -eq '' -and $ts.inCall) "$m1 / $m2"
   $tprof = Profile 'tray'
   $tray = Start-Child $tprof "-File `"$(Join-Path $root 'tray.ps1')`" -NoIcon -NoApply"
-  $env:USERPROFILE, $real = $tprof, $env:USERPROFILE
+  $real = $env:USERPROFILE; $env:USERPROFILE = $tprof
   try { . (Join-Path $root 'config.ps1'); $agent = TrayName 'Agent'; $quit = TrayName 'Quit' } finally { $env:USERPROFILE = $real; . (Join-Path $root 'config.ps1') }
   $t0 = Get-Date; $m = $null
   while (-not [Threading.Mutex]::TryOpenExisting($agent, [ref]$m) -and ((Get-Date) - $t0).TotalSeconds -lt 15 -and -not $tray.HasExited) { Start-Sleep -Milliseconds 200 }
@@ -171,11 +219,29 @@ try {
   $iapp = Join-Path $iprof '.tile-windows\app'; $iprog = Join-Path $iprof 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs'
   $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $iprog 'Tile Windows.lnk'))
   Check 'installer (piped) copies the app and adds both shortcuts' ($ins.ExitCode -eq 0 -and @(Get-ChildItem -LiteralPath $iapp -ErrorAction SilentlyContinue).Count -eq 9 -and $lnk.Arguments -like "*$iapp\tray.ps1`" -Open" -and (Test-Path -LiteralPath (Join-Path $iprog 'Startup\Tile Windows tray.lnk'))) "$iout $ierr"
-  $realAfter = "$(Test-Path -LiteralPath $realHome)|$(if (Test-Path -LiteralPath $realHome) { (Get-ChildItem -Recurse -Force -LiteralPath $realHome | % { "$($_.FullName)@$($_.LastWriteTimeUtc.Ticks)" }) -join ',' })|$(Test-Path -LiteralPath $realLink)"
-  Check 'installer into a temp profile leaves the real one alone' ($realAfter -ceq $realBefore) "before: $realBefore after: $realAfter"
+  Check 'installer writes only into the profile it is given' (-not (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.tile-windows\app')) -and -not (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Tile Windows.lnk')))
+  # Again, with -NoStartup and the installed tray agent running: same files, no staging folder left,
+  # the login shortcut goes away, and the old agent was told to quit before the swap.
+  $real = $env:USERPROFILE; $env:USERPROFILE = $iprof
+  try { . (Join-Path $root 'config.ps1'); $iagent = TrayName 'Agent' } finally { $env:USERPROFILE = $real; . (Join-Path $root 'config.ps1') }
+  $itray = Start-Child $iprof "-File `"$(Join-Path $iapp 'tray.ps1')`" -NoIcon -NoApply"; $t0 = Get-Date; $m = $null
+  while (-not [Threading.Mutex]::TryOpenExisting($iagent, [ref]$m) -and ((Get-Date) - $t0).TotalSeconds -lt 15 -and -not $itray.HasExited) { Start-Sleep -Milliseconds 200 }
+  $iup = [bool]$m; if ($m) { $m.Dispose() }
+  $ins2 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoStartup -NoLaunch" @{ TILE_SOURCE = $root }; $i2 = $ins2.StandardOutput.ReadToEnd() + $ins2.StandardError.ReadToEnd(); $ins2.WaitForExit()
+  $iquit = $itray.HasExited; if (-not $iquit) { $itray.Kill() }
+  Check 'installing again first stops the running tray agent' ($iup -and $iquit) "up=$iup quit=$iquit"
+  Check 'installing again works in place; -NoStartup drops the login shortcut' ($ins2.ExitCode -eq 0 -and @(Get-ChildItem -LiteralPath $iapp).Count -eq 9 -and @(Get-ChildItem -LiteralPath (Join-Path $iprof '.tile-windows') -Filter 'app.new-*').Count -eq 0 -and (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Startup\Tile Windows tray.lnk'))) $i2
+  # A failed copy (a missing source file) leaves the installed app as it was.
+  $bsrc = Join-Path $tmp 'badsrc'; New-Item -ItemType Directory $bsrc | Out-Null; Get-ChildItem -LiteralPath $root -File | Copy-Item -Destination $bsrc; Remove-Item -LiteralPath (Join-Path $bsrc 'README.md')
+  $stamp = (Get-Item -LiteralPath (Join-Path $iapp 'tile.ps1')).LastWriteTimeUtc
+  $ins3 = Start-Child $iprof "-File `"$(Join-Path $bsrc 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $bsrc }; [void]$ins3.StandardOutput.ReadToEnd(); [void]$ins3.StandardError.ReadToEnd(); $ins3.WaitForExit()
+  Check 'a failed install leaves the old app in place' ($ins3.ExitCode -ne 0 -and @(Get-ChildItem -LiteralPath $iapp).Count -eq 9 -and (Get-Item -LiteralPath (Join-Path $iapp 'tile.ps1')).LastWriteTimeUtc -eq $stamp -and @(Get-ChildItem -LiteralPath (Join-Path $iprof '.tile-windows') -Filter 'app.new-*').Count -eq 0)
   New-Item -ItemType File (Join-Path $iprof '.tile-windows\config.json') -Force | Out-Null
   $un = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`""; $uout = $un.StandardOutput.ReadToEnd() + $un.StandardError.ReadToEnd(); $un.WaitForExit()
   Check 'uninstall removes the app and shortcuts, keeps scenes' ($un.ExitCode -eq 0 -and -not (Test-Path -LiteralPath $iapp) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Startup\Tile Windows tray.lnk')) -and (Test-Path -LiteralPath (Join-Path $iprof '.tile-windows\config.json'))) $uout
+  $ins4 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $root }; [void]$ins4.StandardOutput.ReadToEnd(); [void]$ins4.StandardError.ReadToEnd(); $ins4.WaitForExit()
+  $un2 = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`" -Purge"; $u2 = $un2.StandardOutput.ReadToEnd() + $un2.StandardError.ReadToEnd(); $un2.WaitForExit()
+  Check 'uninstall -Purge removes the scenes too' ($un2.ExitCode -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $iprof '.tile-windows')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk'))) $u2
 
   # 10. -Default -DryRun prints the same as main's tile.ps1 (run back to back; windows can change between runs).
   #     -Default now runs the Default scene from scenes.json, so this also proves the scene engine mirrors it.
@@ -196,7 +262,8 @@ try {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
   if ($form -and -not $form.HasExited) { Stop-Process -Id $form.Id -Force }
-  foreach ($p in $srv, $fsrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
+  foreach ($p in $srv, $fsrv, $ssrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
+  foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { 'All checks passed.' }
