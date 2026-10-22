@@ -17,7 +17,7 @@ description: Use when the user asks to tile, sort, grid, arrange, or snap their 
 
 ## Default setup
 
-If the user asks to tile windows and names no layout, use `-Default`. It runs three passes:
+If the user asks to tile windows and names no layout, use `-Default`. It runs the Default scene from `scenes.json`, in three passes:
 
 | Monitor | Windows |
 |---|---|
@@ -39,6 +39,9 @@ A missing app is skipped, with a warning. If there are more windows than the 10 
 | `-Order 'a\|b'` | Windows whose title contains a come first, then b, and so on. Windows that match nothing go last. | none |
 | `-Skip a,b` | Apps that `*` leaves out (wildcards allowed) | input and PowerToys shell windows |
 | `-Default` | The default setup above. Works with `-DryRun`. | off |
+| `-Sort app\|category\|title\|position` | Fill order. `category` uses the app → category map in the config. | `app` |
+| `-Scene name` | Run a saved scene (see "Scenes" below). Also takes a scene file or scene JSON. | none |
+| `-From snapshot.json` | Use a `-Json` snapshot instead of the live desktop. Always a dry run. | none |
 | `-Monitor` | `wide` (ultrawide, 4096×1680), `laptop` (1536×912), `tall` (portrait, 1200×1872), or a 0-based index | `wide` |
 | `-List` | Print windows (app and title) and monitors, then stop | off |
 | `-DryRun` | Print where each window would go, then stop | off |
@@ -83,27 +86,37 @@ Windows that are not pinned fill the open slots row by row. They sort by app (in
 - Bash runs inside the Claude app's package. Never write new files under AppData from it (see the machine note on MSIX AppData).
 - The "Ultrawide 6x2" FancyZones layout is separate. It covers Shift-drag by hand.
 
-## Sandbox
+## Scenes
 
-`sandbox.html` (this folder) draws the user's monitors and windows. The user drags windows, then clicks Apply. A window snaps to the monitor's grid (5x2 on the widest, editable on the page). Undo steps back one change.
+A scene is a whole-desk layout: one grid per monitor role (`wide`, `tall`, `laptop`), pins by app and title text, and one fill monitor with its app list and fill order. Scenes live in `%USERPROFILE%\.tile-windows\config.json`. The first read copies the starters from `scenes.json`: Default, Focus, Meetings, Review.
+
+- To apply a saved scene: `-Scene Focus -DryRun`, check the lines, then run it without `-DryRun`. The name is the scene's name or id.
+- `-Scene ... -Json` prints `{placed, missing, left}`. Each placed window has its `from` and `to` rect, so the windows can go back through `-Place`.
+- With one or two monitors, a role with no screen of its own is skipped, with a warning.
+- To change a scene for good, edit it in the app, or edit `config.json` and keep it valid JSON. The app and the tray read it each time.
+
+## The app
+
+`serve.ps1` serves `app.html`: the monitors as a board, scenes on the left rail, and an inspector on the right. The installed copy sits in `%USERPROFILE%\.tile-windows\app`. The Start menu shortcut and the tray icon both open it.
 
 **Live (default).** Say in one line that a browser tab will open. Then start the server in the background:
 `powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/.claude/skills/tile-windows/serve.ps1)"`
 
 - It prints its URL (127.0.0.1, a free port, a random token) and opens the browser.
-- The page loads the windows from `tile.ps1 -Json`. Refresh loads them again.
-- Apply moves only the changed windows, through `tile.ps1 -Place`, and lists the result per window.
-- After a live Apply, Undo moves the windows back at once (decision: undo-moves-windows). Before any Apply, Undo only moves the boxes.
-- The server stops on the page's Stop server button or Ctrl+C. Stop it before you finish: `curl -s -X POST -d quit "<url>quit"`, or stop the background task.
-- `-DryRun` makes every Apply a dry run. `-NoBrowser` skips opening the browser.
+- Dragging a window onto a cell pins it in the selected scene. `tile.ps1` lays out every preview, so the board shows what Apply will do.
+- Apply runs the scene through `tile.ps1 -Scene` and lists the result per window.
+- After a live Apply, Undo moves the windows back at once (decision: undo-moves-windows). Before any Apply, Undo only reverts edits.
+- The server stops on the page's Stop Server button or Ctrl+C. Stop it before you finish: `curl -s -X POST -d quit "<url>quit"`, or stop the background task.
+- `-DryRun` makes every Apply a dry run. `-From test\fixture.json` shows an invented desk (always a dry run). `-NoBrowser` skips opening the browser.
 
-**Offline.** Open `sandbox.html` as a file. A 30-window sample loads.
+**Offline.** Open `app.html` as a file. A sample loads.
 
-1. Run `tile.ps1 -Json`. It prints monitors and windows as JSON and moves nothing. Default `-Proc '*'`; `-Proc`/`-Skip` narrow it. Minimized windows are left out.
-2. The user pastes the JSON under "Load a snapshot by hand", then arranges the windows.
+1. Run `tile.ps1 -Json`. It prints monitors (with roles) and windows as JSON, and moves nothing. Minimized windows carry `"min":true`.
+2. The user pastes the JSON under "Load a snapshot by hand", then drags windows onto cells.
 3. Apply downloads `last-place.json` (changed windows only) and shows the command:
-   `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.claude\skills\tile-windows\tile.ps1" -PlaceFile "$env:USERPROFILE\Downloads\last-place.json"`
+   `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.tile-windows\app\tile.ps1" -PlaceFile "$env:USERPROFILE\Downloads\last-place.json"`
+   That is the installed path. When Claude runs it, use `tile.ps1` in this folder instead.
 
 **The place format.** Entries are `{app,title,x,y,w,h}` in screen pixels, plus `id` (the window handle from `-Json`) when known. Each entry matches an open window by `id`, else app plus exact title, else title contains. `-Place '<json>'` takes the array inline, but prefer `-PlaceFile`: titles carry quotes and apostrophes. `-DryRun` prints each move and moves nothing. `-Json` prints one result per entry instead of text. Claude runs `-DryRun` first.
 
-**Check.** `powershell -NoProfile -ExecutionPolicy Bypass -File test\run.ps1` moves no window.
+**Check.** `powershell -NoProfile -ExecutionPolicy Bypass -File testun.ps1` moves no window and uses a temp profile.

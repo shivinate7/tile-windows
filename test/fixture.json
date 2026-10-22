@@ -1,0 +1,21 @@
+{"monitors":[
+ {"name":"\\\\.\\DISPLAY1","role":"laptop","x":-1536,"y":769,"w":1536,"h":912,"bw":1536,"bh":960},
+ {"name":"\\\\.\\DISPLAY2","role":"wide","x":0,"y":0,"w":4096,"h":1680,"bw":4096,"bh":1728},
+ {"name":"\\\\.\\DISPLAY3","role":"tall","x":4096,"y":-1354,"w":1200,"h":1872,"bw":1200,"bh":1920}],
+"windows":[
+ {"id":1001,"app":"claude","title":"Refactor the grid solver","x":0,"y":0,"w":819,"h":840},
+ {"id":1002,"app":"claude","title":"Pin parser edge cases","x":819,"y":0,"w":819,"h":840},
+ {"id":1003,"app":"claude","title":"Draft release notes","x":1638,"y":840,"w":819,"h":840},
+ {"id":1004,"app":"claude","title":"Claude","x":-25600,"y":-25600,"w":160,"h":28,"min":true},
+ {"id":1005,"app":"chrome","title":"Pull request 212 - Example","x":2457,"y":0,"w":1639,"h":1680},
+ {"id":1006,"app":"chrome","title":"Quarterly roadmap - Example","x":300,"y":200,"w":1400,"h":1000},
+ {"id":1007,"app":"chrome","title":"It's a \"quoted\" <test> & more","x":-1400,"y":800,"w":1200,"h":800},
+ {"id":1008,"app":"WindowsTerminal","title":"pwsh - tiler","x":0,"y":840,"w":819,"h":840},
+ {"id":1009,"app":"WindowsTerminal","title":"pwsh - docs watch","x":819,"y":840,"w":819,"h":840},
+ {"id":1010,"app":"explorer","title":"Projects","x":2000,"y":300,"w":1000,"h":700},
+ {"id":1011,"app":"explorer","title":"Downloads","x":2200,"y":500,"w":1000,"h":700},
+ {"id":1012,"app":"ms-teams","title":"Design sync | Microsoft Teams","x":4096,"y":-418,"w":1200,"h":936},
+ {"id":1013,"app":"outlook","title":"Inbox - sample@example.com - Outlook","x":4096,"y":-1354,"w":1200,"h":936},
+ {"id":1014,"app":"notepad","title":"todo.txt - Notepad","x":3000,"y":900,"w":900,"h":700},
+ {"id":1015,"app":"Spotify","title":"Spotify Free","x":-1536,"y":769,"w":1536,"h":912},
+ {"id":1016,"app":"POWERPNT","title":"Deck draft - PowerPoint","x":1200,"y":400,"w":1600,"h":1000}]}

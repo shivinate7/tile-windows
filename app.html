@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1C201D" media="(prefers-color-scheme: dark)">
+<title>Tile Windows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap">
+<style>
+/* Tokens from mockup B (canvas) and C (scenes). Blue = act (buttons, drop target, focus); ink = selected; amber = dry run / attention. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --tmix:26%; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D; --ok:#17754B; --bad:#B42318;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.skip{position:absolute;left:8px;top:-60px;z-index:50;background:var(--panel);padding:8px 12px;border-radius:6px;border:1px solid var(--line)}
+.skip:focus{top:8px}
+.app{height:100vh;height:100dvh;display:grid;grid-template-columns:232px minmax(0,1fr) 268px;grid-template-rows:auto auto minmax(0,1fr) auto;
+  grid-template-areas:"top top top" "dry dry dry" "rail canvas insp" "status status status";background:var(--panel)}
+.top{grid-area:top;position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:9px 16px;border-bottom:1px solid var(--line)}
+h1.brand{display:flex;align-items:center;gap:8px;font:700 15px var(--f-disp);letter-spacing:-.01em;margin:0}
+.brand svg{width:20px;height:20px;color:var(--select)}
+.crumb{color:var(--muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--ink);font-weight:600}
+.edited{color:var(--ink);font-weight:600}
+.edited::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hi);margin:0 6px 1px 8px}
+.drybar{grid-area:dry;display:flex;gap:10px;align-items:center;padding:7px 16px;background:var(--hi-bg);border-bottom:2px solid var(--hi);font-weight:600}
+.drybar svg{width:16px;height:16px;flex:none;color:var(--hi)}
+.drybar span{font-weight:400;color:var(--muted)}
+.tools{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;border:1px solid var(--line);background:var(--panel);padding:5px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:color-mix(in srgb,var(--ink) 40%,var(--line))}
+.btn.pri{background:var(--select);color:var(--select-ink);border-color:var(--select);font-weight:600}
+.btn.pri.dry{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.btn.pri.dry::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--hi)}
+.btn.pri:hover:not(:disabled){filter:brightness(1.08)}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 55%,var(--line))}
+.btn.danger.solid{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.btn:disabled{cursor:not-allowed;color:var(--muted);background:transparent;border-style:dashed;border-color:var(--line);filter:none}
+.btn svg{width:15px;height:15px}
+.switch{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 6px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.switch input{appearance:none;width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;margin:0;cursor:pointer;flex:none}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel)}
+.switch input:checked{background:var(--ink)} .switch input:checked::after{left:14px}
+@media (pointer:coarse){.btn,.switch,.lg,.seg button,.trig label,.mlab button,select,input[type=text],input[type=time]{min-height:44px}.step button,.days button{width:44px;height:44px}}
+.toast{position:absolute;right:16px;top:calc(100% + 6px);z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;max-width:min(460px,calc(100vw - 32px));
+  padding:9px 10px 9px 14px;border-radius:8px;background:var(--ink);color:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent);font-weight:500}
+.toast.warn{background:var(--hi);color:var(--hi-ink)}
+.toast.bad{background:var(--bad);color:#fff}
+.toast .btn{min-height:28px;background:transparent;color:inherit;border-color:color-mix(in srgb,currentColor 40%,transparent)}
+@media (prefers-reduced-motion:no-preference){.toast{animation:pop .18s ease-out}@keyframes pop{from{opacity:0;transform:translateY(-4px)}}}
+
+.rail,.insp{min-width:0;min-height:0;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:auto}
+.rail{grid-area:rail;border-right:1px solid var(--line)}
+.insp{grid-area:insp;border-left:1px solid var(--line);gap:0;padding-top:4px}
+.isec{display:grid;gap:8px;padding:12px 0 16px;border-bottom:1px solid var(--line)}
+.isec:last-child{border-bottom:0}
+.isec:empty{display:none}
+.insp h2{margin:0;color:var(--ink);font-size:12px;font-weight:700}
+h2{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:10px 0 0;display:flex;align-items:center;justify-content:space-between;gap:6px}
+h2:first-child{margin-top:0}
+h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;padding:2px 8px;font-size:12px;color:var(--ink)}
+
+/* Scene cards */
+.cards{display:grid;gap:6px}
+.card{position:relative;display:grid;gap:4px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.card.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.pick{display:grid;gap:5px;border:0;background:transparent;padding:0;text-align:left;min-width:0;border-radius:4px}
+.pick strong{font:700 15px var(--f-disp);letter-spacing:-.01em;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pick small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.when{display:flex;gap:5px;align-items:center;font-size:12px;color:var(--ink)}
+.when svg{width:12px;height:12px;flex:none}
+.live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.tag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden}
+.mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
+.mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
+
+.cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
+.legend{display:grid;gap:2px}
+.lg{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;border:0;background:transparent;padding:4px 6px;border-radius:4px;text-align:left}
+.lg:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.lg .ct{margin-left:auto;font:12px var(--f-mono);color:var(--muted)}
+.lg[aria-pressed="false"]{color:var(--muted)}
+.lg[aria-pressed="false"] .sw{background:transparent;border:1.5px solid var(--cat)}
+.recent{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:12px}
+.recent li{display:grid;gap:1px}
+.recent span{color:var(--muted);font:11px var(--f-mono)}
+
+/* Canvas */
+.canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;justify-content:safe center;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.canvas>*{width:100%}
+#stage{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.mon{position:absolute;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
+.mon.cur{outline:2px dashed var(--ink);outline-offset:4px}
+.mon .cell{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);border-radius:2px;position:relative;min-width:0;min-height:0}
+.mon .cell i{position:absolute;right:3px;bottom:1px;font:normal 11px var(--f-mono);color:var(--muted)}
+.mon .empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:6px;font-size:12px;color:var(--muted);pointer-events:none}
+.nogrid .mon .cell{border-color:transparent} .nogrid .mon .cell i{display:none}
+.mlab{position:absolute;display:flex;gap:6px;align-items:baseline;font-size:11px;color:var(--muted);white-space:nowrap;transform:translateY(-100%);padding-bottom:3px}
+.mlab button{border:0;background:transparent;padding:0;font-weight:600;color:var(--ink);font-size:11.5px}
+.mlab button[aria-pressed="true"]{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.tile{position:absolute;display:flex;flex-direction:column;align-items:flex-start;gap:2px;overflow:hidden;padding:3px 5px 3px 8px;border-radius:3px;
+  border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);background:color-mix(in srgb,var(--cat) var(--tmix),var(--panel));color:var(--ink);font-size:12px;line-height:1.2;cursor:grab;touch-action:none;contain:layout paint}
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
+.tile b{font:600 11px var(--f);padding:1px 5px;border-radius:2px;background:var(--cat);color:var(--panel);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;max-width:100%}
+.tile .pinmark{position:absolute;top:3px;right:3px;width:12px;height:12px;color:var(--cat)}
+.tile.pin{border-width:2px;border-color:var(--cat);background:color-mix(in srgb,var(--cat) 34%,var(--panel))}
+.tile.stay{background:transparent;border-style:dashed;border-color:color-mix(in srgb,var(--muted) 60%,transparent);color:var(--muted);z-index:0}
+.tile.stay::before{background:color-mix(in srgb,var(--cat) 40%,transparent)}
+.tile.stay b{background:color-mix(in srgb,var(--cat) 30%,var(--panel));color:var(--ink)}
+.tile.pin,.tile.fill{z-index:2}
+.tile.sel{outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent);z-index:4}
+.tile:focus-visible{outline:2px solid var(--select);outline-offset:-2px;z-index:5}
+.tile.dim{opacity:.22}
+.tile.drag{cursor:grabbing;z-index:9;opacity:.92;box-shadow:0 12px 26px -10px color-mix(in srgb,var(--ink) 60%,transparent)}
+#drop{position:absolute;border:2px solid var(--select);background:color-mix(in srgb,var(--select) 18%,transparent);border-radius:3px;pointer-events:none;display:none;z-index:8}
+@media (prefers-reduced-motion:no-preference){
+  .tile{transition:left .22s cubic-bezier(.2,.7,.2,1),top .22s cubic-bezier(.2,.7,.2,1),width .22s,height .22s,opacity .15s}
+  .tile.drag,.tile.now,.still .tile{transition:none}
+  #drop{transition:left .08s,top .08s,width .08s,height .08s}}
+.hint,.over{font-size:12px;color:var(--muted);margin:0}
+.over b{color:var(--ink);font-weight:600}
+.over.warn{background:var(--hi-bg);border-left:3px solid var(--hi);padding:8px 10px;border-radius:4px;color:var(--ink)}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+#reslist{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:2px;font-size:12px;max-height:240px;overflow:auto}
+#reslist li{display:grid;grid-template-columns:1.2em minmax(0,1fr);gap:4px;overflow-wrap:anywhere}
+#reslist .ok{color:var(--ok)} #reslist .bad{color:var(--bad)} #reslist .mut{color:var(--muted)}
+.phead{display:flex;align-items:center;gap:8px}
+.phead b{font-weight:600}
+.phead .btn{margin-left:auto}
+pre{margin:6px 0;padding:8px;background:var(--canvas);border:1px solid var(--line);border-radius:6px;white-space:pre-wrap;word-break:break-all;font:12px/1.4 var(--f-mono)}
+textarea,input[type=text],input[type=time],select{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-height:32px;min-width:0;max-width:100%}
+textarea{width:100%;height:76px;resize:vertical;font:12px/1.4 var(--f-mono)}
+input[type=text]{width:100%}
+details summary{cursor:pointer;font-weight:600}
+
+/* Inspector */
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;min-height:30px;border:0;background:transparent;padding:5px 2px;font-size:12px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.field{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px}
+.field>label,.field>span:first-child{color:var(--muted)}
+.field.stack{flex-direction:column;align-items:stretch;gap:4px}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.step button{border:0;background:transparent;width:30px;height:30px;font-size:15px}
+.step button:disabled{color:var(--muted);cursor:not-allowed}
+.step span{min-width:26px;text-align:center;font:500 12.5px var(--f-mono)}
+.win{display:grid;gap:7px;padding:9px;border:1px solid var(--line);border-radius:8px}
+.win .t{font-weight:600;font-size:13px;word-break:break-word}
+.win .m{color:var(--muted);font-size:12px}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+fieldset.trig{display:grid;gap:6px;border:0;margin:0;padding:0;min-width:0}
+fieldset.trig legend{padding:0;margin-bottom:4px;color:var(--muted)}
+.trig label{display:flex;gap:8px;align-items:center;min-height:26px}
+.trig input[type=radio],.trig input[type=checkbox]{accent-color:var(--ink);margin:0;width:15px;height:15px}
+.days{display:flex;flex-wrap:wrap;gap:2px;margin-left:23px}
+.days button{width:26px;height:30px;border:1px solid var(--line);background:var(--panel);border-radius:5px;font-size:12px;font-weight:600;padding:0}
+.days button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.at{display:flex;gap:8px;align-items:center;margin-left:23px}
+.note{font-size:12px;color:var(--muted);margin:0}
+.why{font-size:12px;color:var(--muted);margin:0;display:grid;gap:2px}
+
+.status{grid-area:status;display:flex;flex-wrap:wrap;gap:4px 18px;padding:7px 16px;border-top:1px solid var(--line);font:12px var(--f-mono);color:var(--muted);align-items:center}
+.status #msg{color:var(--ink)}
+.status .btn{margin-left:auto;font:12px var(--f);min-height:26px}
+
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:16px;width:min(460px,calc(100vw - 32px));max-height:min(640px,calc(100vh - 32px))}
+dialog::backdrop{background:color-mix(in srgb,#000 40%,transparent)}
+dialog h2{font:700 18px var(--f-disp);text-transform:none;letter-spacing:0;color:var(--ink);margin:0 0 8px}
+dialog form{display:grid;gap:10px}
+.catrows{display:grid;gap:2px;max-height:360px;overflow:auto}
+.catrow{display:grid;grid-template-columns:auto minmax(0,1fr) 120px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid var(--line)}
+
+/* Below 1180px the scenes become a strip over the canvas, so the canvas keeps its width. */
+@media (max-width:1180px){
+  .app{grid-template-columns:minmax(0,1fr) 252px;grid-template-rows:auto auto auto minmax(0,1fr) auto;grid-template-areas:"top top" "dry dry" "rail rail" "canvas insp" "status status"}
+  .rail{flex-direction:row;align-items:stretch;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;padding:8px 12px;gap:12px}
+  .rail>section{display:flex;flex-direction:column;gap:6px;flex:none}
+  .cards{grid-auto-flow:column;grid-auto-columns:176px}
+  .card .pick small,.legend+.note,#recentbox{display:none}
+  .mini{height:32px}
+  .legend{grid-template-columns:repeat(2,auto);column-gap:6px}
+  .canvas{padding:18px 14px}}
+@media (max-width:760px){
+  .app{height:auto;min-height:100%;grid-template-rows:none;grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "dry" "rail" "canvas" "insp" "status"}
+  .insp{border:0;border-top:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the Board</a>
+<div class="app">
+  <header class="top">
+    <h1 class="brand"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1"/><rect x="11" y="3" width="7" height="6" rx="1"/><rect x="2" y="11" width="16" height="6" rx="1"/></svg>Tile Windows</h1>
+    <span class="crumb">Scene: <b id="sname">…</b><span id="sedit" class="edited" hidden>Edited</span></span>
+    <div class="tools">
+      <label class="switch"><input type="checkbox" id="grid" checked>Grid Lines</label>
+      <label class="switch">Theme <select id="theme" name="theme"><option value="system">Match Windows</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      <button id="refresh" class="btn" type="button" title="Read the windows again. This clears Undo." hidden>Refresh</button>
+      <button id="undo" class="btn" type="button" disabled>Undo</button>
+      <button id="apply" class="btn pri" type="button">Apply</button>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden><span id="toastText"></span><button id="toastUndo" class="btn" type="button" hidden>Undo</button><button id="toastMore" class="btn" type="button" hidden>Details</button><button id="toastClose" class="btn" type="button" aria-label="Dismiss">✕</button></div>
+  </header>
+  <div id="drybar" class="drybar" hidden><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1 15 14H1L8 1zm-.8 5v4h1.6V6H7.2zm0 5v1.6h1.6V11H7.2z"/></svg>Dry run: nothing on your screen moves.<span>Preview shows what Apply would do.</span></div>
+
+  <aside class="rail" aria-label="Scenes and categories">
+    <section><h2>Scenes</h2><div id="cards" class="cards"></div></section>
+    <section><h2>Categories <button id="editcats" class="btn" type="button" hidden>Edit</button></h2>
+      <div id="legend" class="legend"></div>
+      <p class="note">Click a category to fade it on the board.</p></section>
+    <section id="recentbox" hidden><h2>Recent</h2><ol id="recent" class="recent"></ol></section>
+  </aside>
+
+  <main class="canvas">
+    <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"></div></div>
+    <p id="hint" class="hint"></p>
+    <p id="over" class="over"></p>
+    <section id="results" class="panel" hidden aria-label="Apply results">
+      <div class="phead"><b id="sum"></b><button id="closeres" class="btn ghost" type="button">Close</button></div>
+      <ul id="reslist"></ul>
+    </section>
+    <section id="fileout" class="panel" hidden aria-label="Apply by hand">
+      <p class="note" style="margin:0 0 4px">1. <b>last-place.json</b> was downloaded. If it is not in Downloads, change the path.</p>
+      <input type="text" id="path" name="path" autocomplete="off" spellcheck="false" value="$env:USERPROFILE\Downloads\last-place.json" aria-label="Path of last-place.json">
+      <p class="note" style="margin:8px 0 0">2. Paste this into Windows PowerShell:</p>
+      <pre id="cmd"></pre>
+      <div class="row"><button id="copy" class="btn" type="button">Copy</button><span class="note" id="cmsg" role="status"></span></div>
+    </section>
+    <details id="offline" class="panel" hidden>
+      <summary>Load a Snapshot by Hand</summary>
+      <p class="note" style="margin:6px 0">Paste the output of <code>tile.ps1 -Json</code>. Then drag windows onto cells and click Apply to get a place file.</p>
+      <textarea id="paste" name="snapshot" autocomplete="off" spellcheck="false" placeholder='Paste {"monitors":[…],"windows":[…]}…' aria-label="Snapshot JSON"></textarea>
+      <div class="row" style="margin-top:6px"><button id="load" class="btn" type="button">Load</button><button id="sample" class="btn" type="button">Use Sample</button><span class="note" id="lmsg" role="status"></span></div>
+    </details>
+  </main>
+
+  <aside class="insp" aria-label="Inspector">
+    <section class="isec" id="scenebox" aria-label="Scene"></section>
+    <section class="isec" aria-labelledby="monh"><h2 id="monh">Monitor</h2><div id="mon"></div></section>
+    <section class="isec" aria-labelledby="winh"><h2 id="winh">Window</h2><div id="win"></div></section>
+  </aside>
+
+  <footer class="status"><span id="msg" role="status"></span><span id="pend"></span><button id="quit" class="btn ghost" type="button" hidden>Stop Server</button></footer>
+</div>
+
+<dialog id="dlg"><form method="dialog" id="dlgform"></form></dialog>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const LIVE=location.protocol.startsWith("http");
+const ROLE={wide:"Ultrawide",tall:"Portrait",laptop:"Laptop"};
+const SORTS=[["app","App Order (Default)"],["category","Category"],["title","Title A to Z"],["position","Where Windows Sit Now"]];
+const TRIG=[["manual","Only When I Click Apply"],["time","On a Schedule"],["display","When the Monitors Change"],["call","When a Teams Call Starts"]];
+const DAYN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DAYORDER=[1,2,3,4,5,6,0];
+const CATS0=[["code","Code"],["browse","Browse"],["comms","Comms"],["other","Other"]];
+// Names people know for the process names the engine uses. Unknown processes show with a capital letter.
+const APPN={claude:"Claude",chrome:"Chrome",msedge:"Edge",firefox:"Firefox",brave:"Brave","ms-teams":"Teams",teams:"Teams",olk:"Outlook (new)",outlook:"Outlook",
+  windowsterminal:"Terminal",powershell:"PowerShell",pwsh:"PowerShell",explorer:"File Explorer",notepad:"Notepad",powerpnt:"PowerPoint",winword:"Word",excel:"Excel",
+  code:"VS Code",devenv:"Visual Studio",slack:"Slack",zoom:"Zoom",spotify:"Spotify",applicationframehost:"Windows app","*":"everything else"};
+const appName=a=>APPN[String(a).toLowerCase()]||String(a).charAt(0).toUpperCase()+String(a).slice(1);
+// The offline page cannot read scenes.json (file://), so it keeps a copy of its map. test/run.ps1 checks they match.
+const OFFLINE_CATS={"claude":"code","Code":"code","WindowsTerminal":"code","powershell":"code","pwsh":"code","devenv":"code","chrome":"browse","msedge":"browse","firefox":"browse","brave":"browse","ms-teams":"comms","olk":"comms","outlook":"comms","slack":"comms","Zoom":"comms"};
+// Invented sample for the offline page: no real titles.
+const SAMPLE={monitors:[{name:"\\\\.\\DISPLAY1",role:"laptop",x:-1536,y:769,w:1536,h:912},{name:"\\\\.\\DISPLAY2",role:"wide",x:0,y:0,w:4096,h:1680},{name:"\\\\.\\DISPLAY3",role:"tall",x:4096,y:-1354,w:1200,h:1872}],
+  windows:[["claude","Refactor the grid solver",0,0],["claude","Pin parser edge cases",819,0],["chrome","Quarterly roadmap",1638,0],["chrome","It's a \"quoted\" <test>",2457,0],["WindowsTerminal","pwsh - tiler",0,840],
+    ["explorer","Projects",1638,840],["ms-teams","Team chat",4096,-418],["outlook","Inbox - Outlook",4096,-1354],["olk","Calendar",-1536,769],["notepad","todo.txt - Notepad",2900,700]]
+    .map(([app,title,x,y],i)=>({id:i+1,app,title,x,y,w:x>=4096?1200:x<0?1536:819,h:x>=4096?936:x<0?912:840}))};
+const PIN='<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M4 1h4l-.6 3.2L9.5 6v1H6.6L6 11.5 5.4 7H2.5V6l2.1-1.8z"/></svg>';
+
+let snap=null,cfg={scenes:[],cats:LIVE?{}:OFFLINE_CATS,categories:CATS0},work={},selId=null,prevs={},pseq={},selWin=null,curMon=null,hist=[],isBusy=false,serverDry=false,
+  st={active:"",log:[]},hidden=new Set(),showGrid=true,G={x0:0,y0:0,S:1},els=new Map(),drawn={},optim=null,drag=null,raf=0,
+  offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false;
+const clone=o=>JSON.parse(JSON.stringify(o));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
+const same=(a,b)=>a&&b&&a.x===b.x&&a.y===b.y&&a.w===b.w&&a.h===b.h;
+const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
+const status=t=>{$("msg").textContent=t};
+const scene=()=>work[selId];
+const saved=id=>cfg.scenes.find(s=>s.id===id);
+const edited=id=>!!work[id]&&JSON.stringify(work[id])!==JSON.stringify(saved(id));
+const withCats=s=>({...s,cats:cfg.cats,categories:cfg.categories});
+const catOf=app=>{const c=cfg.cats&&Object.keys(cfg.cats).find(k=>k.toLowerCase()===String(app).toLowerCase());return c?cfg.cats[c]:"other"};
+const catName=c=>(cfg.categories.find(x=>x[0]===c)||[c,c])[1];
+const monName=m=>m.role?ROLE[m.role]:`Monitor ${snap.monitors.indexOf(m)+1}`;
+const winById=id=>snap.windows.find(w=>w.id===id);
+const prev=()=>prevs[selId];
+const ordinal=n=>n+(n%10===1&&n%100!==11?"st":n%10===2&&n%100!==12?"nd":n%10===3&&n%100!==13?"rd":"th");
+const post=(u,b)=>fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:typeof b==="string"?b:JSON.stringify(b)});
+const verb=()=>serverDry?"Preview":"Apply";
+// Apps as a short list: "Terminal ×2, File Explorer".
+const appList=ws=>{const n=new Map();for(const w of ws){const a=appName(w.app);n.set(a,(n.get(a)||0)+1)}return[...n].map(([a,k])=>k>1?`${a} ×${k}`:a).join(", ")};
+// A server read that recovered from a bad file says so in a header.
+function noteFrom(r){const n=r.headers.get("X-Tile-Note");if(n){toast(decodeURIComponent(n),"warn",{sticky:true});noteUp=true}}
+
+/* ---------- Grids and cells (display and hit-testing only; the engine places windows) ---------- */
+function gridOf(m){if(LIVE)return m.role&&scene()?scene().grids[m.role]:null;
+  if(!offGrids[m.name])offGrids[m.name]=m.role==="wide"?{c:5,r:2}:m.h>m.w?{c:1,r:2}:{c:1,r:1};return offGrids[m.name]}
+// Round as tile.ps1's [int] does: to the nearest whole number, halves to even.
+function bround(x){const f=Math.floor(x),d=x-f;return d>0.5||(d===0.5&&f%2!==0)?f+1:f}
+function cellRect(m,g,c0,r0,cs,rs){const cw=bround(m.w/g.c),ch=bround(m.h/g.r);return{x:m.x+c0*cw,y:m.y+r0*ch,w:cs*cw,h:rs*ch}}
+function bbox(slots,g){const cs=slots.map(s=>s%g.c),rs=slots.map(s=>Math.floor(s/g.c));
+  const c0=Math.min(...cs),c1=Math.max(...cs),r0=Math.min(...rs),r1=Math.max(...rs),cells=[];
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)cells.push(r*g.c+c);return{c:c0,r:r0,cs:c1-c0+1,rs:r1-r0+1,cells}}
+function monAt(x,y){return snap.monitors.find(m=>x>=m.x&&x<m.x+m.w&&y>=m.y&&y<m.y+m.h)}
+const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
+
+/* ---------- Loading ---------- */
+async function loadAll(){
+  let step="read your windows";
+  try{
+    const s=await fetch("snapshot",{cache:"no-store"});if(!s.ok)throw new Error(await s.text());
+    serverDry=s.headers.get("X-Dry-Run")==="1";const sj=await s.json();
+    step="read your scenes";const c=await fetch("config",{cache:"no-store"});if(!c.ok)throw new Error(await c.text());noteFrom(c);cfg=await c.json();
+    step="read the recent log";const t=await fetch("state",{cache:"no-store"});if(t.ok){noteFrom(t);st=await t.json()}
+    for(const x of cfg.scenes)if(!work[x.id])work[x.id]=clone(x);
+    if(!selId||!work[selId])selId=(cfg.scenes.find(x=>x.id===st.active)||cfg.scenes[0]).id;
+    setSnap(sj);await previewAll();
+  }catch(e){status(e instanceof TypeError?"Could not reach the server. Start Tile Windows again.":`Could not ${step}: ${e.message}`)}
+}
+async function refresh(){if(isBusy)return;status("Reading your windows…");
+  try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);hist=[];prevs={};setSnap(await r.json());await previewAll();status("Windows read again.")}
+  catch(e){status("Could not read windows: "+e.message)}}
+function setSnap(d){
+  if(!d||!Array.isArray(d.monitors)||!d.monitors.length||!Array.isArray(d.windows))throw new Error("need {monitors:[...], windows:[...]}");
+  snap={monitors:d.monitors,windows:d.windows.map(w=>({...w}))};
+  if(!LIVE){offOrig=snap.windows.map(rect);offRects=snap.windows.map(rect);hist=[]}
+  if(!snap.monitors.includes(curMon))curMon=snap.monitors.find(m=>m.role==="wide")||snap.monitors[0];
+  if(selWin&&!winById(selWin))selWin=null;
+  build();layout();render();
+}
+async function preview(id){
+  const n=pseq[id]=(pseq[id]||0)+1;
+  try{const r=await post("preview",withCats(work[id]));if(!r.ok)throw new Error(await r.text());const j=await r.json();
+    if(pseq[id]!==n)return;prevs[id]=j;if(id===selId)optim=null;render()}
+  catch(e){status("Preview failed: "+e.message)}}
+async function previewAll(){await preview(selId);for(const s of cfg.scenes)if(s.id!==selId)await preview(s.id);
+  for(const id in work)if(!saved(id)&&id!==selId)await preview(id)}
+
+/* ---------- Drawing ---------- */
+function build(){
+  const stg=$("stage"),drop=$("drop");stg.textContent="";stg.appendChild(drop);els.clear();
+  for(const m of snap.monitors){
+    const e=document.createElement("div");e.className="mon";m.el=e;stg.appendChild(e);
+    const l=document.createElement("div");l.className="mlab";m.lab=l;stg.appendChild(l);
+  }
+  for(const w of snap.windows){
+    const e=document.createElement("div");e.className="tile";e.tabIndex=0;e.setAttribute("role","button");e.dataset.id=w.id;
+    e.innerHTML="<b></b><span></span>";e.firstChild.textContent=appName(w.app);e.children[1].textContent=w.title;
+    stg.appendChild(e);els.set(w.id,e);
+  }
+}
+const INSET=3;  // drawn gap inside each monitor edge, so side-by-side monitors read as separate screens
+// The only layout reads: the canvas size, on load and on resize. The board fills the canvas width, up to the window height.
+function layout(){
+  const M=snap.monitors,stg=$("stage"),cv=stg.parentElement;
+  stg.classList.add("still");requestAnimationFrame(()=>requestAnimationFrame(()=>stg.classList.remove("still")));
+  const x0=Math.min(...M.map(m=>m.x)),y0=Math.min(...M.map(m=>m.y)),x1=Math.max(...M.map(m=>m.x+m.w)),y1=Math.max(...M.map(m=>m.y+m.h));
+  const narrow=matchMedia("(max-width:760px)").matches,text=$("hint").offsetHeight+$("over").offsetHeight+36;
+  const top=22,W=cv.clientWidth-36,H=Math.max(240,narrow?innerHeight*.6:cv.clientHeight-44-text),S=Math.min(W/(x1-x0),(H-top)/(y1-y0));
+  G={x0,y0:y0-top/S,S};
+  stg.style.width=Math.round((x1-x0)*S)+"px";stg.style.height=Math.round((y1-y0)*S+top+4)+"px";
+  for(const m of M){Object.assign(m.el.style,{left:(m.x-G.x0)*S+INSET+"px",top:(m.y-G.y0)*S+"px",width:m.w*S-2*INSET+"px",height:m.h*S+"px"});
+    Object.assign(m.lab.style,{left:(m.x-G.x0)*S+INSET+"px",top:(m.y-G.y0)*S+"px",maxWidth:Math.max(m.w*S,60)+"px"})}
+  for(const p of document.querySelectorAll(".canvas>p"))p.style.maxWidth=Math.max(stg.offsetWidth,420)+"px";
+}
+// A screen rect on the board; inside a monitor it keeps clear of the monitor's drawn edge.
+function px(r){const m=monAt(r.x+r.w/2,r.y+r.h/2);let L=(r.x-G.x0)*G.S,T=(r.y-G.y0)*G.S,W=r.w*G.S,H=r.h*G.S;
+  if(m){const ml=(m.x-G.x0)*G.S+INSET+3,mr=(m.x+m.w-G.x0)*G.S-INSET-3,mt=(m.y-G.y0)*G.S+3,mb=(m.y+m.h-G.y0)*G.S-3;
+    const l=Math.max(L,ml)+1,t=Math.max(T,mt)+1,rr=Math.min(L+W,mr)-1,b=Math.min(T+H,mb)-1;if(rr>l&&b>t){L=l;T=t;W=rr-l;H=b-t}}
+  return{left:L+"px",top:T+"px",width:Math.max(W,10)+"px",height:Math.max(H,10)+"px"}}
+// Where each window goes: the engine's preview (live) or the edited rects (offline).
+function view(){
+  const v={},P=prev();
+  snap.windows.forEach((w,i)=>{v[w.id]={w,r:LIVE?(w.min?null:rect(w)):(w.min&&same(offRects[i],offOrig[i])?null:offRects[i]),kind:"stay",p:null}});
+  if(LIVE&&P){for(const p of P.placed){const x=v[p.id];if(x){x.r=rect(p);x.kind=p.pin>=0?"pin":"fill";x.p=p}}for(const l of P.left)if(v[l.id])v[l.id].kind="left"}
+  if(!LIVE)snap.windows.forEach((w,i)=>{v[w.id].kind=same(offRects[i],offOrig[i])?"fill":"pin"});
+  if(optim&&v[optim.id]){v[optim.id].r=optim.r;v[optim.id].kind="pin"}
+  return v}
+function render(){
+  if(!snap)return;
+  const V=view(),s=LIVE?scene():null;drawn={};
+  $("stage").classList.toggle("nogrid",!showGrid);
+  const used=new Set();
+  let moves=0;
+  for(const w of snap.windows){
+    const e=els.get(w.id),x=V[w.id];if(drag&&drag.id===w.id){used.add(monAt(drag.start.x+drag.start.w/2,drag.start.y+drag.start.h/2));continue}
+    e.className=`tile cat-${catOf(w.app)} ${x.kind==="left"?"stay":x.kind}`;
+    const pm=e.querySelector(".pinmark");if(x.kind==="pin"&&!pm)e.insertAdjacentHTML("beforeend",PIN);else if(x.kind!=="pin"&&pm)pm.remove();
+    if(!x.r){e.hidden=true;continue}
+    e.hidden=false;Object.assign(e.style,px(x.r));drawn[w.id]={x:x.r.x,y:x.r.y,w:x.r.w,h:x.r.h,kind:x.kind};used.add(monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2));
+    const mv=(x.kind==="pin"||x.kind==="fill")&&!same(x.r,w);if(mv)moves++;
+    e.classList.toggle("sel",w.id===selWin);e.classList.toggle("dim",hidden.has(catOf(w.app)));
+    e.setAttribute("aria-label",`${w.title}, ${appName(w.app)}, ${where(x)}${x.kind==="pin"?", pinned":""}`);
+    e.title=`${appName(w.app)}: ${w.title}\n${where(x)}`;
+  }
+  for(const m of snap.monitors){
+    const g=gridOf(m),e=m.el;e.classList.toggle("cur",m===curMon);
+    const want=g?`${g.c}x${g.r}`:"";
+    if(e.dataset.g!==want){e.dataset.g=want;e.innerHTML="";
+      if(g){e.style.gridTemplateColumns=`repeat(${g.c},minmax(0,1fr))`;e.style.gridTemplateRows=`repeat(${g.r},minmax(0,1fr))`;
+        for(let i=0;i<g.c*g.r;i++){const c=document.createElement("div");c.className="cell";c.innerHTML=`<i>${i+1}</i>`;e.appendChild(c)}}
+      const em=document.createElement("div");em.className="empty";e.appendChild(em)}
+    e.querySelector(".empty").textContent=used.has(m)?"":g?"Empty. Drag a window here.":"Empty. Not in this scene.";
+    const fills=s&&s.fill&&s.fill.mon===m.role;
+    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${g.c}×${g.r}`:""}${fills?" · fills":""}</span>`;
+    m.lab.title=`${monName(m)}: ${m.w}×${m.h}`;
+  }
+  // Header
+  $("sname").textContent=LIVE?(s?s.name:"…"):"Offline snapshot";
+  $("sedit").hidden=!(LIVE&&edited(selId));
+  $("drybar").hidden=!(LIVE&&serverDry);
+  $("apply").textContent=`${LIVE?verb():"Apply"}${moves?` · ${plural(moves,"Move")}`:""}`;$("apply").classList.toggle("dry",LIVE&&serverDry);
+  $("apply").disabled=isBusy||(!LIVE&&!moves);
+  $("undo").disabled=isBusy||!hist.length;$("refresh").disabled=isBusy;
+  $("undo").title=isBusy?"Wait for the current action to finish.":hist.length?"Undo the last change or "+(LIVE?verb():"Apply")+".":"Nothing to undo yet.";
+  $("pend").textContent=moves?`${plural(moves,"window")} will move on ${LIVE?verb():"Apply"}`:"The board matches your screen";
+  $("hint").textContent=LIVE?"Drag a window onto a cell to pin it there. Unpinned windows fill the "+(s&&s.fill?ROLE[s.fill.mon]||"fill monitor":"fill monitor")+" in fill order. Keys: arrows move a focused window one cell, Shift+arrows resize it, Delete unpins.":
+    "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
+  overText(V);renderRail();renderInsp(V);
+}
+function where(x){if(!x.r)return"minimized, stays minimized";if(x.kind==="left")return"no free cell, stays where it is";
+  if(x.kind==="stay")return LIVE?"not in this scene, stays where it is":"where it is now";
+  const p=x.p,m=p?snap.monitors.find(m=>m.role===p.mon):monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2);
+  return `${m?monName(m):"?"}${p?` · cell${p.slots.length>1?"s":""} ${p.slots.join("+")}`:""}`}
+function overText(V){const P=prev(),o=$("over");if(!LIVE||!P){o.textContent="";o.classList.remove("warn");return}
+  const parts=[],left=P.left.map(l=>winById(l.id)||l);
+  if(left.length)parts.push(`<b>No free cell</b> for ${plural(left.length,"window")} (${esc(appList(left))}). They stay where they are.`);
+  if(P.missing.length)parts.push(`<b>Not open:</b> ${esc([...new Set(P.missing.map(m=>appName(m.app)+(m.why!=="no open window"?` (${m.why})`:"")))].join(", "))}.`);
+  o.classList.toggle("warn",parts.length>0);o.innerHTML=parts.join(" ")||"Every window in this scene has a place."}
+
+function miniHTML(P){const M=snap.monitors,x0=Math.min(...M.map(m=>m.x)),y0=Math.min(...M.map(m=>m.y)),x1=Math.max(...M.map(m=>m.x+m.w)),y1=Math.max(...M.map(m=>m.y+m.h));
+  const BW=196,BH=28,S=Math.min(BW/(x1-x0),BH/(y1-y0)),ox=(BW-(x1-x0)*S)/2+3,oy=(BH-(y1-y0)*S)/2+2,b=r=>`left:${ox+(r.x-x0)*S}px;top:${oy+(r.y-y0)*S}px;width:${Math.max(r.w*S-1,2)}px;height:${Math.max(r.h*S-1,2)}px`;
+  return M.map(m=>`<i style="${b(m)}"></i>`).join("")+(P?P.placed.map(p=>`<b class="cat-${catOf(p.app)}" style="${b(p)}"></b>`).join(""):"")}
+function trigText(s){const t=s.trigger||{type:"manual"};if(t.type==="time"){const d=DAYORDER.filter(x=>(t.days||[]).includes(x));
+  return `${d.length===5&&[1,2,3,4,5].every(x=>d.includes(x))?"Mon to Fri":d.length===7?"Every day":d.map(x=>DAYN[x]).join(", ")||"No days"} at ${t.time||"09:00"}`}
+  return t.type==="display"?"When the monitors change":t.type==="call"?"When a Teams call starts":"By hand"}
+const CLOCK='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="6" cy="6" r="4.8"/><path d="M6 3.4V6l1.8 1.2"/></svg>';
+function renderRail(){
+  if(LIVE){
+    const ids=[...cfg.scenes.map(s=>s.id),...Object.keys(work).filter(id=>!saved(id))];
+    $("cards").innerHTML=ids.map(id=>{const s=work[id],on=id===st.active;return `<article class="card${id===selId?" sel":""}">
+      <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini" aria-hidden="true">${miniHTML(prevs[id])}</span>
+      <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
+      ${(s.trigger||{}).type&&s.trigger.type!=="manual"?`<span class="when">${CLOCK}${esc(trigText(s))}</span>`:""}</button>
+      <div class="crow"><span class="tag">${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}</span><button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></div></article>`}).join("");
+  }else $("cards").innerHTML=`<p class="note">Scenes need the app server. Open Tile Windows from the Start menu, or run <code>serve.ps1</code>.</p>`;
+  const counts={};for(const w of snap.windows){const c=catOf(w.app);counts[c]=(counts[c]||0)+1}
+  $("legend").innerHTML=cfg.categories.map(([c,l])=>`<button type="button" class="lg cat-${c}" data-cat="${c}" aria-pressed="${!hidden.has(c)}"><i class="sw"></i>${esc(l)}<span class="ct">${counts[c]||0}</span></button>`).join("");
+  $("recentbox").hidden=!(LIVE&&st.log&&st.log.length);
+  if(st.log)$("recent").innerHTML=st.log.slice(0,5).map(l=>`<li><span>${esc(l.t)}</span>${esc(l.x)}</li>`).join("");
+}
+const stepper=(lbl,val,attrs,min,max)=>`<span class="step"><button type="button" ${attrs} data-d="-1" aria-label="Fewer ${lbl}" ${val<=min?"disabled":""}>−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" ${attrs} data-d="1" aria-label="More ${lbl}" ${val>=max?"disabled":""}>+</button></span>`;
+function renderInsp(V){
+  const s=LIVE?scene():null,m=curMon,g=gridOf(m);
+  // Scene first: it is what Apply acts on.
+  if(LIVE&&s){
+    const t=s.trigger||(s.trigger={type:"manual",days:[1,2,3,4,5],time:"09:00"}),isSaved=!!saved(selId),ed=edited(selId);
+    const why={save:s.builtIn?"Built-in scenes do not change. Use Save As New.":isSaved&&!ed?"No changes to save.":"",
+      revert:!isSaved?"Not saved yet, so nothing to revert to.":!ed?"No changes to revert.":"",del:s.builtIn?"Built-in scenes cannot be deleted.":""};
+    $("scenebox").innerHTML=`<h2>Scene</h2>
+    <div class="field stack"><label for="sceneName">Name</label><input type="text" id="sceneName" name="sceneName" autocomplete="off" value="${esc(s.name)}" ${s.builtIn?"disabled title=\"Built-in scenes keep their name.\"":""} maxlength="40"></div>
+    <fieldset class="trig"><legend>Applies itself</legend>${TRIG.map(([v,l])=>`<label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}>${l}</label>`).join("")}
+      ${t.type==="time"?`<div class="days" role="group" aria-label="Days">${DAYORDER.map(d=>`<button type="button" data-day="${d}" aria-pressed="${(t.days||[]).includes(d)}" aria-label="${DAYN[d]}">${DAYN[d][0]}</button>`).join("")}</div>
+      <div class="at"><label for="time">At</label><input type="time" id="time" value="${esc(t.time||"09:00")}"></div>`:""}
+      ${t.type==="call"?`<label class="at"><input type="checkbox" id="back" ${t.back?"checked":""}>When the Call Ends, Go Back to the Scene Before</label>`:""}</fieldset>
+    <p class="note">${t.type==="manual"?"It changes your windows only when you apply it.":"The tray agent applies it"+(t.type==="time"?" at that time.":t.type==="call"?" when Teams starts using the microphone.":" when a monitor is added or removed.")+" Save to turn it on."}</p>
+    <div class="acts"><button type="button" class="btn pri" id="save" ${why.save?`disabled title="${why.save}" aria-describedby="whyoff"`:""}>Save</button>
+      <button type="button" class="btn" id="saveas">Save As New</button>
+      <button type="button" class="btn" id="revert" ${why.revert?`disabled title="${why.revert}" aria-describedby="whyoff"`:""}>Revert</button>
+      <button type="button" class="btn danger" id="del" ${why.del?`disabled title="${why.del}" aria-describedby="whyoff"`:""}>Delete</button></div>
+    <p class="note" id="smsg" role="status">${esc(sceneMsg)}</p>
+    <p class="why" id="whyoff">${[...new Set([why.save,why.del,!why.save?why.revert:""].filter(Boolean))].map(x=>`<span>${esc(x)}</span>`).join("")}</p>`}
+  else $("scenebox").innerHTML="";
+  const mons=LIVE?snap.monitors.filter(x=>x.role):snap.monitors;
+  let h=`<div class="seg" role="group" aria-label="Monitor">${mons.map(x=>`<button type="button" data-mon="${snap.monitors.indexOf(x)}" aria-pressed="${x===m}">${esc(monName(x))}</button>`).join("")}</div>
+    <p class="note">${m.w}×${m.h} pixels.</p>`;
+  if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
+    if(s&&s.fill&&s.fill.mon===m.role)h+=`<div class="field stack"><label for="sort">Fill order</label><select id="sort">${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note">Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.</p></div>`;
+    else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`}
+  else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>`;
+  $("mon").innerHTML=h;
+  const w=selWin&&winById(selWin),x=w&&V[w.id];
+  if(!w)$("win").innerHTML=`<p class="note">Click a window on the board to change it here.</p>`;
+  else{const p=x.p,pin=LIVE&&p&&p.pin>=0?s.pins[p.pin]:null,box=pin?bbox(pin.slots,s.grids[pin.mon]):null;
+    let wh=`<div class="win cat-${catOf(w.app)}"><div class="field" style="min-height:0"><span style="display:flex;gap:6px;align-items:center;color:var(--ink)"><i class="sw"></i>${esc(appName(w.app))}</span>
+      ${LIVE?`<select id="wcat" aria-label="Category of ${esc(appName(w.app))}">${cfg.categories.map(([c,l])=>`<option value="${c}"${c===catOf(w.app)?" selected":""}>${esc(l)}</option>`).join("")}</select>`:""}</div>
+      <div class="t">${esc(w.title)}</div>
+      <div class="m">${!LIVE?esc(where(x)):pin?"Pinned · "+esc(where(x)):x.kind==="fill"?`Fills ${esc(where(x))}`:esc(where(x)[0].toUpperCase()+where(x).slice(1))}.</div>`;
+    if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,s.grids[pin.mon].c)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,s.grids[pin.mon].r)}</div>
+      <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" name="match" autocomplete="off" placeholder="Any ${esc(appName(w.app))} window…" spellcheck="false"></div>`;
+    const mm=LIVE?snap.monitors.filter(q=>q.role&&s.grids[q.role]):snap.monitors;
+    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto"><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(gg.c*gg.r).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
+    if(pin)wh+=`<button type="button" class="btn" id="unpin">Unpin and Let It Fill</button>`;
+    $("win").innerHTML=wh+"</div>"}
+}
+
+/* ---------- Toast: the result of Apply and Undo, next to the buttons ---------- */
+function toast(text,kind="",o={}){const t=$("toast");clearTimeout(toastT);noteUp=false;t.className="toast"+(kind?" "+kind:"");$("toastText").textContent=text;
+  $("toastUndo").hidden=!o.undo;$("toastMore").hidden=!o.more;t.hidden=false;if(!o.sticky)toastT=setTimeout(()=>{t.hidden=true},8000)}
+$("toastClose").onclick=()=>{$("toast").hidden=true;if(noteUp){noteUp=false;post("note","dismiss").catch(()=>{})}};
+$("toastUndo").onclick=()=>{$("toast").hidden=true;$("undo").onclick()};
+$("toastMore").onclick=()=>{$("results").hidden=false;$("results").scrollIntoView({block:"nearest"});$("toast").hidden=true};
+
+/* ---------- Editing scenes ---------- */
+function edit(fn,msg){if(isBusy)return false;sceneMsg="";hist.push({k:"edit",id:selId,s:clone(scene())});fn(scene());if(msg)status(msg);render();preview(selId);return true}
+const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
+function pinWin(id,mon,slot,cs=1,rs=1){
+  const w=winById(id);
+  if(!LIVE){const i=snap.windows.indexOf(w),g=gridOf(mon);cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
+    const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),t=cellRect(mon,g,c0,r0,cs,rs);
+    if(same(t,offRects[i]))return render();hist.push({k:"rects",r:offRects.map(rect)});offRects[i]=t;selWin=id;render();status(`Moved ${w.title} to ${monName(mon)} cell ${r0*g.c+c0+1}.`);return}
+  const s=scene(),g=s.grids[mon.role];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
+  const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),slots=[];
+  for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*g.c+c);
+  const P=prev(),cur=P&&P.placed.find(p=>p.id===id),grab=cur&&cur.pin>=0?s.pins[cur.pin]:null,match=grab?grab.match||"":matchFor(w),cells=new Set(slots);
+  optim={id,r:cellRect(mon,g,c0,r0,cs,rs)};selWin=id;
+  // Drop the pin that held this window and any pin on the cells it now covers.
+  const covers=q=>{const qs=q.slots.filter(v=>v<g.c*g.r);return q.mon===mon.role&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
+  edit(x=>{x.pins=x.pins.filter(q=>q!==grab&&!(q.app===w.app&&(q.match||"")===match)&&!covers(q));
+    x.pins.unshift({app:w.app,match,mon:mon.role,slots})},`Pinned ${w.title} to ${monName(mon)} ${slots.length>1?"cells":"cell"} ${slots.map(v=>v+1).join("+")}.`);
+}
+function setGrid(k,d){const m=curMon;
+  if(!LIVE){const g=gridOf(m);g[k]=clamp(g[k]+d,1,k==="c"?8:4);m.el.dataset.g="";render();return}
+  edit(s=>{const g=s.grids[m.role],o={...g};g[k]=clamp(g[k]+d,1,k==="c"?8:4);
+    // Keep each pin on the same column and row; drop cells past the new edge.
+    for(const p of s.pins)if(p.mon===m.role)p.slots=p.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+    s.pins=s.pins.filter(p=>p.slots.length)},`${monName(m)} grid: ${scene().grids[m.role].c+(k==="c"?d:0)}×${scene().grids[m.role].r+(k==="r"?d:0)}.`)}
+function pinOf(id){const P=prev(),p=P&&P.placed.find(q=>q.id===id);return p&&p.pin>=0?{p,pin:scene().pins[p.pin]}:null}
+
+/* ---------- Drag: pointer capture, transform while moving, one rAF per frame ---------- */
+const stage=$("stage"),dropEl=$("drop");
+function target(d){
+  const sr=stage.getBoundingClientRect(),sx=(d.px-sr.left)/G.S+G.x0,sy=(d.py-sr.top)/G.S+G.y0,m=monAt(sx,sy),g=m&&gridOf(m);
+  if(!g)return null;
+  const cw=m.w/g.c,ch=m.h/g.r,cs=Math.min(d.cs,g.c),rs=Math.min(d.rs,g.r);
+  let c,r;
+  if(cs===1&&rs===1){c=Math.floor((sx-m.x)/cw);r=Math.floor((sy-m.y)/ch)}
+  else{const tx=d.start.x+(d.px-d.sx)/G.S,ty=d.start.y+(d.py-d.sy)/G.S;c=Math.round((tx-m.x)/cw);r=Math.round((ty-m.y)/ch)}
+  c=clamp(c,0,g.c-cs);r=clamp(r,0,g.r-rs);return{m,g,slot:r*g.c+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)}}
+function spanOf(id,start){const pp=LIVE&&pinOf(id);if(pp){const b=bbox(pp.pin.slots,scene().grids[pp.pin.mon]);return[b.cs,b.rs,pp.pin.mon]}
+  if(!LIVE){const m=monAt(start.x+start.w/2,start.y+start.h/2),g=m&&gridOf(m);if(g)return[clamp(Math.round(start.w/(m.w/g.c)),1,g.c),clamp(Math.round(start.h/(m.h/g.r)),1,g.r),null]}
+  return[1,1,null]}
+function frame(){raf=0;if(!drag)return;const d=drag;d.el.style.transform=`translate3d(${d.px-d.sx}px,${d.py-d.sy}px,0)`;
+  const t=target(d);d.t=t;if(t){Object.assign(dropEl.style,px(t.r));dropEl.style.display="block"}else dropEl.style.display="none"}
+stage.addEventListener("pointerdown",ev=>{
+  const lab=ev.target.closest(".mlab button");if(lab)return;
+  const e=ev.target.closest(".tile");if(!e||ev.button!==0||drag||isBusy)return;
+  ev.preventDefault();e.focus({preventScroll:true});
+  try{e.setPointerCapture(ev.pointerId)}catch(_){}
+  const id=+e.dataset.id,d=drawn[id];if(!d)return;const start={x:d.x,y:d.y,w:d.w,h:d.h},[cs,rs,pmon]=spanOf(id,start);
+  e.classList.add("drag","now");
+  drag={id,el:e,start,cs,rs,pmon,sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,pid:ev.pointerId,t:null};
+});
+stage.addEventListener("pointermove",ev=>{if(!drag||ev.pointerId!==drag.pid)return;drag.px=ev.clientX;drag.py=ev.clientY;if(!raf)raf=requestAnimationFrame(frame)});
+function endDrag(ev){
+  if(!drag||ev.pointerId!==drag.pid)return;
+  const d=drag;drag=null;if(raf)cancelAnimationFrame(raf);raf=0;dropEl.style.display="none";
+  const moved=Math.abs(d.px-d.sx)+Math.abs(d.py-d.sy)>4;
+  d.el.classList.remove("drag");d.el.style.transform="";
+  requestAnimationFrame(()=>d.el.classList.remove("now"));
+  if(ev.type!=="pointerup"){render();return}
+  if(!moved){selWin=d.id;const dw=drawn[d.id],m=dw&&monAt(dw.x+dw.w/2,dw.y+dw.h/2);if(m&&gridOf(m))curMon=m;render();return}
+  const t=target(d);
+  if(!t){render();status("Dropped outside a grid. Nothing changed.");return}
+  // Keep a pinned window's size when it moves within its monitor; a new monitor starts at one cell.
+  const keep=!LIVE||d.pmon===t.m.role;
+  curMon=t.m;pinWin(d.id,t.m,t.slot,keep?t.cs:1,keep?t.rs:1);
+}
+stage.addEventListener("pointerup",endDrag);stage.addEventListener("pointercancel",endDrag);stage.addEventListener("lostpointercapture",endDrag);
+
+// Keyboard: arrows move a window one cell; Shift+arrows resize; Enter selects; Delete unpins.
+stage.addEventListener("keydown",ev=>{
+  const e=ev.target.closest(".tile");if(!e||isBusy)return;const id=+e.dataset.id;
+  if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();selWin=id;render();return}
+  if((ev.key==="Delete"||ev.key==="Backspace")&&LIVE){ev.preventDefault();unpin(id);return}
+  const k={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];if(!k)return;ev.preventDefault();
+  const d=drawn[id];if(!d)return;
+  const pp=LIVE&&pinOf(id);let m,g,b;
+  if(pp){m=snap.monitors.find(q=>q.role===pp.pin.mon);g=gridOf(m);b=bbox(pp.pin.slots,g)}
+  else{m=monAt(d.x+d.w/2,d.y+d.h/2);g=m&&gridOf(m);if(!g)return;const cw=m.w/g.c,ch=m.h/g.r;
+    b={c:clamp(Math.floor((d.x+d.w/2-m.x)/cw),0,g.c-1),r:clamp(Math.floor((d.y+d.h/2-m.y)/ch),0,g.r-1),cs:1,rs:1};
+    if(!LIVE){const[cs,rs]=spanOf(id,d);b.cs=cs;b.rs=rs;b.c=clamp(Math.round((d.x-m.x)/cw),0,g.c-cs);b.r=clamp(Math.round((d.y-m.y)/ch),0,g.r-rs)}}
+  let{c,r,cs,rs}=b;
+  if(ev.shiftKey){cs=clamp(cs+k[0],1,g.c-c);rs=clamp(rs+k[1],1,g.r-r)}else{c=clamp(c+k[0],0,g.c-cs);r=clamp(r+k[1],0,g.r-rs)}
+  curMon=m;pinWin(id,m,r*g.c+c,cs,rs);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));
+});
+function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.");return}
+  edit(s=>{s.pins.splice(pp.p.pin,1)},`Unpinned ${winById(id).title}. It fills if its app is in the fill list.`)}
+
+/* ---------- Apply, Undo, results ---------- */
+function busy(b){isBusy=b;render()}
+function showResults(sum,rows){$("fileout").hidden=true;$("sum").textContent=sum;
+  $("reslist").innerHTML=rows.map(([cls,txt])=>`<li><span class="${cls}">${cls==="ok"?"✓":cls==="bad"?"✗":"·"}</span><span>${esc(txt)}</span></li>`).join("")}
+async function applyScene(){
+  const s=scene();if(!s||isBusy)return;
+  busy(true);toast(`${serverDry?"Previewing":"Applying"} ${s.name}…`,"",{sticky:true});
+  try{
+    const r=await post("scene",withCats(s));if(!r.ok)throw new Error(await r.text());const res=await r.json();
+    const moved=res.placed.filter(p=>!same(p,p.from)),dry=res.placed.some(p=>/^dry run/.test(p.note));
+    const nm=p=>`${appName(p.app)}: ${p.title}`;
+    const rows=res.placed.map(p=>[p.ok&&!/^off size/.test(p.note)?"ok":"bad",`${nm(p)} — ${same(p,p.from)?"already there":dry?"would move":p.note}`])
+      .concat(res.missing.map(m=>["bad",`${appName(m.app)}${m.match?` "${m.match}"`:""} — ${m.why}`]),res.left.map(l=>["mut",`${nm(l)} — no free cell, stays`]));
+    const bad=res.placed.filter(p=>!p.ok||/^off size/.test(p.note)).length;
+    const sum=`${dry?"Preview: would move":"Moved"} ${plural(moved.length,"window")} for ${s.name}.${bad?` ${bad} did not fit.`:""}`;
+    showResults(sum,rows);
+    // Undo moves these back (decision: undo-moves-windows). A minimized window has no rect to go back to.
+    hist.push({k:"apply",back:moved.filter(p=>p.from.x>-20000).map(p=>({id:p.id,app:p.app,title:p.title,...p.from}))});
+    toast(sum+(dry?" Nothing moved.":""),bad?"warn":"",{undo:!dry&&moved.length>0,more:true});
+    if(!dry){st.active=selId;try{const t=await fetch("state",{cache:"no-store"});if(t.ok)st=await t.json()}catch(_){}
+      const sn=await fetch("snapshot",{cache:"no-store"});if(sn.ok){setSnap(await sn.json());prevs={};await previewAll()}}
+  }catch(e){showResults("Apply failed: "+e.message,[]);toast("Apply failed: "+e.message,"bad",{sticky:true,more:true})}
+  finally{busy(false)}
+}
+async function placeBack(back){
+  busy(true);toast("Moving windows back…","",{sticky:true});
+  try{const r=await post("apply",back);if(!r.ok)throw new Error(await r.text());const res=[].concat(await r.json());
+    const dry=res.some(x=>/^dry run/.test(x.note)),sum=`${dry?"Preview: would put back":"Put back"} ${res.filter(x=>x.ok).length} of ${plural(res.length,"window")}.`;
+    showResults(sum,res.map(x=>[x.ok&&!/^off size/.test(x.note)?"ok":"bad",`${appName(x.app)}: ${x.title} — ${x.note}`]));toast(sum,"",{more:true});
+    if(!dry){const sn=await fetch("snapshot",{cache:"no-store"});if(sn.ok){setSnap(await sn.json());prevs={};await previewAll()}}}
+  catch(e){showResults("Undo failed: "+e.message,[]);toast("Undo failed: "+e.message,"bad",{sticky:true})}
+  finally{busy(false)}}
+$("apply").onclick=async()=>{
+  if(LIVE)return applyScene();
+  const ch=snap.windows.map((w,i)=>({...w,...offRects[i]})).filter((w,i)=>!same(offRects[i],offOrig[i]));
+  if(!ch.length){status("Nothing changed yet. Drag a window first.");return}
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([spec(ch)],{type:"application/json"}));a.download="last-place.json";
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  $("results").hidden=true;$("fileout").hidden=false;$("cmd").textContent=cmd();$("cmsg").textContent="";
+  toast("Downloaded last-place.json. Run the command below it.","",{});
+};
+$("undo").onclick=async()=>{if(isBusy)return;const e=hist.pop();if(!e)return;
+  if(e.k==="rects"){offRects=e.r;render();toast("Undid the last move.");return}
+  if(e.k==="edit"){selId=e.id;work[e.id]=e.s;optim=null;render();preview(selId);toast("Undid the last change.");return}
+  if(e.k==="apply"){if(e.back.length)await placeBack(e.back);else toast("That Apply moved nothing.")}};
+$("refresh").onclick=()=>refresh();
+$("closeres").onclick=()=>{$("results").hidden=true};
+// Same JSON for the file and for /apply: what tile.ps1 -Place reads.
+const spec=ws=>JSON.stringify(ws.map(({id,app,title,x,y,w,h})=>id?{id,app,title,x,y,w,h}:{app,title,x,y,w,h}));
+function cmd(){const p=$("path").value.replace(/["`]/g,"");
+  return `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\\.tile-windows\\app\\tile.ps1" -PlaceFile "${p}"`}
+$("path").oninput=()=>{$("cmd").textContent=cmd()};
+$("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("cmd").textContent);$("cmsg").textContent="Copied."}
+  catch(e){const r=document.createRange();r.selectNodeContents($("cmd"));const s=getSelection();s.removeAllRanges();s.addRange(r);$("cmsg").textContent="Press Ctrl+C to copy."}};
+
+/* ---------- Saving scenes ---------- */
+async function saveConfig(next,msg){
+  const r=await post("config",next);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
+  cfg=next;status(msg);sceneMsg=msg;render();return true}
+async function saveScene(){const s=scene();if(s.builtIn)return;const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId);
+  if(i>=0)next.scenes[i]=clone(s);else next.scenes.push(clone(s));await saveConfig(next,`Saved ${s.name}.`)}
+async function saveAsNew(name){const s=clone(scene()),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
+  Object.assign(s,{id,name:base.slice(0,40),builtIn:false});delete s.blurb;
+  const next=clone(cfg);next.scenes.push(s);
+  if(saved(selId))work[selId]=clone(saved(selId));work[id]=clone(s);
+  if(await saveConfig(next,`Saved as ${s.name}.`)){selId=id;render();await preview(id)}}
+// A dialog. A destructive one starts on Cancel.
+function ask(title,body,ok,danger){return new Promise(res=>{const d=$("dlg"),f=$("dlgform");
+  f.innerHTML=`<h2>${esc(title)}</h2>${body}<div class="row" style="justify-content:flex-end"><button class="btn" value="" id="dlgCancel">Cancel</button><button class="btn ${danger?"danger solid":"pri"}" value="ok">${esc(ok)}</button></div>`;
+  d.onclose=()=>res(d.returnValue==="ok"?f:null);d.returnValue="";d.showModal();
+  (danger?$("dlgCancel"):f.querySelector("input,select")||f.querySelector(".pri")).focus()})}
+
+/* ---------- Events ---------- */
+document.addEventListener("click",async ev=>{
+  const t=ev.target.closest("button");if(!t||t.classList.contains("tile")||t.closest("#toast"))return;
+  if(t.dataset.mon!==undefined){curMon=snap.monitors[+t.dataset.mon];render()}
+  else if(t.dataset.pick){selId=t.dataset.pick;optim=null;render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}
+  else if(t.dataset.apply){selId=t.dataset.apply;render();if(!prevs[selId])await preview(selId);applyScene()}
+  else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
+  else if(t.dataset.g){setGrid(t.dataset.g,+t.dataset.d)}
+  else if(t.dataset.span){const pp=pinOf(selWin);if(!pp)return;const g=scene().grids[pp.pin.mon],b=bbox(pp.pin.slots,g);
+    const cs=b.cs+(t.dataset.span==="cs"?+t.dataset.d:0),rs=b.rs+(t.dataset.span==="rs"?+t.dataset.d:0);
+    pinWin(selWin,snap.monitors.find(q=>q.role===pp.pin.mon),b.r*g.c+b.c,clamp(cs,1,g.c-b.c),clamp(rs,1,g.r-b.r))}
+  else if(t.dataset.day){const d=+t.dataset.day;edit(s=>{const x=s.trigger;x.days=(x.days||[]).includes(d)?x.days.filter(v=>v!==d):[...(x.days||[]),d].sort()})}
+  else if(t.id==="unpin")unpin(selWin);
+  else if(t.id==="save")saveScene();
+  else if(t.id==="saveas"){const f=await ask("Save as a new scene",`<label class="field stack"><span>Name</span><input type="text" name="n" value="${esc(scene().name)} copy" maxlength="40" required></label>`,"Save");if(f)saveAsNew(f.n.value)}
+  else if(t.id==="revert"){edit(s=>{Object.keys(s).forEach(k=>delete s[k]);Object.assign(s,clone(saved(selId)))},"Reverted to the saved scene.");sceneMsg="Reverted to the saved scene.";render()}
+  else if(t.id==="del"){const s=scene();if(s.builtIn)return;const f=await ask(`Delete ${s.name}?`,`<p class="note">The scene and its trigger go away. Your windows do not move.</p>`,"Delete",true);if(!f)return;
+    const next=clone(cfg);next.scenes=next.scenes.filter(x=>x.id!==selId);
+    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){delete work[selId];delete prevs[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
+  else if(t.id==="editcats")editCats();
+  else if(t.id==="quit"){try{await post("quit","quit")}catch(_){}document.body.innerHTML='<p style="padding:24px;font:15px system-ui">Server stopped. You can close this tab.</p>'}
+});
+$("grid").onchange=e=>{showGrid=e.target.checked;render()};
+document.addEventListener("change",ev=>{const t=ev.target;
+  if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
+  else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
+  else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});
+  else if(t.id==="time"&&t.value)edit(s=>{s.trigger.time=t.value});
+  else if(t.id==="back")edit(s=>{s.trigger.back=t.checked});
+  else if(t.id==="match")edit(s=>{const pp=pinOf(selWin);if(pp)s.pins[pp.p.pin].match=t.value.trim()},"The pin now matches any title containing that text.");
+  else if(t.id==="sceneName"&&t.value.trim())edit(s=>{s.name=t.value.trim().slice(0,40)});
+  else if(t.id==="wcat"){const w=winById(selWin),next=clone(cfg);next.cats[w.app]=t.value;saveConfig(next,`${appName(w.app)} is now ${catName(t.value)}.`).then(ok=>{if(ok){prevs={};previewAll()}})}
+});
+async function editCats(){
+  const apps=[...new Set([...snap.windows.map(w=>w.app),...Object.keys(cfg.cats)])].sort((a,b)=>appName(a).localeCompare(appName(b)));
+  const f=await ask("Categories",`<p class="note">Each app gets one category. It sets the color on the board and the Category fill order.</p><div class="catrows">${apps.map((a,i)=>`<div class="catrow cat-${catOf(a)}"><i class="sw"></i><span>${esc(appName(a))}</span><select name="c${i}" aria-label="Category of ${esc(appName(a))}">${cfg.categories.map(([c,l])=>`<option value="${c}"${c===catOf(a)?" selected":""}>${esc(l)}</option>`).join("")}</select></div>`).join("")}</div>`,"Save");
+  if(!f)return;const next=clone(cfg);next.cats={};apps.forEach((a,i)=>{const v=f["c"+i].value;if(v!=="other"||cfg.cats[a])next.cats[a]=v});
+  if(await saveConfig(next,"Categories saved.")){prevs={};previewAll()}}
+
+/* ---------- Theme ---------- */
+function setTheme(t){if(!["light","dark"].includes(t))t="system";if(t==="system")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme=t;$("theme").value=t}
+$("theme").onchange=e=>{setTheme(e.target.value);try{localStorage.setItem("tile-theme",e.target.value)}catch(_){}};
+try{setTheme(localStorage.getItem("tile-theme")||"system")}catch(_){setTheme("system")}
+addEventListener("keydown",ev=>{if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
+let rz=0;addEventListener("resize",()=>{if(snap&&!rz)rz=requestAnimationFrame(()=>{rz=0;layout();render()})});
+
+/* ---------- Offline ---------- */
+function parse(t){const a=t.indexOf("{");if(a<0)throw new Error("no JSON object found");return JSON.parse(t.slice(a,t.lastIndexOf("}")+1))}
+$("load").onclick=()=>{try{setSnap(parse($("paste").value));$("lmsg").textContent="Loaded."}catch(e){$("lmsg").textContent="Could not load: "+e.message}};
+$("sample").onclick=()=>{setSnap(SAMPLE);$("lmsg").textContent="Sample loaded."};
+
+if(LIVE){$("refresh").hidden=false;$("quit").hidden=false;$("editcats").hidden=false;status("Reading your windows…");
+  loadAll().then(()=>{if(!snap)return;status(`${scene().name} is selected. Drag windows onto cells, or ${verb().toLowerCase()} a scene from the rail.`);
+    if(serverDry&&location.hash==="#selftest-undo")selftestUndo();if(serverDry&&location.hash==="#selftest-scenes")selftestScenes()})}
+else{$("offline").hidden=false;$("offline").open=true;setSnap(SAMPLE);status("Offline. A sample desktop is loaded.")}
+
+/* ---------- Self-tests: run by test/run.ps1 against serve.ps1 -From (always a dry run) ---------- */
+function dump(out){const pre=document.createElement("pre");pre.id="selftest";pre.textContent=JSON.stringify(out);document.body.appendChild(pre)}
+async function selftestUndo(){
+  const log=[],f=window.fetch;window.fetch=(u,o)=>{if(u==="scene"||u==="apply")log.push(JSON.parse(o.body));return f(u,o)};
+  const w0=snap.windows[0],w1=snap.windows[1];
+  // A scene with one pin and no fill moves exactly one window.
+  const run=async fn=>{await refresh();work.selftest={id:"selftest",name:"Selftest",grids:clone(work[cfg.scenes[0].id].grids),pins:[],fill:{mon:"wide",apps:[],skip:[],sort:"app"},trigger:{type:"manual",days:[],time:"09:00"}};
+    selId="selftest";await preview("selftest");log.length=0;const r=await fn();return{r,bodies:log.slice()}};
+  const wide=()=>snap.monitors.find(m=>m.role==="wide");
+  const mv=async slot=>{pinWin(w0.id,wide(),slot);await preview(selId)};
+  const out={};
+  out.applyUndo=await run(async()=>{await mv(9);await $("apply").onclick();await $("undo").onclick();return{id:w0.id,...rect(w0)}});
+  out.undoNoApply=await run(async()=>{await mv(9);await $("undo").onclick()});
+  out.undoDragAfterApply=await run(async()=>{await mv(9);await $("apply").onclick();await mv(8);await mv(7);await $("undo").onclick()});
+  out.undoAfterRefresh=await run(async()=>{await mv(9);await $("apply").onclick();await refresh();await mv(8);await $("undo").onclick()});
+  out.busy=await run(async()=>{await mv(9);const before=JSON.stringify(scene()),p=$("apply").onclick();
+    els.get(w1.id).dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
+    const r={undoOff:$("undo").disabled,refreshOff:$("refresh").disabled,kept:JSON.stringify(scene())===before};await p;return r});
+  dump(out);
+}
+async function selftestScenes(){
+  const out={drawn:{},names:[],cell:cellRect({x:0,y:0,w:1365,h:1001},{c:2,r:2},0,0,1,1)};
+  for(const s of cfg.scenes){selId=s.id;await preview(s.id);
+    out.drawn[s.id]=Object.entries(drawn).filter(([,d])=>d.kind==="pin"||d.kind==="fill").map(([id,d])=>({id:+id,x:d.x,y:d.y,w:d.w,h:d.h}))}
+  selId=cfg.scenes[0].id;render();await saveAsNew("Selftest copy");
+  out.names=(await (await fetch("config",{cache:"no-store"})).json()).scenes.map(s=>s.name);
+  dump(out);
+}
+</script>
+</body>
+</html>
