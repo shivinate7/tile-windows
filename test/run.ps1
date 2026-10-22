@@ -165,12 +165,14 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
 
     # Page preview == engine, for each starter scene, on the fixture.
     $ss = SelfTest $furl 'scenes'
-    foreach ($id in 'default', 'focus', 'meetings', 'review') {
+    foreach ($id in 'default', 'focus', 'meetings', 'review', 'listen', 'solo', 'thursday-prep') {
       $eng = ((& $tile -Scene (StarterJson $id) -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json).placed | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
       $pg = @($ss.drawn.$id) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
       Check "page preview == engine: $id" ($eng.Count -gt 0 -and ($eng -join ' ') -ceq ($pg -join ' ')) ("engine: $($eng -join ' ') | page: $($pg -join ' ')")
     }
     Check 'page cell size rounds like tile.ps1 ([int], to even)' ($ss.cell.w -eq [int](1365 / 2) -and $ss.cell.h -eq [int](1001 / 2)) ($ss.cell | ConvertTo-Json -Compress)
+    $sb = SelfTest $furl 'builtin'
+    Check 'page: a built-in scene saves a change to its trigger switches, and nothing else' ($sb.builtIn -and $sb.idleDisabled -and $sb.autoEnabled -and $sb.saved -and $sb.otherDisabled) ($sb | ConvertTo-Json -Compress)
     Check 'page Save as new writes the scene to config.json' (@($ss.names) -contains 'Selftest copy' -and ([IO.File]::ReadAllText($fcfg, $utf8)).Contains('"Selftest copy"')) (@($ss.names) -join ',')
   }
   [void](Invoke-WebRequest -UseBasicParsing "${furl}quit" -Method Post -Body 'quit')

@@ -53,11 +53,10 @@ function Get-TodayAgenda($raw, [datetime]$now) {
   , @(@($raw.events) | % { try { [pscustomobject]@{ start = [datetime]$_.start; end = [datetime]$_.end; attendees = [int]$_.attendees; teams = [bool]$_.teams; showAs = "$($_.showAs)".ToLower() } } catch {} })
 }
 function Test-Busy($e) { $e.showAs -in 'busy', 'oof' }
-# The call scene for a meeting of this size: Listen from 'at' attendees up, else Meetings; '' when that scene's size switch is off.
-function Get-SizeScene($cfg, [int]$attendees) {
-  $t = (Get-Tcfg $cfg).size; $id = if ($attendees -ge [int]$t.at) { $t.big } else { $t.small }
-  if (Test-Auto (Get-Scene $cfg $id) 'size') { $id } else { '' }
-}
+# The scene for a meeting of this size: Listen from 'at' attendees up, else Meetings. A call applies it only when that scene's size switch is on;
+# the offer needs only the scene's offer switch.
+function Get-SizeId($cfg, [int]$attendees) { $t = (Get-Tcfg $cfg).size; if ($attendees -ge [int]$t.at) { $t.big } else { $t.small } }
+function Get-SizeScene($cfg, [int]$attendees) { $id = Get-SizeId $cfg $attendees; if (Test-Auto (Get-Scene $cfg $id) 'size') { $id } else { '' } }
 # The Teams meeting on now (up to 10 minutes early); the one that started last wins.
 function Get-NowMeeting($ev, [datetime]$now) { @($ev | ? { $_.teams -and (Test-Busy $_) -and $now -ge $_.start.AddMinutes(-10) -and $now -le $_.end } | Sort-Object start)[-1] }
 
@@ -132,6 +131,8 @@ function Step-NoExternal($s, [datetime]$now, $cfg, $n, [string]$active) {
   if ($active -eq $sc.id) { $s.soloDone = $true; return }
   $st = $s; New-Cand $sc.id 'because the external monitors are gone' 'noext' ({ $st.soloDone = $true }.GetNewClosure())
 }
+# The scene (with the config's category map attached, as Get-TileScene gives it) as JSON for tile.ps1 -Scene, its ultrawide grid swapped.
+function Get-GridSceneJson($sc, $grid) { $full = ConvertFrom-Json (ConvertTo-Json -Depth 8 -Compress $sc); $full.grids.wide = $grid; ConvertTo-Json -Depth 8 -Compress $full }
 # Grid follows the Claude count: the ultrawide grid a scene asks for at this many Claude windows, or $null.
 function Get-ClaudeGrid($sc, [int]$n) { if (-not (Test-Auto $sc 'grid') -or -not $sc.claudeGrid) { return }; if ($n -ge [int]$sc.claudeGrid.at) { $sc.claudeGrid.dense } else { $sc.claudeGrid.roomy } }
 
@@ -191,7 +192,7 @@ function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active, $sig 
   $out = @()
   foreach ($e in @($agenda | ? { $_.teams -and (Test-Busy $_) -and $now -ge $_.start.AddMinutes(-2) -and $now -lt $_.start })) {
     $k = $e.start.ToString('s'); if ($s.offered[$k]) { continue }
-    $s.offered[$k] = $true; $id = Get-SizeScene $cfg $e.attendees
+    $s.offered[$k] = $true; $id = Get-SizeId $cfg $e.attendees
     if ($id -and (Test-Auto (Get-Scene $cfg $id) 'offer')) { $o = New-Cand $id 'a meeting starts in 2 minutes' 'offer'; $o.offer = $true; $out += $o }
   }
 
@@ -284,7 +285,7 @@ function Apply-Scene($s, [string]$why) {
     # Grid follows the Claude count: the scene runs from its JSON with the ultrawide grid swapped.
     if ((Test-Auto $s 'grid') -and $s.claudeGrid) {
       $g = Get-ClaudeGrid $s @(Read-Windows | ? { $_.app -eq 'claude' -and -not $_.min }).Count
-      if ($g) { $full = ConvertFrom-Json (ConvertTo-Json -Depth 8 -Compress (Get-TileScene $s.id)); $full.grids.wide = $g; $arg = ConvertTo-Json -Depth 8 -Compress $full }
+      if ($g) { $arg = Get-GridSceneJson (Get-TileScene $s.id) $g }
     }
     $r = (& $tile -Scene $arg -Json -DryRun:$NoApply 3>$null) -join '' | ConvertFrom-Json
     $n = @($r.placed | ? { $_.note -eq 'moved' }).Count

@@ -308,6 +308,8 @@ const status=t=>{$("msg").textContent=t};
 const scene=()=>work[selId];
 const saved=id=>cfg.scenes.find(s=>s.id===id);
 const edited=id=>!!work[id]&&JSON.stringify(work[id])!==JSON.stringify(saved(id));
+// A built-in scene is read-only except its trigger switches (.auto): Default carries the first-unlock and grid switches.
+const autoOnly=(a,b)=>{if(!b)return false;const x=clone(a),y=clone(b);delete x.auto;delete y.auto;return JSON.stringify(x)===JSON.stringify(y)};
 const withCats=s=>({...s,cats:cfg.cats,categories:cfg.categories});
 const catOf=app=>{const c=cfg.cats&&Object.keys(cfg.cats).find(k=>k.toLowerCase()===String(app).toLowerCase());return c?cfg.cats[c]:"other"};
 const catName=c=>(cfg.categories.find(x=>x[0]===c)||[c,c])[1];
@@ -485,7 +487,7 @@ function renderInsp(V){
   // Scene first: it is what Apply acts on.
   if(LIVE&&s){
     const t=s.trigger||(s.trigger={type:"manual",days:[1,2,3,4,5],time:"09:00"}),isSaved=!!saved(selId),ed=edited(selId);
-    const why={save:s.builtIn?"Built-in scenes do not change. Use Save As New.":isSaved&&!ed?"No changes to save.":"",
+    const why={save:s.builtIn&&!autoOnly(s,saved(selId))?"Built-in scenes do not change, except their trigger switches. Use Save As New.":isSaved&&!ed?"No changes to save.":"",
       revert:!isSaved?"Not saved yet, so nothing to revert to.":!ed?"No changes to revert.":"",del:s.builtIn?"Built-in scenes cannot be deleted.":""};
     $("scenebox").innerHTML=`<h2>Scene</h2>
     <div class="field stack"><label for="sceneName">Name</label><input type="text" id="sceneName" name="sceneName" autocomplete="off" value="${esc(s.name)}" ${s.builtIn?"disabled title=\"Built-in scenes keep their name.\"":""} maxlength="40"></div>
@@ -677,7 +679,7 @@ $("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("cmd").tex
 async function saveConfig(next,msg){
   const r=await post("config",next);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
   cfg=next;status(msg);sceneMsg=msg;render();return true}
-async function saveScene(){const s=scene();if(s.builtIn)return;const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId);
+async function saveScene(){const s=scene();if(s.builtIn&&!autoOnly(s,saved(selId)))return;const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId);
   if(i>=0)next.scenes[i]=clone(s);else next.scenes.push(clone(s));await saveConfig(next,`Saved ${s.name}.`)}
 async function saveAsNew(name){const s=clone(scene()),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
   Object.assign(s,{id,name:base.slice(0,40),builtIn:false});delete s.blurb;
@@ -744,7 +746,7 @@ $("sample").onclick=()=>{setSnap(SAMPLE);$("lmsg").textContent="Sample loaded."}
 
 if(LIVE){$("refresh").hidden=false;$("quit").hidden=false;$("editcats").hidden=false;status("Reading your windows…");
   loadAll().then(()=>{if(!snap)return;status(`${scene().name} is selected. Drag windows onto cells, or ${verb().toLowerCase()} a scene from the rail.`);
-    if(serverDry&&location.hash==="#selftest-undo")selftestUndo();if(serverDry&&location.hash==="#selftest-scenes")selftestScenes()})}
+    if(serverDry&&location.hash==="#selftest-undo")selftestUndo();if(serverDry&&location.hash==="#selftest-scenes")selftestScenes();if(serverDry&&location.hash==="#selftest-builtin")selftestBuiltin()})}
 else{$("offline").hidden=false;$("offline").open=true;setSnap(SAMPLE);status("Offline. A sample desktop is loaded.")}
 
 /* ---------- Self-tests: run by test/run.ps1 against serve.ps1 -From (always a dry run) ---------- */
@@ -765,6 +767,14 @@ async function selftestUndo(){
   out.busy=await run(async()=>{await mv(9);const before=JSON.stringify(scene()),p=$("apply").onclick();
     els.get(w1.id).dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}));
     const r={undoOff:$("undo").disabled,refreshOff:$("refresh").disabled,kept:JSON.stringify(scene())===before};await p;return r});
+  dump(out);
+}
+async function selftestBuiltin(){
+  const id=cfg.scenes[0].id,out={builtIn:!!cfg.scenes[0].builtIn};selId=id;render();
+  out.idleDisabled=$("save").disabled;
+  edit(s=>{(s.auto||(s.auto={})).desk=true});out.autoEnabled=!$("save").disabled;
+  await saveScene();out.saved=(await (await fetch("config",{cache:"no-store"})).json()).scenes[0].auto.desk===true;
+  edit(s=>{s.blurb="changed"});out.otherDisabled=$("save").disabled;
   dump(out);
 }
 async function selftestScenes(){

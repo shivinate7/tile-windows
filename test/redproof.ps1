@@ -12,6 +12,7 @@ manual-move guard, 10 s ## tray.ps1 ## $sig.manualAt).TotalSeconds -lt 10 ## $si
 mouse-down guard ## tray.ps1 ## $held = $sig.mouseDown -or ## $held = $false -or ## never while a mouse button is down
 30 s cap ## tray.ps1 ## $capped = ($now - $s.lastAuto).TotalSeconds -lt 30 ## $capped = ($now - $s.lastAuto).TotalSeconds -lt 0 ## at most one automatic apply per 30 s
 call trigger exempt from the cap ## tray.ps1 ## -not $capped -or $_.kind -eq 'call' ## -not $capped ## not held by the 30 s cap
+call end goes back inside the cap ## tray.ps1 ## -not $capped -or $_.kind -eq 'call' ## -not $capped ## goes back at the end
 60 s expiry of a held trigger ## tray.ps1 ## @($s.pend | ? { $_.exp -gt $now }) ## @($s.pend | ? { $true }) ## dropped after 60 s
 desk: lock of 5 min ## tray.ps1 ## [double]$sig.unlockedAfter -ge 300 ## [double]$sig.unlockedAfter -ge 0 ## desk: the first unlock of the day
 desk: idle of 10 min ## tray.ps1 ## elseif ([double]$sig.idleSec -ge 600) ## elseif ([double]$sig.idleSec -ge 60) ## under 10 min idle does nothing
@@ -32,6 +33,7 @@ gaps: once per gap ## tray.ps1 ## if ($s.gapKey -eq $k) { return } ## ## once pe
 gaps: off switch ## tray.ps1 ## $f = @(Get-AutoScenes $cfg 'gaps')[0] ## $f = @($cfg.scenes | ? { $_.id -eq 'focus' })[0] ## gaps: with the switch off
 offer: once per meeting ## tray.ps1 ## if ($s.offered[$k]) { continue } ## ## once, and moves nothing
 offer: 2 min ahead ## tray.ps1 ## $now -ge $_.start.AddMinutes(-2) ## $now -ge $_.start.AddMinutes(-20) ## offer: 2 min before
+offer: its own switch is enough ## tray.ps1 ## $id = Get-SizeId $cfg $e.attendees ## $id = Get-SizeScene $cfg $e.attendees ## its own switch is enough
 offer: off switch ## tray.ps1 ## if ($id -and (Test-Auto (Get-Scene $cfg $id) 'offer')) ## if ($id) ## offer: with the switch off
 monitors: the set must match ## tray.ps1 ## ? { [int]$_.screens -eq $n })[0]; if ## ? { $true })[0]; if ## a set no scene is made for
 monitors: off switch ## tray.ps1 ## @(Get-AutoScenes $cfg 'monitors' | ? ## @($cfg.scenes | ? ## monitors: with the switch off
@@ -42,6 +44,8 @@ grid: threshold ## tray.ps1 ## if ($n -ge [int]$sc.claudeGrid.at) ## if ($n -gt 
 page and tray list the same switches ## tray.ps1 ## 'noext', 'grid') ## 'noext') ## the page edits the same trigger switches
 migration: only when older ## config.ps1 ## if ([int]$c.version -ge [int]$st.version) { return $text } ## ## a second read changes nothing
 migration: never re-adds a deleted scene ## config.ps1 ## [int]$_.since -gt [int]$c.version -and ## $true -and ## an older config gains
+migration: depth of the rewrite ## config.ps1 ## $out = ConvertTo-Json -Depth 10 $c ## $out = ConvertTo-Json -Depth 1 $c ## nested and one-item arrays
+grid json: depth ## tray.ps1 ## ConvertTo-Json -Depth 8 -Compress $full ## ConvertTo-Json -Depth 1 -Compress $full ## the scene JSON the tray hands
 '@
 $scratch = Join-Path $env:TEMP "tile-red-$PID"; New-Item -ItemType Directory $scratch | Out-Null
 function Run-Triggers { (& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'triggers.ps1') -Tray (Join-Path $scratch 'tray.ps1') 2>&1 | % { "$_" }) }

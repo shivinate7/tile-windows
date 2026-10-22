@@ -122,6 +122,7 @@ Check 'offer: a small meeting offers Meetings' ((OfferTick (Agenda @(Ev '11:00' 
 Check 'offer: a meeting that is not on Teams or not busy is not offered' (@(OfferTick (Agenda @(Ev '11:00' '12:00' 4 $false)) 0).Count -eq 0 -and @(OfferTick (Agenda @(Ev '11:00' '12:00' 4 $true 'free')) 0).Count -eq 0)
 Check 'offer: no agenda, or one for another day, offers nothing' (@(OfferTick $null 0).Count -eq 0 -and @(OfferTick (Agenda @(Ev '11:00' '12:00') '2026-10-20') 0).Count -eq 0)
 Check 'offer: with the switch off it offers nothing' (@(OfferTick $ag 0 (New-TrayState) (Cfg (StdScenes @{ meetings = @{ size = $true }; listen = @{ size = $true } }))).Count -eq 0)
+Check 'offer: its own switch is enough: size off, offer on, still offers' ((OfferTick $ag 0 (New-TrayState) (Cfg (StdScenes @{ meetings = @{ offer = $true }; listen = @{ offer = $true } }))).id -eq 'listen')
 Check 'offer: a held mouse or a recent manual move does not hold an offer back' ((OfferTick $ag 0 (New-TrayState) $cfg @{ mouseDown = $true }).offer -eq $true)
 
 # ---- A scene per monitor set; no external monitor for 30 s ----
@@ -171,6 +172,10 @@ Check 'grid: 4 or more Claude windows picks the denser grid, 3 or fewer the room
 $gs.auto.grid = $false
 Check 'grid: with the switch off the scene keeps its own grid' ($null -eq (Get-ClaudeGrid $gs 5) -and $null -eq (Get-ClaudeGrid (ConvertFrom-Json '{"auto":{"grid":true}}') 5))
 
+$gsc = $st.scenes | ? { $_.id -eq 'default' }; $gsc | Add-Member -Force cats $st.cats; $gsc | Add-Member -Force categories $st.categories
+$gj = ConvertFrom-Json (Get-GridSceneJson $gsc $gsc.claudeGrid.dense)
+Check 'grid: the scene JSON the tray hands tile.ps1 keeps its arrays and categories and swaps only the ultrawide grid' ($gj.grids.wide.c -eq 6 -and $gj.grids.tall.r -eq 2 -and $gj.pins[0].slots -is [array] -and $gj.pins[0].slots[0] -eq 0 -and $gj.categories[0] -is [array] -and $gj.categories[0][1] -eq 'Code' -and $gj.cats.claude -eq 'code' -and $gj.fill.apps.Count -eq 3)
+
 # ---- Global guards ----
 $sched = Scene 'sched' @{} @{ trigger = @{ type = 'time'; days = @(0, 1, 2, 3, 4, 5, 6); time = '10:07' } }
 $gc = Cfg (@(StdScenes) + @($sched))
@@ -195,12 +200,15 @@ $x = @((Run $s $t0 $gc (Sig @{ unlockedAfter = 20 }) 'focus'), (Run $s $t0.AddSe
 Check 'guard: at most one automatic apply per 30 s; the next waits for the cap' (($x -join '/') -eq 'default/////focus') ($x -join '/')
 $s = New-TrayState; $x = @((Run $s $t0 $gc (Sig @{ unlockedAfter = 20 }) 'focus'), (Run $s $t0.AddSeconds(3) $gc (Sig @{ agenda = $sg.agenda }) 'plain' $null $false), (Run $s $t0.AddSeconds(6) $gc (Sig @{ agenda = $sg.agenda }) 'plain' $null $true), (Run $s $t0.AddSeconds(9) $gc (Sig @{ agenda = $sg.agenda }) 'plain' $null $true))
 Check 'guard: the call trigger is not held by the 30 s cap' (($x -join '/') -eq 'default//' + '/listen') ($x -join '/')
+$bc = Cfg (@(Scene 'work') + @(Scene 'meet' @{} @{ trigger = @{ type = 'call'; back = $true } }))
+$s = New-TrayState; $x = @((Run $s $t0 $bc (Sig) 'work' $null $false), (Run $s $t0.AddSeconds(3) $bc (Sig) 'work' $null $true), (Run $s $t0.AddSeconds(6) $bc (Sig) 'work' $null $true), (Run $s $t0.AddSeconds(9) $bc (Sig) 'meet' $null $false), (Run $s $t0.AddSeconds(12) $bc (Sig) 'meet' $null $false))
+Check 'guard: with live signals a call scene applies at the start and goes back at the end, even inside the 30 s cap' (($x -join '/') -eq '//meet//work') ($x -join '/')
 $s = New-TrayState; $x = @((Run $s $tS $gc (Sig) 'plain'), (Run $s $tS.AddSeconds(2) $gc (Sig) 'plain'))
 Check 'guard: without live signals only the schedule, display and call triggers run, and a schedule fires once' (($x -join '/') -eq 'sched/') ($x -join '/')
 
 # ---- An older config gains the new starters, and nothing else changes ----
 $mig = Join-Path $env:TEMP "tile-mig-$PID"; New-Item -ItemType Directory $mig | Out-Null
-$oldCfg = '{"version":1,"categories":[["code","Code"]],"cats":{"claude":"code"},"scenes":[{"id":"default","name":"Default","trigger":{"type":"manual"},"grids":{"wide":{"c":1,"r":1}},"pins":[{"app":"outlook","match":"","mon":"tall","slots":[0]}],"fill":{"mon":"wide","apps":["claude"],"skip":[],"sort":"app"}},{"id":"mine","name":"Mine","trigger":{"type":"manual"},"grids":{"wide":{"c":2,"r":1}},"pins":[],"fill":{"mon":"wide","apps":["*"],"skip":[],"sort":"app"}}]}'
+$oldCfg = '{"version":1,"categories":[["code","Code"],["browse","Browse"],["comms","Comms"],["other","Other"]],"cats":{"claude":"code"},"scenes":[{"id":"fri","name":"Fri","trigger":{"type":"time","days":[5],"time":"14:00"},"grids":{"wide":{"c":2,"r":1}},"pins":[],"fill":{"mon":"wide","apps":["*"],"skip":[],"sort":"app"}},{"id":"default","name":"Default","trigger":{"type":"manual"},"grids":{"wide":{"c":1,"r":1}},"pins":[{"app":"outlook","match":"","mon":"tall","slots":[0]}],"fill":{"mon":"wide","apps":["claude"],"skip":[],"sort":"app"}},{"id":"mine","name":"Mine","trigger":{"type":"manual"},"grids":{"wide":{"c":2,"r":1}},"pins":[],"fill":{"mon":"wide","apps":["*"],"skip":[],"sort":"app"}}]}'
 [IO.File]::WriteAllText((Join-Path $mig 'config.json'), $oldCfg)
 $real = $env:TILE_HOME; $env:TILE_HOME = $mig
 try {
@@ -211,7 +219,9 @@ try {
   $m2 = [IO.File]::ReadAllText((Join-Path $mig 'config.json')); $w2 = (Get-Item (Join-Path $mig 'config.json')).LastWriteTimeUtc
 } finally { if ($null -eq $real) { Remove-Item env:TILE_HOME } else { $env:TILE_HOME = $real } }
 $mc = ConvertFrom-Json $m1; $md = @($mc.scenes | ? { $_.id -eq 'default' })[0]
-Check 'migration: an older config gains Listen, Solo, Thursday Prep, the activity map and the meeting-size rule, and its own scenes stay' ($mc.version -eq 2 -and (@($mc.scenes.id) -join ',') -eq 'default,mine,listen,solo,thursday-prep' -and $mc.activity.Count -ge 5 -and $mc.meetingSize.at -eq 25 -and -not $md.auto -and $md.pins[0].slots -is [array] -and $md.pins[0].slots[0] -eq 0) $m1
+Check 'migration: an older config gains Listen, Solo, Thursday Prep, the activity map and the meeting-size rule, and its own scenes stay' ($mc.version -eq 2 -and (@($mc.scenes.id) -join ',') -eq 'fri,default,mine,listen,solo,thursday-prep' -and $mc.activity.Count -ge 5 -and $mc.meetingSize.at -eq 25 -and -not $md.auto -and $md.pins[0].slots -is [array] -and $md.pins[0].slots[0] -eq 0) $m1
+$mf = @($mc.scenes | ? { $_.id -eq 'fri' })[0]
+Check 'migration: nested and one-item arrays survive the rewrite (categories, days)' ($mc.categories.Count -eq 4 -and $mc.categories[0] -is [array] -and $mc.categories[0][1] -eq 'Code' -and $mf.trigger.days -is [array] -and $mf.trigger.days[0] -eq 5 -and $mc.cats.claude -eq 'code' -and $m1 -notmatch '"Count":|"value":') $m1
 Check 'migration: a second read changes nothing' ($m1 -ceq $m2 -and $w1 -eq $w2)
 Remove-Item -Recurse -Force $mig -ErrorAction SilentlyContinue
 
