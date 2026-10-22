@@ -46,10 +46,19 @@ function Get-Tcfg($cfg) {
   [pscustomobject]@{ activity = @($(if ($cfg.activity) { $cfg.activity } else { $d.activity })); size = $(if ($cfg.meetingSize) { $cfg.meetingSize } else { $d.meetingSize }); optDefaults = $(if ($cfg.optDefaults) { $cfg.optDefaults } else { $d.optDefaults }) }
 }
 # A threshold the owner can edit: the scene's own value (scene.opt.<switch>.<name>), else the default from optDefaults.
+# A value that does not read as a positive number (a hand edit) falls back to the default; a value over its cap is held at the cap.
 function Get-Opt($cfg, $sc, [string]$flag, [string]$name) {
-  $v = $sc.opt.$flag.$name; if ($null -ne $v -and "$v" -ne '') { return [double]$v }
-  $o = (Get-Tcfg $cfg).optDefaults; if ($null -eq $o.$flag.$name) { $o = $script:TileStarterCfg.optDefaults }
-  [double]$o.$flag.$name
+  $k = "$flag.$name"; $o = (Get-Tcfg $cfg).optDefaults
+  $def = Read-Num $o.$flag.$name ([double]$script:TileStarterCfg.optDefaults.$flag.$name) $k
+  $v = $sc.opt.$flag.$name; if ($null -ne $v -and "$v" -ne '') { return (Read-Num $v $def $k) }
+  $def
+}
+# The cap on each threshold. The page's AUTO list caps its boxes at the same values (a test checks).
+$TileOptMax = @{ 'desk.lockMin' = 240; 'desk.idleMin' = 240; 'window.holdSec' = 60; 'activity.dwellSec' = 3600; 'activity.graceMin' = 240
+  'grid.at' = 20; 'size.at' = 500; 'offer.leadMin' = 30; 'gaps.minutes' = 480; 'monitors.screens' = 8; 'noext.sec' = 600 }
+function Read-Num($v, [double]$def, [string]$key) {
+  $n = 0.0; if (-not [double]::TryParse("$v", [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$n) -or $n -le 0) { return $def }
+  [Math]::Min($n, $TileOptMax[$key])
 }
 function ConvertTo-Bool($v) { if ($v -is [bool]) { return $v }; if ($v -is [string]) { return $v.Trim().ToLower() -in 'true', 'yes', '1' }; if ($null -eq $v) { return $false }; [bool]($v -is [ValueType] -and $v -ne 0) }
 # Today's meetings from agenda.json's parsed text: [{start, end, attendees, teams, showAs}], or $null when there is no agenda or it is not
@@ -65,7 +74,7 @@ function Test-Busy($e) { $e.showAs -in 'busy', 'oof' }
 # A call applies it only when that scene's size switch is on; the offer needs only the scene's offer switch.
 function Get-SizeId($cfg, [int]$attendees) {
   $t = (Get-Tcfg $cfg).size; $big = Get-Scene $cfg $t.big
-  $at = if ($null -ne $big.opt.size.at -and "$($big.opt.size.at)" -ne '') { [int]$big.opt.size.at } else { [int]$t.at }
+  $at = Read-Num $big.opt.size.at (Read-Num $t.at ([double]$script:TileStarterCfg.meetingSize.at) 'size.at') 'size.at'
   if ($attendees -ge $at) { $t.big } else { $t.small }
 }
 function Get-SizeScene($cfg, [int]$attendees) { $id = Get-SizeId $cfg $attendees; if (Test-Auto (Get-Scene $cfg $id) 'size') { $id } else { '' } }
@@ -156,7 +165,7 @@ function Get-GridSceneJson($sc, $grid) { $full = ConvertFrom-Json (ConvertTo-Jso
 # that hovers at the line does not flap. $null when the scene has no switch or no claudeGrid.
 function Get-ClaudeMode($sc, [int]$n, [string]$prev = '') {
   if (-not (Test-Auto $sc 'grid') -or -not $sc.claudeGrid) { return }
-  $at = [int]$sc.claudeGrid.at
+  $at = Read-Num $sc.claudeGrid.at 0 'grid.at'; if (-not $at) { return }
   if ($n -ge $at) { 'dense' } elseif ($n -le $at - 2) { 'roomy' } elseif ($prev) { $prev } else { 'roomy' }
 }
 function Get-ClaudeGrid($sc, [int]$n, [string]$prev = '') { $m = Get-ClaudeMode $sc $n $prev; if ($m) { $sc.claudeGrid.$m } }
@@ -180,7 +189,7 @@ function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active, $sig 
   foreach ($x in (Get-DueScenes $cfg $now $s.fired)) { $s.fired[$x.id] = $now.ToString('yyyy-MM-dd HH:mm'); $ev += New-Cand $x.id 'on schedule' 'schedule' }
   if ($key) {
     $n = @($key -split ';').Count
-    $d = @(Get-AutoScenes $cfg 'monitors' | ? { [int]$_.screens -eq $n })[0]; if (-not $d) { $d = @(Get-DisplayScenes $cfg)[0] }
+    $d = @(Get-AutoScenes $cfg 'monitors' | ? { (Read-Num $_.screens 0 'monitors.screens') -eq $n })[0]; if (-not $d) { $d = @(Get-DisplayScenes $cfg)[0] }
     if ($s.lastKey -and $key -ne $s.lastKey -and $d) { $ev += New-Cand $d.id 'because the monitors changed' 'display' }
     $s.lastKey = $key
   }

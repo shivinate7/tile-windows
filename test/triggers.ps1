@@ -168,6 +168,11 @@ Check 'offer: with the switch off it offers nothing' (@(OfferTick $ag 0 (New-Tra
 Check 'offer: its own switch is enough: size off, offer on, still offers' ((OfferTick $ag 0 (New-TrayState) (Cfg (StdScenes @{ meetings = @{ offer = $true }; listen = @{ offer = $true } }))).id -eq 'listen')
 Check 'offer: a held mouse does not hold an offer back' ((OfferTick $ag 0 (New-TrayState) $cfg @{ mouseDown = $true }).offer -eq $true)
 Check 'threshold: how far ahead the offer comes is the scene''s' ((OfferTick $ag -150 (New-TrayState) (WithOpt 'listen' '{"offer":{"leadMin":5}}')).id -eq 'listen' -and @(OfferTick $ag -150 (New-TrayState) $cfg).Count -eq 0)
+$r = try { Ids (OfferTick $ag 0 (New-TrayState) (WithOpt 'listen' '{"offer":{"leadMin":"soon"}}')) } catch { 'threw' }
+Check 'threshold: a value that does not read falls back to the default, and nothing throws' ($r -eq 'listen' -and (Get-Opt $cfg (ConvertFrom-Json '{"opt":{"gaps":{"minutes":"abc"}}}') 'gaps' 'minutes') -eq 60) $r
+Check 'threshold: a value over its cap is held at the cap, so a huge offer lead does not offer a meeting 2 h off' (@(OfferTick (Agenda @(Ev '13:00' '14:00' 30)) 0 (New-TrayState) (WithOpt 'listen' '{"offer":{"leadMin":9999}}')).Count -eq 0 -and (Get-Opt $cfg (ConvertFrom-Json '{"opt":{"offer":{"leadMin":9999}}}') 'offer' 'leadMin') -eq 30)
+Check 'agenda: an event that ends before it starts is dropped' (@(OfferTick (Agenda @(Ev '11:00' '10:30' 30)) 0).Count -eq 0)
+
 
 # ---- A scene per monitor set; no external monitor for 30 s ----
 function KeyRun($s, $key, $cfg = $cfg, $secs = 0) { Run $s $t0.AddSeconds($secs) $cfg (Sig) 'plain' $key }
@@ -211,6 +216,10 @@ $names = if ($off) { @([regex]::Matches($matches[1], '(?m)^\["(\w+)"') | % { $_.
 Check 'starters: the page edits the same trigger switches as the tray' ($off -and (($names | sort) -join ',') -eq (($TileAutoFlags | sort) -join ',')) ($names -join ',')
 $optNames = @([regex]::Matches($page, '\{k:"(\w+)",l:') | % { $_.Groups[1].Value }); $defNames = @($st.optDefaults.PSObject.Properties | % { $_.Value.PSObject.Properties.Name })
 Check 'starters: the page edits the same thresholds as the tray reads' (@($defNames | ? { $optNames -notcontains $_ }).Count -eq 0) (($optNames -join ',') + ' vs ' + ($defNames -join ','))
+$pageMax = @(if ($off) { $matches[1] -split "`n" | % { if ($_ -match '^\["(\w+)"') { $f = $matches[1]; [regex]::Matches($_, '\{k:"(\w+)",l:[^}]*?max:(\d+)') | % { "$f.$($_.Groups[1].Value)=$($_.Groups[2].Value)" } } } }) | sort
+$trayMax = @($TileOptMax.Keys | % { "$_=$($TileOptMax[$_])" }) | sort
+Check 'starters: the page caps each threshold box at the same value as the tray' ($pageMax.Count -gt 0 -and ($pageMax -join ',') -eq ($trayMax -join ',')) (($pageMax -join ',') + ' vs ' + ($trayMax -join ','))
+
 # Solo on a one-monitor desk: the only screen is the wide role, so both Claude and Chrome land.
 $one = Join-Path $env:TEMP "tile-solo-$PID.json"
 [IO.File]::WriteAllText($one, '{"monitors":[{"name":"D1","role":"wide","x":0,"y":0,"w":1536,"h":912,"bw":1536,"bh":960}],"windows":[{"id":1,"app":"claude","title":"C","x":0,"y":0,"w":800,"h":600},{"id":2,"app":"chrome","title":"G","x":10,"y":10,"w":800,"h":600},{"id":3,"app":"ms-teams","title":"T","x":20,"y":20,"w":800,"h":600}]}')

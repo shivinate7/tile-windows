@@ -350,18 +350,19 @@ const LIVE=location.protocol.startsWith("http");
 const ROLE={wide:"Ultrawide",tall:"Portrait",laptop:"Laptop"};
 const SORTS=[["app","App Order (Default)"],["category","Category"],["title","Title A to Z"],["position","Where Windows Sit Now"]];
 // The extra triggers, one per line. The switches are the tray's ($TileAutoFlags in tray.ps1) and the thresholds are optDefaults in scenes.json (a test checks both).
-// [switch, label, one-line hint, group, chip text on the rail card, [{k: threshold, l: text before the box, u: text after it, scope?}]]
+// [switch, label, one-line hint, group, chip text on the rail card, [{k: threshold, l: text before the box, u: text after it, max: cap ($TileOptMax in tray.ps1), scope?}]]
 const AUTO=[
-["desk","Put This Scene Back When I Return","After a lock or a long idle, apply it again.","At my desk","Return",[{k:"lockMin",l:"After a lock of",u:"min"},{k:"idleMin",l:"or idle for",u:"min"}]],
-["window","Place New Windows","A new window of an app this scene places gets its slot.","At my desk","New Window",[{k:"holdSec",l:"Once it has stayed open",u:"s"}]],
-["activity","Switch Here When My Work Suits It","After a while in an app it suits, such as Claude, Procore, NetSuite, PowerPoint or Excel.","At my desk","Work Match",[{k:"dwellSec",l:"After",u:"s in that app"},{k:"graceMin",l:"but not for",u:"min after I apply a scene"}]],
-["grid","Resize the Grid by Claude Windows","A denser ultrawide grid when many Claude windows are open.","At my desk","Grid",[{k:"at",l:"Denser from",u:"Claude windows",scope:"grid"}]],
-["size","Use This Scene for Calls of Its Size","Big calls go to Listen, others to Meetings, from the meeting file.","Calls and meetings","Call Size",[{k:"at",l:"A big call is",u:"people or more",scope:"size"}]],
-["offer","Offer This Scene Before a Meeting","A tray notice asks first. Nothing moves unless you click it.","Calls and meetings","Offer",[{k:"leadMin",l:"Ask",u:"min before"}]],
-["gaps","Use This Scene in a Gap Between Meetings","When the next busy meeting is far off and you are at the PC.","Calls and meetings","Gap",[{k:"minutes",l:"Next meeting at least",u:"min away"}]],
-["monitors","Use This Scene for This Many Screens","When the monitors change to this count.","Monitors","Screens",[{k:"screens",l:"Screens",u:"",scope:"scene"}]],
-["noext","Use This Scene When the External Monitors Go","When only the laptop screen has been left for a while.","Monitors","Laptop Only",[{k:"sec",l:"Gone for",u:"s"}]]
+["desk","Put This Scene Back When I Return","After a lock or a long idle, apply it again.","At My Desk","Return",[{k:"lockMin",l:"After a lock of",u:"min or more.",max:240},{k:"idleMin",l:"Or after no input for",u:"min or more.",max:240}]],
+["window","Place New Windows","A new window of an app this scene places gets its slot.","At My Desk","New Window",[{k:"holdSec",l:"Once it has stayed open",u:"s.",max:60}]],
+["activity","Switch Here When My Work Suits It","After a while in an app it suits, such as Claude, Procore, NetSuite, PowerPoint or Excel.","At My Desk","Work Match",[{k:"dwellSec",l:"After",u:"s in that app.",max:3600},{k:"graceMin",l:"Never within",u:"min of a scene I applied.",max:240}]],
+["grid","Resize the Grid by Claude Windows","A denser ultrawide grid when many Claude windows are open.","At My Desk","Grid",[{k:"at",l:"Denser from",u:"Claude windows.",max:20,scope:"grid"}]],
+["size","Use This Scene for Calls of Its Size","Big calls go to Listen, others to Meetings, from the meeting file.","Calls and Meetings","Call Size",[{k:"at",l:"A big call has",u:"people or more.",max:500,scope:"size"}]],
+["offer","Offer This Scene Before a Meeting","A tray notice asks first. Nothing moves unless you click it.","Calls and Meetings","Offer",[{k:"leadMin",l:"Ask",u:"min before it starts.",max:30}]],
+["gaps","Use This Scene in a Gap Between Meetings","When the next busy meeting is far off and you are at the PC.","Calls and Meetings","Gap",[{k:"minutes",l:"The next meeting is",u:"min or more away.",max:480}]],
+["monitors","Use This Scene for This Many Screens","When the monitors change to this count.","Monitors","Screens",[{k:"screens",l:"Number of screens:",u:"",max:8,scope:"scene"}]],
+["noext","Use This Scene When the External Monitors Go","When only the laptop screen has been left for a while.","Monitors","Laptop Only",[{k:"sec",l:"Gone for",u:"s or more.",max:600}]]
 ];
+
 const TRIGH={manual:"I apply it myself.",time:"On set days at a set time.",display:"When a monitor is added or removed.",call:"When Teams starts using the microphone."};
 const TRIG=[["manual","Only When I Click Apply"],["time","On a Schedule"],["display","When the Monitors Change"],["call","When a Teams Call Starts"]];
 const DAYN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DAYORDER=[1,2,3,4,5,6,0];

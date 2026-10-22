@@ -47,7 +47,12 @@ offer: once per meeting ## tray.ps1 ## if ($s.offered[$k]) { continue } ## ## on
 offer: lead time ## tray.ps1 ## $now -lt $e.start.AddMinutes(-(Get-Opt $cfg $osc 'offer' 'leadMin')) ## $now -lt $e.start.AddMinutes(-20) ## offer: 2 min before
 offer: off switch ## tray.ps1 ## if (-not (Test-Auto $osc 'offer') -or ## if ($false -or ## offer: with the switch off
 offer: its own switch is enough ## tray.ps1 ## $id = Get-SizeId $cfg $e.attendees ## $id = Get-SizeScene $cfg $e.attendees ## its own switch is enough
-monitors: the set must match ## tray.ps1 ## ? { [int]$_.screens -eq $n })[0]; if ## ? { $true })[0]; if ## a set no scene is made for
+monitors: the set must match ## tray.ps1 ## ? { (Read-Num $_.screens 0 'monitors.screens') -eq $n })[0]; if ## ? { $true })[0]; if ## a set no scene is made for
+threshold: an unreadable value falls back ## tray.ps1 ## if (-not [double]::TryParse("$v", [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$n) -or $n -le 0) { return $def } ## $n = [double]$v ## does not read falls back
+threshold: the cap ## tray.ps1 ## [Math]::Min($n, $TileOptMax[$key]) ## $n ## over its cap is held
+threshold: page and tray caps match ## tray.ps1 ## 'offer.leadMin' = 30 ## 'offer.leadMin' = 3000 ## caps each threshold box
+agenda: an event must end after it starts ## tray.ps1 ## if ($e.end -gt $e.start -and ## if ($true -and ## ends before it starts
+
 monitors: off switch ## tray.ps1 ## @(Get-AutoScenes $cfg 'monitors' | ? ## @($cfg.scenes | ? ## monitors: with the switch off
 no external: how long ## tray.ps1 ## (Get-Opt $cfg $sc 'noext' 'sec') ## 0 ## no external: 30 s
 no external: the first reading only seeds ## tray.ps1 ## $s.screensSeen = $true; $s.soloDone = $true } ## $s.screensSeen = $true } ## starting the agent on one screen
