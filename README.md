@@ -30,6 +30,8 @@ From a clone, run `install.ps1` directly. It takes `-NoStartup` and `-NoLaunch`.
 
 - **The board** shows your real monitors. To pin a window to a cell, drag it there. Windows you do not pin fill the fill monitor (the ultrawide in the starters), in the order you choose.
 - **Scenes** are on the left rail: Default, Focus, Meetings and Review, plus any you save. To put a scene on screen, click its **Apply** button. **Undo** moves the windows back.
+- **The bay** sits under the board. It holds every window without a cell (no free cell, a full zone, minimized, or taken off the board), by category. Drag a window from the bay onto a cell to place it, or a tile into the bay to keep that window where it is. With the keyboard: B sends a focused tile to the bay; Enter on a bay window lets you pick its cell in the inspector. On Apply, bay windows do not move.
+- **Zones** fill a block of cells with one app or category. Drag across empty cells (or Shift+drag across any) to draw one, then pick what fills it. Its windows fill in fill order; a pin inside it keeps its cell; windows that do not fit go to the bay. Drag a window onto another's cell to swap them. A zone is saved in the scene as intent (app or category and cells).
 - **The inspector** is on the right. Use it to set each monitor's grid and fill order, and a window's span and category. It also sets when a scene applies itself: by hand, on a schedule, when the monitors change, or when a Teams call starts (and, if you ask, back to the scene before when the call ends).
 - **The tray icon** opens the app, and its menu applies any scene. It also runs the scenes that apply themselves.
 

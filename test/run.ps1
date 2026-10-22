@@ -132,6 +132,31 @@ try {
   Check 'Add-TileLog on a bad state.json does not throw and starts a fresh log' (-not $threw -and $st2.active -eq 'focus' -and @($st2.log).Count -eq 1)
   [void](Post "${furl}config" $c1)
 
+  # Zones and the bay (decision: bay-and-group-zones), through the engine on the fixture. Claude windows in
+  # fill order: 1004 (minimized, sorts first), 1001, 1002 (top row), 1003. Chrome: 1006, 1005 (top row), 1007.
+  function Zr($zones, $pins = '[]', $bay = '[]', $fill = '[]') { (& $tile -Scene "{`"id`":`"z`",`"name`":`"Z`",`"grids`":{`"wide`":{`"c`":5,`"r`":2}},`"pins`":$pins,`"zones`":$zones,`"bay`":$bay,`"fill`":{`"mon`":`"wide`",`"apps`":$fill,`"skip`":[],`"sort`":`"app`"}}" -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json }
+  function Zp($r) { (@($r.placed) | Sort-Object { $_.slots[0] } | % { "$($_.id)@$($_.slots -join '+')" }) -join ' ' }
+  function Zl($r, $why) { (@($r.left) | ? { $_.why -eq $why } | % { $_.id } | Sort-Object) -join ',' }
+  $z1 = Zr '[{"mon":"wide","slots":[0,1,5,6],"app":"claude"}]'
+  Check 'zone fills its cells with its app in fill order' ((Zp $z1) -eq '1004@1 1001@2 1002@6 1003@7' -and @($z1.placed | ? { $_.zone -ne 0 }).Count -eq 0) (Zp $z1)
+  $z2 = Zr '[{"mon":"wide","slots":[0,5],"app":"claude"}]'
+  Check 'zone overflow goes to the bay' ((Zp $z2) -eq '1004@1 1001@6' -and (Zl $z2 'zone full') -eq '1002,1003') "$(Zp $z2) | $(Zl $z2 'zone full')"
+  $z3 = Zr '[{"mon":"wide","slots":[0,1,5,6],"app":"claude"}]' '[{"app":"chrome","match":"Pull","mon":"wide","slots":[1]}]'
+  Check 'a pin inside a zone keeps its cell; the zone fills the rest' ((Zp $z3) -eq '1004@1 1005@2 1001@6 1002@7' -and @($z3.placed | ? { $_.id -eq 1005 })[0].pin -eq 0 -and (Zl $z3 'zone full') -eq '1003') "$(Zp $z3) | $(Zl $z3 'zone full')"
+  $z4 = Zr '[{"mon":"wide","slots":[2,3],"cat":"browse"}]'
+  Check 'a category zone fills with that category' ((Zp $z4) -eq '1006@3 1005@4' -and (Zl $z4 'zone full') -eq '1007') "$(Zp $z4) | $(Zl $z4 'zone full')"
+  $z5 = Zr '[]' '[]' '[{"app":"WindowsTerminal","title":"pwsh - tiler"}]' '["*"]'
+  Check 'a window in the bay keeps no cell, and fill skips it' (-not @($z5.placed | ? { $_.id -eq 1008 }).Count -and (Zl $z5 'in the bay') -eq '1008' -and @($z5.placed).Count -eq 10) (Zl $z5 'in the bay')
+  # A zone scene round-trips through config.json and runs by name the same as from its JSON.
+  $zt = ConvertFrom-Json '{"id":"zt","name":"Zones","trigger":{"type":"manual"},"grids":{"tall":{"c":1,"r":2},"wide":{"c":5,"r":2}},"pins":[{"app":"chrome","match":"Pull","mon":"wide","slots":[1]}],"zones":[{"mon":"wide","slots":[0,1,5,6],"app":"claude"},{"mon":"wide","slots":[2,3,4],"cat":"browse"},{"mon":"tall","slots":[0,1],"cat":"comms"}],"bay":[{"app":"notepad","title":"todo.txt - Notepad"}],"fill":{"mon":"wide","apps":["*"],"skip":[],"sort":"app"}}'
+  $zcfg = ConvertFrom-Json $c1; $zcfg.scenes = @($zcfg.scenes) + $zt; $zbody = ConvertTo-Json -Depth 10 -Compress $zcfg
+  $zok = (Post "${furl}config" $zbody) -eq 'Saved'; $zback = (Invoke-WebRequest -UseBasicParsing "${furl}config").Content
+  $env:TILE_HOME = Join-Path $fprof '.tile-windows'
+  try { $zn = (& $tile -Scene 'zt' -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json } finally { $env:TILE_HOME = $null }
+  $ztJson = ConvertTo-Json -Depth 10 -Compress (@((ConvertFrom-Json $zback).scenes) | ? { $_.id -eq 'zt' })
+  $zj = (& $tile -Scene $ztJson -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json
+  Check 'a zone scene round-trips through config and runs by name' ($zok -and $zback -ceq $zbody -and (Zp $zn) -eq (Zp $zj) -and @($zn.placed | ? { $_.zone -ge 0 }).Count -ge 4 -and (Zl $zn 'in the bay') -eq '1014') "$(Zp $zn) | $(Zp $zj)"
+
   # Writers in three processes at once, released together: every log entry lands (each tagged by writer;
   # 3 x 6 fits the 20-entry log), every config write lands whole, no temp file is left behind.
   $whome = Join-Path $tmp 'writers'; $wjob = Join-Path $tmp 'writer.ps1'; $wgo = Join-Path $tmp 'writers-go'
@@ -170,6 +195,11 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
       $pg = @($ss.drawn.$id) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
       Check "page preview == engine: $id" ($eng.Count -gt 0 -and ($eng -join ' ') -ceq ($pg -join ' ')) ("engine: $($eng -join ' ') | page: $($pg -join ' ')")
     }
+    $eng = @($zj.placed) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
+    $pg = @($ss.drawn.zt) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
+    Check 'page preview == engine: a zone scene' ($eng.Count -gt 0 -and ($eng -join ' ') -ceq ($pg -join ' ')) ("engine: $($eng -join ' ') | page: $($pg -join ' ')")
+    $bb = $ss.bay
+    Check 'page: a window sent to the bay leaves the board, shows in the bay, and comes back when placed' ($bb -and $bb.why -eq 'in the bay' -and $bb.chip -and $bb.kept -eq 2 -and $bb.back) ($bb | ConvertTo-Json -Compress)
     Check 'page cell size rounds like tile.ps1 ([int], to even)' ($ss.cell.w -eq [int](1365 / 2) -and $ss.cell.h -eq [int](1001 / 2)) ($ss.cell | ConvertTo-Json -Compress)
     Check 'page Save as new writes the scene to config.json' (@($ss.names) -contains 'Selftest copy' -and ([IO.File]::ReadAllText($fcfg, $utf8)).Contains('"Selftest copy"')) (@($ss.names) -join ',')
   }

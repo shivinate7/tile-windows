@@ -19,7 +19,6 @@ Low findings. Each becomes a debt only after a real incident.
 
 ## From PR 2 review round 3 (2026-10-22)
 
-- Debt: "Stop Server" in the app footer stops with no ask. Add an ask that names the act. (design round 3, row 1)
 - `app.html` 321/526: a later toast clears `noteUp`, so a recovery note can return on every load until dismissed.
 - `serve.ps1` 37: `Get-TileNote` reads `note.txt` with no lock; a dismiss racing a read can drop that one reply.
 - `config.ps1` 34: the note file grows by one line per recovery until dismissed.
