@@ -16,3 +16,12 @@ Low findings. Each becomes a debt only after a real incident.
 - `config.ps1` The unique temp name cannot go red alone: the write lock already keeps two writers apart. It guards a writer that skips the lock.
 - `config.ps1` The re-check under the lock before a file moves to `.bad` guards a race between two readers. No test can time that race, so it has no red proof.
 - `install.ps1` `TILE_TEST_SWAP_FAIL` is a test seam: it throws between the two renames of the swap, so the rollback can be tested.
+
+## From PR 2 review round 3 (2026-10-22)
+
+- Debt: "Stop Server" in the app footer stops with no ask. Add an ask that names the act. (design round 3, row 1)
+- `app.html` 321/526: a later toast clears `noteUp`, so a recovery note can return on every load until dismissed.
+- `serve.ps1` 37: `Get-TileNote` reads `note.txt` with no lock; a dismiss racing a read can drop that one reply.
+- `config.ps1` 34: the note file grows by one line per recovery until dismissed.
+- `install.ps1` 37: a failed delete of `app.old-<pid>` is never cleaned up by later installs.
+- Design round 3 rows 2 to 9 (`design/reviews/app-round3.md`).
