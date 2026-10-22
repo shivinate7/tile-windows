@@ -10,7 +10,7 @@ $TileUtf8 = New-Object Text.UTF8Encoding $false
 function Write-TileFile([string]$path, [string]$text) {
   if (-not (Test-Path -LiteralPath $TileHome)) { New-Item -ItemType Directory -Path $TileHome | Out-Null }
   $tmp = "$path.tmp"; [IO.File]::WriteAllText($tmp, $text, $TileUtf8)
-  if (Test-Path -LiteralPath $path) { [IO.File]::Replace($tmp, $path, $null) } else { [IO.File]::Move($tmp, $path) }
+  if (Test-Path -LiteralPath $path) { [IO.File]::Replace($tmp, $path, [NullString]::Value) } else { [IO.File]::Move($tmp, $path) }
 }
 
 function Get-TileConfigText {
