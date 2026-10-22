@@ -161,7 +161,7 @@ try {
   $iout = $ins.StandardOutput.ReadToEnd(); $ierr = $ins.StandardError.ReadToEnd(); $ins.WaitForExit()
   $iapp = Join-Path $iprof '.tile-windows\app'; $iprog = Join-Path $iprof 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs'
   $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $iprog 'Tile Windows.lnk'))
-  Check 'installer (piped) copies the app and adds both shortcuts' ($ins.ExitCode -eq 0 -and @(Get-ChildItem -LiteralPath $iapp).Count -eq 9 -and $lnk.Arguments -like "*$iapp\tray.ps1`" -Open" -and (Test-Path -LiteralPath (Join-Path $iprog 'Startup\Tile Windows tray.lnk'))) "$iout $ierr"
+  Check 'installer (piped) copies the app and adds both shortcuts' ($ins.ExitCode -eq 0 -and @(Get-ChildItem -LiteralPath $iapp -ErrorAction SilentlyContinue).Count -eq 9 -and $lnk.Arguments -like "*$iapp\tray.ps1`" -Open" -and (Test-Path -LiteralPath (Join-Path $iprog 'Startup\Tile Windows tray.lnk'))) "$iout $ierr"
   $realAfter = "$(Test-Path -LiteralPath $realHome)|$(if (Test-Path -LiteralPath $realHome) { (Get-ChildItem -Recurse -Force -LiteralPath $realHome | % { "$($_.FullName)@$($_.LastWriteTimeUtc.Ticks)" }) -join ',' })|$(Test-Path -LiteralPath $realLink)"
   Check 'installer into a temp profile leaves the real one alone' ($realAfter -ceq $realBefore) "before: $realBefore after: $realAfter"
   New-Item -ItemType File (Join-Path $iprof '.tile-windows\config.json') -Force | Out-Null
