@@ -2,14 +2,20 @@
 # -Proc order = tile order (e.g. -Proc msedge,claude puts the browser first).
 # -Monitor: 'wide' (widest), 'laptop' (smallest), 'tall' (portrait), or a 0-based index.
 # -Pin 'chrome:RFP=1;ms-teams=5+10': put an app's first window (title containing the text after ':', if given) in given slots (spans the box around them).
-# -Json: print monitors + windows as JSON (default -Proc '*'), move nothing.
+# -Json: print monitors (with their role) + windows as JSON (default -Proc '*'), move nothing. Minimized windows carry "min":true.
 # -Place '<json>' / -PlaceFile <path>: move windows to [{app,title,x,y,w,h,id?}] screen rects (match id, else app + title). Honors -DryRun.
 #   With -Json, print one result per entry as JSON instead of text.
+# -Scene <name|path|json>: run a scene (one grid per monitor role, pins, fill) from config.json or a file. See scenes.json.
+#   With -Json, print {placed,missing,left} as JSON, each placed window with its from and to rect.
+# -From <path|json>: use a -Json snapshot instead of the live desktop. Always a dry run.
 # Slots number row by row from 1 (top-left).
 # -Cells n: grid with n cells (rows picked for you). Ultrawide default = 10 cells (5x2).
 param([int]$Cols = 0, [int]$Rows = 0, [int]$Cells = 0, [string[]]$Proc = @('claude'), [string]$Monitor = 'wide', [string]$Pin = '', [switch]$List, [switch]$DryRun, [switch]$Json, [string]$Place = '', [string]$PlaceFile = '', [switch]$Default,
   # -Order 'a|b|c': windows whose title contains a, then b, then c come first, in that order.
   [string]$Order = '',
+  # -Sort app|category|title|position: fill order. app = -Proc order (then -Order, then where windows sit now).
+  [string]$Sort = 'app',
+  [string]$Scene = '', [string]$From = '',
   [string[]]$Skip = @('TextInputHost', 'PowerToys*', 'ShellExperienceHost', 'SearchHost', 'StartMenuExperienceHost', 'LockApp'))
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -37,52 +43,72 @@ public static class W {
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int hh, bool r);
 }
 '@
+. (Join-Path $PSScriptRoot 'config.ps1')
 
-# Default setup: portrait = Outlook classic (top) + Teams (bottom); laptop = new Outlook;
-# ultrawide 5x2 = Claude, then Chrome, then everything else.
-if ($Default) {
-  $me = $PSCommandPath; $x = @{}; if ($DryRun) { $x.DryRun = $true }
-  & $me -Monitor tall -Cols 1 -Rows 2 -Proc '' -Pin 'outlook:- Outlook=1;ms-teams=2' @x
-  & $me -Monitor laptop -Cols 1 -Rows 1 -Proc '' -Pin 'olk=1' @x
-  & $me -Monitor wide -Cols 5 -Rows 2 -Proc 'claude,chrome,*' -Skip ($Skip + 'outlook', 'olk', 'ms-teams') @x
-  return
-}
+function JsonText($s) { if ($s -match '^\s*[\[{]') { $s } else { [IO.File]::ReadAllText((Resolve-Path -LiteralPath $s), $TileUtf8) } }
+
+# Default setup = the "default" scene in scenes.json: portrait = Outlook classic (top) + Teams (bottom);
+# laptop = new Outlook; ultrawide 5x2 = Claude, then Chrome, then everything else.
+$sc = $null
+if ($Default) { $st = ConvertFrom-Json ([IO.File]::ReadAllText($TileStarters, $TileUtf8)); $sc = @($st.scenes | ? { $_.id -eq 'default' })[0]; $sc | Add-Member cats $st.cats; $sc | Add-Member categories $st.categories }
+elseif ($Scene) { $sc = if ($Scene -match '^\s*\{' -or (Test-Path -LiteralPath $Scene -PathType Leaf)) { ConvertFrom-Json (JsonText $Scene) } else { Get-TileScene $Scene } }
+
 if (($Json -or $Place -or $PlaceFile) -and -not $PSBoundParameters.ContainsKey('Proc')) { $Proc = @('*') }
 $Proc = @($Proc -split ',' | ? { $_ })  # -File passes 'a,b' as one string
-$pins = @(); foreach ($e in ($Pin -split ';' | ? { $_ })) { $a, $b = $e -split '='; $app, $t = $a.Trim() -split ':', 2; $pins += [pscustomobject]@{ App = $app; Match = $t; Slots = @($b -split '\+' | % { [int]$_ - 1 }) } }
-$fill = @($Proc)  # apps that fill open slots; pinned-only apps place one window
-$Proc = @(@($pins.App) + @($Proc | ? { $pins.App -notcontains $_ }) | ? { $_ })
-$screens = [System.Windows.Forms.Screen]::AllScreens
-$scr = switch ($Monitor) {
-  'wide'   { $screens | Sort-Object { $_.Bounds.Width } -Descending | Select-Object -First 1 }
-  'laptop' { $screens | Sort-Object { $_.Bounds.Width * $_.Bounds.Height } | Select-Object -First 1 }
-  'tall'   { $screens | Where-Object { $_.Bounds.Height -gt $_.Bounds.Width } | Select-Object -First 1 }
-  default  { $screens[[int]$Monitor] }
-}
-if (-not $scr) { throw "No monitor matches '$Monitor'." }
-$area = $scr.WorkingArea
-# pid -> rank of its app in -Proc, so windows sort in -Proc order.
-$rank = @{}
 $Skip = @($Skip -split ',' | ? { $_ })
-# '*' in -Proc = every other app not in -Skip, ranked at its place in the list.
-for ($k = 0; $k -lt $Proc.Count; $k++) {
-  $ps = if ($Proc[$k] -eq '*') { Get-Process | ? { $n = $_.Name; -not ($Skip | ? { $n -like $_ }) } } else { Get-Process $Proc[$k] -ErrorAction SilentlyContinue }
-  $ps | % { if (-not $rank.ContainsKey("$($_.Id)")) { $rank["$($_.Id)"] = $k } }
-}
 
-$wins = [System.Collections.Generic.List[IntPtr]]::new()
-[W]::EnumWindows({ param($h, $l)
-  $p = 0; [void][W]::GetWindowThreadProcessId($h, [ref]$p)
-  if ($rank.ContainsKey("$p") -and [W]::IsAppWindow($h)) { $wins.Add($h) }
-  $true }, [IntPtr]::Zero) | Out-Null
-function Info($h) {
-  $p = 0; [void][W]::GetWindowThreadProcessId($h, [ref]$p)
-  $r = New-Object W+RECT; [void][W]::GetWindowRect($h, [ref]$r)
-  $sb = New-Object System.Text.StringBuilder 256; [void][W]::GetWindowText($h, $sb, 256)
-  [pscustomobject]@{ H = $h; Rank = $rank["$p"]; X = $r.L; Y = $r.T; Wd = $r.R - $r.L; Ht = $r.B - $r.T; App = (Get-Process -Id $p).Name; Title = "$sb" }
+# Monitors: bounds pick the role, the working area is where windows go.
+if ($From) {
+  $DryRun = [switch]$true
+  $snapIn = ConvertFrom-Json (JsonText $From)
+  $screens = @($snapIn.monitors | % { [pscustomobject]@{ Name = $_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h } })
+} else {
+  $screens = @([System.Windows.Forms.Screen]::AllScreens | % { $a = $_.WorkingArea; [pscustomobject]@{ Name = $_.DeviceName; BW = $_.Bounds.Width; BH = $_.Bounds.Height; X = $a.X; Y = $a.Y; W = $a.Width; H = $a.Height } })
 }
-$items = @($wins | % { Info $_ })
-if ($List) { $items | Format-Table App, Title -AutoSize | Out-String -Width 200; $screens | % { $_.DeviceName + ' ' + $_.WorkingArea }; return }
+function Pick($role, $taken = @()) {
+  $s = @($screens | ? { $taken -notcontains $_.Name })
+  switch ($role) {
+    'wide'   { $s | Sort-Object BW -Descending | Select-Object -First 1 }
+    'laptop' { $s | Sort-Object { $_.BW * $_.BH } | Select-Object -First 1 }
+    'tall'   { $s | Where-Object { $_.BH -gt $_.BW } | Select-Object -First 1 }
+    default  { $screens[[int]$role] }
+  }
+}
+# Scene roles get distinct screens, widest first, so one screen never holds two grids.
+function Roles { $r = @{}; $t = @(); foreach ($k in 'wide', 'tall', 'laptop') { $s = Pick $k $t; if ($s) { $r[$k] = $s; $t += $s.Name } }; $r }
+
+# Windows: every real app window. Each pass ranks them by its own -Proc list.
+if ($From) {
+  $items = @($snapIn.windows | % { [pscustomobject]@{ H = [int64]$_.id; Rank = $null; X = [int]$_.x; Y = [int]$_.y; Wd = [int]$_.w; Ht = [int]$_.h; App = [string]$_.app; Title = [string]$_.title } })
+} else {
+  $pname = @{}; Get-Process | % { $pname["$($_.Id)"] = $_.Name }
+  $wins = [System.Collections.Generic.List[IntPtr]]::new()
+  [W]::EnumWindows({ param($h, $l) if ([W]::IsAppWindow($h)) { $wins.Add($h) }; $true }, [IntPtr]::Zero) | Out-Null
+  $items = @($wins | % {
+    $p = 0; [void][W]::GetWindowThreadProcessId($_, [ref]$p)
+    $r = New-Object W+RECT; [void][W]::GetWindowRect($_, [ref]$r)
+    $sb = New-Object System.Text.StringBuilder 256; [void][W]::GetWindowText($_, $sb, 256)
+    if ($pname["$p"]) { [pscustomobject]@{ H = $_; Rank = $null; X = $r.L; Y = $r.T; Wd = $r.R - $r.L; Ht = $r.B - $r.T; App = $pname["$p"]; Title = "$sb" } }
+  })
+}
+$claimed = @{}  # windows a scene pass already placed
+# Rank = place of the window's app in the list; '*' = every other app not in -Skip.
+function Ranked($procs, $skip) {
+  foreach ($it in $items) {
+    if ($claimed.ContainsKey("$($it.H)")) { continue }
+    $it.Rank = $null
+    for ($k = 0; $k -lt $procs.Count; $k++) {
+      $a = $it.App
+      if (($procs[$k] -eq '*' -and -not ($skip | ? { $a -like $_ })) -or ($procs[$k] -ne '*' -and $a -like $procs[$k])) { $it.Rank = $k; break }
+    }
+    if ($null -ne $it.Rank) { $it }
+  }
+}
+function Contains($t, $m) { $t.IndexOf($m, [StringComparison]::OrdinalIgnoreCase) -ge 0 }
+$pins = @(); foreach ($e in ($Pin -split ';' | ? { $_ })) { $a, $b = $e -split '='; $app, $t = $a.Trim() -split ':', 2; $pins += [pscustomobject]@{ App = $app; Match = $t; Slots = @($b -split '\+' | % { [int]$_ - 1 }); Index = $pins.Count } }
+$allProc = @(@($pins.App) + @($Proc | ? { $pins.App -notcontains $_ }) | ? { $_ })
+
+if ($List) { Ranked $allProc $Skip | Format-Table App, Title -AutoSize | Out-String -Width 200; $screens | % { "$($_.Name) {X=$($_.X),Y=$($_.Y),Width=$($_.W),Height=$($_.H)}" }; return }
 
 # One move path for slots and -Place: restore, move twice, warn if the size is off.
 function Move-Win($win, $x, $y, $ww, $hh) {
@@ -97,17 +123,18 @@ function Move-Win($win, $x, $y, $ww, $hh) {
     "off size: is {0}x{1}" -f ($r.R - $r.L), ($r.B - $r.T)
   }
 }
-if ($Json -and -not ($Place -or $PlaceFile)) {
-  # Minimized windows sit at about -25600 (or -32000) and cannot be drawn; leave them out.
-  $min = @($items | ? { $_.X -le -20000 }); if ($min) { [Console]::Error.WriteLine("Left out $($min.Count) minimized window(s).") }
+if ($Json -and -not ($Place -or $PlaceFile -or $sc)) {
+  $roles = Roles
   [pscustomobject]@{
-    monitors = @($screens | % { [pscustomobject]@{ name = $_.DeviceName; x = $_.WorkingArea.X; y = $_.WorkingArea.Y; w = $_.WorkingArea.Width; h = $_.WorkingArea.Height } })
-    windows  = @($items | ? { $_.X -gt -20000 -and $_.Title -ne 'Program Manager' } | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; x = $_.X; y = $_.Y; w = $_.Wd; h = $_.Ht } })
+    monitors = @($screens | % { $n = $_.Name; [pscustomobject]@{ name = $n; role = @($roles.Keys | ? { $roles[$_].Name -eq $n })[0]; x = $_.X; y = $_.Y; w = $_.W; h = $_.H; bw = $_.BW; bh = $_.BH } })
+    # Minimized windows sit at about -25600 (or -32000); a scene still tiles them, so they stay in, marked.
+    windows  = @(Ranked $allProc $Skip | ? { $_.Title -ne 'Program Manager' } | % { $o = [ordered]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; x = $_.X; y = $_.Y; w = $_.Wd; h = $_.Ht }; if ($_.X -le -20000) { $o.min = $true }; [pscustomobject]$o })
   } | ConvertTo-Json -Depth 4 -Compress
   return
 }
 
 if ($Place -or $PlaceFile) {
+  $items = @(Ranked $allProc $Skip)
   $raw = if ($PlaceFile) { Get-Content -Raw -Encoding UTF8 -LiteralPath $PlaceFile -ErrorAction Stop } else { $Place }
   $spec = @(ConvertFrom-Json $raw | % { $_ })
   if ($spec.Count -eq 1 -and $spec[0].windows) { $spec = @($spec[0].windows | % { $_ }) }  # accept the whole -Json object
@@ -132,41 +159,96 @@ if ($Place -or $PlaceFile) {
   return
 }
 
-# Pinned windows: first window of each pinned app (leftmost, then topmost).
-$placed = @(); $used = @{}
-foreach ($pn in $pins) {
-  $it = $items | ? { $_.App -eq $pn.App -and (-not $pn.Match -or $_.Title -like "*$($pn.Match)*") -and -not $placed.Contains($_) } | Sort-Object X, Y | Select-Object -First 1
-  if (-not $it) { Write-Warning "No open window for '$($pn.App)'."; continue }
-  $placed += $it; $pn.Slots | % { $used[$_] = 1 }
-  $pn | Add-Member Item $it
+$missing = @(); $left = @()
+# One grid on one monitor. Pinned windows take their slots; the -Proc apps fill the open
+# slots. Emits text (-DryRun), result objects (-Json), or moves windows.
+function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role) {
+  $all = @(@($pins.App) + @($fill | ? { $pins.App -notcontains $_ }) | ? { $_ })
+  $its = @(Ranked $all $skip)
+  # Pinned windows: first window of each pinned app (leftmost, then topmost).
+  $placed = @(); $used = @{}
+  foreach ($pn in $pins) {
+    $it = $its | ? { $_.App -eq $pn.App -and (-not $pn.Match -or (Contains $_.Title $pn.Match)) -and -not $placed.Contains($_) } | Sort-Object X, Y | Select-Object -First 1
+    $pn | Add-Member -Force Item $it
+    if (-not $it) { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' }; continue }
+    $placed += $it; $pn.Slots | % { $used[$_] = 1 }
+  }
+  $free = @($its | ? { $placed -notcontains $_ -and ($fill -contains $_.App -or ($fill -contains '*' -and $all -notcontains $_.App)) -and $_.Title -ne 'Program Manager' })
+
+  # Auto grid sized to fit, unless -Cols/-Rows given.
+  $need = $free.Count + $used.Count
+  $maxSlot = ($pins.Slots | Measure-Object -Maximum).Maximum + 1
+  if ($Cols -le 0 -and $Rows -le 0 -and $Cells -le 0 -and $isWide) { $Cells = 10 }
+  if ($Cells -gt 0) { $need = [Math]::Max($Cells, $maxSlot) }
+  if ($Rows -le 0) { $Rows = if ($need -le 4) { 1 } elseif ($need -le 12) { 2 } else { 3 } }
+  if ($Cols -le 0) { $Cols = [Math]::Max([Math]::Ceiling($need / $Rows), [Math]::Ceiling($maxSlot / $Rows)) }
+  $w = [int]($area.W / $Cols); $h = [int]($area.H / $Rows)
+
+  function Put($it, $slots, $pin) {
+    $cs = $slots | % { $_ % $Cols }; $rs = $slots | % { [Math]::Floor($_ / $Cols) }
+    $c0 = ($cs | Measure -Min).Minimum; $c1 = ($cs | Measure -Max).Maximum
+    $r0 = ($rs | Measure -Min).Minimum; $r1 = ($rs | Measure -Max).Maximum
+    $x = $area.X + $c0 * $w; $y = $area.Y + $r0 * $h; $ww = ($c1 - $c0 + 1) * $w; $hh = ($r1 - $r0 + 1) * $h
+    $script:claimed["$($it.H)"] = 1
+    if ($Json) {
+      $note = if ($DryRun) { 'dry run' } else { $m = Move-Win $it.H $x $y $ww $hh; if ($m) { "$m" } else { 'moved' } }
+      return [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; mon = $role; slots = @($slots | % { $_ + 1 }); pin = $pin; x = $x; y = $y; w = $ww; h = $hh
+        from = [pscustomobject]@{ x = $it.X; y = $it.Y; w = $it.Wd; h = $it.Ht }; ok = $true; note = $note }
+    }
+    if ($DryRun) { "{0,-9} slots {1,-6} x={2} y={3} {4}x{5}  {6}" -f $it.App, (($slots | % { $_ + 1 }) -join '+'), $x, $y, $ww, $hh, $it.Title; return }
+    $null = Move-Win $it.H $x $y $ww $hh
+  }
+  foreach ($pn in $pins) { if ($pn.Item) { Put $pn.Item $pn.Slots $pn.Index } }
+
+  # Free windows fill the open slots row by row. app: in -Proc order, then -Order, then current
+  # position (top row first, left to right), so re-running keeps your arrangement.
+  $ord = @($order -split '\|' | ? { $_ })
+  function OrdIdx($t) { for ($k = 0; $k -lt $ord.Count; $k++) { if (Contains $t $ord[$k]) { return $k } }; $ord.Count }
+  function CatIdx($a) { $c = if ($script:cats) { $script:cats.$a }; $i = [array]::IndexOf($script:catOrder, [string]$c); if ($i -lt 0) { $script:catOrder.Count } else { $i } }
+  $row = { [Math]::Floor(($_.Y - $area.Y + $h / 2) / $h) }
+  $keys = switch ($sort) {
+    'title'    { 'Title', $row, 'X' }
+    'position' { $row, 'X' }
+    'category' { { CatIdx $_.App }, 'Rank', { OrdIdx $_.Title }, $row, 'X' }
+    default    { 'Rank', { OrdIdx $_.Title }, $row, 'X' }
+  }
+  $free = @($free | Sort-Object $keys)
+  $open = @(0..($Cols * $Rows - 1) | ? { -not $used.ContainsKey($_) })
+  $n = [Math]::Min($free.Count, $open.Count)
+  for ($i = 0; $i -lt $n; $i++) { Put $free[$i] @($open[$i]) (-1) }
+  $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title } })
+  if (-not $Json) { "Grid ${Cols}x${Rows} ($w x $h per slot): pinned $($placed.Count), tiled $n of $($free.Count) others." }
 }
-$free = @($items | ? { $placed -notcontains $_ -and ($fill -contains $_.App -or ($fill -contains '*' -and $Proc -notcontains $_.App)) -and $_.Title -ne 'Program Manager' })
 
-# Auto grid sized to fit, unless -Cols/-Rows given.
-$need = $free.Count + $used.Count
-$maxSlot = ($pins.Slots | Measure-Object -Maximum).Maximum + 1
-if ($Cols -le 0 -and $Rows -le 0 -and $Cells -le 0 -and $Monitor -eq 'wide') { $Cells = 10 }
-if ($Cells -gt 0) { $need = [Math]::Max($Cells, $maxSlot) }
-if ($Rows -le 0) { $Rows = if ($need -le 4) { 1 } elseif ($need -le 12) { 2 } else { 3 } }
-if ($Cols -le 0) { $Cols = [Math]::Max([Math]::Ceiling($need / $Rows), [Math]::Ceiling($maxSlot / $Rows)) }
-$w = [int]($area.Width / $Cols); $h = [int]($area.Height / $Rows)
-
-function Put($win, $slots) {
-  $cs = $slots | % { $_ % $Cols }; $rs = $slots | % { [Math]::Floor($_ / $Cols) }
-  $c0 = ($cs | Measure -Min).Minimum; $c1 = ($cs | Measure -Max).Maximum
-  $r0 = ($rs | Measure -Min).Minimum; $r1 = ($rs | Measure -Max).Maximum
-  $x = $area.X + $c0 * $w; $y = $area.Y + $r0 * $h; $ww = ($c1 - $c0 + 1) * $w; $hh = ($r1 - $r0 + 1) * $h
-  if ($DryRun) { "{0,-9} slots {1,-6} x={2} y={3} {4}x{5}  {6}" -f ($items | ? { $_.H -eq $win }).App, (($slots | % { $_ + 1 }) -join '+'), $x, $y, $ww, $hh, ($items | ? { $_.H -eq $win }).Title; return }
-  $null = Move-Win $win $x $y $ww $hh
+# App -> category for -Sort category: the scene's map, else the starters'.
+$cs = if ($sc -and $sc.cats) { $sc } else { ConvertFrom-Json ([IO.File]::ReadAllText($TileStarters, $TileUtf8)) }
+$cats = $cs.cats; $catOrder = @($cs.categories | % { [string]$_[0] }); if (-not $catOrder.Count) { $catOrder = @('code', 'browse', 'comms', 'other') }
+if (-not $sc) {
+  $scr = Pick $Monitor
+  if (-not $scr) { throw "No monitor matches '$Monitor'." }
+  Pass $scr $Cols $Rows $Cells $Proc $pins $Skip $Order $Sort ($Monitor -eq 'wide') $Monitor
+  return
 }
-foreach ($pn in $pins) { if ($pn.Item) { Put $pn.Item.H $pn.Slots } }
 
-# Free windows fill the open slots row by row, in -Proc order, then current
-# position (top row first, left to right), so re-running keeps your arrangement.
-$ord = @($Order -split '\|' | ? { $_ })
-function OrdIdx($t) { for ($k = 0; $k -lt $ord.Count; $k++) { if ($t -like "*$($ord[$k])*") { return $k } }; $ord.Count }
-$free = @($free | Sort-Object Rank, { OrdIdx $_.Title }, { [Math]::Floor(($_.Y - $area.Y + $h / 2) / $h) }, X)
-$open = @(0..($Cols * $Rows - 1) | ? { -not $used.ContainsKey($_) })
-$n = [Math]::Min($free.Count, $open.Count)
-for ($i = 0; $i -lt $n; $i++) { Put $free[$i].H @($open[$i]) }
-"Grid ${Cols}x${Rows} ($w x $h per slot): pinned $($placed.Count), tiled $n of $($free.Count) others."
+# A scene: one pass per monitor role, portrait, then laptop, then ultrawide.
+$roles = Roles; $out = @()
+foreach ($role in 'tall', 'laptop', 'wide') {
+  $g = $sc.grids.$role; if (-not $g) { continue }
+  $gc = [int]$g.c; $gr = [int]$g.r
+  $ps = @(for ($i = 0; $i -lt @($sc.pins).Count; $i++) {
+    $p = @($sc.pins)[$i]; if ($p.mon -ne $role) { continue }
+    $sl = @($p.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
+    if (-not $sl.Count) { $missing += [pscustomobject]@{ pin = $i; app = $p.app; match = [string]$p.match; why = 'slots outside the grid' }; continue }
+    [pscustomobject]@{ App = [string]$p.app; Match = [string]$p.match; Slots = $sl; Index = $i }
+  })
+  $isFill = $sc.fill.mon -eq $role
+  if (-not $ps.Count -and -not $isFill) { continue }
+  $scr = $roles[$role]
+  if (-not $scr) { Write-Warning "No $role monitor. That part of the scene is skipped."; $missing += @($ps | % { [pscustomobject]@{ pin = $_.Index; app = $_.App; match = $_.Match; why = "no $role monitor" } }); continue }
+  $fl = if ($isFill) { @($sc.fill.apps) } else { @() }
+  $sk = if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }
+  $srt = if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }
+  if ($Json) { $out += @(Pass $scr $gc $gr 0 $fl $ps $sk ([string]$sc.fill.order) $srt ($role -eq 'wide') $role) }
+  else { Pass $scr $gc $gr 0 $fl $ps $sk ([string]$sc.fill.order) $srt ($role -eq 'wide') $role }
+}
+if ($Json) { ConvertTo-Json -Depth 6 -Compress ([pscustomobject]@{ placed = @($out); missing = @($missing); left = @($left) }) }
