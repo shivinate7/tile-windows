@@ -277,6 +277,8 @@ const $=id=>document.getElementById(id);
 const LIVE=location.protocol.startsWith("http");
 const ROLE={wide:"Ultrawide",tall:"Portrait",laptop:"Laptop"};
 const SORTS=[["app","App Order (Default)"],["category","Category"],["title","Title A to Z"],["position","Where Windows Sit Now"]];
+// The same switches as $TileAutoFlags in tray.ps1 (a test checks the two lists match).
+const AUTO=[["desk","When I Return to My Desk"],["window","When a New Window Opens"],["activity","When I Work in One App for a Minute"],["size","When a Call Matches This Meeting Size"],["gaps","In a Gap Before the Next Meeting"],["offer","Offer Before a Meeting"],["monitors","When the Monitor Set Matches"],["noext","When the External Monitor Is Gone for 30 Seconds"],["grid","Grid Follows the Claude Count"]];
 const TRIG=[["manual","Only When I Click Apply"],["time","On a Schedule"],["display","When the Monitors Change"],["call","When a Teams Call Starts"]];
 const DAYN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DAYORDER=[1,2,3,4,5,6,0];
 const CATS0=[["code","Code"],["browse","Browse"],["comms","Comms"],["other","Other"]];
@@ -491,6 +493,7 @@ function renderInsp(V){
       ${t.type==="time"?`<div class="days" role="group" aria-label="Days">${DAYORDER.map(d=>`<button type="button" data-day="${d}" aria-pressed="${(t.days||[]).includes(d)}" aria-label="${DAYN[d]}">${DAYN[d][0]}</button>`).join("")}</div>
       <div class="at"><label for="time">At</label><input type="time" id="time" value="${esc(t.time||"09:00")}"></div>`:""}
       ${t.type==="call"?`<label class="at"><input type="checkbox" id="back" ${t.back?"checked":""}>When the Call Ends, Go Back to the Scene Before</label>`:""}</fieldset>
+    <fieldset class="trig"><legend>Also applies itself</legend>${AUTO.map(([k,l])=>`<label><input type="checkbox" data-auto="${k}" ${(s.auto||{})[k]?"checked":""}>${l}</label>`).join("")}</fieldset>
     <p class="note">${t.type==="manual"?"It changes your windows only when you apply it.":"The tray agent applies it"+(t.type==="time"?" at that time.":t.type==="call"?" when Teams starts using the microphone.":" when a monitor is added or removed.")+" Save to turn it on."}</p>
     <div class="acts"><button type="button" class="btn pri" id="save" ${why.save?`disabled title="${why.save}" aria-describedby="whyoff"`:""}>Save</button>
       <button type="button" class="btn" id="saveas">Save As New</button>
@@ -716,6 +719,7 @@ document.addEventListener("change",ev=>{const t=ev.target;
   else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});
   else if(t.id==="time"&&t.value)edit(s=>{s.trigger.time=t.value});
   else if(t.id==="back")edit(s=>{s.trigger.back=t.checked});
+  else if(t.dataset.auto)edit(s=>{(s.auto||(s.auto={}))[t.dataset.auto]=t.checked});
   else if(t.id==="match")edit(s=>{const pp=pinOf(selWin);if(pp)s.pins[pp.p.pin].match=t.value.trim()},"The pin now matches any title containing that text.");
   else if(t.id==="sceneName"&&t.value.trim())edit(s=>{s.name=t.value.trim().slice(0,40)});
   else if(t.id==="wcat"){const w=winById(selWin),next=clone(cfg);next.cats[w.app]=t.value;saveConfig(next,`${appName(w.app)} is now ${catName(t.value)}.`).then(ok=>{if(ok){prevs={};previewAll()}})}

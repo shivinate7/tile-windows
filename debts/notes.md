@@ -25,3 +25,15 @@ Low findings. Each becomes a debt only after a real incident.
 - `config.ps1` 34: the note file grows by one line per recovery until dismissed.
 - `install.ps1` 37: a failed delete of `app.old-<pid>` is never cleaned up by later installs.
 - Design round 3 rows 2 to 9 (`design/reviews/app-round3.md`).
+
+## From the triggers lane (2026-10-22)
+
+- Untested: the Win32 signals (idle, mouse, foreground, lock and unlock, the end of a window drag) and the balloon click that arranges. Pure steps are tested; a tick with real signals was smoke-run with no apply.
+- `tray.ps1` The offer is a balloon, not a button: a click on it arranges (for 3 min, or until another balloon shows). A click from Action Center is unchecked.
+- `tray.ps1` The manual-move guard sees a user's drag or resize (the end of a move). A window moved by keyboard shortcut or snap assist may not register; the mouse-button guard still holds while a button is down.
+- `tray.ps1` Focus in gaps has no hours: with a gap and a touched PC after the last meeting, Focus applies once that evening.
+- `tray.ps1` Grid follows the Claude count applies only from the tray. The app's Apply and tile.ps1 use the saved grid.
+- `tray.ps1` The activity map reads the foreground window every 3 s; a Chrome tab title that changes inside one dwell counts as the same activity.
+- `scenes.json` Thursday Prep ships as a manual scene with Thursday 14:30 filled in; set "On a Schedule" on it to run it.
+- `config.ps1` An older config.json gains the new starters once (the first read after the update). A scene deleted earlier stays deleted.
+- `README.md` `agenda.json` lives in the app folder, so a reinstall removes it until the morning task writes it again.

@@ -41,10 +41,23 @@ function Test-TileConfig([string]$text) {
   if (-not ($c.scenes -is [array]) -or @($c.scenes | ? { -not $_.id -or -not $_.name -or -not $_.grids }).Count) { throw 'Config needs a scenes array; each scene needs id, name and grids.' }
   if (@($c.scenes.id | Select-Object -Unique).Count -ne @($c.scenes).Count) { throw 'Scene ids must be unique.' }
 }
+# A config older than the starters gains what the starters added since: each scene whose "since" is newer than the config's version
+# (a scene the owner deleted earlier stays deleted), the activity map and the meeting-size rule. It never changes a scene already there.
+function Update-TileConfig([string]$text) {
+  try {
+    $c = ConvertFrom-Json $text; $st = ConvertFrom-Json ([IO.File]::ReadAllText($TileStarters, $TileUtf8))
+    if ([int]$c.version -ge [int]$st.version) { return $text }
+    $have = @($c.scenes.id)
+    $c.scenes = @($c.scenes) + @($st.scenes | ? { [int]$_.since -gt [int]$c.version -and $have -notcontains $_.id })
+    foreach ($k in 'activity', 'meetingSize') { if (-not $c.PSObject.Properties[$k]) { $c | Add-Member $k $st.$k } }
+    $c | Add-Member -Force version $st.version
+    $out = ConvertTo-Json -Depth 10 $c; Save-TileConfigText $out; $out
+  } catch { $text }
+}
 function Get-TileConfigText {
   if (Test-Path -LiteralPath $TileConfig) {
     $t = Read-TileFile $TileConfig
-    try { Test-TileConfig $t; return $t } catch {
+    try { Test-TileConfig $t; return (Update-TileConfig $t) } catch {
       # Check again under the lock: another writer may have fixed or already moved it.
       $ok = Use-TileLock { if (Test-Path -LiteralPath $TileConfig) { $t2 = Read-TileFile $TileConfig; try { Test-TileConfig $t2; $t2 } catch { Set-TileBad $TileConfig 'the starter scenes are back' } } }
       if ($ok) { return $ok }

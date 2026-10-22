@@ -1,4 +1,4 @@
-# Checks for tile.ps1, serve.ps1, app.html, tray.ps1 and install.ps1. Plain asserts; moves no window
+# Checks for tile.ps1, serve.ps1, app.html, tray.ps1 (its automatic triggers: triggers.ps1) and install.ps1. Plain asserts; moves no window
 # (every place call is a dry run) and touches no real profile (servers, tray and installer get a temp one).
 # Run: powershell -NoProfile -ExecutionPolicy Bypass -File test\run.ps1
 $ErrorActionPreference = 'Stop'
@@ -100,7 +100,7 @@ try {
   $furl = $fsrv.StandardOutput.ReadLine()
   $noFile = -not (Test-Path -LiteralPath $fcfg)
   $c1 = (Invoke-WebRequest -UseBasicParsing "${furl}config").Content
-  Check 'config file created on first run, from the starters' ($noFile -and (Test-Path -LiteralPath $fcfg) -and ((ConvertFrom-Json $c1).scenes.id -join ',') -eq 'default,focus,meetings,review')
+  Check 'config file created on first run, from the starters' ($noFile -and (Test-Path -LiteralPath $fcfg) -and ((ConvertFrom-Json $c1).scenes.id -join ',') -eq 'default,focus,meetings,review,listen,solo,thursday-prep')
   # Save a scene with awkward text, read it back byte for byte, then run it through the engine by name.
   $cfg = ConvertFrom-Json $c1
   $new = ConvertFrom-Json '{"id":"x-1","name":"Late \"night\" — it''s ünïcode","trigger":{"type":"time","days":[1,3],"time":"21:30"},"grids":{"wide":{"c":2,"r":1}},"pins":[{"app":"chrome","match":"It''s a \"quoted\"","mon":"wide","slots":[1]}],"fill":{"mon":"wide","apps":["claude"],"skip":[],"sort":"title"}}'
@@ -119,7 +119,7 @@ try {
   # is kept as .bad, and the page is told.
   [IO.File]::WriteAllText($fcfg, '{"scenes":[{bad', $utf8); $fst = Join-Path $fprof '.tile-windows\state.json'; [IO.File]::WriteAllText($fst, 'nope', $utf8)
   $rc = Invoke-WebRequest -UseBasicParsing "${furl}config"; $rs = Invoke-WebRequest -UseBasicParsing "${furl}state"
-  Check 'a bad config.json falls back to the starters, keeps .bad, and says so' (((ConvertFrom-Json $rc.Content).scenes.id -join ',') -eq 'default,focus,meetings,review' -and [IO.File]::ReadAllText("$fcfg.bad", $utf8) -ceq '{"scenes":[{bad' -and [Uri]::UnescapeDataString($rc.Headers['X-Tile-Note']) -like 'config.json could not be read*')
+  Check 'a bad config.json falls back to the starters, keeps .bad, and says so' (((ConvertFrom-Json $rc.Content).scenes.id -join ',') -eq 'default,focus,meetings,review,listen,solo,thursday-prep' -and [IO.File]::ReadAllText("$fcfg.bad", $utf8) -ceq '{"scenes":[{bad' -and [Uri]::UnescapeDataString($rc.Headers['X-Tile-Note']) -like 'config.json could not be read*')
   Check 'a bad state.json gives an empty log, keeps .bad, and says so' (@((ConvertFrom-Json $rs.Content).log).Count -eq 0 -and [IO.File]::ReadAllText("$fst.bad", $utf8) -ceq 'nope' -and [Uri]::UnescapeDataString($rs.Headers['X-Tile-Note']) -like '*state.json could not be read*')
   # The note stays on every answer (the tray may have hit the bad file) until the page dismisses it.
   $rn = Invoke-WebRequest -UseBasicParsing "${furl}snapshot"; [void](Post "${furl}note" 'dismiss'); $rn2 = Invoke-WebRequest -UseBasicParsing "${furl}config"
@@ -214,6 +214,8 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $tt2 = ConvertFrom-Json '{"scenes":[{"id":"work","trigger":{"type":"manual"}},{"id":"meet2","trigger":{"type":"call"}}]}'
   $ts = New-TrayState; $x = @((Ids (Step-Tray $ts $d $tt $null $false 'work')), (Ids (Step-Tray $ts $d $tt $null $true 'work')), (Ids (Step-Tray $ts $d $tt2 $null $true 'work')))
   Check 'tray tick: a change to the call scenes starts the call reading over' (($x -join '/') -eq '//' -and $ts.inCall -and $ts.streak -eq 0) ($x -join '/')
+  # The automatic triggers (idle, new window, activity, meeting size, guards...) have their own file; a child scope keeps its variables out of this run.
+  & { . (Join-Path $PSScriptRoot 'triggers.ps1') }
   $tprof = Profile 'tray'
   $tray = Start-Child $tprof "-File `"$(Join-Path $root 'tray.ps1')`" -NoIcon -NoApply"
   $real = $env:USERPROFILE; $env:USERPROFILE = $tprof
