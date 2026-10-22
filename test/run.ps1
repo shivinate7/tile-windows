@@ -170,9 +170,12 @@ try {
 
   # 10. -Default -DryRun prints the same as main's tile.ps1 (run back to back; windows can change between runs).
   #     -Default now runs the Default scene from scenes.json, so this also proves the scene engine mirrors it.
-  $main = Join-Path $tmp 'tile-main.ps1'
-  $src = & git -C $root show main:tile.ps1; if ($LASTEXITCODE) { $src = & git -C $root show origin/main:tile.ps1 }
-  Set-Content -LiteralPath $main -Encoding ASCII -Value $src
+  #     It runs main's whole tree: tile.ps1 reads config.ps1 and scenes.json beside it.
+  $ref = if ($env:TILE_TEST_MAIN) { $env:TILE_TEST_MAIN } else { 'main' }
+  $zip = Join-Path $tmp 'main.zip'; $mainDir = Join-Path $tmp 'main'
+  & git -C $root archive -o $zip $ref 2>$null; if ($LASTEXITCODE) { & git -C $root archive -o $zip "origin/$ref" }
+  Expand-Archive -LiteralPath $zip -DestinationPath $mainDir
+  $main = Join-Path $mainDir 'tile.ps1'
   $same = $false
   for ($k = 0; $k -lt 2 -and -not $same; $k++) {
     $a = (Child $main -Default -DryRun 2>&1 | % { "$_" }) -join "`n"

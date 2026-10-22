@@ -97,7 +97,7 @@ A scene is a whole-desk layout: one grid per monitor role (`wide`, `tall`, `lapt
 
 ## The app
 
-`serve.ps1` serves `app.html`: the monitors as a board, scenes on the left rail, and an inspector on the right. The installed copy sits in `%USERPROFILE%\.tile-windowspp`. The Start menu shortcut and the tray icon both open it.
+`serve.ps1` serves `app.html`: the monitors as a board, scenes on the left rail, and an inspector on the right. The installed copy sits in `%USERPROFILE%\.tile-windows\app`. The Start menu shortcut and the tray icon both open it.
 
 **Live (default).** Say in one line that a browser tab will open. Then start the server in the background:
 `powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/.claude/skills/tile-windows/serve.ps1)"`
@@ -107,14 +107,15 @@ A scene is a whole-desk layout: one grid per monitor role (`wide`, `tall`, `lapt
 - Apply runs the scene through `tile.ps1 -Scene` and lists the result per window.
 - After a live Apply, Undo moves the windows back at once (decision: undo-moves-windows). Before any Apply, Undo only reverts edits.
 - The server stops on the page's Stop server button or Ctrl+C. Stop it before you finish: `curl -s -X POST -d quit "<url>quit"`, or stop the background task.
-- `-DryRun` makes every Apply a dry run. `-From testixture.json` shows an invented desk (always a dry run). `-NoBrowser` skips opening the browser.
+- `-DryRun` makes every Apply a dry run. `-From test\fixture.json` shows an invented desk (always a dry run). `-NoBrowser` skips opening the browser.
 
 **Offline.** Open `app.html` as a file. A sample loads.
 
 1. Run `tile.ps1 -Json`. It prints monitors (with roles) and windows as JSON, and moves nothing. Minimized windows carry `"min":true`.
 2. The user pastes the JSON under "Load a snapshot by hand", then drags windows onto cells.
 3. Apply downloads `last-place.json` (changed windows only) and shows the command:
-   `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.tile-windowspp	ile.ps1" -PlaceFile "$env:USERPROFILE\Downloads\last-place.json"`
+   `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.tile-windows\app\tile.ps1" -PlaceFile "$env:USERPROFILE\Downloads\last-place.json"`
+   That is the installed path. When Claude runs it, use `tile.ps1` in this folder instead.
 
 **The place format.** Entries are `{app,title,x,y,w,h}` in screen pixels, plus `id` (the window handle from `-Json`) when known. Each entry matches an open window by `id`, else app plus exact title, else title contains. `-Place '<json>'` takes the array inline, but prefer `-PlaceFile`: titles carry quotes and apostrophes. `-DryRun` prints each move and moves nothing. `-Json` prints one result per entry instead of text. Claude runs `-DryRun` first.
 

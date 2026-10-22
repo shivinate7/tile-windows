@@ -39,6 +39,12 @@ A scene stores your intent, not pixels: app names, title matches, grids and a fi
 
 [SKILL.md](SKILL.md) is a Claude Code skill. Ask Claude to "tile my windows", "put Teams in the left two columns", or "apply my Focus scene". Claude runs [tile.ps1](tile.ps1) with a dry run first. Precise one-off layouts are faster to ask Claude for than to build by hand.
 
+To give Claude the skill, link its folder to a clone of this repo or to the installed app. A junction needs no admin rights:
+
+```powershell
+cmd /c mklink /J "$env:USERPROFILE\.claude\skills\tile-windows" "$env:USERPROFILE\.tile-windows\app"
+```
+
 ## Remove it
 
 ```powershell
