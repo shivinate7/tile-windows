@@ -24,6 +24,18 @@ Low findings. Each becomes a debt only after a real incident.
 - `config.ps1` 34: the note file grows by one line per recovery until dismissed.
 - `install.ps1` 37: a failed delete of `app.old-<pid>` is never cleaned up by later installs.
 - Design round 3 rows 2 to 9 (`design/reviews/app-round3.md`).
+
+## From the triggers lane (2026-10-22)
+
+- Untested: the Win32 signals (idle, mouse, foreground, lock and unlock, the end of a window drag) and the balloon click that arranges. Pure steps are tested; a tick with real signals was smoke-run with no apply.
+- `tray.ps1` The offer is a balloon, not a button: a click on it arranges (for 3 min, or until another balloon shows). A click from Action Center is unchecked.
+- `tray.ps1` The manual-move guard sees a user's drag or resize (the end of a move). A window moved by keyboard shortcut or snap assist may not register; the mouse-button guard still holds while a button is down.
+- `tray.ps1` Focus in gaps has no hours: with a gap and a touched PC after the last meeting, Focus applies once that evening.
+- `tray.ps1` Grid follows the Claude count applies only from the tray. The app's Apply and tile.ps1 use the saved grid.
+- `tray.ps1` The activity map reads the foreground window every 3 s; a Chrome tab title that changes inside one dwell counts as the same activity.
+- `scenes.json` Thursday Prep ships as a manual scene with Thursday 14:30 filled in; set "On a Schedule" on it to run it.
+- `config.ps1` An older config.json gains the new starters once (the first read after the update). A scene deleted earlier stays deleted.
+- `README.md` `agenda.json` lives in the app folder, so a reinstall removes it until the morning task writes it again.
 - `tile.ps1` Zones fill after all pins, in monitor order (portrait, laptop, then ultrawide). A zone on an earlier monitor can take a window a later zone wants.
 - `tile.ps1` A window that stays put is held by handle and app for the session. A saved scene holds it by app and exact title, so a window whose title changed rejoins the fill next session.
 - `app.html` A swap writes two pins, so the swapped windows stop following their zone's fill order. The offline page has no bay or zones.
@@ -36,3 +48,17 @@ Low findings. Each becomes a debt only after a real incident.
 - After Save, a scene with Stay Put entries can still show as edited until refresh.
 - Under 240px of board height the list flows below the board; dragging onto it then needs a scroll.
 - Bay design round 3 rows 3 to 9.
+
+## From triggers review round 3 (2026-10-22)
+
+- `app.html` Choosing "On a Schedule" pushes the rows below down about 80px. Reviewer B rated it acceptable: the fields belong to that choice.
+- `app.html` The folded Extra Triggers line and the rail say "3 on", "2 of 7 scenes" without naming them.
+- `app.html` The "On" word shows beside some switches only, far from the toggle, and clips at 1024.
+- `app.html` Rail chip names ("Return", "Gap") differ from the switch names.
+- `app.html` The amber "triggers move windows" box is heavy and repeats on every scene.
+- `app.html` Group labels look alike; the extras do not read as a separate zone.
+- `app.html` At 1024 the sticky Save bar covers the last lines of the inspector.
+- `tray.ps1` `Read-Num` lets the string "NaN" through; it then throws in `AddMinutes`. Hand edit only.
+- `app.html` A saved value over its cap shows uncapped; the tray acts on the cap.
+- `tray.ps1` A bad hand-edited value falls back to its default with no warning.
+- `app.html` Unverified: focus restore may snap back to an edited field after Tab out.

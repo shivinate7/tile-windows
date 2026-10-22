@@ -1,4 +1,4 @@
-# Checks for tile.ps1, serve.ps1, app.html, tray.ps1 and install.ps1. Plain asserts; moves no window
+# Checks for tile.ps1, serve.ps1, app.html, tray.ps1 (its automatic triggers: triggers.ps1) and install.ps1. Plain asserts; moves no window
 # (every place call is a dry run) and touches no real profile (servers, tray and installer get a temp one).
 # Run: powershell -NoProfile -ExecutionPolicy Bypass -File test\run.ps1
 $ErrorActionPreference = 'Stop'
@@ -39,7 +39,8 @@ function SelfTest($url, $hook) {
 $starters = [IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json
 function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $s | Add-Member -Force cats $starters.cats; $s | Add-Member -Force categories $starters.categories; ConvertTo-Json -Depth 10 -Compress $s }
 
-$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tray = $null
+$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray = $null
+
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
 $saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME }
 $env:USERPROFILE = Profile 'run'; $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'; $env:TILE_HOME = $null
@@ -100,7 +101,7 @@ try {
   $furl = $fsrv.StandardOutput.ReadLine()
   $noFile = -not (Test-Path -LiteralPath $fcfg)
   $c1 = (Invoke-WebRequest -UseBasicParsing "${furl}config").Content
-  Check 'config file created on first run, from the starters' ($noFile -and (Test-Path -LiteralPath $fcfg) -and ((ConvertFrom-Json $c1).scenes.id -join ',') -eq 'default,focus,meetings,review')
+  Check 'config file created on first run, from the starters' ($noFile -and (Test-Path -LiteralPath $fcfg) -and ((ConvertFrom-Json $c1).scenes.id -join ',') -eq 'default,focus,meetings,review,listen,solo,thursday-prep')
   # Save a scene with awkward text, read it back byte for byte, then run it through the engine by name.
   # The fill sorts by title; the minimized 'Claude' (1004) stays minimized, so 'Draft release notes' is first.
   $cfg = ConvertFrom-Json $c1
@@ -120,7 +121,7 @@ try {
   # is kept as .bad, and the page is told.
   [IO.File]::WriteAllText($fcfg, '{"scenes":[{bad', $utf8); $fst = Join-Path $fprof '.tile-windows\state.json'; [IO.File]::WriteAllText($fst, 'nope', $utf8)
   $rc = Invoke-WebRequest -UseBasicParsing "${furl}config"; $rs = Invoke-WebRequest -UseBasicParsing "${furl}state"
-  Check 'a bad config.json falls back to the starters, keeps .bad, and says so' (((ConvertFrom-Json $rc.Content).scenes.id -join ',') -eq 'default,focus,meetings,review' -and [IO.File]::ReadAllText("$fcfg.bad", $utf8) -ceq '{"scenes":[{bad' -and [Uri]::UnescapeDataString($rc.Headers['X-Tile-Note']) -like 'config.json could not be read*')
+  Check 'a bad config.json falls back to the starters, keeps .bad, and says so' (((ConvertFrom-Json $rc.Content).scenes.id -join ',') -eq 'default,focus,meetings,review,listen,solo,thursday-prep' -and [IO.File]::ReadAllText("$fcfg.bad", $utf8) -ceq '{"scenes":[{bad' -and [Uri]::UnescapeDataString($rc.Headers['X-Tile-Note']) -like 'config.json could not be read*')
   Check 'a bad state.json gives an empty log, keeps .bad, and says so' (@((ConvertFrom-Json $rs.Content).log).Count -eq 0 -and [IO.File]::ReadAllText("$fst.bad", $utf8) -ceq 'nope' -and [Uri]::UnescapeDataString($rs.Headers['X-Tile-Note']) -like '*state.json could not be read*')
   # The note stays on every answer (the tray may have hit the bad file) until the page dismisses it.
   $rn = Invoke-WebRequest -UseBasicParsing "${furl}snapshot"; [void](Post "${furl}note" 'dismiss'); $rn2 = Invoke-WebRequest -UseBasicParsing "${furl}config"
@@ -228,7 +229,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
 
     # Page preview == engine, for each starter scene, on the fixture.
     $ss = SelfTest $furl 'scenes'
-    foreach ($id in 'default', 'focus', 'meetings', 'review') {
+    foreach ($id in 'default', 'focus', 'meetings', 'review', 'listen', 'solo', 'thursday-prep') {
       $eng = ((& $tile -Scene (StarterJson $id) -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json).placed | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
       $pg = @($ss.drawn.$id) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
       Check "page preview == engine: $id" ($eng.Count -gt 0 -and ($eng -join ' ') -ceq ($pg -join ' ')) ("engine: $($eng -join ' ') | page: $($pg -join ' ')")
@@ -247,7 +248,22 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $bb = $ss.bay
     Check 'page: a window sent to the bay leaves the board, shows in the bay, and comes back when placed' ($bb -and $bb.why -eq 'in the bay' -and $bb.chip -and $bb.kept -eq 2 -and $bb.back) ($bb | ConvertTo-Json -Compress)
     Check 'page cell size rounds like tile.ps1 ([int], to even)' ($ss.cell.w -eq [int](1365 / 2) -and $ss.cell.h -eq [int](1001 / 2)) ($ss.cell | ConvertTo-Json -Compress)
+    $sb = SelfTest $furl 'builtin'
+    Check 'page: a built-in scene saves a change to its trigger switches, and nothing else' ($sb.builtIn -and $sb.idleDisabled -and $sb.autoEnabled -and $sb.saved -and $sb.otherDisabled) ($sb | ConvertTo-Json -Compress)
     Check 'page Save as new writes the scene to config.json' (@($ss.names) -contains 'Selftest copy' -and ([IO.File]::ReadAllText($fcfg, $utf8)).Contains('"Selftest copy"')) (@($ss.names) -join ',')
+    # Triggers on (test/triggers-on.json over the starters): rail chips, the shared-trigger and does-nothing notes, a steady callout.
+    $tprof = Profile 'trig'; $thome = Join-Path $tprof '.tile-windows'; New-Item -ItemType Directory $thome | Out-Null
+    $tcfg = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8)); $ov = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'triggers-on.json'), $utf8))
+    foreach ($x in $tcfg.scenes) { $o = $ov.($x.id); if ($o.trigger) { $x.trigger = $o.trigger }; if ($o.auto) { $o.auto.PSObject.Properties | % { $x.auto.($_.Name) = $_.Value } } }
+    [IO.File]::WriteAllText((Join-Path $thome 'config.json'), (ConvertTo-Json -Depth 10 $tcfg), $utf8)
+    $tsrv = Start-Child $tprof "-File `"$serve`" -NoBrowser -From `"$fixture`"" @{ TILE_HOME = $thome }
+    $turl = $tsrv.StandardOutput.ReadLine(); $tst = SelfTest $turl 'triggers'
+    [void](Invoke-WebRequest -UseBasicParsing "${turl}quit" -Method Post -Body 'quit')
+    Check 'page: with triggers on, the rail shows each scene''s extra triggers as chips' ($tst.chips.default -eq 'Return,Call Size,Gap' -and $tst.chips.focus -eq 'Gap' -and $tst.railsum -like '2 of 7 scenes have triggers on*') ($tst | ConvertTo-Json -Compress)
+    Check 'page: two scenes with the same extra trigger each say so beside the switch, and the first in the rail wins' ($tst.gaps.default -like 'Also used by Focus. This scene is first*' -and $tst.gaps.focus -like 'Also used by Default. Default is first*') ($tst | ConvertTo-Json -Compress)
+    Check 'page: a switch that does nothing here says so beside it, and the closed extras count the warnings' ($tst.size -like '*does nothing here.' -and $tst.summary -like '3 on*2 warnings') ($tst | ConvertTo-Json -Compress)
+    Check 'page: the trigger section has no disabled control' ($tst.disabled -eq 0) ($tst | ConvertTo-Json -Compress)
+    Check 'page: the callout keeps its height when the last trigger goes off' ($tst.callout.on -gt 0 -and $tst.callout.on -eq $tst.callout.off) ($tst | ConvertTo-Json -Compress)
   }
   [void](Invoke-WebRequest -UseBasicParsing "${furl}quit" -Method Post -Body 'quit')
   Check 'fixture server exits on /quit' ($fsrv.WaitForExit(5000))
@@ -290,6 +306,8 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $tt2 = ConvertFrom-Json '{"scenes":[{"id":"work","trigger":{"type":"manual"}},{"id":"meet2","trigger":{"type":"call"}}]}'
   $ts = New-TrayState; $x = @((Ids (Step-Tray $ts $d $tt $null $false 'work')), (Ids (Step-Tray $ts $d $tt $null $true 'work')), (Ids (Step-Tray $ts $d $tt2 $null $true 'work')))
   Check 'tray tick: a change to the call scenes starts the call reading over' (($x -join '/') -eq '//' -and $ts.inCall -and $ts.streak -eq 0) ($x -join '/')
+  # The automatic triggers (idle, new window, activity, meeting size, guards...) have their own file; a child scope keeps its variables out of this run.
+  & { . (Join-Path $PSScriptRoot 'triggers.ps1') }
   $tprof = Profile 'tray'
   $tray = Start-Child $tprof "-File `"$(Join-Path $root 'tray.ps1')`" -NoIcon -NoApply"
   $real = $env:USERPROFILE; $env:USERPROFILE = $tprof
@@ -365,7 +383,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
   if ($form -and -not $form.HasExited) { Stop-Process -Id $form.Id -Force }
-  foreach ($p in $srv, $fsrv, $ssrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
+  foreach ($p in $srv, $fsrv, $ssrv, $tsrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
