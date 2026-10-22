@@ -9,4 +9,4 @@
 
 **Why.** Moving pieces one by one is slow; the owner wants to block out an area for one kind of window, then fine-tune.
 
-**Open point.** The owner's example said "a 4x4 in an 8x2 grid". An 8×2 grid has two rows, so the zone is read as up to 8 columns by 2 rows. Confirm on the first build.
+**Zone size (2026-10-22, owner).** A zone is any rectangle of cells on the grid, such as 4 columns by 2 rows on an 8×2 grid.
