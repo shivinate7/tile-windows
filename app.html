@@ -188,12 +188,27 @@ details summary{cursor:pointer;font-weight:600}
 .win .t{font-weight:600;font-size:13px;word-break:break-word}
 .win .m{color:var(--muted);font-size:12px}
 .row{display:flex;flex-wrap:wrap;gap:6px}
-fieldset.trig,fieldset.xtras{display:grid;gap:4px;border:0;margin:0;padding:0;min-width:0}
-fieldset.xtras legend{padding:0;margin-bottom:2px}
+fieldset.trig{display:grid;gap:2px;border:0;margin:0;padding:0;min-width:0}
 .trig label{display:flex;gap:8px;align-items:center;min-height:34px}
 .trig label small,.xt small{display:block;color:var(--muted);font-size:12px}
-.trig input[type=radio]{width:18px;height:18px}
-.trig .days button:disabled,.trig input:disabled{opacity:.5;cursor:not-allowed}
+.ropt{display:grid;gap:4px}
+.ropt>.at,.ropt>.days{margin-bottom:4px}
+/* The two callout texts share one cell, so the box keeps the taller one's height whichever shows. */
+.callout{display:grid;font-size:12px;color:var(--muted);margin:0;padding:8px 10px;border-left:3px solid var(--line);border-radius:4px}
+.callout>span{grid-area:1/1}
+.callout>.off{visibility:hidden}
+.callout b{color:var(--ink);font-weight:600}
+.callout.warn{background:var(--hi-bg);border-left-color:var(--hi);color:var(--ink)}
+details.xtras{border-top:1px solid var(--line);margin-top:6px}
+details.xtras>summary{display:flex;align-items:center;gap:8px;min-height:36px;cursor:pointer;list-style:none;font-size:12.5px;white-space:nowrap}
+details.xtras>summary::-webkit-details-marker{display:none}
+details.xtras>summary::before{content:"";width:6px;height:6px;border:solid var(--ink);border-width:0 1.5px 1.5px 0;transform:rotate(-45deg);margin:0 4px 0 2px;flex:none}
+details.xtras[open]>summary::before{transform:rotate(45deg)}
+.xsum{margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:12px}
+.xsum svg,.xwarn svg{width:14px;height:14px;flex:none}
+.xwarn{display:flex;gap:6px;align-items:flex-start;margin:0 0 4px 40px;padding:5px 8px;font-size:12px;color:var(--ink);background:var(--hi-bg);border-left:3px solid var(--hi);border-radius:4px}
+.xwarn svg{margin-top:1px}
+.ropt .xwarn{margin-left:0}
 h3.grp{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:12px 0 2px}
 .xrow{display:grid;gap:2px;padding:4px 0;border-top:1px solid var(--line)}
 .xrow .switch{align-items:flex-start;white-space:normal;min-height:36px;padding:4px 0;gap:10px;width:100%}
@@ -202,16 +217,18 @@ h3.grp{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color
 .xrow .switch input:focus-visible,.trig input:focus-visible{outline:2px solid var(--select);outline-offset:2px}
 .xt{display:grid;flex:1;min-width:0}
 .xon{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--ink);align-self:center}
-.xopt{display:flex;flex-wrap:wrap;gap:4px 12px;padding:0 0 4px 40px;font-size:12px;color:var(--muted)}
-.xopt label{display:inline-flex;align-items:center;gap:5px;min-height:32px}
-.xopt input[type=number]{width:62px;min-height:30px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
-.xopt.off{opacity:.55}
-.xrow .conf{padding-left:40px}
+/* Each threshold is one sentence on its own line, the box inline in the text. */
+.xopt{display:grid;gap:2px;padding:0 0 6px 40px;font-size:12px;color:var(--ink)}
+.xopt label{display:block;line-height:1.5}
+.xopt input[type=number]{width:54px;
+min-height:28px;margin:1px 2px;vertical-align:middle;background:var(--panel);color:var(--ink);border:1px solid var(--muted);border-radius:6px;padding:3px 6px}
 .chips{display:flex;flex-wrap:wrap;gap:3px}
 .chips i{font:normal 11px var(--f);border:1px solid var(--line);border-radius:10px;padding:0 6px;color:var(--ink)}
 fieldset.trig legend{padding:0;margin-bottom:4px;color:var(--muted)}
-.trig input[type=radio],.trig input[type=checkbox]{accent-color:var(--ink);margin:0;width:15px;height:15px}
-.trig input[type=checkbox]{box-shadow:inset 0 0 0 1px var(--muted)}
+.trig input[type=radio]{appearance:none;width:16px;height:16px;margin:0;flex:none;border:1.5px solid var(--muted);border-radius:50%;background:var(--panel)}
+.trig input[type=radio]:checked{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 3px var(--panel)}
+.trig input[type=checkbox]{accent-color:var(--ink);margin:0;width:15px;height:15px;box-shadow:inset 0 0 0 1px var(--muted)}
+
 .days{display:flex;flex-wrap:wrap;gap:2px;margin-left:26px}
 .days button{width:23px;height:30px;border:1px solid var(--line);background:var(--panel);border-radius:5px;font-size:12px;font-weight:600;padding:0}
 .days button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
@@ -352,15 +369,15 @@ const SORTS=[["app","App Order (Default)"],["category","Category"],["title","Tit
 // The extra triggers, one per line. The switches are the tray's ($TileAutoFlags in tray.ps1) and the thresholds are optDefaults in scenes.json (a test checks both).
 // [switch, label, one-line hint, group, chip text on the rail card, [{k: threshold, l: text before the box, u: text after it, max: cap ($TileOptMax in tray.ps1), scope?}]]
 const AUTO=[
-["desk","Put This Scene Back When I Return","After a lock or a long idle, apply it again.","At My Desk","Return",[{k:"lockMin",l:"After a lock of",u:"min or more.",max:240},{k:"idleMin",l:"Or after no input for",u:"min or more.",max:240}]],
-["window","Place New Windows","A new window of an app this scene places gets its slot.","At My Desk","New Window",[{k:"holdSec",l:"Once it has stayed open",u:"s.",max:60}]],
-["activity","Switch Here When My Work Suits It","After a while in an app it suits, such as Claude, Procore, NetSuite, PowerPoint or Excel.","At My Desk","Work Match",[{k:"dwellSec",l:"After",u:"s in that app.",max:3600},{k:"graceMin",l:"Never within",u:"min of a scene I applied.",max:240}]],
+["desk","Put This Scene Back When I Return","After a lock or a long idle, apply it again.","At My Desk","Return",[{k:"lockMin",l:"After a lock of",u:"min.",max:240},{k:"idleMin",l:"Or idle for",u:"min.",max:240}]],
+["window","Place New Windows","A new window of an app this scene places gets its slot.","At My Desk","New Window",[{k:"holdSec",l:"Once open for",u:"s.",max:60}]],
+["activity","Switch Here When My Work Suits It","After a while in an app it suits, such as Claude, Procore, NetSuite, PowerPoint or Excel.","At My Desk","Work Match",[{k:"dwellSec",l:"After",u:"s in that app.",max:3600},{k:"graceMin",l:"Wait",u:"min after I apply.",max:240}]],
 ["grid","Resize the Grid by Claude Windows","A denser ultrawide grid when many Claude windows are open.","At My Desk","Grid",[{k:"at",l:"Denser from",u:"Claude windows.",max:20,scope:"grid"}]],
-["size","Use This Scene for Calls of Its Size","Big calls go to Listen, others to Meetings, from the meeting file.","Calls and Meetings","Call Size",[{k:"at",l:"A big call has",u:"people or more.",max:500,scope:"size"}]],
-["offer","Offer This Scene Before a Meeting","A tray notice asks first. Nothing moves unless you click it.","Calls and Meetings","Offer",[{k:"leadMin",l:"Ask",u:"min before it starts.",max:30}]],
-["gaps","Use This Scene in a Gap Between Meetings","When the next busy meeting is far off and you are at the PC.","Calls and Meetings","Gap",[{k:"minutes",l:"The next meeting is",u:"min or more away.",max:480}]],
-["monitors","Use This Scene for This Many Screens","When the monitors change to this count.","Monitors","Screens",[{k:"screens",l:"Number of screens:",u:"",max:8,scope:"scene"}]],
-["noext","Use This Scene When the External Monitors Go","When only the laptop screen has been left for a while.","Monitors","Laptop Only",[{k:"sec",l:"Gone for",u:"s or more.",max:600}]]
+["size","Use This Scene for Calls of Its Size","Big calls go to Listen, others to Meetings, from the meeting file.","Calls and Meetings","Call Size",[{k:"at",l:"Big from",u:"people.",max:500,scope:"size"}]],
+["offer","Offer This Scene Before a Meeting","A tray notice asks first. Nothing moves unless you click it.","Calls and Meetings","Offer",[{k:"leadMin",l:"Ask",u:"min before.",max:30}]],
+["gaps","Use This Scene in a Gap Between Meetings","When the next busy meeting is far off and you are at the PC.","Calls and Meetings","Gap",[{k:"minutes",l:"A gap of",u:"min or more.",max:480}]],
+["monitors","Use This Scene for This Many Screens","When the monitors change to this count.","Monitors","Screens",[{k:"screens",l:"For",u:"screens.",max:8,scope:"scene"}]],
+["noext","Use This Scene When the External Monitors Go","When only the laptop screen has been left for a while.","Monitors","Laptop Only",[{k:"sec",l:"Gone for",u:"s.",max:600}]]
 ];
 
 const TRIGH={manual:"I apply it myself.",time:"On set days at a set time.",display:"When a monitor is added or removed.",call:"When Teams starts using the microphone."};
@@ -383,7 +400,7 @@ const PIN='<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hid
 
 let snap=null,cfg={scenes:[],cats:LIVE?{}:OFFLINE_CATS,categories:CATS0},work={},selId=null,prevs={},pseq={},selWin=null,curMon=null,hist=[],isBusy=false,serverDry=false,
   st={active:"",log:[]},hidden=new Set(),showGrid=true,G={x0:0,y0:0,S:1},els=new Map(),drawn={},optim=null,drag=null,raf=0,
-  offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zanchor=null,selZone=null;
+  offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zanchor=null,selZone=null,xOpen=false;
 const clone=o=>JSON.parse(JSON.stringify(o));
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
@@ -410,13 +427,35 @@ function needNote(f,s){if(!(s.auto||{})[f])return "";const m=cfg.meetingSize||{}
   if((f==="size"||f==="offer")&&s.id!==m.big&&s.id!==m.small)return "Only the scenes named in the meeting rule (Listen and Meetings) take part, so this does nothing here.";
   if(f==="activity"&&cfg.activity&&!cfg.activity.some(a=>a.scene===s.id))return "No app in the activity map points at this scene, so this does nothing.";
   return ""}
-function autoUI(s){const groups=[...new Set(AUTO.map(x=>x[3]))],big=s.id===(cfg.meetingSize||{}).big;
-  return groups.map(g=>`<h3 class="grp">${g}</h3>`+AUTO.filter(x=>x[3]===g).map(([k,l,h,,,opts])=>{const on=!!(s.auto||{})[k],noGrid=k==="grid"&&!s.claudeGrid;
-    const os=opts.filter(o=>!(o.scope==="size"&&!big)&&!(o.scope==="grid"&&!s.claudeGrid)),cn=[conflictNote(k,s),needNote(k,s)].filter(Boolean).join(" ");
-    return `<div class="xrow"><label class="switch"><input type="checkbox" data-auto="${k}" ${on?"checked":""} ${noGrid&&!on?"disabled":""}><span class="xt"><b>${l}</b><small>${esc(noGrid?"Only for a scene that carries a second grid, such as Default.":h)}</small></span>${on?'<span class="xon">On</span>':""}</label>
-      ${os.length?`<div class="xopt${on?"":" off"}">${os.map(o=>`<label>${o.l} <input type="number" min="1" step="1" data-xf="${k}" data-xk="${o.k}" data-xs="${o.scope||""}" value="${esc(optGet(s,k,o)??"")}" ${on?"":"disabled"} aria-label="${esc(l+": "+o.l+" "+o.u)}"> ${o.u}</label>`).join("")}</div>`:""}
-      ${cn?`<p class="note conf">${esc(cn)}</p>`:""}</div>`}).join("")).join("")}
+const WARN='<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="var(--hi)" stroke="var(--ink)" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3.6" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".95" fill="var(--ink)"/></svg>';
+const warnNote=(id,t)=>`<p class="xwarn" id="${id}">${WARN}<span><span class="vh">Warning: </span>${esc(t)}</span></p>`;
+// The extra triggers that apply to this scene: the grid switch only where the scene carries a second grid.
+const autoRows=s=>AUTO.filter(([k])=>k!=="grid"||s.claudeGrid||(s.auto||{}).grid);
+const autoNote=(k,s)=>[conflictNote(k,s),needNote(k,s)].filter(Boolean).join(" ");
+// Thresholds show only while their switch is on; a note sits under its switch, before the thresholds.
+function autoUI(s){const rows=autoRows(s),groups=[...new Set(rows.map(x=>x[3]))],big=s.id===(cfg.meetingSize||{}).big;
+  return groups.map(g=>`<h3 class="grp">${g}</h3>`+rows.filter(x=>x[3]===g).map(([k,l,h,,,opts])=>{const on=!!(s.auto||{})[k];
+    const os=opts.filter(o=>!(o.scope==="size"&&!big)&&!(o.scope==="grid"&&!s.claudeGrid)),cn=autoNote(k,s);
+    return `<div class="xrow"><label class="switch"><input type="checkbox" data-auto="${k}" ${on?"checked":""} ${cn?`aria-describedby="xn-${k}"`:""}><span class="xt"><b>${l}</b><small>${esc(h)}</small></span>${on?'<span class="xon">On</span>':""}</label>
+      ${cn?warnNote("xn-"+k,cn):""}
+      ${on&&os.length?`<div class="xopt">${os.map(o=>`<label>${o.l} <input type="number" min="1" max="${o.max}" step="1" data-xf="${k}" data-xk="${o.k}" data-xs="${o.scope||""}" value="${esc(optGet(s,k,o)??"")}" aria-label="${esc(l+": "+o.l+" "+o.u)}"> ${o.u}</label>`).join("")}</div>`:""}</div>`}).join("")).join("")}
+
+// The fields of the chosen main trigger, under its radio. A shared main trigger says which scene wins.
+function trigFields(s,t){
+  const users=["display","call"].includes(t.type)?railIds().map(i=>work[i]).filter(x=>x&&(x.trigger||{}).type===t.type):[];
+  const cn=users.length>1?(users[0].id===s.id?`Also used by ${users.slice(1).map(x=>x.name).join(", ")}. This scene is first in the rail, so it wins.`:`Also used by ${users.filter(x=>x.id!==s.id).map(x=>x.name).join(", ")}. ${users[0].name} is first in the rail and wins.`):"";
+  return (t.type==="time"?`<div class="days" role="group" aria-label="Days">${DAYORDER.map(d=>`<button type="button" data-day="${d}" aria-pressed="${(t.days||[]).includes(d)}" aria-label="${DAYN[d]}">${DAYN[d][0]}</button>`).join("")}</div>
+      <div class="at"><label for="time">At</label><input type="time" id="time" value="${esc(t.time||"09:00")}"></div>`:"")
+    +(t.type==="call"?`<label class="at"><input type="checkbox" id="back" ${t.back?"checked":""}><span>When the Call Ends, Go Back to the Scene Before</span></label>`:"")
+    +(cn?`<div class="at">${warnNote("tn",cn)}</div>`:"")}
+// The one line the closed extras show: how many are on, and how many carry a warning.
+function xSummary(s){const rows=autoRows(s),n=rows.filter(([k])=>(s.auto||{})[k]).length,w=rows.filter(([k])=>autoNote(k,s)).length;
+  return `${n} on`+(w?` · ${WARN}${plural(w,"warning")}`:"")}
+// The scene box is redrawn on every edit; this names the focused control so the redraw can put focus back (keyboard users keep their place).
+function focusKey(e){if(!e||!e.closest||!e.closest("#scenebox"))return "";if(e.id)return "#"+e.id;if(e.tagName==="SUMMARY")return "#xtras>summary";
+  if(e.name==="trig")return `input[name=trig][value="${e.value}"]`;return ["data-auto","data-day","data-xf","data-xk"].filter(a=>e.hasAttribute(a)).map(a=>`[${a}="${e.getAttribute(a)}"]`).join("")}
 const withCats=s=>({...s,cats:cfg.cats,categories:cfg.categories});
+
 const catOf=app=>{const c=cfg.cats&&Object.keys(cfg.cats).find(k=>k.toLowerCase()===String(app).toLowerCase());return c?cfg.cats[c]:"other"};
 const catName=c=>(cfg.categories.find(x=>x[0]===c)||[c,c])[1];
 const monName=m=>m.role?ROLE[m.role]:`Monitor ${snap.monitors.indexOf(m)+1}`;
@@ -610,12 +649,12 @@ const CLOCK='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-w
 function renderRail(){
   if(LIVE){
     const ids=railIds(),nOn=ids.filter(id=>hasAny(work[id])).length;
-    $("railsum").textContent=nOn?`${nOn} of ${ids.length} scenes apply themselves. The tray agent runs them.`:`No scene applies itself yet. Open a scene to switch a trigger on.`;
+    $("railsum").textContent=nOn?`${nOn} of ${ids.length} scenes have triggers on. The tray agent runs them.`:`No scene has a trigger on yet. Open a scene to switch one on.`;
     $("cards").innerHTML=ids.map(id=>{const s=work[id],on=id===st.active;return `<article class="card${id===selId?" sel":""}">
       <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini" aria-hidden="true">${miniHTML(prevs[id])}</span>
       <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
       ${(s.trigger||{}).type&&s.trigger.type!=="manual"?`<span class="when">${CLOCK}${esc(trigText(s))}</span>`:""}
-      ${chipsOf(s).length?`<span class="chips" aria-label="Also applies itself">${chipsOf(s).map(c=>`<i>${esc(c)}</i>`).join("")}</span>`:""}</button>
+      ${chipsOf(s).length?`<span class="chips" aria-label="Extra triggers on">${chipsOf(s).map(c=>`<i>${esc(c)}</i>`).join("")}</span>`:""}</button>
       <div class="crow"><span class="tag">${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}</span><button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></div></article>`}).join("");
   }else $("cards").innerHTML=`<p class="note">Scenes need the app server. Open Tile Windows from the Start menu, or run <code>serve.ps1</code>.</p>`;
   const counts={};for(const w of snap.windows){const c=catOf(w.app);counts[c]=(counts[c]||0)+1}
@@ -631,23 +670,22 @@ function renderInsp(V){
     const t=s.trigger||(s.trigger={type:"manual",days:[1,2,3,4,5],time:"09:00"}),isSaved=!!saved(selId),ed=edited(selId);
     const why={save:s.builtIn&&!autoOnly(s,saved(selId))?"Built-in scenes keep their layout. Use Save As New to change it.":isSaved&&!ed?"No changes to save.":"",
       revert:!isSaved?"Not saved yet, so nothing to revert to.":!ed?"No changes to revert.":"",del:s.builtIn?"Built-in scenes cannot be deleted.":""};
+    const fk=focusKey(document.activeElement);
     $("scenebox").innerHTML=`<h2>Scene</h2>
     <div class="field stack"><label for="sceneName">Name</label><input type="text" id="sceneName" name="sceneName" autocomplete="off" value="${esc(s.name)}" ${s.builtIn?"disabled title=\"Built-in scenes keep their name.\"":""} maxlength="40"></div>
-    <h2>When this scene applies itself</h2>
-    ${hasAny(s)?`<p class="over warn"><b>Switched-on triggers move your windows without asking.</b> They run once you Save, and only while the tray agent runs. Applying by hand always works.</p>`:`<p class="note">Nothing is switched on, so this scene changes your windows only when you apply it.</p>`}
-    <fieldset class="trig"><legend>Main trigger (pick one)</legend>${TRIG.map(([v,l])=>`<label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}><span>${l}<small>${TRIGH[v]}</small></span></label>`).join("")}
-      <div class="days" role="group" aria-label="Days">${DAYORDER.map(d=>`<button type="button" data-day="${d}" aria-pressed="${(t.days||[]).includes(d)}" aria-label="${DAYN[d]}" ${t.type==="time"?"":"disabled"}>${DAYN[d][0]}</button>`).join("")}</div>
-      <div class="at"><label for="time">At</label><input type="time" id="time" value="${esc(t.time||"09:00")}" ${t.type==="time"?"":"disabled"}></div>
-      <label class="at"><input type="checkbox" id="back" ${t.back?"checked":""} ${t.type==="call"?"":"disabled"}><span>When the Call Ends, Go Back to the Scene Before</span></label>
-      ${["display","call"].includes(t.type)&&railIds().map(i=>work[i]).filter(x=>x&&(x.trigger||{}).type===t.type).length>1?`<p class="note">Another scene has this main trigger too. The first in the rail wins${(railIds().map(i=>work[i]).find(x=>(x.trigger||{}).type===t.type)||{}).id===s.id?" (this one).":"."}</p>`:""}</fieldset>
-    <fieldset class="xtras"><legend class="note">Extras (any number, each with its own switch)</legend>${autoUI(s)}</fieldset>
+    <h2>Triggers</h2>
+    <p class="callout${hasAny(s)?" warn":""}"><span${hasAny(s)?"":` class="off"`}><b>Triggers that are on move your windows without asking.</b> They run once you Save, and only while the tray agent runs. Applying by hand always works.</span><span${hasAny(s)?` class="off"`:""}>No trigger is on, so this scene changes your windows only when you apply it.</span></p>
+    <fieldset class="trig"><legend>Main Trigger (Pick One)</legend>${TRIG.map(([v,l])=>`<div class="ropt"><label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}><span>${l}<small>${TRIGH[v]}</small></span></label>${t.type===v?trigFields(s,t):""}</div>`).join("")}</fieldset>
+    <details class="xtras" id="xtras"${xOpen?" open":""}><summary><b>Extra Triggers</b><span class="xsum">${xSummary(s)}</span></summary><p class="note">Any number, each with its own switch.</p>${autoUI(s)}</details>
+
     ${s.builtIn?`<p class="note">This is a built-in scene. Save keeps your trigger settings; its layout stays as shipped. Use Save As New to change the layout.</p>`:""}
     <div class="acts"><button type="button" class="btn pri" id="save" ${why.save?`disabled title="${why.save}" aria-describedby="whyoff"`:""}>Save</button>
       <button type="button" class="btn" id="saveas">Save As New</button>
       <button type="button" class="btn" id="revert" ${why.revert?`disabled title="${why.revert}" aria-describedby="whyoff"`:""}>Revert</button>
       <button type="button" class="btn danger" id="del" ${why.del?`disabled title="${why.del}" aria-describedby="whyoff"`:""}>Delete</button></div>
     <p class="note" id="smsg" role="status">${esc(sceneMsg)}</p>
-    <p class="why" id="whyoff">${[...new Set([why.save,why.del,!why.save?why.revert:""].filter(Boolean))].map(x=>`<span>${esc(x)}</span>`).join("")}</p>`}
+    <p class="why" id="whyoff">${[...new Set([why.save,why.del,!why.save?why.revert:""].filter(Boolean))].map(x=>`<span>${esc(x)}</span>`).join("")}</p>`;
+    if(fk){const e=$("scenebox").querySelector(fk);if(e)e.focus()}}
   else $("scenebox").innerHTML="";
   const z=LIVE&&s&&selZone!==null?(s.zones||[])[selZone]:null;
   if(z){const cnt=prev()?prev().placed.filter(p=>p.zone===selZone).length:0,over=prev()?prev().left.filter(l=>l.why==="zone full").length:0;
@@ -967,6 +1005,8 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="quit"){if(!await ask("Stop the Tile Windows server?",`<p class="note">This page stops working until you open Tile Windows again. Your scenes are saved. Your windows do not move.</p>`,"Stop Server",true))return;try{await post("quit","quit")}catch(_){}document.body.innerHTML='<p style="padding:24px;font:15px system-ui">Server stopped. You can close this tab.</p>'}
 });
 $("grid").onchange=e=>{showGrid=e.target.checked;render()};
+document.addEventListener("toggle",e=>{if(e.target.id==="xtras")xOpen=e.target.open},true);
+
 document.addEventListener("change",ev=>{const t=ev.target;
   if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
   else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
@@ -975,7 +1015,8 @@ document.addEventListener("change",ev=>{const t=ev.target;
   else if(t.id==="back")edit(s=>{s.trigger.back=t.checked});
   else if(t.dataset.auto){const x=AUTO.find(a=>a[0]===t.dataset.auto),msg=`${x[1]} is ${t.checked?"on":"off"} for ${scene().name}. ${t.checked?"It moves windows without asking once you Save.":"Save to keep it."}`;
     edit(s=>{(s.auto||(s.auto={}))[t.dataset.auto]=t.checked},msg);sceneMsg=msg;if($("smsg"))$("smsg").textContent=msg}
-  else if(t.dataset.xk){const v=Math.max(1,Math.round(+t.value)||1),f=t.dataset.xf,k=t.dataset.xk,sc=t.dataset.xs;
+  else if(t.dataset.xk){const v=clamp(Math.round(+t.value)||1,1,+t.max),f=t.dataset.xf,k=t.dataset.xk,sc=t.dataset.xs;
+
     edit(s=>{if(sc==="scene")s.screens=v;else if(sc==="grid")(s.claudeGrid||(s.claudeGrid={})).at=v;else((s.opt||(s.opt={}))[f]||(s.opt[f]={}))[k]=v},`Set to ${v}. Save to keep it.`)}
   else if(t.id==="match")edit(s=>{const pp=pinOf(selWin);if(pp)s.pins[pp.p.pin].match=t.value.trim()},"The pin now matches any title containing that text.");
   else if(t.id==="sceneName"&&t.value.trim())edit(s=>{s.name=t.value.trim().slice(0,40)});
@@ -1004,7 +1045,7 @@ $("sample").onclick=()=>{setSnap(SAMPLE);$("lmsg").textContent="Sample loaded."}
 
 if(LIVE){$("refresh").hidden=false;$("quit").hidden=false;$("editcats").hidden=false;$("bay").hidden=false;status("Reading your windows…");
   loadAll().then(()=>{if(!snap)return;status(`${scene().name} is selected. Drag windows onto cells, or ${verb().toLowerCase()} a scene from the rail.`);
-    if(serverDry&&location.hash==="#selftest-undo")selftestUndo();if(serverDry&&location.hash==="#selftest-scenes")selftestScenes();if(serverDry&&location.hash==="#selftest-builtin")selftestBuiltin()})}
+    if(serverDry&&location.hash==="#selftest-undo")selftestUndo();if(serverDry&&location.hash==="#selftest-scenes")selftestScenes();if(serverDry&&location.hash==="#selftest-builtin")selftestBuiltin();if(serverDry&&location.hash==="#selftest-triggers")selftestTriggers()})}
 else{$("keys").hidden=true;$("offline").hidden=false;$("offline").open=true;setSnap(SAMPLE);status("Offline. A sample desktop is loaded.")}
 
 /* ---------- Self-tests: run by test/run.ps1 against serve.ps1 -From (always a dry run) ---------- */
@@ -1035,7 +1076,20 @@ async function selftestBuiltin(){
   edit(s=>{s.blurb="changed"});out.otherDisabled=$("save").disabled;
   dump(out);
 }
+// Run on a config with triggers on (test/triggers-on.json): what the rail and the trigger section show.
+async function selftestTriggers(){
+  const out={chips:{},gaps:{}},note=k=>{const e=document.getElementById("xn-"+k);return e?e.textContent.replace(/^Warning: /,""):""};
+  for(const c of document.querySelectorAll(".card")){const ch=c.querySelector(".chips");if(ch)out.chips[c.querySelector("[data-pick]").dataset.pick]=[...ch.querySelectorAll("i")].map(i=>i.textContent).join(",")}
+  out.railsum=$("railsum").textContent;
+  selId="default";render();out.gaps.default=note("gaps");out.size=note("size");out.summary=document.querySelector(".xsum").textContent;
+  out.disabled=document.querySelectorAll("#scenebox .trig :disabled,#xtras :disabled").length;
+  selId="focus";render();out.gaps.focus=note("gaps");
+  const h=()=>document.querySelector("#scenebox .callout").offsetHeight;out.callout={on:h()};
+  edit(s=>{s.auto.gaps=false});out.callout.off=h();
+  dump(out);
+}
 async function selftestScenes(){
+
   const out={drawn:{},names:[],cell:cellRect({x:0,y:0,w:1365,h:1001},{c:2,r:2},0,0,1,1)};
   for(const s of cfg.scenes){selId=s.id;await preview(s.id);
     out.drawn[s.id]=Object.entries(drawn).filter(([,d])=>d.kind==="pin"||d.kind==="fill"||d.kind==="zone").map(([id,d])=>({id:+id,x:d.x,y:d.y,w:d.w,h:d.h}))}

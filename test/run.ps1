@@ -39,7 +39,8 @@ function SelfTest($url, $hook) {
 $starters = [IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json
 function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $s | Add-Member -Force cats $starters.cats; $s | Add-Member -Force categories $starters.categories; ConvertTo-Json -Depth 10 -Compress $s }
 
-$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tray = $null
+$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray = $null
+
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
 $saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME }
 $env:USERPROFILE = Profile 'run'; $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'; $env:TILE_HOME = $null
@@ -250,6 +251,19 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $sb = SelfTest $furl 'builtin'
     Check 'page: a built-in scene saves a change to its trigger switches, and nothing else' ($sb.builtIn -and $sb.idleDisabled -and $sb.autoEnabled -and $sb.saved -and $sb.otherDisabled) ($sb | ConvertTo-Json -Compress)
     Check 'page Save as new writes the scene to config.json' (@($ss.names) -contains 'Selftest copy' -and ([IO.File]::ReadAllText($fcfg, $utf8)).Contains('"Selftest copy"')) (@($ss.names) -join ',')
+    # Triggers on (test/triggers-on.json over the starters): rail chips, the shared-trigger and does-nothing notes, a steady callout.
+    $tprof = Profile 'trig'; $thome = Join-Path $tprof '.tile-windows'; New-Item -ItemType Directory $thome | Out-Null
+    $tcfg = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8)); $ov = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'triggers-on.json'), $utf8))
+    foreach ($x in $tcfg.scenes) { $o = $ov.($x.id); if ($o.trigger) { $x.trigger = $o.trigger }; if ($o.auto) { $o.auto.PSObject.Properties | % { $x.auto.($_.Name) = $_.Value } } }
+    [IO.File]::WriteAllText((Join-Path $thome 'config.json'), (ConvertTo-Json -Depth 10 $tcfg), $utf8)
+    $tsrv = Start-Child $tprof "-File `"$serve`" -NoBrowser -From `"$fixture`"" @{ TILE_HOME = $thome }
+    $turl = $tsrv.StandardOutput.ReadLine(); $tst = SelfTest $turl 'triggers'
+    [void](Invoke-WebRequest -UseBasicParsing "${turl}quit" -Method Post -Body 'quit')
+    Check 'page: with triggers on, the rail shows each scene''s extra triggers as chips' ($tst.chips.default -eq 'Return,Call Size,Gap' -and $tst.chips.focus -eq 'Gap' -and $tst.railsum -like '2 of 7 scenes have triggers on*') ($tst | ConvertTo-Json -Compress)
+    Check 'page: two scenes with the same extra trigger each say so beside the switch, and the first in the rail wins' ($tst.gaps.default -like 'Also used by Focus. This scene is first*' -and $tst.gaps.focus -like 'Also used by Default. Default is first*') ($tst | ConvertTo-Json -Compress)
+    Check 'page: a switch that does nothing here says so beside it, and the closed extras count the warnings' ($tst.size -like '*does nothing here.' -and $tst.summary -like '3 on*2 warnings') ($tst | ConvertTo-Json -Compress)
+    Check 'page: the trigger section has no disabled control' ($tst.disabled -eq 0) ($tst | ConvertTo-Json -Compress)
+    Check 'page: the callout keeps its height when the last trigger goes off' ($tst.callout.on -gt 0 -and $tst.callout.on -eq $tst.callout.off) ($tst | ConvertTo-Json -Compress)
   }
   [void](Invoke-WebRequest -UseBasicParsing "${furl}quit" -Method Post -Body 'quit')
   Check 'fixture server exits on /quit' ($fsrv.WaitForExit(5000))
@@ -369,7 +383,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
   if ($form -and -not $form.HasExited) { Stop-Process -Id $form.Id -Force }
-  foreach ($p in $srv, $fsrv, $ssrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
+  foreach ($p in $srv, $fsrv, $ssrv, $tsrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }

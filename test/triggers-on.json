@@ -1,0 +1,3 @@
+{"_note":"Overrides on the starter scenes (scenes.json) for a config with triggers on: Default and Focus share the gap trigger (a conflict), and Default has the call-size switch on, which does nothing there. test/run.ps1 seeds a fixture server with it.",
+ "default":{"trigger":{"type":"time","days":[1,2,3,4,5],"time":"08:30"},"auto":{"desk":true,"gaps":true,"size":true}},
+ "focus":{"auto":{"gaps":true}}}
