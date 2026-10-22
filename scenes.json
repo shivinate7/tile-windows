@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "categories": [["code", "Code"], ["browse", "Browse"], ["comms", "Comms"], ["other", "Other"]],
   "cats": {
     "claude": "code", "Code": "code", "WindowsTerminal": "code", "powershell": "code", "pwsh": "code", "devenv": "code",
@@ -102,6 +102,14 @@
     }
   ],
   "meetingSize": { "at": 25, "big": "listen", "small": "meetings" },
+  "optDefaults": {
+    "desk": { "lockMin": 5, "idleMin": 10 },
+    "window": { "holdSec": 3 },
+    "activity": { "dwellSec": 60, "graceMin": 15 },
+    "gaps": { "minutes": 60 },
+    "offer": { "leadMin": 2 },
+    "noext": { "sec": 30 }
+  },
   "activity": [
     { "app": "claude", "scene": "focus" },
     { "app": "chrome", "title": "Procore", "scene": "review" },

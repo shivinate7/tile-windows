@@ -39,23 +39,35 @@ function Test-Auto($sc, [string]$flag) { [bool]($sc -and $sc.auto -and $sc.auto.
 function Test-AnyAuto($cfg) { [bool]@($cfg.scenes | ? { $sc = $_; ($sc.trigger.type -and $sc.trigger.type -ne 'manual') -or @($TileAutoFlags | ? { Test-Auto $sc $_ }).Count }).Count }
 function Get-Scene($cfg, [string]$id) { if ($id) { @($cfg.scenes | ? { $_.id -eq $id })[0] } }
 function Get-AutoScenes($cfg, [string]$flag) { @($cfg.scenes | ? { Test-Auto $_ $flag }) }
-# The activity map and the meeting-size rule: the config's own, else the starters' (a config from before they existed has none).
+# The activity map, the meeting-size rule and the threshold defaults: the config's own, else the starters' (a config from before they existed has none).
 function Get-Tcfg($cfg) {
   if (-not $script:TileStarterCfg) { $script:TileStarterCfg = ConvertFrom-Json ([IO.File]::ReadAllText($TileStarters, $TileUtf8)) }
-  [pscustomobject]@{ activity = @($(if ($cfg.activity) { $cfg.activity } else { $script:TileStarterCfg.activity })); size = $(if ($cfg.meetingSize) { $cfg.meetingSize } else { $script:TileStarterCfg.meetingSize }) }
+  $d = $script:TileStarterCfg
+  [pscustomobject]@{ activity = @($(if ($cfg.activity) { $cfg.activity } else { $d.activity })); size = $(if ($cfg.meetingSize) { $cfg.meetingSize } else { $d.meetingSize }); optDefaults = $(if ($cfg.optDefaults) { $cfg.optDefaults } else { $d.optDefaults }) }
 }
+# A threshold the owner can edit: the scene's own value (scene.opt.<switch>.<name>), else the default from optDefaults.
+function Get-Opt($cfg, $sc, [string]$flag, [string]$name) {
+  $v = $sc.opt.$flag.$name; if ($null -ne $v -and "$v" -ne '') { return [double]$v }
+  $o = (Get-Tcfg $cfg).optDefaults; if ($null -eq $o.$flag.$name) { $o = $script:TileStarterCfg.optDefaults }
+  [double]$o.$flag.$name
+}
+function ConvertTo-Bool($v) { if ($v -is [bool]) { return $v }; if ($v -is [string]) { return $v.Trim().ToLower() -in 'true', 'yes', '1' }; if ($null -eq $v) { return $false }; [bool]($v -is [ValueType] -and $v -ne 0) }
 # Today's meetings from agenda.json's parsed text: [{start, end, attendees, teams, showAs}], or $null when there is no agenda or it is not
-# for today. Every agenda trigger does nothing on $null.
+# for today. Every agenda trigger does nothing on $null. An event with a start, end or attendee count that does not read is dropped.
 function Get-TodayAgenda($raw, [datetime]$now) {
   if (-not $raw) { return $null }
   $d = if ($raw.date -is [datetime]) { $raw.date.ToString('yyyy-MM-dd') } else { "$($raw.date)" }
   if ($d -ne $now.ToString('yyyy-MM-dd')) { return $null }
-  , @(@($raw.events) | % { try { [pscustomobject]@{ start = [datetime]$_.start; end = [datetime]$_.end; attendees = [int]$_.attendees; teams = [bool]$_.teams; showAs = "$($_.showAs)".ToLower() } } catch {} })
+  , @(@($raw.events) | % { try { $e = [pscustomobject]@{ start = [datetime]$_.start; end = [datetime]$_.end; attendees = [int]$_.attendees; teams = ConvertTo-Bool $_.teams; showAs = "$($_.showAs)".ToLower() }; if ($e.end -gt $e.start -and $e.attendees -ge 0) { $e } } catch {} })
 }
 function Test-Busy($e) { $e.showAs -in 'busy', 'oof' }
-# The scene for a meeting of this size: Listen from 'at' attendees up, else Meetings. A call applies it only when that scene's size switch is on;
-# the offer needs only the scene's offer switch.
-function Get-SizeId($cfg, [int]$attendees) { $t = (Get-Tcfg $cfg).size; if ($attendees -ge [int]$t.at) { $t.big } else { $t.small } }
+# The scene for a meeting of this size: Listen from its 'size' threshold up (the meeting-size rule's, unless Listen sets its own), else Meetings.
+# A call applies it only when that scene's size switch is on; the offer needs only the scene's offer switch.
+function Get-SizeId($cfg, [int]$attendees) {
+  $t = (Get-Tcfg $cfg).size; $big = Get-Scene $cfg $t.big
+  $at = if ($null -ne $big.opt.size.at -and "$($big.opt.size.at)" -ne '') { [int]$big.opt.size.at } else { [int]$t.at }
+  if ($attendees -ge $at) { $t.big } else { $t.small }
+}
 function Get-SizeScene($cfg, [int]$attendees) { $id = Get-SizeId $cfg $attendees; if (Test-Auto (Get-Scene $cfg $id) 'size') { $id } else { '' } }
 # The Teams meeting on now (up to 10 minutes early); the one that started last wins.
 function Get-NowMeeting($ev, [datetime]$now) { @($ev | ? { $_.teams -and (Test-Busy $_) -and $now -ge $_.start.AddMinutes(-10) -and $now -le $_.end } | Sort-Object start)[-1] }
@@ -77,8 +89,8 @@ function Test-SceneApp($sc, [string]$app) {
   foreach ($a in @($sc.fill.apps)) { if ($a -eq '*') { if (-not @($sc.fill.skip | ? { $app -like $_ }).Count) { return $true } } elseif ($app -like $a) { return $true } }
   $false
 }
-function New-Cand([string]$id, [string]$why, [string]$kind, $commit = $null) { [pscustomobject]@{ id = $id; why = $why; kind = $kind; offer = $false; commit = $commit; exp = $null } }
-# New window finds its place: a window of a scene app, 400x300 or bigger, that appears and holds for 3 s re-flows the active scene.
+function New-Cand([string]$id, [string]$why, [string]$kind, $commit = $null) { [pscustomobject]@{ id = $id; why = $why; kind = $kind; offer = $false; commit = $commit; exp = $null; gen = $null } }
+# New window finds its place: a window of a scene app, 400x300 or bigger, that appears and holds (3 s unless the scene says) re-flows the active scene.
 # $wins: the window list, or $null when not read this tick. The first list only seeds $s.known.
 function Step-NewWindow($s, [datetime]$now, $cfg, $wins, [string]$active) {
   if ($null -eq $wins) { return }
@@ -93,51 +105,65 @@ function Step-NewWindow($s, [datetime]$now, $cfg, $wins, [string]$active) {
   }
   foreach ($k in @($s.known.Keys)) { if (-not $by.ContainsKey($k)) { $s.known.Remove($k) } }
   foreach ($k in @($s.newSeen.Keys)) { $w = $by[$k]; if (-not $on -or -not $w -or $w.min -or [int]$w.w -lt 400 -or [int]$w.h -lt 300) { $s.newSeen.Remove($k) } }
-  if (@($s.newSeen.Keys | ? { ($now - $s.newSeen[$_]).TotalSeconds -ge 3 }).Count) { $st = $s; New-Cand $active 'because a new window opened' 'window' ({ $st.newSeen = @{} }.GetNewClosure()) }
+  $hold = Get-Opt $cfg $sc 'window' 'holdSec'
+  if (@($s.newSeen.Keys | ? { ($now - $s.newSeen[$_]).TotalSeconds -ge $hold }).Count) { $st = $s; New-Cand $active 'because a new window opened' 'window' ({ $st.newSeen = @{} }.GetNewClosure()) }
 }
-# Activity snap: one kind of app in front for 60 s, and the layout is not the scene that suits it. $fg: {app, title}, or $null when not read.
+# Activity snap: one kind of app in front for a minute (or the scene's own), and the layout is not the scene that suits it. $fg: {app, title}, or
+# $null when not read. Not within 15 minutes (or the scene's own) of a scene you applied by hand.
 function Step-Activity($s, [datetime]$now, $cfg, $fg, [string]$active) {
   if ($null -eq $fg) { return }
   $map = @((Get-Tcfg $cfg).activity); $idx = -1
   for ($i = 0; $i -lt $map.Count; $i++) { if ($fg.app -like $map[$i].app -and (-not $map[$i].title -or $fg.title -match $map[$i].title)) { $idx = $i; break } }
   if (-not $s.act -or $s.act.key -ne "$idx") { $s.act = [pscustomobject]@{ key = "$idx"; since = $now; done = $false } }
   if ($idx -lt 0 -or $s.act.done) { return }
-  $to = $map[$idx].scene
-  if (-not (Test-Auto (Get-Scene $cfg $to) 'activity')) { return }
+  $to = $map[$idx].scene; $sc = Get-Scene $cfg $to
+  if (-not (Test-Auto $sc 'activity')) { return }
   if ($active -eq $to) { $s.act.done = $true; return }
-  if (($now - $s.act.since).TotalSeconds -ge 60) { $a = $s.act; New-Cand $to 'because of what you are working in' 'activity' ({ $a.done = $true }.GetNewClosure()) }
+  if (($now - $s.manualApplyAt).TotalMinutes -lt (Get-Opt $cfg $sc 'activity' 'graceMin')) { return }
+  if (($now - $s.act.since).TotalSeconds -ge (Get-Opt $cfg $sc 'activity' 'dwellSec')) { $a = $s.act; New-Cand $to 'because of what you are working in' 'activity' ({ $a.done = $true }.GetNewClosure()) }
 }
-# Focus in gaps: the next busy meeting is 60+ minutes off (or none is left), none is on now, and input was within 2 minutes. Once per gap.
+# Focus in gaps: a next busy meeting is 60+ minutes off (or the scene's own), none is on now, and input was within 2 minutes. Once per gap.
+# With no meeting left it does nothing, and it never follows a call's end within 10 minutes (the call's back scene stays).
 function Step-Gaps($s, [datetime]$now, $cfg, $ev, [double]$idle, [bool]$locked, [string]$active) {
   $f = @(Get-AutoScenes $cfg 'gaps')[0]
-  if ($null -eq $ev -or -not $f -or $locked -or $idle -ge 120) { return }
+  if ($null -eq $ev -or -not $f -or $locked -or $idle -ge 120 -or ($now - $s.callEndAt).TotalMinutes -lt 10) { return }
   $busy = @($ev | ? { Test-Busy $_ })
   if (@($busy | ? { $_.start -le $now -and $now -lt $_.end }).Count) { return }
   $next = @($busy | ? { $_.start -gt $now } | Sort-Object start)[0]
-  if ($next -and ($next.start - $now).TotalMinutes -lt 60) { return }
-  $k = $(if ($next) { $next.start.ToString('s') } else { 'none' })
+  if (-not $next -or ($next.start - $now).TotalMinutes -lt (Get-Opt $cfg $f 'gaps' 'minutes')) { return }
+  $k = $next.start.ToString('s')
   if ($s.gapKey -eq $k) { return }
   if ($active -eq $f.id) { $s.gapKey = $k; return }
   $st = $s; New-Cand $f.id 'because there is a gap before the next meeting' 'gaps' ({ $st.gapKey = $k }.GetNewClosure())
 }
-# No external monitor for 30 s: one screen left, then the laptop scene. $n: screen count, or $null when not read. The first reading only seeds.
-function Step-NoExternal($s, [datetime]$now, $cfg, $n, [string]$active) {
+# No external monitor for 30 s (or the scene's own): one screen left, then the laptop scene. $n: screen count, or $null when not read. The first
+# reading only seeds. A locked or idle PC does not count (a sleeping monitor drops out), and a monitor-set scene applied in the last
+# minute is the same event, so this does nothing.
+function Step-NoExternal($s, [datetime]$now, $cfg, $n, [string]$active, [double]$idle, [bool]$locked) {
   if ($null -eq $n) { return }
   if ($n -gt 1) { $s.soloSince = $null; $s.soloDone = $false; $s.screensSeen = $true; return }
   if (-not $s.screensSeen) { $s.screensSeen = $true; $s.soloDone = $true }
+  if ($locked -or $idle -ge 120) { $s.soloSince = $null; return }
   if (-not $s.soloSince) { $s.soloSince = $now }
   $sc = @(Get-AutoScenes $cfg 'noext')[0]
-  if ($s.soloDone -or -not $sc -or ($now - $s.soloSince).TotalSeconds -lt 30) { return }
-  if ($active -eq $sc.id) { $s.soloDone = $true; return }
+  if ($s.soloDone -or -not $sc -or ($now - $s.soloSince).TotalSeconds -lt (Get-Opt $cfg $sc 'noext' 'sec')) { return }
+  if ($active -eq $sc.id -or ($now - $s.displayAt).TotalSeconds -lt 60) { $s.soloDone = $true; return }
   $st = $s; New-Cand $sc.id 'because the external monitors are gone' 'noext' ({ $st.soloDone = $true }.GetNewClosure())
 }
 # The scene (with the config's category map attached, as Get-TileScene gives it) as JSON for tile.ps1 -Scene, its ultrawide grid swapped.
 function Get-GridSceneJson($sc, $grid) { $full = ConvertFrom-Json (ConvertTo-Json -Depth 8 -Compress $sc); $full.grids.wide = $grid; ConvertTo-Json -Depth 8 -Compress $full }
-# Grid follows the Claude count: the ultrawide grid a scene asks for at this many Claude windows, or $null.
-function Get-ClaudeGrid($sc, [int]$n) { if (-not (Test-Auto $sc 'grid') -or -not $sc.claudeGrid) { return }; if ($n -ge [int]$sc.claudeGrid.at) { $sc.claudeGrid.dense } else { $sc.claudeGrid.roomy } }
+# Grid follows the Claude count: dense from 'at' Claude windows, roomy again at 'at' minus 2, and in between whatever it was ($prev), so a count
+# that hovers at the line does not flap. $null when the scene has no switch or no claudeGrid.
+function Get-ClaudeMode($sc, [int]$n, [string]$prev = '') {
+  if (-not (Test-Auto $sc 'grid') -or -not $sc.claudeGrid) { return }
+  $at = [int]$sc.claudeGrid.at
+  if ($n -ge $at) { 'dense' } elseif ($n -le $at - 2) { 'roomy' } elseif ($prev) { $prev } else { 'roomy' }
+}
+function Get-ClaudeGrid($sc, [int]$n, [string]$prev = '') { $m = Get-ClaudeMode $sc $n $prev; if ($m) { $sc.claudeGrid.$m } }
 
 function New-TrayState { [pscustomobject]@{ fired = @{}; lastKey = $null; inCall = $null; streak = 0; before = ''; callSet = $null
-  pend = @(); lastAuto = [datetime]::MinValue; deskDay = ''; idled = $false; known = $null; newSeen = @{}; act = $null; gapKey = $null; offered = @{}; soloSince = $null; soloDone = $false; screensSeen = $false } }
+  pend = @(); lastAuto = [datetime]::MinValue; deskDay = ''; idled = $false; known = $null; newSeen = @{}; act = $null; gapKey = $null; offered = @{}; soloSince = $null; soloDone = $false; screensSeen = $false
+  lastManual = [datetime]::MinValue; lastActive = $null; manualApplyAt = [datetime]::MinValue; autoApplied = ''; displayAt = [datetime]::MinValue; callEndAt = [datetime]::MinValue } }
 $TileKindRank = @{ call = 0; display = 1; schedule = 2; desk = 3; window = 4; activity = 5; gaps = 6; noext = 7 }
 # One tick of the agent, with no side effects but on $s. Returns the scenes to apply: [{id, why, kind, offer}].
 # $key: the monitor key once the display has settled, else $null. $call: a call reading, or $null (not polled).
@@ -147,6 +173,7 @@ $TileKindRank = @{ call = 0; display = 1; schedule = 2; desk = 3; window = 4; ac
 # schedule, display and call triggers, with no guards. With $sig, one pass of guards decides what may apply now:
 #   during a call only the call trigger applies; nothing within 10 s of a manual move or while a mouse button is down;
 #   at most one automatic apply per 30 s (the call trigger is exempt). A one-shot trigger that a guard holds back waits up to 60 s.
+#   A manual move also cancels what was waiting before it (a dwell, a new window, a held one-shot), so nothing undoes the move.
 function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active, $sig = $null) {
   $ev = @(); $agenda = $null
   if ($sig) { $agenda = Get-TodayAgenda $sig.agenda $now }
@@ -167,46 +194,55 @@ function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active, $sig 
       $m = if ($call) { Get-NowMeeting $agenda $now }
       $st = Step-CallTrigger $s.inCall ([bool]$call) $cfg $active $s.before $(if ($m) { Get-SizeScene $cfg $m.attendees } else { '' })
       $s.inCall = [bool]$call; $s.streak = 0; $s.before = $st.back
+      if (-not $call) { $s.callEndAt = $now }
       if ($st.apply) { $ev += New-Cand $st.apply $(if ($call) { 'because a Teams call started' } else { 'because the call ended' }) 'call' }
     }
   }
   if (-not $sig) { return @($ev | % { $_.commit = $null; $_ }) }
 
-  # Return to the desk: an unlock after 5+ minutes locked re-applies the active scene; the day's first unlock applies Default;
-  # input after 10+ minutes idle with no lock in between re-applies the active scene.
-  $day = $now.ToString('yyyy-MM-dd')
+  # A scene on screen that this agent did not apply was applied by hand: activity snap keeps off it for a while.
+  if ($null -eq $s.lastActive) { $s.lastActive = $active }
+  elseif ($active -ne $s.lastActive) { if ($active -ne $s.autoApplied) { $s.manualApplyAt = $now }; $s.lastActive = $active }
+  # A manual move cancels everything that was waiting before it.
+  $ma = [datetime]$sig.manualAt
+  if ($ma -gt $s.lastManual) { $s.lastManual = $ma; $s.pend = @($s.pend | ? { $_.kind -eq 'call' -or $_.gen -ge $ma }); $s.newSeen = @{}; $s.act = $null }
+
+  # Return to the desk: an unlock after a 5 minute lock (or the scene's own) re-applies the active scene; the day's first unlock applies Default;
+  # input after 10 idle minutes with no lock in between re-applies the active scene.
+  $day = $now.ToString('yyyy-MM-dd'); $asc = Get-Scene $cfg $active
   if ($null -ne $sig.unlockedAfter) {
     $s.idled = $false; $first = $s.deskDay -ne $day; $s.deskDay = $day
-    $to = if ($first -and (Test-Auto (Get-Scene $cfg 'default') 'desk')) { 'default' } elseif ([double]$sig.unlockedAfter -ge 300 -and (Test-Auto (Get-Scene $cfg $active) 'desk')) { $active }
+    $to = if ($first -and (Test-Auto (Get-Scene $cfg 'default') 'desk')) { 'default' } elseif ([double]$sig.unlockedAfter -ge 60 * (Get-Opt $cfg $asc 'desk' 'lockMin') -and (Test-Auto $asc 'desk')) { $active }
     if ($to) { $ev += New-Cand $to 'because you are back at your desk' 'desk' }
-  } elseif ([double]$sig.idleSec -ge 600) { $s.idled = $true }
+  } elseif ([double]$sig.idleSec -ge 60 * (Get-Opt $cfg $asc 'desk' 'idleMin')) { $s.idled = $true }
   elseif ($s.idled -and [double]$sig.idleSec -lt 10) {
     $s.idled = $false
-    if (Test-Auto (Get-Scene $cfg $active) 'desk') { $ev += New-Cand $active 'because you are back at your desk' 'desk' }
+    if (Test-Auto $asc 'desk') { $ev += New-Cand $active 'because you are back at your desk' 'desk' }
   }
   # One-shot triggers wait out a guard for up to 60 s, then drop.
-  foreach ($e in $ev) { $e.exp = $now.AddSeconds(60) }
+  foreach ($e in $ev) { $e.exp = $now.AddSeconds(60); $e.gen = $now }
   $s.pend = @(@($s.pend | ? { $_.exp -gt $now }) + $ev)
 
-  # Offer 2 minutes before a busy Teams meeting; it moves nothing, so no guard holds it. Once per meeting.
+  # Offer a few minutes (2 unless the scene says) before a busy Teams meeting; it moves nothing, so no guard holds it. Once per meeting.
   $out = @()
-  foreach ($e in @($agenda | ? { $_.teams -and (Test-Busy $_) -and $now -ge $_.start.AddMinutes(-2) -and $now -lt $_.start })) {
+  foreach ($e in @($agenda | ? { $_.teams -and (Test-Busy $_) -and $_.start -gt $now })) {
     $k = $e.start.ToString('s'); if ($s.offered[$k]) { continue }
-    $s.offered[$k] = $true; $id = Get-SizeId $cfg $e.attendees
-    if ($id -and (Test-Auto (Get-Scene $cfg $id) 'offer')) { $o = New-Cand $id 'a meeting starts in 2 minutes' 'offer'; $o.offer = $true; $out += $o }
+    $id = Get-SizeId $cfg $e.attendees; $osc = Get-Scene $cfg $id
+    if (-not (Test-Auto $osc 'offer') -or $now -lt $e.start.AddMinutes(-(Get-Opt $cfg $osc 'offer' 'leadMin'))) { continue }
+    $s.offered[$k] = $true; $o = New-Cand $id 'a meeting starts soon' 'offer'; $o.offer = $true; $out += $o
   }
 
   $cand = @($s.pend) + @(Step-NewWindow $s $now $cfg $sig.wins $active) + @(Step-Activity $s $now $cfg $sig.fg $active) +
-    @(Step-Gaps $s $now $cfg $agenda ([double]$sig.idleSec) ([bool]$sig.locked) $active) + @(Step-NoExternal $s $now $cfg $sig.screens $active)
+    @(Step-Gaps $s $now $cfg $agenda ([double]$sig.idleSec) ([bool]$sig.locked) $active) + @(Step-NoExternal $s $now $cfg $sig.screens $active ([double]$sig.idleSec) ([bool]$sig.locked))
   $cand = @($cand | ? { $_ })
   if ($s.inCall) { $s.pend = @($s.pend | ? { $_.kind -eq 'call' }); $cand = @($cand | ? { $_.kind -eq 'call' }) }
-  $held = $sig.mouseDown -or ($now - [datetime]$sig.manualAt).TotalSeconds -lt 10
+  $held = $sig.mouseDown -or ($now - $ma).TotalSeconds -lt 10
   if (-not $held) {
     $capped = ($now - $s.lastAuto).TotalSeconds -lt 30
     $pick = @($cand | ? { -not $capped -or $_.kind -eq 'call' } | Sort-Object { $TileKindRank[$_.kind] })[0]
     if ($pick) {
       if ($pick.commit) { & $pick.commit }
-      $s.pend = @($s.pend | ? { $_ -ne $pick }); $s.lastAuto = $now; $out += $pick
+      $s.pend = @($s.pend | ? { $_ -ne $pick }); $s.lastAuto = $now; $s.autoApplied = $pick.id; if ($pick.kind -eq 'display') { $s.displayAt = $now }; $out += $pick
     }
   }
   @($out | % { $_.commit = $null; $_ })
@@ -269,7 +305,7 @@ public static class TileInput {
 try { [TileInput]::Start() } catch { Write-Warning "Some automatic triggers are off: $($_.Exception.Message)" }
 $tile = Join-Path $PSScriptRoot 'tile.ps1'; $serve = Join-Path $PSScriptRoot 'serve.ps1'
 $srv = $null; $url = ''; $state = New-TrayState; $dirtyAt = $null; $tick = 0; $first = $true
-$agendaRaw = $null; $offer = $null
+$agendaRaw = $null; $offer = $null; $gridMode = @{}
 
 # Any balloon replaces a pending offer, so a click on it never arranges.
 function Note([string]$text) { $script:offer = $null; if ($icon) { $icon.ShowBalloonTip(4000, 'Tile Windows', $text, 'Info') } }
@@ -284,8 +320,8 @@ function Apply-Scene($s, [string]$why) {
     $arg = $s.id
     # Grid follows the Claude count: the scene runs from its JSON with the ultrawide grid swapped.
     if ((Test-Auto $s 'grid') -and $s.claudeGrid) {
-      $g = Get-ClaudeGrid $s @(Read-Windows | ? { $_.app -eq 'claude' -and -not $_.min }).Count
-      if ($g) { $arg = Get-GridSceneJson (Get-TileScene $s.id) $g }
+      $mode = Get-ClaudeMode $s @(Read-Windows | ? { $_.app -eq 'claude' -and -not $_.min }).Count $gridMode[$s.id]
+      if ($mode) { $gridMode[$s.id] = $mode; $arg = Get-GridSceneJson (Get-TileScene $s.id) $s.claudeGrid.$mode }
     }
     $r = (& $tile -Scene $arg -Json -DryRun:$NoApply 3>$null) -join '' | ConvertFrom-Json
     $n = @($r.placed | ? { $_.note -eq 'moved' }).Count

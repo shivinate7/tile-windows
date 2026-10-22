@@ -37,26 +37,28 @@ A scene stores your intent, not pixels: app names, title matches, grids and a fi
 
 ## Triggers
 
-Every trigger is off for a scene until you tick it in the inspector's **Also applies itself** box, then save. The starter scenes ship with all of them off. Only the tray agent runs them, and only while it runs.
+A scene applies itself through one **main trigger** (pick one: by hand, on a schedule, when the monitors change, or when a Teams call starts) and any number of **extras**, each with its own switch. Both live in the inspector under "When this scene applies itself". Every extra is off until you tick it and Save. Anything switched on moves your windows without asking, and only while the tray agent runs. The starter scenes ship with every extra off. The rail shows each scene's switched-on extras as chips and says how many scenes apply themselves.
 
-| Switch | What it does | Whose switch counts |
-|---|---|---|
-| When I Return to My Desk | After an unlock that follows a lock of 5+ minutes, or input after 10+ minutes idle with no lock, it re-applies the scene on screen. The first unlock of the day applies Default. | the scene on screen; Default for the first unlock |
-| When a New Window Opens | A window of an app the scene places (400x300 or bigger) that holds for 3 s re-flows the scene on screen. | the scene on screen |
-| When I Work in One App for a Minute | 60 s in one kind of app, and the layout is not the scene that suits it: snap to that scene. The map is `activity` in config.json (app, an optional title pattern for sites in Chrome, and a scene). It starts with Claude, Procore, NetSuite, PowerPoint and Excel. | the scene it snaps to |
-| When a Call Matches This Meeting Size | A Teams call that starts during a meeting in `agenda.json` applies Listen (25+ attendees) or Meetings. `meetingSize` in config.json holds the numbers and scene ids. | the scene it applies |
-| In a Gap Before the Next Meeting | The next busy meeting is 60+ minutes off (or none is left), none is on now, and input was within 2 minutes: apply the scene, once per gap. | the scene it applies |
-| Offer Before a Meeting | 2 minutes before a busy Teams meeting, a tray balloon offers the scene for its size. Nothing moves unless you click the balloon. | the scene it offers |
-| When the Monitor Set Matches | When the monitors change, apply the scene whose `screens` equals the new count (Solo is 1). With no match, the scene that applies on a monitor change runs, as before. | the scene it applies |
-| When the External Monitor Is Gone for 30 Seconds | One screen left for 30 s: apply the scene. | the scene it applies |
-| Grid Follows the Claude Count | When the tray applies the scene, its `claudeGrid` picks the ultrawide grid: `dense` at `at` or more Claude windows, else `roomy`. Applies from the tray only; the app and Apply in the board use the saved grid. | the scene it applies |
+| Extra | What it does | Thresholds (edit beside the switch) | Whose switch counts |
+|---|---|---|---|
+| Put This Scene Back When I Return | After a lock, or input after a long idle with no lock, apply the scene on screen again. The first unlock of the day applies Default. | lock 5 min, idle 10 min | the scene on screen; Default for the first unlock |
+| Place New Windows | A window of an app the scene places (400x300 or bigger) that stays open re-flows the scene on screen. | 3 s | the scene on screen |
+| Switch Here When My Work Suits It | After a while in one kind of app, and the layout is not the scene that suits it, snap to that scene. The map is `activity` in config.json: an app, an optional title pattern for sites in Chrome, and a scene. It starts with Claude, Procore, NetSuite, PowerPoint and Excel. Not within a while of a scene you applied by hand. | 60 s in the app, 15 min after a hand-applied scene | the scene it snaps to |
+| Resize the Grid by Claude Windows | When the tray applies the scene, its `claudeGrid` picks the ultrawide grid: `dense` at `at` or more Claude windows, back to `roomy` at two fewer. Tray applies only; the app and Apply on the board use the saved grid. | dense from 4 Claude windows | the scene it applies |
+| Use This Scene for Calls of Its Size | A Teams call that starts during a meeting in `agenda.json` applies Listen (a big call) or Meetings. `meetingSize` in config.json names the scenes. | a big call is 25 people or more (set on Listen) | the scene it applies |
+| Offer This Scene Before a Meeting | A tray balloon offers the scene for the meeting's size. Nothing moves unless you click the balloon. | 2 min before | the scene it offers |
+| Use This Scene in a Gap Between Meetings | A next busy meeting is far off, none is on now, and input was within 2 minutes: apply the scene, once per gap. With no meeting left, or within 10 minutes of a call ending, it does nothing. | next meeting 60 min away | the scene it applies |
+| Use This Scene for This Many Screens | When the monitors change, apply the scene whose `screens` equals the new count (Solo is 1). With no match, the scene that applies on a monitor change runs, as before. | screens | the scene it applies |
+| Use This Scene When the External Monitors Go | One screen left for a while, while unlocked and not idle, and no monitor-set scene applied in the last minute: apply the scene. | 30 s | the scene it applies |
 
-Thursday Prep is an ordinary schedule (Thursday 14:30): set **On a Schedule** on it. Applying a scene by hand is never limited.
+Thresholds are stored with the scene (`opt`), with the defaults in `optDefaults` in config.json. Thursday Prep is an ordinary schedule (Thursday 14:30): set "On a Schedule" on it. Applying a scene by hand is never limited.
+
+Two scenes can hold the same extra (the gap, the laptop-only and the screen-count scenes can clash, as can two main triggers of the same kind). The first scene in the rail wins, and the inspector says "also used by ...".
 
 Guards, for every automatic apply:
 
 - During a Teams call only the call trigger applies. A scheduled apply that falls in a call is skipped, not kept for later.
-- Nothing moves within 10 s of your own window drag, or while a mouse button is down. A one-shot trigger that this holds back (an unlock, a monitor change, a schedule) waits up to 60 s, then drops.
+- Nothing moves within 10 s of your own window drag, or while a mouse button is down. A manual move also cancels what was waiting before it (a dwell, a new window, a held one-shot), so nothing undoes your move. A one-shot trigger that arrives during the hold waits up to 60 s, then drops.
 - At most one automatic apply per 30 s. The call trigger is exempt.
 
 ### agenda.json
@@ -70,7 +72,7 @@ Meeting size, Focus in gaps and the offer read `agenda.json` in the app folder (
   ] }
 ```
 
-`date` is the local day. `start` and `end` are local times, `yyyy-MM-ddTHH:mm`. `attendees` counts everyone invited, you included. `teams` is true when the invite has a Teams link. `showAs` is `free`, `tentative`, `busy` or `oof`; only `busy` and `oof` count as a meeting.
+`date` is the local day. `start` and `end` are local times, `yyyy-MM-ddTHH:mm`. `attendees` counts everyone invited, you included. `teams` is true when the invite has a Teams link (`true`, "yes" and "1" count; anything else is false). An event whose start, end or `attendees` does not read is dropped. `showAs` is `free`, `tentative`, `busy` or `oof`; only `busy` and `oof` count as a meeting.
 
 The weekday-morning scheduled task is not part of this repo. The prompt it would run:
 

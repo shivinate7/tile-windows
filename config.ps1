@@ -42,14 +42,21 @@ function Test-TileConfig([string]$text) {
   if (@($c.scenes.id | Select-Object -Unique).Count -ne @($c.scenes).Count) { throw 'Scene ids must be unique.' }
 }
 # A config older than the starters gains what the starters added since: each scene whose "since" is newer than the config's version
-# (a scene the owner deleted earlier stays deleted), the activity map and the meeting-size rule. It never changes a scene already there.
+# (a scene the owner deleted earlier stays deleted), the activity map, the meeting-size rule and the threshold defaults, and gives each scene the trigger fields.
+# It never changes a value a scene already has.
 function Update-TileConfig([string]$text) {
   try {
     $c = ConvertFrom-Json $text; $st = ConvertFrom-Json ([IO.File]::ReadAllText($TileStarters, $TileUtf8))
     if ([int]$c.version -ge [int]$st.version) { return $text }
     $have = @($c.scenes.id)
     $c.scenes = @($c.scenes) + @($st.scenes | ? { [int]$_.since -gt [int]$c.version -and $have -notcontains $_.id })
-    foreach ($k in 'activity', 'meetingSize') { if (-not $c.PSObject.Properties[$k]) { $c | Add-Member $k $st.$k } }
+    foreach ($k in 'activity', 'meetingSize', 'optDefaults') { if (-not $c.PSObject.Properties[$k]) { $c | Add-Member $k $st.$k } }
+    # A scene already there gains the fields the triggers read, with every switch off: its starter's screens and claudeGrid, and an auto block.
+    foreach ($x in @($c.scenes)) {
+      $sx = @($st.scenes | ? { $_.id -eq $x.id })[0]
+      foreach ($k in 'screens', 'claudeGrid') { if ($sx -and $null -ne $sx.$k -and -not $x.PSObject.Properties[$k]) { $x | Add-Member $k $sx.$k } }
+      if (-not $x.PSObject.Properties['auto']) { $x | Add-Member auto $(if ($sx) { $sx.auto } else { $st.scenes[0].auto }) }
+    }
     $c | Add-Member -Force version $st.version
     $out = ConvertTo-Json -Depth 10 $c; Save-TileConfigText $out; $out
   } catch { $text }
