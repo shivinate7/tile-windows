@@ -5,7 +5,8 @@ $TileConfig = Join-Path $TileHome 'config.json'
 $TileState = Join-Path $TileHome 'state.json'
 $TileStarters = Join-Path $PSScriptRoot 'scenes.json'
 $TileUtf8 = New-Object Text.UTF8Encoding $false
-$TileNote = ''  # set when a read had to recover from a bad file; the server and tray show it
+$TileNoteFile = Join-Path $TileHome 'note.txt'
+$TileNote = ''  # set in this process when a read recovered from a bad file; the tray shows it as a balloon
 
 # Run $fn with every writer to this home held off: the server, the tray and tile.ps1 can all write.
 function Use-TileLock([scriptblock]$fn) {
@@ -23,8 +24,17 @@ function Write-TileFile([string]$path, [string]$text) {
   finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } }
 }
 function Read-TileFile([string]$path) { Retry-TileIO { [IO.File]::ReadAllText($path, $TileUtf8) } }
-# Move a file that does not parse aside as <name>.bad, so the app can start fresh and the text is kept.
-function Set-TileBad([string]$path) { Retry-TileIO { [IO.File]::Copy($path, "$path.bad", $true); [IO.File]::Delete($path) } }
+# Move a file that does not parse aside as <name>.bad (or <name>.<time>.bad when an older one is there),
+# so the app can start fresh and the text is kept. The note stays in note.txt until the page dismisses it.
+# Callers hold the lock.
+function Set-TileBad([string]$path, [string]$fresh) {
+  $bad = "$path.bad"; if (Test-Path -LiteralPath $bad) { $bad = "$path.$((Get-Date).ToString('yyyyMMdd-HHmmss-fff')).bad" }
+  Retry-TileIO { [IO.File]::Copy($path, $bad, $false); [IO.File]::Delete($path) }
+  $n = "$([IO.Path]::GetFileName($path)) could not be read, so $fresh. The old file is $([IO.Path]::GetFileName($bad))."
+  $script:TileNote = $n; Write-TileFile $TileNoteFile ((@((Get-TileNote), $n) | ? { $_ }) -join ' ')
+}
+function Get-TileNote { if (Test-Path -LiteralPath $TileNoteFile) { Read-TileFile $TileNoteFile } else { '' } }
+function Clear-TileNote { Use-TileLock { if (Test-Path -LiteralPath $TileNoteFile) { Retry-TileIO { [IO.File]::Delete($TileNoteFile) } } } }
 
 function Test-TileConfig([string]$text) {
   $c = ConvertFrom-Json $text -ErrorAction Stop
@@ -35,8 +45,9 @@ function Get-TileConfigText {
   if (Test-Path -LiteralPath $TileConfig) {
     $t = Read-TileFile $TileConfig
     try { Test-TileConfig $t; return $t } catch {
-      Use-TileLock { if (Test-Path -LiteralPath $TileConfig) { Set-TileBad $TileConfig } }
-      $script:TileNote = "config.json could not be read, so the starter scenes are back. The old file is config.json.bad."
+      # Check again under the lock: another writer may have fixed or already moved it.
+      $ok = Use-TileLock { if (Test-Path -LiteralPath $TileConfig) { $t2 = Read-TileFile $TileConfig; try { Test-TileConfig $t2; $t2 } catch { Set-TileBad $TileConfig 'the starter scenes are back' } } }
+      if ($ok) { return $ok }
     }
   }
   $t = [IO.File]::ReadAllText($TileStarters, $TileUtf8); Save-TileConfigText $t; $t
@@ -58,7 +69,10 @@ function Get-TileStateText {
   if (-not (Test-Path -LiteralPath $TileState)) { return $empty }
   $t = Read-TileFile $TileState
   try { $s = ConvertFrom-Json $t -ErrorAction Stop; if ($null -eq $s -or $s -is [array]) { throw 'not an object' }; $t }
-  catch { Use-TileLock { if (Test-Path -LiteralPath $TileState) { Set-TileBad $TileState } }; $script:TileNote = 'state.json could not be read, so the recent log starts over. The old file is state.json.bad.'; $empty }
+  catch {
+    $ok = Use-TileLock { if (Test-Path -LiteralPath $TileState) { $t2 = Read-TileFile $TileState; try { $s = ConvertFrom-Json $t2 -ErrorAction Stop; if ($null -eq $s -or $s -is [array]) { throw 'not an object' }; $t2 } catch { Set-TileBad $TileState 'the recent log starts over' } } }
+    if ($ok) { $ok } else { $empty }
+  }
 }
 # Never throws: it runs after windows have moved, and a log failure must not report the move as failed.
 function Add-TileLog([string]$active, [string]$text) {

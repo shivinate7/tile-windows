@@ -120,25 +120,33 @@ try {
   [IO.File]::WriteAllText($fcfg, '{"scenes":[{bad', $utf8); $fst = Join-Path $fprof '.tile-windows\state.json'; [IO.File]::WriteAllText($fst, 'nope', $utf8)
   $rc = Invoke-WebRequest -UseBasicParsing "${furl}config"; $rs = Invoke-WebRequest -UseBasicParsing "${furl}state"
   Check 'a bad config.json falls back to the starters, keeps .bad, and says so' (((ConvertFrom-Json $rc.Content).scenes.id -join ',') -eq 'default,focus,meetings,review' -and [IO.File]::ReadAllText("$fcfg.bad", $utf8) -ceq '{"scenes":[{bad' -and [Uri]::UnescapeDataString($rc.Headers['X-Tile-Note']) -like 'config.json could not be read*')
-  Check 'a bad state.json gives an empty log, keeps .bad, and says so' (@((ConvertFrom-Json $rs.Content).log).Count -eq 0 -and [IO.File]::ReadAllText("$fst.bad", $utf8) -ceq 'nope' -and [Uri]::UnescapeDataString($rs.Headers['X-Tile-Note']) -like 'state.json could not be read*')
+  Check 'a bad state.json gives an empty log, keeps .bad, and says so' (@((ConvertFrom-Json $rs.Content).log).Count -eq 0 -and [IO.File]::ReadAllText("$fst.bad", $utf8) -ceq 'nope' -and [Uri]::UnescapeDataString($rs.Headers['X-Tile-Note']) -like '*state.json could not be read*')
+  # The note stays on every answer (the tray may have hit the bad file) until the page dismisses it.
+  $rn = Invoke-WebRequest -UseBasicParsing "${furl}snapshot"; [void](Post "${furl}note" 'dismiss'); $rn2 = Invoke-WebRequest -UseBasicParsing "${furl}config"
+  Check 'the recovery note stays until the page dismisses it' ([Uri]::UnescapeDataString($rn.Headers['X-Tile-Note']) -like 'config.json could not be read*state.json could not be read*' -and -not $rn2.Headers['X-Tile-Note']) $rn.Headers['X-Tile-Note']
+  [IO.File]::WriteAllText($fcfg, '{"scenes":[{worse', $utf8); [void](Invoke-WebRequest -UseBasicParsing "${furl}config"); [void](Post "${furl}note" 'dismiss')
+  $bads = @(Get-ChildItem -LiteralPath (Split-Path $fcfg) -Filter 'config.json.*.bad')
+  Check 'a second bad config.json keeps the first .bad' ([IO.File]::ReadAllText("$fcfg.bad", $utf8) -ceq '{"scenes":[{bad' -and $bads.Count -eq 1 -and [IO.File]::ReadAllText($bads[0].FullName, $utf8) -ceq '{"scenes":[{worse') ($bads.Name -join ',')
   [IO.File]::WriteAllText($fst, '[1,2', $utf8); $env:TILE_HOME = Join-Path $fprof '.tile-windows'
   try { . (Join-Path $root 'config.ps1'); $threw = $false; try { Add-TileLog 'focus' 'after a move' 3>$null } catch { $threw = $true }; $st2 = ConvertFrom-Json (Get-TileStateText) } finally { $env:TILE_HOME = $null; . (Join-Path $root 'config.ps1') }
   Check 'Add-TileLog on a bad state.json does not throw and starts a fresh log' (-not $threw -and $st2.active -eq 'focus' -and @($st2.log).Count -eq 1)
   [void](Post "${furl}config" $c1)
 
-  # Writers in three processes at once: every write lands whole, no temp file is left behind.
-  $whome = Join-Path $tmp 'writers'; $wjob = Join-Path $tmp 'writer.ps1'
+  # Writers in three processes at once, released together: every log entry lands (each tagged by writer;
+  # 3 x 6 fits the 20-entry log), every config write lands whole, no temp file is left behind.
+  $whome = Join-Path $tmp 'writers'; $wjob = Join-Path $tmp 'writer.ps1'; $wgo = Join-Path $tmp 'writers-go'
   Set-Content -LiteralPath $wjob -Encoding ASCII -Value @"
 . '$(Join-Path $root 'config.ps1')'; `$ErrorActionPreference = 'Stop'
 `$starters = [IO.File]::ReadAllText('$(Join-Path $root 'scenes.json')')
-1..25 | % { Add-TileLog "w`$PID" "entry `$_" 3>&1 | % { throw "`$_" }; [void](Get-TileStateText); Save-TileConfigText `$starters }
+while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
+1..6 | % { Add-TileLog "w`$PID" "w`$PID-`$_" 3>&1 | % { throw "`$_" }; Save-TileConfigText `$starters }
 'ok'
 "@
-  $ws = @(1..3 | % { Start-Child $null "-File `"$wjob`"" @{ TILE_HOME = $whome } })
+  $ws = @(1..3 | % { Start-Child $null "-File `"$wjob`"" @{ TILE_HOME = $whome } }); Start-Sleep -Milliseconds 1500; New-Item -ItemType File $wgo | Out-Null
   $wout = @($ws | % { $_.StandardOutput.ReadToEnd().Trim() + $_.StandardError.ReadToEnd().Trim() })
   $ws | % { $_.WaitForExit() }
   $wst = try { ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $whome 'state.json'))) } catch { $null }
-  Check 'three processes writing config and log at once: all writes land, no temp files left' (($wout -join ',') -eq 'ok,ok,ok' -and @($wst.log).Count -eq 20 -and @(Get-ChildItem -LiteralPath $whome -Filter '*.tmp').Count -eq 0) ($wout -join ' | ')
+  Check 'three processes writing config and log at once: all writes land, no temp files left' (($wout -join ',') -eq 'ok,ok,ok' -and @($ws | % { $p = $_.Id; 1..6 | % { "w$p-$_" } } | ? { @($wst.log.x) -notcontains $_ }).Count -eq 0 -and @($wst.log).Count -eq 18 -and @(Get-ChildItem -LiteralPath $whome -Filter '*.tmp').Count -eq 0) ("$($wout -join ' | ') log: $(@($wst.log).Count)")
 
   # 6. Browser cases: headless Edge runs the page's self-test hooks, which run only when the server is a dry run.
   if (-not $edge) { 'SKIP  browser cases: Microsoft Edge not found in either Program Files folder.' } else {
@@ -202,6 +210,10 @@ try {
   Check 'tray tick: a call starts and ends only after 2 readings agree, then goes back' (($c -join '/') -eq '//meet////work') ($c -join '/')
   $ts = New-TrayState; $m1 = Ids (Step-Tray $ts $d $tt $null $true 'meet'); $m2 = Ids (Step-Tray $ts $d $tt $null $true 'meet')
   Check 'tray tick: starting mid-call applies nothing' ($m1 -eq '' -and $m2 -eq '' -and $ts.inCall) "$m1 / $m2"
+  # A half-counted start does not carry over when the call scenes change: the reading starts over.
+  $tt2 = ConvertFrom-Json '{"scenes":[{"id":"work","trigger":{"type":"manual"}},{"id":"meet2","trigger":{"type":"call"}}]}'
+  $ts = New-TrayState; $x = @((Ids (Step-Tray $ts $d $tt $null $false 'work')), (Ids (Step-Tray $ts $d $tt $null $true 'work')), (Ids (Step-Tray $ts $d $tt2 $null $true 'work')))
+  Check 'tray tick: a change to the call scenes starts the call reading over' (($x -join '/') -eq '//' -and $ts.inCall -and $ts.streak -eq 0) ($x -join '/')
   $tprof = Profile 'tray'
   $tray = Start-Child $tprof "-File `"$(Join-Path $root 'tray.ps1')`" -NoIcon -NoApply"
   $real = $env:USERPROFILE; $env:USERPROFILE = $tprof
@@ -220,6 +232,14 @@ try {
   $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $iprog 'Tile Windows.lnk'))
   Check 'installer (piped) copies the app and adds both shortcuts' ($ins.ExitCode -eq 0 -and @(Get-ChildItem -LiteralPath $iapp -ErrorAction SilentlyContinue).Count -eq 9 -and $lnk.Arguments -like "*$iapp\tray.ps1`" -Open" -and (Test-Path -LiteralPath (Join-Path $iprog 'Startup\Tile Windows tray.lnk'))) "$iout $ierr"
   Check 'installer writes only into the profile it is given' (-not (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.tile-windows\app')) -and -not (Test-Path -LiteralPath (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Tile Windows.lnk')))
+  # Run in a temp profile, a hard-coded path would still land in the real one, so read the scripts too:
+  # every path must come from USERPROFILE or APPDATA (PowerShell's own tokenizer, so comments do not count).
+  $hard = foreach ($f in 'install.ps1', 'uninstall.ps1', 'config.ps1', 'tray.ps1', 'serve.ps1') {
+    $e = $null; foreach ($t in [Management.Automation.PSParser]::Tokenize([IO.File]::ReadAllText((Join-Path $root $f)), [ref]$e)) {
+      if ($t.Type -eq 'Comment') { continue }
+      if (($t.Type -eq 'Variable' -and $t.Content -match '^(HOME|env:(HOMEPATH|HOMEDRIVE|LOCALAPPDATA|HOME))$') -or $t.Content -match '(?i)GetFolderPath|SpecialFolder|\b[a-z]:\\users\\') { "${f}:$($t.StartLine) $($t.Content)" }
+    } }
+  Check 'installer and app take every profile path from USERPROFILE or APPDATA' (-not $hard) ($hard -join '; ')
   # Again, with -NoStartup and the installed tray agent running: same files, no staging folder left,
   # the login shortcut goes away, and the old agent was told to quit before the swap.
   $real = $env:USERPROFILE; $env:USERPROFILE = $iprof
@@ -236,6 +256,10 @@ try {
   $stamp = (Get-Item -LiteralPath (Join-Path $iapp 'tile.ps1')).LastWriteTimeUtc
   $ins3 = Start-Child $iprof "-File `"$(Join-Path $bsrc 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $bsrc }; [void]$ins3.StandardOutput.ReadToEnd(); [void]$ins3.StandardError.ReadToEnd(); $ins3.WaitForExit()
   Check 'a failed install leaves the old app in place' ($ins3.ExitCode -ne 0 -and @(Get-ChildItem -LiteralPath $iapp).Count -eq 9 -and (Get-Item -LiteralPath (Join-Path $iapp 'tile.ps1')).LastWriteTimeUtc -eq $stamp -and @(Get-ChildItem -LiteralPath (Join-Path $iprof '.tile-windows') -Filter 'app.new-*').Count -eq 0)
+  # A failure between the two renames of the swap puts the old app back, and it still runs.
+  $ins5 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $root; TILE_TEST_SWAP_FAIL = '1' }; [void]$ins5.StandardOutput.ReadToEnd(); [void]$ins5.StandardError.ReadToEnd(); $ins5.WaitForExit()
+  $runs = ''; $runsOk = $false; if (Test-Path -LiteralPath (Join-Path $iapp 'tile.ps1')) { $runs = (Child (Join-Path $iapp 'tile.ps1') -From (Join-Path $root 'test\fixture.json') -Default 2>&1 | Out-String); $runsOk = $LASTEXITCODE -eq 0 }
+  Check 'a failure mid-swap puts the old app back, and it runs' ($ins5.ExitCode -ne 0 -and (Test-Path -LiteralPath (Join-Path $iapp 'tile.ps1')) -and @(Get-ChildItem -LiteralPath $iapp).Count -eq 9 -and (Get-Item -LiteralPath (Join-Path $iapp 'tile.ps1')).LastWriteTimeUtc -eq $stamp -and @(Get-ChildItem -LiteralPath (Join-Path $iprof '.tile-windows') -Filter 'app.*-*').Count -eq 0 -and $runsOk) $runs
   New-Item -ItemType File (Join-Path $iprof '.tile-windows\config.json') -Force | Out-Null
   $un = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`""; $uout = $un.StandardOutput.ReadToEnd() + $un.StandardError.ReadToEnd(); $un.WaitForExit()
   Check 'uninstall removes the app and shortcuts, keeps scenes' ($un.ExitCode -eq 0 -and -not (Test-Path -LiteralPath $iapp) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Startup\Tile Windows tray.lnk')) -and (Test-Path -LiteralPath (Join-Path $iprof '.tile-windows\config.json'))) $uout

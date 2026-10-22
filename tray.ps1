@@ -40,7 +40,7 @@ function Step-CallTrigger([bool]$was, [bool]$now, $config, [string]$active, [str
   [pscustomobject]@{ apply = $(if ($s.trigger.back -and $before -and @($config.scenes.id) -contains $before) { $before } else { '' }); back = '' }
 }
 # What the tick remembers between ticks.
-function New-TrayState { [pscustomobject]@{ fired = @{}; lastKey = $null; inCall = $null; streak = 0; before = '' } }
+function New-TrayState { [pscustomobject]@{ fired = @{}; lastKey = $null; inCall = $null; streak = 0; before = ''; callSet = $null } }
 # One tick of the agent, with no side effects but on $s. Returns the scenes to apply: [{id, why}].
 # $key: the monitor key once the display has settled, else $null. $call: a call reading, or $null (not polled).
 # The first key and the first call reading only seed $s, so starting the agent (or restarting it mid-call)
@@ -53,6 +53,9 @@ function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active) {
     if ($s.lastKey -and $key -ne $s.lastKey -and $d) { $out += [pscustomobject]@{ id = $d.id; why = 'because the monitors changed' } }
     $s.lastKey = $key
   }
+  # A changed set of call scenes starts the call reading over (seed again, no pending streak).
+  $set = @($cfg.scenes | ? { $_.trigger.type -eq 'call' } | % { "$($_.id):$([bool]$_.trigger.back)" }) -join ','
+  if ($set -ne $s.callSet) { $s.callSet = $set; $s.inCall = $null; $s.streak = 0; $s.before = '' }
   if ($null -ne $call) {
     if ($null -eq $s.inCall) { $s.inCall = [bool]$call }
     elseif ([bool]$call -eq $s.inCall) { $s.streak = 0 }
@@ -151,6 +154,8 @@ $timer.add_Tick({
   $call = $null
   if ((++$script:tick % 3) -eq 0 -and @($cfg.scenes | ? { $_.trigger.type -eq 'call' }).Count) { $call = Test-TeamsCall (Get-MicUsage) (Get-TeamsWindows) }
   $active = try { (ConvertFrom-Json (Get-TileStateText)).active } catch { '' }
+  # A read here recovered from a bad file: the page shows the note until dismissed; the tray says it once.
+  if ($TileNote) { Note $TileNote; $script:TileNote = '' }
   foreach ($a in (Step-Tray $state (Get-Date) $cfg $key $call $active)) { $sc = @($cfg.scenes | ? { $_.id -eq $a.id })[0]; if ($sc) { Apply-Scene $sc $a.why } }
 })
 $timer.Start()

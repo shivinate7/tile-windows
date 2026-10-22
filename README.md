@@ -76,6 +76,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File serve.ps1 -From test\fixture
 
 The tests never touch your profile: they run with a temp `USERPROFILE`. Set `TILE_HOME` to keep scenes in another folder.
 
-If `config.json` or `state.json` stops parsing, the app keeps it as `config.json.bad` (or `state.json.bad`), starts from the starter scenes (or an empty log), and says so on the page.
+If `config.json` or `state.json` stops parsing, the app keeps it as `config.json.bad` (or `state.json.bad`), starts from the starter scenes (or an empty log), and says so on the page (and in a tray balloon) until you dismiss the note. A second bad file is kept with a time in its name, so the first `.bad` is never overwritten.
 
 The decisions behind the app are in [decisions/](decisions/).

@@ -7,6 +7,7 @@
 #   POST /<token>/preview   body = scene; answers tile.ps1 -Scene -From <last snapshot> -Json (moves nothing)
 #   POST /<token>/scene     body = scene; answers tile.ps1 -Scene -Json results. ?dry=1 = -DryRun.
 #   POST /<token>/apply     body = -Place array; answers tile.ps1 -Place -Json results. ?dry=1 = -DryRun.
+#   POST /<token>/note      dismiss the recovery note (see X-Tile-Note)
 #   POST /<token>/quit      stop the server
 # Prints the URL as its first line, opens the browser (unless -NoBrowser), stops on Ctrl+C or /quit.
 # -DryRun: every apply is a dry run (for tests). -From <snapshot.json>: show that snapshot instead of
@@ -32,8 +33,8 @@ function Send($ctx, [int]$code, [string]$type, [string]$body) {
   $b = [Text.Encoding]::UTF8.GetBytes($body)
   $ctx.Response.StatusCode = $code; $ctx.Response.ContentType = "$type; charset=utf-8"
   $ctx.Response.Headers['Cache-Control'] = 'no-store'; $ctx.Response.ContentLength64 = $b.Length
-  # A read that recovered from a bad file says so once; the page shows it.
-  if ($script:TileNote) { $ctx.Response.Headers['X-Tile-Note'] = [Uri]::EscapeDataString($script:TileNote); $script:TileNote = '' }
+  # A read that recovered from a bad file (here or in the tray) says so on every answer until the page dismisses it.
+  $n = Get-TileNote; if ($n) { $ctx.Response.Headers['X-Tile-Note'] = [Uri]::EscapeDataString($n) }
   $ctx.Response.OutputStream.Write($b, 0, $b.Length); $ctx.Response.Close()
 }
 # A JSON body of the given kind ('[' or '{'), or $null after answering 400.
@@ -87,6 +88,7 @@ try {
           if (-not ($body = Body $ctx $req '[')) { continue }
           Send $ctx 200 'application/json' ((& $tile -Place $body -Json -DryRun:$dry @fromArg 3>$null) -join '')
         }
+        'POST note' { Clear-TileNote; Send $ctx 200 'text/plain' 'Dismissed' }
         'POST quit' {
           $ctx.Response.KeepAlive = $false  # else Stop() resets the open connection before the client reads 'Bye'
           Send $ctx 200 'text/plain' 'Bye'; $run = $false

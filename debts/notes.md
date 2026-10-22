@@ -14,3 +14,5 @@ Low findings. Each becomes a debt only after a real incident.
 - `config.ps1` Writers share one named mutex per home with a 10 s wait. A writer that waits longer goes ahead without it.
 - `tray.ps1` The installer asks a running tray to quit and waits 5 s. A tray stuck longer is not stopped, and its old files are replaced under it.
 - `config.ps1` The unique temp name cannot go red alone: the write lock already keeps two writers apart. It guards a writer that skips the lock.
+- `config.ps1` The re-check under the lock before a file moves to `.bad` guards a race between two readers. No test can time that race, so it has no red proof.
+- `install.ps1` `TILE_TEST_SWAP_FAIL` is a test seam: it throws between the two renames of the swap, so the rollback can be tested.

@@ -26,8 +26,17 @@ param([switch]$NoStartup, [switch]$NoLaunch)
   . (Join-Path $new 'tray.ps1') -Lib
   try { [void][Threading.EventWaitHandle]::OpenExisting((TrayName 'Quit')).Set() } catch [Threading.WaitHandleCannotBeOpenedException] {}
   for ($i = 0; $i -lt 50; $i++) { $m = $null; if (-not [Threading.Mutex]::TryOpenExisting((TrayName 'Agent'), [ref]$m)) { break }; $m.Dispose(); Start-Sleep -Milliseconds 100 }
-  if (Test-Path -LiteralPath $app) { Remove-Item -LiteralPath $app -Recurse -Force }
-  Rename-Item -LiteralPath $new -NewName 'app'
+  # Swap by renames: the old app is put back if any step fails, so a failed install leaves it working.
+  $old = Join-Path $home_ "app.old-$PID"
+  try {
+    if (Test-Path -LiteralPath $app) { Rename-Item -LiteralPath $app -NewName (Split-Path $old -Leaf) }
+    if ($env:TILE_TEST_SWAP_FAIL) { throw 'Test: the swap failed.' }  # test seam: a failure between the renames
+    Rename-Item -LiteralPath $new -NewName 'app'
+  } catch {
+    if ((Test-Path -LiteralPath $old) -and -not (Test-Path -LiteralPath $app)) { Rename-Item -LiteralPath $old -NewName 'app' }
+    Remove-Item -LiteralPath $new -Recurse -Force -ErrorAction SilentlyContinue; throw
+  }
+  Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
 
   $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
