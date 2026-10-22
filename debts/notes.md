@@ -48,3 +48,17 @@ Low findings. Each becomes a debt only after a real incident.
 - After Save, a scene with Stay Put entries can still show as edited until refresh.
 - Under 240px of board height the list flows below the board; dragging onto it then needs a scroll.
 - Bay design round 3 rows 3 to 9.
+
+## From triggers review round 3 (2026-10-22)
+
+- `app.html` Choosing "On a Schedule" pushes the rows below down about 80px. Reviewer B rated it acceptable: the fields belong to that choice.
+- `app.html` The folded Extra Triggers line and the rail say "3 on", "2 of 7 scenes" without naming them.
+- `app.html` The "On" word shows beside some switches only, far from the toggle, and clips at 1024.
+- `app.html` Rail chip names ("Return", "Gap") differ from the switch names.
+- `app.html` The amber "triggers move windows" box is heavy and repeats on every scene.
+- `app.html` Group labels look alike; the extras do not read as a separate zone.
+- `app.html` At 1024 the sticky Save bar covers the last lines of the inspector.
+- `tray.ps1` `Read-Num` lets the string "NaN" through; it then throws in `AddMinutes`. Hand edit only.
+- `app.html` A saved value over its cap shows uncapped; the tray acts on the cap.
+- `tray.ps1` A bad hand-edited value falls back to its default with no warning.
+- `app.html` Unverified: focus restore may snap back to an edited field after Tab out.
