@@ -29,7 +29,9 @@ $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$en
 # Run one of the page's #selftest-* hooks in headless Edge; returns its JSON, or $null.
 function SelfTest($url, $hook) {
   $dom = Join-Path $tmp "dom-$hook.html"
-  Start-Process $edge -Wait -WindowStyle Hidden -RedirectStandardOutput $dom -RedirectStandardError (Join-Path $tmp "edge-$hook.log") -ArgumentList '--headless', '--disable-gpu', '--no-first-run', "--user-data-dir=$tmp\edge-$hook", '--virtual-time-budget=90000', '--dump-dom', "${url}#selftest-$hook"
+  # Font hosts fail fast (a pending font fetch can stall virtual time); a hung Edge is killed, not waited on.
+  $e = Start-Process $edge -PassThru -WindowStyle Hidden -RedirectStandardOutput $dom -RedirectStandardError (Join-Path $tmp "edge-$hook.log") -ArgumentList '--headless', '--disable-gpu', '--no-first-run', "--user-data-dir=$tmp\edge-$hook", '--host-resolver-rules="MAP fonts.googleapis.com 0.0.0.0, MAP fonts.gstatic.com 0.0.0.0"', '--virtual-time-budget=90000', '--dump-dom', "${url}#selftest-$hook"
+  if (-not $e.WaitForExit(120000)) { Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*edge-$hook*" } | % { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; return $null }
   if ((Get-Content -Raw -Encoding UTF8 $dom) -match '<pre id="selftest">(.*?)</pre>') { [Net.WebUtility]::HtmlDecode($matches[1]) | ConvertFrom-Json }
 }
 # A starter scene as the page sends it: the scene plus the category map.
@@ -145,6 +147,13 @@ try {
   Check 'tray: a scheduled scene is due on its day and minute only' ((@(Get-DueScenes $tc $mon9 @{}).id -join ',') -eq 'a' -and @(Get-DueScenes $tc $mon9.AddMinutes(1) @{}).Count -eq 0 -and (@(Get-DueScenes $tc ([datetime]'2026-10-24 09:00') @{}).id -join ',') -eq 'b')
   Check 'tray: a scheduled scene fires once per minute' (@(Get-DueScenes $tc $mon9 @{ a = '2026-10-19 09:00' }).Count -eq 0)
   Check 'tray: display scenes and the monitor key' ((@(Get-DisplayScenes $tc).id -join ',') -eq 'c' -and (Get-MonitorKey @([pscustomobject]@{ DeviceName = 'B'; Bounds = [Drawing.Rectangle]::new(0, 0, 10, 20) }, [pscustomobject]@{ DeviceName = 'A'; Bounds = [Drawing.Rectangle]::new(-5, 1, 3, 4) })) -eq 'A=3x4@-5,1;B=10x20@0,0')
+  $cases = @(ConvertFrom-Json (Get-Content -Raw (Join-Path $PSScriptRoot 'teams-call.json')) | % { $_ })
+  $bad = @($cases | ? { (Test-TeamsCall $_.mic $_.wins) -ne $_.call } | % { $_.case })
+  Check 'tray: Teams call detection, every fixture case' ($cases.Count -eq 9 -and $bad.Count -eq 0) ($bad -join '; ')
+  $cc = ConvertFrom-Json '{"scenes":[{"id":"work","trigger":{"type":"manual"}},{"id":"meet","trigger":{"type":"call","back":true}}]}'
+  $s1 = Step-CallTrigger $false $true $cc 'work' ''; $s2 = Step-CallTrigger $true $true $cc 'meet' $s1.back; $s3 = Step-CallTrigger $true $false $cc 'meet' $s2.back
+  $cc.scenes[1].trigger.back = $false; $s4 = Step-CallTrigger $true $false $cc 'meet' 'work'
+  Check 'tray: call start applies the call scene; call end goes back only when asked' ($s1.apply -eq 'meet' -and $s1.back -eq 'work' -and $s2.apply -eq '' -and $s3.apply -eq 'work' -and $s4.apply -eq '') (($s1, $s2, $s3, $s4 | ConvertTo-Json -Compress))
   $tprof = Profile 'tray'
   $tray = Start-Child $tprof "-File `"$(Join-Path $root 'tray.ps1')`" -NoIcon -NoApply"
   $env:USERPROFILE, $real = $tprof, $env:USERPROFILE

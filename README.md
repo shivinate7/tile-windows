@@ -30,8 +30,8 @@ From a clone, run `install.ps1` directly. It takes `-NoStartup` and `-NoLaunch`.
 
 - **The board** shows your real monitors. To pin a window to a cell, drag it there. Windows you do not pin fill the fill monitor (the ultrawide in the starters), in the order you choose.
 - **Scenes** are on the left rail: Default, Focus, Meetings and Review, plus any you save. To put a scene on screen, click its **Apply** button. **Undo** moves the windows back.
-- **The inspector** is on the right. Use it to set each monitor's grid and fill order, and a window's span and category. It also sets when a scene applies itself: by hand, on a schedule, or when the monitors change.
-- **The tray icon** opens the app, and its menu applies any scene. It also runs the scheduled and monitor-change scenes.
+- **The inspector** is on the right. Use it to set each monitor's grid and fill order, and a window's span and category. It also sets when a scene applies itself: by hand, on a schedule, when the monitors change, or when a Teams call starts (and, if you ask, back to the scene before when the call ends).
+- **The tray icon** opens the app, and its menu applies any scene. It also runs the scenes that apply themselves.
 
 A scene stores your intent, not pixels: app names, title matches, grids and a fill order. It keeps working as windows open and close. Scenes are saved in `%USERPROFILE%\.tile-windows\config.json`. The four starters come from [scenes.json](scenes.json).
 

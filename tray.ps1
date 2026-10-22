@@ -1,6 +1,7 @@
 # Tile Windows tray agent: an icon in the notification area.
 #   Menu: Open Tile Windows, Apply scene >, Quit. Double-click opens the app.
-#   Applies scenes on their trigger: a schedule (days + time), or when the monitor set changes.
+#   Applies scenes on their trigger: a schedule (days + time), when the monitor set changes, or when a
+#   Teams call starts (and, if the scene says so, goes back to the scene before when the call ends).
 # -Open: open the app (starts the agent first if it is not running).
 # -NoIcon: run without the icon (tests). -NoApply: every apply is a dry run (tests).
 # -Lib: define the functions and return (tests dot-source it).
@@ -21,6 +22,31 @@ function Get-DueScenes($config, [datetime]$now, $fired) {
 # The monitor set as one string: a change in it (a monitor added, removed or moved) fires 'display' scenes.
 function Get-MonitorKey($screens) { (@($screens | % { "$($_.DeviceName)=$($_.Bounds.Width)x$($_.Bounds.Height)@$($_.Bounds.X),$($_.Bounds.Y)" }) | Sort-Object) -join ';' }
 function Get-DisplayScenes($config) { @($config.scenes | ? { $_.trigger.type -eq 'display' }) }
+
+# Is a Teams call on? $mic: [{name, stop}] from Windows' microphone privacy store (see Get-MicUsage);
+# stop = 0 means the app holds the microphone now. $wins: [{app, title}] of Teams windows, the fallback
+# when the store says nothing (for example, microphone access turned off for desktop apps).
+function Test-TeamsCall($mic, $wins) {
+  if (@($mic | ? { $_.name -match '(?i)(^|[#\\])(ms-teams|teams)\.exe$|^MSTeams_' -and [int64]$_.stop -eq 0 }).Count) { return $true }
+  [bool]@($wins | ? { $_.app -match '(?i)^(ms-teams|teams)$' -and $_.title -match '(?i)^(meeting|call)\b|\b(meeting|call) (with|in)\b' }).Count
+}
+# What a change in call state does. Returns {apply: scene id or '', back: scene id to remember}.
+# Call starts: apply the first 'call' scene and remember the scene on screen. Call ends: if that scene
+# has trigger.back, apply the remembered one.
+function Step-CallTrigger([bool]$was, [bool]$now, $config, [string]$active, [string]$before) {
+  $s = @($config.scenes | ? { $_.trigger.type -eq 'call' })[0]
+  if (-not $s -or $was -eq $now) { return [pscustomobject]@{ apply = ''; back = $before } }
+  if ($now) { return [pscustomobject]@{ apply = $s.id; back = $(if ($active -ne $s.id) { $active } else { $before }) } }
+  [pscustomobject]@{ apply = $(if ($s.trigger.back -and $before -and @($config.scenes.id) -contains $before) { $before } else { '' }); back = '' }
+}
+# Microphone use per app, from HKCU ...\CapabilityAccessManager\ConsentStore\microphone: desktop apps under
+# NonPackaged (key name = exe path with # for \), Store apps (new Teams: MSTeams_8wekyb3d8bbwe) by package.
+function Get-MicUsage {
+  $k = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone'
+  @(Get-ChildItem -LiteralPath $k, "$k\NonPackaged" -ErrorAction SilentlyContinue | ? { $_.PSChildName -ne 'NonPackaged' } |
+    % { $p = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue; if ($p -and $null -ne $p.LastUsedTimeStop) { [pscustomobject]@{ name = $_.PSChildName; stop = [int64]$p.LastUsedTimeStop } } })
+}
+function Get-TeamsWindows { @(Get-Process ms-teams, Teams -ErrorAction SilentlyContinue | ? { $_.MainWindowTitle } | % { [pscustomobject]@{ app = $_.Name; title = $_.MainWindowTitle } }) }
 if ($Lib) { return }
 
 $quitName = TrayName 'Quit'; $openName = TrayName 'Open'
@@ -40,6 +66,7 @@ public static class TileDisplayWatch {
 [TileDisplayWatch]::Start()
 $tile = Join-Path $PSScriptRoot 'tile.ps1'; $serve = Join-Path $PSScriptRoot 'serve.ps1'
 $srv = $null; $url = ''; $fired = @{}; $lastKey = Get-MonitorKey ([Windows.Forms.Screen]::AllScreens); $dirtyAt = $null
+$inCall = $false; $callBefore = ''; $tick = 0
 
 function Note([string]$text) { if ($icon) { $icon.ShowBalloonTip(4000, 'Tile Windows', $text, 'Info') } }
 function Apply-Scene($s, [string]$why) {
@@ -91,6 +118,14 @@ $timer.add_Tick({
   if ($openEv.WaitOne(0)) { Open-App }
   try { $cfg = ConvertFrom-Json (Get-TileConfigText) } catch { return }
   foreach ($s in (Get-DueScenes $cfg (Get-Date) $fired)) { $fired[$s.id] = (Get-Date).ToString('yyyy-MM-dd HH:mm'); Apply-Scene $s 'on schedule' }
+  # Teams calls: poll every 3 s, only while some scene uses the trigger.
+  if ((++$script:tick % 3) -eq 0 -and @($cfg.scenes | ? { $_.trigger.type -eq 'call' }).Count) {
+    $now = Test-TeamsCall (Get-MicUsage) (Get-TeamsWindows)
+    $active = try { (ConvertFrom-Json (Get-TileStateText)).active } catch { '' }
+    $st = Step-CallTrigger $inCall $now $cfg $active $callBefore
+    $script:inCall = $now; $script:callBefore = $st.back
+    if ($st.apply) { Apply-Scene (@($cfg.scenes | ? { $_.id -eq $st.apply })[0]) $(if ($now) { 'because a Teams call started' } else { 'because the call ended' }) }
+  }
   # Wait for the display to settle (2 s after the last change), then act only if the monitor set changed.
   if ([TileDisplayWatch]::Dirty) { [TileDisplayWatch]::Dirty = $false; $script:dirtyAt = Get-Date }
   if ($dirtyAt -and ((Get-Date) - $dirtyAt).TotalSeconds -ge 2) {

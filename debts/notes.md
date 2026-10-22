@@ -10,3 +10,4 @@ Low findings. Each becomes a debt only after a real incident.
 - `tile.ps1` With fewer than three monitors, each role takes its own screen (widest first) and a missing role is skipped with a warning. main's `-Default` stopped at a missing portrait. Not covered by a fixture.
 - `serve.ps1` Port probe then rebind can race another process; `Start()` then throws a clear error.
 - Untested: Apply moving a real window; the tray icon and its menu; a schedule or monitor change firing end to end; `irm | iex` from GitHub (the piped path is tested from a local source).
+- `tray.ps1` Teams call detection reads the microphone privacy store (`LastUsedTimeStop` = 0 for a Teams exe or the MSTeams package). Misses: microphone access off for desktop apps, a call joined muted from the start in some builds, Teams in a browser. The window-title fallback (`Meeting with…`, `Call…`) misses calls whose window has another title and any non-English Teams.

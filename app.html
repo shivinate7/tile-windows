@@ -243,7 +243,7 @@ const $=id=>document.getElementById(id);
 const LIVE=location.protocol.startsWith("http");
 const ROLE={wide:"Ultrawide",tall:"Portrait",laptop:"Laptop"};
 const SORTS=[["app","App order (default)"],["category","Category"],["title","Title A to Z"],["position","Where windows sit now"]];
-const TRIG=[["manual","Only when I click Apply"],["time","On a schedule"],["display","When the monitors change"]];
+const TRIG=[["manual","Only when I click Apply"],["time","On a schedule"],["display","When the monitors change"],["call","When a Teams call starts"]];
 const DAYN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DAYORDER=[1,2,3,4,5,6,0];
 const CATS0=[["code","Code"],["browse","Browse"],["comms","Comms"],["other","Other"]];
 // The offline page cannot read scenes.json (file://), so it keeps a copy of its map. test/run.ps1 checks they match.
@@ -401,7 +401,7 @@ function miniHTML(P){const M=snap.monitors,x0=Math.min(...M.map(m=>m.x)),y0=Math
   return M.map(m=>`<i style="${b(m)}"></i>`).join("")+(P?P.placed.map(p=>`<b class="cat-${catOf(p.app)}" style="${b(p)}"></b>`).join(""):"")}
 function trigText(s){const t=s.trigger||{type:"manual"};if(t.type==="time"){const d=DAYORDER.filter(x=>(t.days||[]).includes(x));
   return `${d.length===5&&[1,2,3,4,5].every(x=>d.includes(x))?"Mon to Fri":d.length===7?"Every day":d.map(x=>DAYN[x]).join(", ")||"No days"} at ${t.time||"09:00"}`}
-  return t.type==="display"?"When the monitors change":"By hand"}
+  return t.type==="display"?"When the monitors change":t.type==="call"?"When a Teams call starts":"By hand"}
 function renderRail(){
   if(LIVE){
     const ids=[...cfg.scenes.map(s=>s.id),...Object.keys(work).filter(id=>!saved(id))];
@@ -447,8 +447,9 @@ function renderInsp(V){
     <div class="field stack"><label for="sceneName">Name</label><input type="text" id="sceneName" value="${esc(s.name)}" ${s.builtIn?"disabled":""} maxlength="40"></div>
     <div class="trig" role="radiogroup" aria-label="Applies itself">${TRIG.map(([v,l])=>`<label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}>${l}</label>`).join("")}
       ${t.type==="time"?`<div class="days" role="group" aria-label="Days">${DAYORDER.map(d=>`<button type="button" data-day="${d}" aria-pressed="${(t.days||[]).includes(d)}" aria-label="${DAYN[d]}">${DAYN[d][0]}</button>`).join("")}</div>
-      <div class="at"><label for="time">At</label><input type="time" id="time" value="${esc(t.time||"09:00")}"></div>`:""}</div>
-    <p class="note">${t.type==="manual"?"Applies only when you click Apply.":"The tray agent applies it"+(t.type==="time"?" at that time.":" when a monitor is added or removed.")+" Save to turn it on."}</p>
+      <div class="at"><label for="time">At</label><input type="time" id="time" value="${esc(t.time||"09:00")}"></div>`:""}
+      ${t.type==="call"?`<label class="at"><input type="checkbox" id="back" ${t.back?"checked":""}>When the call ends, go back to the scene before</label>`:""}</div>
+    <p class="note">${t.type==="manual"?"Applies only when you click Apply.":"The tray agent applies it"+(t.type==="time"?" at that time.":t.type==="call"?" when Teams starts using the microphone, or opens a meeting or call window.":" when a monitor is added or removed.")+" Save to turn it on."}</p>
     <div class="row"><button type="button" class="btn pri" id="save" ${(isSaved&&!edited(selId))||s.builtIn?"disabled":""}>Save</button>
       <button type="button" class="btn" id="saveas">Save as new</button>
       <button type="button" class="btn" id="revert" ${isSaved&&edited(selId)?"":"disabled"}>Revert</button>
@@ -636,6 +637,7 @@ document.addEventListener("change",ev=>{const t=ev.target;
   else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
   else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});
   else if(t.id==="time"&&t.value)edit(s=>{s.trigger.time=t.value});
+  else if(t.id==="back")edit(s=>{s.trigger.back=t.checked});
   else if(t.id==="match")edit(s=>{const pp=pinOf(selWin);if(pp)s.pins[pp.p.pin].match=t.value.trim()},"Pin now matches any title containing that text.");
   else if(t.id==="sceneName"&&t.value.trim())edit(s=>{s.name=t.value.trim().slice(0,40)});
   else if(t.id==="wcat"){const w=winById(selWin),next=clone(cfg);next.cats[w.app]=t.value;saveConfig(next,`${w.app} is now ${catName(t.value)}.`).then(ok=>{if(ok){prevs={};previewAll()}})}

@@ -1,0 +1,11 @@
+[
+ {"case":"classic Teams holds the mic","call":true,"mic":[{"name":"C:#Users#sample#AppData#Local#Microsoft#Teams#current#Teams.exe","stop":0}],"wins":[]},
+ {"case":"new Teams (Store package) holds the mic","call":true,"mic":[{"name":"MSTeams_8wekyb3d8bbwe","stop":0}],"wins":[]},
+ {"case":"new Teams exe under NonPackaged holds the mic","call":true,"mic":[{"name":"C:#Program Files#WindowsApps#MSTeams_1.0_x64__8wekyb3d8bbwe#ms-teams.exe","stop":0}],"wins":[]},
+ {"case":"Teams used the mic earlier, now released","call":false,"mic":[{"name":"MSTeams_8wekyb3d8bbwe","stop":133000000000000000}],"wins":[{"app":"ms-teams","title":"Chat | Design sync | Microsoft Teams"}]},
+ {"case":"another app holds the mic","call":false,"mic":[{"name":"C:#Program Files#Zoom#bin#Zoom.exe","stop":0},{"name":"C:#Tools#notteams.exe","stop":0}],"wins":[]},
+ {"case":"no mic data, meeting window open","call":true,"mic":[],"wins":[{"app":"ms-teams","title":"Meeting with Sample Person | Microsoft Teams"}]},
+ {"case":"no mic data, call window open","call":true,"mic":[],"wins":[{"app":"ms-teams","title":"Call | Microsoft Teams"}]},
+ {"case":"a chat named after calls is not a call","call":false,"mic":[],"wins":[{"app":"ms-teams","title":"Chat | Call planning | Microsoft Teams"}]},
+ {"case":"a browser tab about meetings is not a call","call":false,"mic":[],"wins":[{"app":"chrome","title":"Meeting with the team - Example"}]}
+]
