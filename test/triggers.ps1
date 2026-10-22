@@ -97,7 +97,7 @@ $s = New-TrayState; $x = @((FgRun $s 0 chrome 'Budget - Procore - Google Chrome'
 Check 'activity: a minute in Procore (Chrome) snaps to Review, once; 59 s does not' ((Joined $x) -eq '//review/') (Joined $x)
 $s = New-TrayState; $x = @((FgRun $s 0 chrome 'Procore'), (FgRun $s 50 notepad 'x'), (FgRun $s 60 chrome 'Procore'), (FgRun $s 119 chrome 'Procore'), (FgRun $s 120 chrome 'Procore'))
 Check 'activity: leaving the app starts the minute over' ((Joined $x) -eq '////review') (Joined $x)
-$s = New-TrayState; $x = @((FgRun $s 0 chrome 'Procore'), (FgRun $s 90 chrome 'Procore' $cfg 'review'))
+$s = New-TrayState; $x = @((FgRun $s 0 chrome 'Procore' $cfg 'review'), (FgRun $s 90 chrome 'Procore' $cfg 'review'))
 Check 'activity: nothing when the layout already is that scene' ((Joined $x) -eq '/') (Joined $x)
 $s = New-TrayState; $x = @((FgRun $s 0 chrome 'Gmail'), (FgRun $s 90 chrome 'Gmail'))
 Check 'activity: an app or title not in the map does nothing' ((Joined $x) -eq '/') (Joined $x)

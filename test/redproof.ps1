@@ -39,7 +39,7 @@ agenda: attendee count must read ## tray.ps1 ## attendees = [int]$_.attendees; t
 size: off switch ## tray.ps1 ## if (Test-Auto (Get-Scene $cfg $id) 'size') { $id } else { '' } ## $id ## with the switch off on both scenes
 gaps: gap length ## tray.ps1 ## -lt (Get-Opt $cfg $f 'gaps' 'minutes') ## -lt 0 ## under 60 min off
 gaps: touched in the last 2 min ## tray.ps1 ## $idle -ge 120 -or ## $idle -ge 99999 -or ## last input was 2+ min ago
-gaps: a next meeting is required ## tray.ps1 ## if (-not $next -or ($next.start - $now).TotalMinutes -lt ## if ($next -and ($next.start - $now).TotalMinutes -lt ## with no meeting left it does nothing
+gaps: a next meeting is required ## tray.ps1 ## $next = @($busy | ? { $_.start -gt $now } | Sort-Object start)[0] ## $next = @($busy | ? { $_.start -gt $now } | Sort-Object start)[0]; if (-not $next) { $next = [pscustomobject]@{ start = $now.AddHours(5) } } ## no meeting left today
 gaps: not after a call ends ## tray.ps1 ## ($now - $s.callEndAt).TotalMinutes -lt 10 ## ($now - $s.callEndAt).TotalMinutes -lt 0 ## within 10 minutes of a call ending
 gaps: once per gap ## tray.ps1 ## if ($s.gapKey -eq $k) { return } ## ## once per gap
 gaps: off switch ## tray.ps1 ## $f = @(Get-AutoScenes $cfg 'gaps')[0] ## $f = @($cfg.scenes | ? { $_.id -eq 'focus' })[0] ## gaps: with the switch off
@@ -66,7 +66,7 @@ migration: a one-item array collapses ## config.ps1 ## $out = ConvertTo-Json -De
 grid json: depth ## tray.ps1 ## ConvertTo-Json -Depth 8 -Compress $full ## ConvertTo-Json -Depth 1 -Compress $full ## the scene JSON the tray hands
 '@
 $scratch = Join-Path $env:TEMP "tile-red-$PID"; New-Item -ItemType Directory $scratch | Out-Null
-function Run-Triggers { (& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'triggers.ps1') -Tray (Join-Path $scratch 'tray.ps1') 2>&1 | % { "$_" }) }
+function Run-Triggers { $ErrorActionPreference = 'Continue'; (& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'triggers.ps1') -Tray (Join-Path $scratch 'tray.ps1') 2>&1 | % { "$_" }) }
 function Reset-Scratch { foreach ($f in 'tray.ps1', 'config.ps1', 'scenes.json') { Copy-Item -LiteralPath (Join-Path $root $f) -Destination (Join-Path $scratch $f) -Force } }
 $bad = 0
 try {
@@ -79,6 +79,7 @@ try {
     if ($n -ne 1) { "STALE $name : the text to break occurs $n times in $file"; $bad++; continue }
     [IO.File]::WriteAllText($path, $text.Replace($find, $repl), $utf8)
     $out = @(Run-Triggers); $fails = @($out | ? { $_ -like 'FAIL*' })
+    if (-not ($out -like 'All trigger checks passed.' -or $out -like '*check(s) failed.')) { "NOT RED $name : the run crashed, which proves nothing"; $bad++; continue }
     $hit = @($fails | ? { $_ -like "*$red*" })
     if ($hit.Count) { $nm = $hit[0] -replace '^FAIL\s+', ''; "RED   $name -> $($nm.Substring(0, [Math]::Min(90, $nm.Length)))" }
     else { "NOT RED $name : failed checks: $(if ($fails.Count) { $fails.Count } else { 'none' })"; $bad++ }
