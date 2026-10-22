@@ -44,7 +44,7 @@ grid: threshold ## tray.ps1 ## if ($n -ge [int]$sc.claudeGrid.at) ## if ($n -gt 
 page and tray list the same switches ## tray.ps1 ## 'noext', 'grid') ## 'noext') ## the page edits the same trigger switches
 migration: only when older ## config.ps1 ## if ([int]$c.version -ge [int]$st.version) { return $text } ## ## a second read changes nothing
 migration: never re-adds a deleted scene ## config.ps1 ## [int]$_.since -gt [int]$c.version -and ## $true -and ## an older config gains
-migration: depth of the rewrite ## config.ps1 ## $out = ConvertTo-Json -Depth 10 $c ## $out = ConvertTo-Json -Depth 1 $c ## nested and one-item arrays
+migration: a one-item array collapses ## config.ps1 ## $out = ConvertTo-Json -Depth 10 $c ## $out = (ConvertTo-Json -Depth 10 $c) -replace '"days":\s*\[\s*(\d)\s*\]', '"days": $1' ## nested and one-item arrays
 grid json: depth ## tray.ps1 ## ConvertTo-Json -Depth 8 -Compress $full ## ConvertTo-Json -Depth 1 -Compress $full ## the scene JSON the tray hands
 '@
 $scratch = Join-Path $env:TEMP "tile-red-$PID"; New-Item -ItemType Directory $scratch | Out-Null
