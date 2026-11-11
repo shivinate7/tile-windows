@@ -25,6 +25,9 @@
 #     A grip drag of 1.4 cells to the right, on a 1x1 tile, makes a 2-column span (whole cells, rounded).
 #     Shift+arrow and the Width and Height steppers grow a span the same way as the grip: a covered pin moves with its stack to
 #     the first free cell, else to Windows That Stay Put, and growth stops at a locked tile.
+#     A stacked tile's +N badge (.stk) has a hit extension (its ::after inset). At 1024 and 1440 its hit box clears the
+#     .rsz grip, the .lk lock and the .stayput Stay Put (the badge-grip overlap debt).
+#     With ten or more windows behind, a narrow (1024) badge reads 9+ and its aria-label names the true count; at 1440 it reads +10.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 $ErrorActionPreference = 'Stop'
@@ -118,6 +121,7 @@ function SlJs($expr) {
 function SlGet($expr) { $s = SlJs ('JSON.stringify(' + $expr + ')'); if ($s) { $s | ConvertFrom-Json } }
 function SlMouse($type, $x, $y, $buttons) { [void](SlSend 'Input.dispatchMouseEvent' @{ type = $type; x = [double]$x; y = [double]$y; button = 'left'; buttons = [int]$buttons; clickCount = 1 }) }
 function SlFrame { [void](SlJs 'new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))') }
+function SlViewport($w, $h) { [void](SlSend 'Emulation.setDeviceMetricsOverride' @{ width = $w; height = $h; deviceScaleFactor = 1; mobile = $false }) }
 # After a change: the preview has come back, and the tiles have finished any CSS transition (a box read mid-slide is a lie).
 function SlSettle { [void](SlJs "preview(selId).then(() => Promise.all(document.getAnimations().filter(a => { const t = a.effect && a.effect.getComputedTiming(); return !t || t.iterations !== Infinity; }).map(a => a.finished.catch(() => null))))") }
 function SlClick($at) { SlMouse 'mousePressed' $at[0] $at[1] 1; SlMouse 'mouseReleased' $at[0] $at[1] 0; SlSettle }
@@ -156,6 +160,70 @@ function SlFewer($k) { [void](SlStep 'g' $k '-1') }
 # The text of the inspector's Behind This Window list ('' when it is not drawn), and a placed window by id (null when none).
 function SlBehindText { SlJs "(() => { const b = document.querySelector('#win .bstack'); return b ? b.textContent : ''; })()" }
 function SlPlacedOf($id) { SlGet "prevs[selId].placed.find(p => p.id === $id) || null" }
+# Hit boxes for the badge cases: the badge (its box, widened by its ::after inset), the grip, the lock and Stay Put, on the
+# board. An element that is not drawn, or has pointer-events none, has no hit box (null). The text point is the centre of the
+# badge's visible text; hitAt names what the page would hit there.
+function SlHitBoxes($id) {
+  SlGet (@(
+    "(() => { const t = els.get($id); if (!t) return null;",
+    "const box = b => ({ l: b.left, t: b.top, r: b.right, b: b.bottom }), n = v => parseFloat(v) || 0;",
+    "const hit = sel => { const e = t.querySelector(sel); if (!e) return null; const cs = getComputedStyle(e);",
+    "  if (cs.display === 'none' || cs.visibility === 'hidden' || cs.pointerEvents === 'none' || !e.getClientRects().length) return null;",
+    "  const r = e.getBoundingClientRect(), a = getComputedStyle(e, '::after');",
+    "  if (a.position !== 'absolute' || a.content === 'none' || a.content === 'normal') return box(r);",
+    "  return { l: r.left + n(a.left), t: r.top + n(a.top), r: r.right - n(a.right), b: r.bottom - n(a.bottom) }; };",
+    "const sk = t.querySelector('.stk'), tn = sk && [...sk.childNodes].find(c => c.nodeType === 3);",
+    "let tx = null; if (tn) { const rg = document.createRange(); rg.selectNodeContents(tn); const q = rg.getBoundingClientRect();",
+    "  tx = { x: (q.left + q.right) / 2, y: (q.top + q.bottom) / 2, l: q.left, t: q.top, r: q.right, b: q.bottom }; }",
+    "const at = tx ? document.elementFromPoint(tx.x, tx.y) : null;",
+    "const who = at ? (at.closest('.stk') ? 'badge' : at.closest('.rsz') ? 'grip' : at.closest('.lk') ? 'lock' : at.closest('.stayput') ? 'Stay Put' : 'other') : null;",
+    "return { badge: hit('.stk'), grip: hit('.rsz'), lock: hit('.lk'), spt: hit('.stayput'), sel: t.classList.contains('sel'),",
+    "  stacked: t.classList.contains('stacked'), narrow: t.classList.contains('narrow'), tile: box(t.getBoundingClientRect()), text: tx, hitAt: who }; })()"
+  ) -join ' ')
+}
+# Two boxes overlap by positive area (touching edges do not count). A missing box never overlaps.
+function SlMeets($a, $b) { [bool]($a -and $b -and $a.l -lt $b.r -and $b.l -lt $a.r -and $a.t -lt $b.b -and $b.t -lt $a.b) }
+function SlHit($b) { if (-not $b) { 'none' } else { '{0},{1} to {2},{3}' -f [int]$b.l, [int]$b.t, [int]$b.r, [int]$b.b } }
+# One state of the badge cases. A fresh scene; the front window is selected, or Quarterly is, so the stack is not. The boxes
+# are read after a hover on the badge text. The click on the text runs last, after every read of the state.
+# $Pins and $Behind (the windows behind Refactor) pick the scene. Ten or more: the narrow text caps at 9+.
+function SlBadgeState($w, $h, [bool]$Selected, $Pins = $pinsBadge, [int]$Behind = 2) {
+  $state = 'not selected'; if ($Selected) { $state = 'selected' }
+  $pre = ''; $gpre = 'guard: '; if ($w -eq 1440) { $pre = 'control: '; $gpre = $pre }
+  $tag = "badge $w, $state, $Behind behind"
+  SlViewport $w $h
+  SlCase (SlSceneJson $Pins)
+  if ($Selected) { SlClick (SlAt (SlBox 1001) 0.5 0.5) } else { SlClick (SlAt (SlBox 1006) 0.5 0.5) }
+  $r0 = SlHitBoxes 1001
+  if ($r0 -and $r0.text) { SlMouse 'mouseMoved' $r0.text.x $r0.text.y 0; SlFrame }
+  $b = SlHitBoxes 1001
+  Check "${pre}${tag}: scope, the front window is stacked with its badge drawn, and selected only as the case says" ([bool]($b -and $b.stacked -and $b.badge -and ([bool]$b.sel -eq $Selected))) "stacked: $($b.stacked), badge: $(SlHit $b.badge), selected: $($b.sel)"
+  Check "${pre}${tag}: scope, the tile is narrow at 1024 and not at 1440" ([bool]($b -and ([bool]$b.narrow -eq ($w -eq 1024)))) "narrow: $($b.narrow)"
+  Check "${pre}${tag}: its badge hit box clears the resize grip" (-not (SlMeets $b.badge $b.grip)) "badge $(SlHit $b.badge), grip $(SlHit $b.grip)"
+  Check "${gpre}${tag}: its badge hit box clears the lock" (-not (SlMeets $b.badge $b.lock)) "badge $(SlHit $b.badge), lock $(SlHit $b.lock)"
+  if ($Selected) {
+    Check "${pre}${tag}: scope, Stay Put is drawn on the selected tile" ([bool]($b -and $b.spt)) "Stay Put: $(SlHit $b.spt)"
+    Check "${gpre}${tag}: its badge hit box clears Stay Put" (-not (SlMeets $b.badge $b.spt)) "badge $(SlHit $b.badge), Stay Put $(SlHit $b.spt)"
+  }
+  $inView = [bool]($b -and $b.text -and $b.tile -and $b.text.x -ge $b.tile.l -and $b.text.x -le $b.tile.r -and $b.text.y -ge $b.tile.t -and $b.text.y -le $b.tile.b -and $b.text.x -ge 0 -and $b.text.x -lt $w -and $b.text.y -ge 0 -and $b.text.y -lt $h)
+  Check "${pre}${tag}: scope, the badge text centre is inside the viewport and inside the tile" $inView "text: $(SlShort $b.text), tile: $(SlShort $b.tile)"
+  # Ten or more behind: a narrow badge caps its text at 9+, and its aria-label keeps the true count (a guard). At 1440 the text is not capped.
+  if ($Behind -ge 10) {
+    $bt = SlGet "(() => { const s = els.get(1001) && els.get(1001).querySelector('.stk'); return s ? { text: s.textContent.trim(), label: s.getAttribute('aria-label') } : null; })()"
+    if ($w -eq 1024) {
+      Check "${tag}: the badge text reads 9+ on a narrow tile" ([bool]($bt -and $bt.text -eq '9+')) "text: $($bt.text)"
+      Check "${gpre}${tag}: the badge aria-label names 10 windows behind" ([bool]($bt -and $bt.label -match '(?<![0-9])10 ')) "aria-label: $($bt.label)"
+    } else {
+      Check "control: ${tag}: the badge text reads +10 at 1440" ([bool]($bt -and $bt.text -eq '+10')) "text: $($bt.text)"
+    }
+  }
+  Check "${pre}${tag}: a press on the badge text reaches the badge, so no resize starts" ($b.hitAt -eq 'badge') "a press at the text centre lands on: $($b.hitAt)"
+  if ($inView) { SlClick @([double]$b.text.x, [double]$b.text.y) }
+  $after = SlGet "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, behind: !!p.behind }))"
+  $front2 = @($after | ? { $_.pin -eq 0 -and -not $_.behind })
+  $ref = @($after | ? { $_.id -eq 1001 })[0]
+  Check "${pre}${tag}: the click brings the back window to the front, with Refactor behind it" ([bool]($front2.Count -eq 1 -and $front2[0].id -ne 1001 -and $ref -and $ref.behind -eq $true)) "placed: $(SlShort $after)"
+}
 # The scene the server holds (after a Save), and the scene the page holds (work).
 function SlSavedScene { ((Invoke-WebRequest -UseBasicParsing "$($script:url)config").Content | ConvertFrom-Json).scenes | ? { $_.id -eq 'sl' } | Select-Object -First 1 }
 function SlPin($s, $text) { @($s.pins | ? { "$($_.match)" -like "*$text*" })[0] }
@@ -215,7 +283,7 @@ function SlStartBrowser {
   $ct = $script:ws.ConnectAsync([Uri]([string]$page.webSocketDebuggerUrl), [Threading.CancellationToken]::None)
   try { if (-not $ct.Wait(30000)) { throw 'DevTools connect timed out' } } catch { throw "DevTools connect failed to $($page.webSocketDebuggerUrl): $($_.Exception.GetBaseException().Message)" }
   # --window-size does not hold under headless DevTools; the board needs a desktop-sized viewport.
-  [void](SlSend 'Emulation.setDeviceMetricsOverride' @{ width = 1440; height = 900; deviceScaleFactor = 1; mobile = $false })
+  SlViewport 1440 900
   $proc
 }
 
@@ -243,6 +311,11 @@ $pinsGrowFree = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":
 $pinsGrowFreeDown = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[5],"behind":[{"app":"claude","match":"Draft release"}]}'
 # Full board: no free cell. Pin parser (slot 1) carries Draft release behind it; POWERPNT holds slot 2, so all ten slots are taken.
 $pinsFullStack = $pinsFull.Replace('{"app":"claude","match":"Pin parser","mon":"wide","slots":[1]}', '{"app":"claude","match":"Pin parser","mon":"wide","slots":[1],"behind":[{"app":"claude","match":"Draft release"}]}').Replace('{"app":"claude","match":"Draft release","mon":"wide","slots":[2]}', '{"app":"POWERPNT","match":"Deck draft","mon":"wide","slots":[2]}')
+# Narrow stacked tile (the badge-grip overlap debt): Refactor in slot 0 with two windows behind it, so its badge reads +2.
+# Quarterly in slot 1 is the tile a state selects to leave the stack unselected.
+$pinsBadge = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"behind":[{"app":"claude","match":"Pin parser"},{"app":"claude","match":"Draft release"}]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}'
+# Ten windows behind the same front, so the badge reads +10 (and 9+ at 1024). They are fixture windows that no other pin here uses.
+$pinsBadge10 = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"behind":[{"app":"claude","match":"Pin parser"},{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Pull request"},{"app":"chrome","match":"quoted"},{"app":"WindowsTerminal","match":"tiler"},{"app":"WindowsTerminal","match":"docs watch"},{"app":"explorer","match":"Projects"},{"app":"explorer","match":"Downloads"},{"app":"ms-teams","match":"Design sync"},{"app":"outlook","match":"Inbox"}]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}'
 # Engine: the open back window takes the front's cell as the new front, as a window behind a removed front takes its cell on the board.
 $eGone = SlPlace (SlSceneJson $pinsFrontGone)
 $eGoneBack = @($eGone.placed | ? { $_.id -eq 1003 })[0]
@@ -309,14 +382,14 @@ try {
   SlRelease (SlAt (SlBox 1001) 0.5 0.5)
   # Lock in a wide cell: the chip reads the approved copy, "Locked, so no Swap". At 1440 the 5-column cells are narrower than
   # 110 px, so this case widens the viewport, then sets it back for the cases after it.
-  [void](SlSend 'Emulation.setDeviceMetricsOverride' @{ width = 2560; height = 1440; deviceScaleFactor = 1; mobile = $false })
+  SlViewport 2560 1440
   SlCase (SlSceneJson $pinsCQLock)
   SlDrag (SlAt (SlBox 1006) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.5) -Hold
   Check 'scope: the drop label shows over the locked tile, at 110 px or wider' ([bool](SlJs "getComputedStyle(document.getElementById('drop')).display !== 'none' && document.getElementById('drop').offsetWidth >= 110")) "width: $(SlJs "document.getElementById('drop').offsetWidth")"
   $lw = SlLabel
   Check 'lock: over a locked tile in a wide cell the drop label reads "Locked, so no Swap"' ("$lw" -match 'Locked, so no Swap') "label: $lw"
   SlRelease (SlAt (SlBox 1001) 0.5 0.5)
-  [void](SlSend 'Emulation.setDeviceMetricsOverride' @{ width = 1440; height = 900; deviceScaleFactor = 1; mobile = $false })
+  SlViewport 1440 900
 
   # Lock: the lock control locks the tile, and Save keeps the lock in the scene.
   SlCase (SlSceneJson $pinsCQ)
@@ -531,6 +604,17 @@ try {
   $s17 = SlGet 'work[selId]'; $t17 = SlPin $s17 'tiler'
   Check 'nothing dropped: an arrow key into a taken cell keeps the occupant''s pin' ([bool]$t17) "pins: $(SlShort $s17.pins)"
   Check 'nothing dropped: an arrow key into a taken cell keeps the occupant''s stack' ([bool]$t17 -and (SlHasBehind $t17 'Draft release')) "occupant pin: $(SlShort $t17)"
+  # Badge and grip (the badge-grip overlap debt): a narrow stacked tile at 1024, selected and not. The same at 1440 is a control.
+  SlBadgeState 1024 768 $true
+  SlBadgeState 1024 768 $false
+  SlBadgeState 1440 900 $true
+  SlBadgeState 1440 900 $false
+  # Ten behind: the same reads, with the text cap at 1024 and the +10 control at 1440.
+  SlBadgeState 1024 768 $true $pinsBadge10 10
+  SlBadgeState 1024 768 $false $pinsBadge10 10
+  SlBadgeState 1440 900 $true $pinsBadge10 10
+  SlBadgeState 1440 900 $false $pinsBadge10 10
+  SlViewport 1440 900
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
 } finally {

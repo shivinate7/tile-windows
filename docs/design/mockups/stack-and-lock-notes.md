@@ -44,7 +44,7 @@ The `--ann-*` tokens are for the mockup's labels only. They are not product colo
    click brings the window directly behind to the front, and the front window goes to the back.
    The tooltip names the windows behind. On a selected stacked tile, Stay Put moves up one row
    so that it clears the badge. Other option: the badge on the top row, which clips the app tag
-   more. Pick: bottom-left.
+   more. Pick: bottom-left. On narrow tiles the badge drops its stack icon and caps at "9+".
 9. **Stack edge.** The front tile is inset 3px from the top and right, and the back window's edge
    shows there. Gain: you see the stack without reading the badge. Loss: the front tile is 3px
    smaller. Option: "Stack Edge" off. Pick: on.

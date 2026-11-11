@@ -300,6 +300,11 @@ dialog form{display:grid;gap:10px}
 .tile.lock .lk{background:var(--ink);color:var(--panel)}
 .tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 6px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1}
 .tile .stk svg{width:10px;height:10px}
+/* A narrow stacked tile (about 50x55) has a 20px grip at the bottom right. The badge gives up its icon and padding so its drawn box and its 3px hit extension end left of the grip: the two hit areas never meet, and a press on the +N reaches the badge. */
+.tile.stacked.narrow .stk{left:3px;padding:1px 3px}
+.tile.stacked.narrow .stk svg{display:none}
+/* Forced colours drop the badge's fill, so a 1px ButtonText border makes it read as a button. The padding gives up 1px a side, so the box keeps its width and its hit box stays clear of the grip. */
+@media (forced-colors:active){.tile .stk{border:1px solid ButtonText}.tile.stacked.narrow .stk{padding:1px 2px}}
 .tile.stacked span{-webkit-line-clamp:2}
 .tile.stacked .stayput{bottom:24px;right:3px}
 /* Stack edge: the front tile keeps its box and its full border. The back window's edge is its own element, drawn 3px up and to the right of the front, under it. */
@@ -670,6 +675,8 @@ function render(){
     e.hidden=false;const pr=px(x.r);Object.assign(e.style,pr);
     // Stay Put reads in words from 84px across; a narrower tile shows the icon alone, named by its tooltip and label.
     const ico=parseFloat(pr.width)<84;e.classList.toggle("narrow",ico);
+    // A narrow badge for ten or more windows behind would grow under the grip, so its text caps at 9+. The label and tooltip keep the true count.
+    if(sb&&back.length)sb.lastChild.textContent=ico&&back.length>9?"9+":`+${back.length}`;
     if(sp){sp.disabled=locked;sp.classList.toggle("ico",ico);
       if(ico){sp.title=locked?"Stay Put. Locked, unlock it first.":"Stay Put";sp.setAttribute("aria-label","Stay Put")}
       else{sp.removeAttribute("aria-label");if(locked)sp.title="Locked. Unlock it first.";else sp.removeAttribute("title")}}
