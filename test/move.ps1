@@ -3,9 +3,10 @@
 #   Placement: the real Set-WinRestore and Get-WinRestore on a hidden message-only window this file makes (no screen, no user window).
 #     Only the workspace offset is faked (10,40). Each case reads the rect back through the real GetWindowPlacement.
 #   Arranged: tile.ps1's own W.Arranged, compiled from a copy of its C# with IsWindowArranged stubbed (no snapped window can be made on demand).
-# The placement cases fail on a stale restore rect, a dropped workspace offset, or a placement that is never sent. A fix may build the
-# placement in a pure function (for example New-CellPlacement: placement, x, y, w, h, offset -> a placement with showCmd 1 and a whole new
-# normal RECT). No case calls that name: a call to a missing name is a crash, not a red.
+# The placement cases fail on a stale restore rect, a dropped workspace offset, or a placement that is never sent. The New-CellPlacement
+# case calls tile.ps1's pure placement builder (placement, x, y, w, h, offset -> a copy that shows normal, with its flags and min/max
+# copied and a whole new normal RECT). It fails on a dropped showCmd, flags, min/max or offset. A missing or faked name fails its scope check
+# first, and the case's other checks do not run.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\move.ps1 [-Tile <path to a tile.ps1 copy>]
 # test\run.ps1 dot-sources this file in a child scope, so the variables it makes stay there.
 param([string]$Tile = (Join-Path (Split-Path $PSScriptRoot) 'tile.ps1'))
@@ -68,6 +69,21 @@ public static class W {
         Check 'placement: Set-WinRestore puts the restore rect at the cell, less the workspace offset' ((@($n.L, $n.T, $n.R, $n.B) -join ',') -eq '673,-40,1356,800') "restore rect at $($n.L),$($n.T) to $($n.R),$($n.B), wanted 673,-40 to 1356,800"
       } finally { $nw.DestroyHandle() }
     }
+    # New-CellPlacement, tile.ps1's pure builder, called directly on a placement whose flags and min/max are not zero.
+    # Scope first: the name must be tile.ps1's own before it is called.
+    $npCmd = Get-Command New-CellPlacement -CommandType Function -ErrorAction SilentlyContinue
+    $npOwn = [bool]$npCmd -and ($npCmd.ScriptBlock.ToString() -match 'New-Object W\+WPL')
+    Check 'placement: New-CellPlacement is tile.ps1''s own, not a fake or missing' $npOwn 'no New-CellPlacement from tile.ps1 in scope'
+    if ($npOwn) {
+      $placement = New-Object W+WPL; $placement.length = [Runtime.InteropServices.Marshal]::SizeOf($placement)
+      $placement.flags = 2; $placement.showCmd = 3; $placement.minX = 11; $placement.minY = 22; $placement.maxX = 33; $placement.maxY = 44
+      $oldRect = New-Object W+RECT; $oldRect.L = 0; $oldRect.T = 0; $oldRect.R = 684; $oldRect.B = 2663; $placement.normal = $oldRect
+      $q = New-CellPlacement $placement 683 0 683 840 ([pscustomobject]@{ X = 10; Y = 40 })
+      Check 'placement: New-CellPlacement shows the window normal (showCmd 1)' ($q.showCmd -eq 1) "showCmd $($q.showCmd), wanted 1"
+      Check 'placement: New-CellPlacement copies the flags' ($q.flags -eq 2) "flags $($q.flags), wanted 2"
+      Check 'placement: New-CellPlacement copies the min and max positions' ((@($q.minX, $q.minY, $q.maxX, $q.maxY) -join ',') -eq '11,22,33,44') "min and max $(@($q.minX, $q.minY, $q.maxX, $q.maxY) -join ','), wanted 11,22,33,44"
+      Check 'placement: New-CellPlacement puts the normal rect at the cell, less the offset' ((@($q.normal.L, $q.normal.T, $q.normal.R, $q.normal.B) -join ',') -eq '673,-40,1356,800') "rect $(@($q.normal.L, $q.normal.T, $q.normal.R, $q.normal.B) -join ','), wanted 673,-40,1356,800"
+    }
   }
 
   # Arranged: the real W.Arranged. The fakes never reach it, and no window can be made arranged on demand, so the copy is
@@ -90,14 +106,15 @@ public static class W {
     }
   }
 
-  # The model: one window in screen coordinates. Live and Restore are x, y, w, h. Arr: snapped. State: normal, max or min.
+  # The model: one window in screen coordinates. Live and Restore are x, y, w, h. Arr: snapped. A maximized or minimized window is
+  # modelled as a plain one: Move-Win restores any window that is not snapped, whatever its state.
   # Works: false means Windows refuses a placement. Log lists the calls in order, so a case can check their order.
-  function New-Win($live, $restore, $arranged, $works = $true, $state = 'normal') {
-    [pscustomobject]@{ Live = $live; Restore = $restore; Arr = $arranged; Works = $works; State = $state; Moves = 0; Sets = 0; Log = @(); FirstMoveRestore = $null }
+  function New-Win($live, $restore, $arranged, $works = $true) {
+    [pscustomobject]@{ Live = $live; Restore = $restore; Arr = $arranged; Works = $works; Moves = 0; Sets = 0; Log = @(); FirstMoveRestore = $null }
   }
   function Mv-Live($win) { $mv.Live }
   function Mv-Restore($win) { $s = $mv; [pscustomobject]@{ X = $s.Restore[0]; Y = $s.Restore[1]; W = $s.Restore[2]; H = $s.Restore[3]; Arranged = $s.Arr } }
-  function Mv-Show($win, $cmd) { $s = $mv; $s.Log += "show $cmd"; if ($cmd -eq 9) { $s.State = 'normal' } }
+  function Mv-Show($win, $cmd) { $s = $mv; $s.Log += "show $cmd" }
   function Mv-Move($win, $x, $y, $w, $h) {
     $s = $mv; $s.Moves++; $s.Log += 'move'
     if ($s.Moves -eq 1) { $s.FirstMoveRestore = $s.Restore }
@@ -106,7 +123,7 @@ public static class W {
   }
   function Mv-Set($win, $x, $y, $w, $h) {
     $s = $mv; $s.Sets++; $s.Log += 'set'
-    if ($s.Works) { $s.Arr = $false; $s.State = 'normal'; $s.Live = @($x, $y, $w, $h); $s.Restore = @($x, $y, $w, $h) }
+    if ($s.Works) { $s.Arr = $false; $s.Live = @($x, $y, $w, $h); $s.Restore = @($x, $y, $w, $h) }
   }
 
   # The five wrappers, as fakes over the model. The older copy's Move-Win calls the stand-in W instead.
@@ -166,12 +183,12 @@ public static class W {
   Check 'move: a snapped window has its restore rect at the cell before its first move' (Same $mv.FirstMoveRestore $cell) "first move saw restore $($mv.FirstMoveRestore -join ',')"
 
   # 6. A maximized window that is not snapped is restored (ShowWindow 9) before its first move.
-  $mv = New-Win $plain $plain $false $true 'max'
+  $mv = New-Win $plain $plain $false
   $null = Move-Win $h0 683 0 683 840 3>$null
   Check 'move: a maximized window is restored before its first move' (($mv.Log.Count -gt 0) -and ($mv.Log[0] -eq 'show 9')) "calls $($mv.Log -join ' > ')"
 
   # 7. A minimized window that is not snapped is restored (ShowWindow 9) before its first move.
-  $mv = New-Win $minimized $plain $false $true 'min'
+  $mv = New-Win $minimized $plain $false
   $null = Move-Win $h0 683 0 683 840 3>$null
   Check 'move: a minimized window is restored before its first move' (($mv.Log.Count -gt 0) -and ($mv.Log[0] -eq 'show 9')) "calls $($mv.Log -join ' > ')"
 }
