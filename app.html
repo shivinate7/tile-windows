@@ -887,8 +887,11 @@ function unplace(id){const w=winById(id);if(selWin===id)optim=null;
 // How a stacked window is named in its front pin: the window's title when its app has several windows, as a pin does.
 const winSpec=w=>({app:w.app,match:w.min?w.title:matchFor(w)});
 // The windows stacked behind pin pi, each with the open window it resolves to (null when it is not open).
+// When the pin's own front is not open, Apply makes its first open back window the front (tile.ps1, Pass), so that entry is not listed.
 function stackOf(pi){const P=prev(),pin=scene().pins[pi];if(!P||!pin||!pin.behind)return[];const taken=new Set();
-  return pin.behind.map((b,k)=>{const p=P.placed.find(q=>q.behind&&q.pin===pi&&!taken.has(q.id)&&q.app===b.app&&(!b.match||q.title.toLowerCase().includes(String(b.match).toLowerCase())));if(p)taken.add(p.id);return{k,b,id:p?p.id:null}})}
+  const f=frontOfPin(pi);let up=!(f&&P.missing.some(m=>m.pin===pi&&m.app===pin.app&&(m.match||"")===(pin.match||"")));
+  const hits=(b,w)=>w.app===b.app&&(!b.match||w.title.toLowerCase().includes(String(b.match).toLowerCase()));
+  return pin.behind.map((b,k)=>{if(!up&&hits(b,f)){up=true;return null}const p=P.placed.find(q=>q.behind&&q.pin===pi&&!taken.has(q.id)&&hits(b,q));if(p)taken.add(p.id);return{k,b,id:p?p.id:null}}).filter(Boolean)}
 const frontOfPin=pi=>{const P=prev();return P&&P.placed.find(p=>p.pin===pi&&!p.behind)};
 // A is dropped on B's lower band: A goes behind B, with any windows behind A.
 function putBehind(aId,bId){
@@ -900,15 +903,17 @@ function putBehind(aId,bId){
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
     x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay},`Put ${appName(A.app)} behind ${appName(B.app)}.`)}
-// The k-th window behind pin pi comes to the front; the old front takes its place in the stack.
-function bringFront(pi,k=0){const e=stackOf(pi)[k];if(!e){status("Nothing is behind that window.");return}
+// The stack entry pin.behind[k] of pin pi, or its first listed entry when k is left out.
+const stackEntry=(pi,k)=>{const st=stackOf(pi);return k===undefined?st[0]:st.find(e=>e.k===k)};
+// The window at pin.behind[k] comes to the front; the old front takes its place in the stack.
+function bringFront(pi,k){const e=stackEntry(pi,k);if(!e){status("Nothing is behind that window.");return}
   if(!e.id){status("That window is not open, so it cannot come to the front.");return}
   const f=frontOfPin(pi),F=f&&winById(f.id),B=winById(e.id);selWin=e.id;
-  edit(x=>{const q=x.pins[pi],old=F?winSpec(F):{app:q.app,match:q.match||""};q.app=B.app;q.match=e.b.match||"";q.behind=q.behind.map((b,j)=>j===k?old:b)},
+  edit(x=>{const q=x.pins[pi],old=F?winSpec(F):{app:q.app,match:q.match||""};q.app=B.app;q.match=e.b.match||"";q.behind=q.behind.map((b,j)=>j===e.k?old:b)},
     `${appName(B.app)}: ${B.title} is in front.`)}
 // Take Out: the window leaves the stack for Windows That Stay Put.
-function takeOut(pi,k){const e=stackOf(pi)[k];if(!e)return;const W=e.id&&winById(e.id);
-  edit(x=>{const q=x.pins[pi];q.behind.splice(k,1);if(!q.behind.length)delete q.behind;
+function takeOut(pi,k){const e=stackEntry(pi,k);if(!e)return;const W=e.id&&winById(e.id);
+  edit(x=>{const q=x.pins[pi];q.behind.splice(e.k,1);if(!q.behind.length)delete q.behind;
     if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title})}},
     W?`${appName(W.app)}: ${W.title} is out of the stack. ${verb()} leaves it where it is.`:"Removed a window that is not open from the stack.")}
 // Lock or unlock a window's tile. A window the fill places gets a pin on its cell first, because a lock is saved on a pin.
@@ -938,6 +943,15 @@ function planResize(id,mon,c0,r0,cs,rs){
   // A window the fill placed there moves on its own.
   if(P)for(const p of P.placed)if(!p.behind&&p.pin<0&&p.id!==id&&p.mon===role&&pbox(p,g).cells.some(c=>nc.has(c)))count++;
   return{c0,r0,cs,rs,stopped,moves,count}}
+// A resize's start for placed window p: its monitor, its grid and its block now.
+function rzBase(p){const g=scene().grids[p.mon];return{id:p.id,m:snap.monitors.find(q=>q.role===p.mon),gr:g,b:pbox(p,g)}}
+// Shift+arrows and the Width and Height steppers: the grip's resize, dc columns and dr rows from the block now.
+// A step onto a locked tile is refused, so the block stays as it is; the grip instead keeps the largest span short of the lock.
+function resizeStep(p,dc,dr){const r=rzBase(p),w=winById(p.id);curMon=r.m;
+  if(lockOfPlaced(p)){status(`${w.title} is locked. Unlock it first.`);render();return}
+  const pl=planResize(p.id,r.m,r.b.c,r.b.r,clamp(r.b.cs+dc,1,r.gr.c-r.b.c),clamp(r.b.rs+dr,1,r.gr.r-r.b.r));
+  if(pl.stopped){status("A locked tile is in the way. Nothing changed.");render();return}
+  commitResize(r,pl)}
 function rzTarget(r){const m=r.m,g=r.gr,cw=m.w/g.c,ch=m.h/g.r,ex=r.start.x+r.start.w+(r.px-r.sx)/G.S,ey=r.start.y+r.start.h+(r.py-r.sy)/G.S;
   const cs=clamp(Math.round((ex-(m.x+r.b.c*cw))/cw),1,g.c-r.b.c),rs=clamp(Math.round((ey-(m.y+r.b.r*ch))/ch),1,g.r-r.b.r);
   return planResize(r.id,m,r.b.c,r.b.r,cs,rs)}
@@ -1060,8 +1074,7 @@ stage.addEventListener("pointerdown",ev=>{
   const e=gr.closest(".tile"),id=+e.dataset.id,d=drawn[id],P=prev(),p=P&&P.placed.find(q=>q.id===id&&!q.behind);
   if(!d||!p||lockOfPlaced(p))return;
   ev.preventDefault();e.focus({preventScroll:true});try{gr.setPointerCapture(ev.pointerId)}catch(_){}
-  const g=scene().grids[p.mon];
-  rz={id,el:e,grip:gr,m:snap.monitors.find(q=>q.role===p.mon),gr:g,b:pbox(p,g),start:{x:d.x,y:d.y,w:d.w,h:d.h},sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,pid:ev.pointerId,plan:null};
+  rz={...rzBase(p),el:e,grip:gr,start:{x:d.x,y:d.y,w:d.w,h:d.h},sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,pid:ev.pointerId,plan:null};
   selWin=id;render()});
 $("bay").addEventListener("pointerdown",ev=>{
   const e=ev.target.closest(".chip");if(!e||ev.button!==0||drag||zdraw||isBusy)return;
@@ -1114,10 +1127,13 @@ stage.addEventListener("keydown",ev=>{
   if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();selWin=id;render();return}
   if(LIVE&&prev()&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey){
     if(ev.key==="l"||ev.key==="L"){ev.preventDefault();toggleLock(id);return}
-    if(ev.key==="b"||ev.key==="B"){ev.preventDefault();const pp=pinOf(id);if(pp&&stackOf(pp.p.pin).length)bringFront(pp.p.pin,0);else status("Nothing is behind that window.");return}}
+    if(ev.key==="b"||ev.key==="B"){ev.preventDefault();const pp=pinOf(id);if(pp&&stackOf(pp.p.pin).length)bringFront(pp.p.pin);else status("Nothing is behind that window.");return}}
   if((ev.key==="Delete"||ev.key==="Backspace")&&LIVE){ev.preventDefault();unpin(id);return}
   if((ev.key==="k"||ev.key==="K")&&LIVE&&prev()){ev.preventDefault();unplace(id);return}
   const k={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];if(!k)return;ev.preventDefault();
+  // Shift+arrows on the board resize by one cell, as the corner grip does.
+  const pz=ev.shiftKey&&LIVE&&prev()&&prev().placed.find(q=>q.id===id&&!q.behind);
+  if(pz){resizeStep(pz,k[0],k[1]);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
   const d=drawn[id];if(!d)return;
   const pp=LIVE&&pinOf(id);let m,g,b;
   if(pp){m=snap.monitors.find(q=>q.role===pp.pin.mon);g=gridOf(m);b=bbox(pp.pin.slots,g)}
@@ -1223,7 +1239,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="zdel"||t.dataset.zdel!==undefined){const i=t.id==="zdel"?selZone:+t.dataset.zdel;selZone=null;edit(x=>{x.zones.splice(i,1);if(!x.zones.length)delete x.zones},"Removed the zone. Its windows fill as before.")}
   else if(t.classList.contains("stayput"))unplace(+t.closest(".tile").dataset.id);
   else if(t.classList.contains("lk"))toggleLock(+t.closest(".tile").dataset.id);
-  else if(t.classList.contains("stk")){const pp=pinOf(+t.closest(".tile").dataset.id);if(pp)bringFront(pp.p.pin,0)}
+  else if(t.classList.contains("stk")){const pp=pinOf(+t.closest(".tile").dataset.id);if(pp)bringFront(pp.p.pin)}
   else if(t.dataset.bf!==undefined){const pp=pinOf(selWin);if(pp)bringFront(pp.p.pin,+t.dataset.bf)}
   else if(t.dataset.bo!==undefined){const pp=pinOf(selWin);if(pp)takeOut(pp.p.pin,+t.dataset.bo)}
   else if(t.id==="baymore"){bayAll=!bayAll;render()}
@@ -1233,9 +1249,7 @@ document.addEventListener("click",async ev=>{
   else if(t.dataset.apply){selId=t.dataset.apply;render();if(!prevs[selId])await preview(selId);applyScene()}
   else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
   else if(t.dataset.g){setGrid(t.dataset.g,+t.dataset.d)}
-  else if(t.dataset.span){const pp=pinOf(selWin);if(!pp)return;const g=scene().grids[pp.pin.mon],b=bbox(pp.pin.slots,g);
-    const cs=b.cs+(t.dataset.span==="cs"?+t.dataset.d:0),rs=b.rs+(t.dataset.span==="rs"?+t.dataset.d:0);
-    pinWin(selWin,snap.monitors.find(q=>q.role===pp.pin.mon),b.r*g.c+b.c,clamp(cs,1,g.c-b.c),clamp(rs,1,g.r-b.r))}
+  else if(t.dataset.span){const pp=pinOf(selWin);if(pp)resizeStep(pp.p,t.dataset.span==="cs"?+t.dataset.d:0,t.dataset.span==="rs"?+t.dataset.d:0)}
   else if(t.dataset.day){const d=+t.dataset.day;edit(s=>{const x=s.trigger;x.days=(x.days||[]).includes(d)?x.days.filter(v=>v!==d):[...(x.days||[]),d].sort()})}
   else if(t.id==="unpin")unpin(selWin);
   else if(t.id==="save")saveScene();
