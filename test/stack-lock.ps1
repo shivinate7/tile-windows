@@ -23,6 +23,8 @@
 #     never reads Place here. A drop on the lower band stacks the dragged window behind; a drop on the upper zone swaps.
 #     The inspector, for the selected front tile, has a Bring to Front and a Take Out button for each window behind it.
 #     A grip drag of 1.4 cells to the right, on a 1x1 tile, makes a 2-column span (whole cells, rounded).
+#     Shift+arrow and the Width and Height steppers grow a span the same way as the grip: a covered pin moves with its stack to
+#     the first free cell, else to Windows That Stay Put, and growth stops at a locked tile.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 $ErrorActionPreference = 'Stop'
@@ -135,16 +137,25 @@ function SlFmt($b) { if (-not $b) { 'none' } else { '{0},{1} {2}x{3}' -f [int]$b
 function SlShort($x) { $j = ($x | ConvertTo-Json -Depth 6 -Compress); if ($j.Length -gt 400) { $j.Substring(0, 400) } else { $j } }
 function SlLabel { SlJs "document.getElementById('drop').textContent" }
 function SlLabelShown { SlJs "getComputedStyle(document.getElementById('drop')).display !== 'none'" }
-# Focuses a tile and presses one arrow key on it: the keydown the board reads.
-function SlKey($id, $key, $vk) {
+# Focuses a tile and presses one arrow key on it: the keydown the board reads. $mods is the CDP modifier bits (Shift is 8).
+function SlKey($id, $key, $vk, $mods = 0) {
   [void](SlJs "(() => { els.get($id).focus({ preventScroll: true }); return true; })()")
-  [void](SlSend 'Input.dispatchKeyEvent' @{ type = 'keyDown'; key = $key; code = $key; windowsVirtualKeyCode = $vk })
-  [void](SlSend 'Input.dispatchKeyEvent' @{ type = 'keyUp'; key = $key; code = $key; windowsVirtualKeyCode = $vk })
+  [void](SlSend 'Input.dispatchKeyEvent' @{ type = 'keyDown'; key = $key; code = $key; windowsVirtualKeyCode = $vk; modifiers = $mods })
+  [void](SlSend 'Input.dispatchKeyEvent' @{ type = 'keyUp'; key = $key; code = $key; windowsVirtualKeyCode = $vk; modifiers = $mods })
   SlSettle }
 # Types a Title contains value into the inspector's field, and fires its change, as a typed value does.
 function SlTitle($text) { [void](SlJs "(() => { const i = document.getElementById('match'); if (!i) return false; i.value = '$text'; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()"); SlSettle }
 # Presses the Fewer button of the monitor's Columns (k = c) or Rows (k = r) stepper, when it is enabled.
-function SlFewer($k) { [void](SlJs "(() => { const b = [...document.querySelectorAll('button')].find(x => x.dataset.g === '$k' && x.dataset.d === '-1'); if (!b || b.disabled) return false; b.click(); return true; })()"); SlSettle }
+# Presses an inspector stepper button (data-$key = $val, data-d = $d) and returns what it found: 'pressed', 'disabled' or
+# 'no such button', so a case names a miss. SlFewer presses the Fewer button of a monitor's Columns (g = c) or Rows (g = r).
+function SlStep($key, $val, $d) {
+  $r = SlJs "(() => { const b = [...document.querySelectorAll('button')].find(x => x.dataset.$key === '$val' && x.dataset.d === '$d'); if (!b) return 'no such button'; if (b.disabled) return 'disabled'; b.click(); return 'pressed'; })()"
+  SlSettle
+  "$r" }
+function SlFewer($k) { [void](SlStep 'g' $k '-1') }
+# The text of the inspector's Behind This Window list ('' when it is not drawn), and a placed window by id (null when none).
+function SlBehindText { SlJs "(() => { const b = document.querySelector('#win .bstack'); return b ? b.textContent : ''; })()" }
+function SlPlacedOf($id) { SlGet "prevs[selId].placed.find(p => p.id === $id) || null" }
 # The scene the server holds (after a Save), and the scene the page holds (work).
 function SlSavedScene { ((Invoke-WebRequest -UseBasicParsing "$($script:url)config").Content | ConvertFrom-Json).scenes | ? { $_.id -eq 'sl' } | Select-Object -First 1 }
 function SlPin($s, $text) { @($s.pins | ? { "$($_.match)" -like "*$text*" })[0] }
@@ -224,6 +235,14 @@ $pinsGridFree = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots"
 # A front that is not open. Empty state: the front is the only pin. Full state: the fixture's ten pins, with the Refactor pin's front not open.
 $pinsFrontGone = SlPins '{"app":"claude","match":"Nonexistent","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"}]}'
 $pinsFullFrontGone = $pinsFull.Replace('{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}', '{"app":"claude","match":"Nonexistent","mon":"wide","slots":[0],"behind":[{"app":"claude","match":"Refactor"}]}')
+# A front that is not open, with a back window whose entry has no title match (the inspector then prints "Not open").
+$pinsNoMatchGone = SlPins '{"app":"claude","match":"Nonexistent","mon":"wide","slots":[3],"behind":[{"app":"notepad"}]}'
+# Growth: Refactor (slot 0) grows over Quarterly, which carries Draft release behind it. pinsGrowFree grows wide, over slot 1;
+# pinsGrowFreeDown grows tall, over slot 5. Slots are 0-based: the first free cell is slot 2 for a wide grow, slot 1 for a tall one.
+$pinsGrowFree = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1],"behind":[{"app":"claude","match":"Draft release"}]}'
+$pinsGrowFreeDown = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[5],"behind":[{"app":"claude","match":"Draft release"}]}'
+# Full board: no free cell. Pin parser (slot 1) carries Draft release behind it; POWERPNT holds slot 2, so all ten slots are taken.
+$pinsFullStack = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"claude","match":"Pin parser","mon":"wide","slots":[1],"behind":[{"app":"claude","match":"Draft release"}]}' '{"app":"POWERPNT","match":"Deck draft","mon":"wide","slots":[2]}' '{"app":"chrome","match":"Pull request","mon":"wide","slots":[3]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[4]}' '{"app":"chrome","match":"quoted","mon":"wide","slots":[5]}' '{"app":"WindowsTerminal","match":"tiler","mon":"wide","slots":[6]}' '{"app":"WindowsTerminal","match":"docs watch","mon":"wide","slots":[7]}' '{"app":"explorer","match":"Projects","mon":"wide","slots":[8]}' '{"app":"explorer","match":"Downloads","mon":"wide","slots":[9]}'
 # Engine: the open back window takes the front's cell as the new front, as a window behind a removed front takes its cell on the board.
 $eGone = SlPlace (SlSceneJson $pinsFrontGone)
 $eGoneBack = @($eGone.placed | ? { $_.id -eq 1003 })[0]
@@ -358,6 +377,90 @@ try {
   $b8 = SlBox 1001; SlDrag (SlAt $b8 (($b8.w - 6) / $b8.w) (($b8.h - 6) / $b8.h)) (SlAt $b8 ((($b8.w - 6) + 0.6 * $b8.w) / $b8.w) (($b8.h - 6) / $b8.h))
   $s8 = SlGet 'work[selId]'; $l8 = SlPin $s8 'Quarterly'; $c8 = SlPin $s8 'Refactor'
   Check 'resize: a resize stops at a locked tile, which keeps its cell' ([bool]$l8 -and $l8.lock -eq $true -and (SlCells $l8) -eq '1') "locked pin: $(SlShort $l8)"
+
+  # Growth by Shift+arrow and by the Width and Height steppers: a covered pinned window moves to the first free cell (rows
+  # top to bottom), with the windows stacked behind it. With no free cell it goes to Windows That Stay Put, with its stack.
+  # Each case's first check is the growth itself, so a key or stepper that never reaches the page cannot pass.
+  SlCase (SlSceneJson $pinsGrowFree)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlKey 1001 'ArrowRight' 39 8
+  $g1 = SlGet 'work[selId]'; $g1r = SlPin $g1 'Refactor'; $g1q = SlPin $g1 'Quarterly'
+  Check 'control: Shift+arrow grows a pinned window to a 2-column span' ([bool]$g1r -and (SlCells $g1r) -eq '0,1') "claude pin: $(SlShort $g1r)"
+  Check 'resize: Shift+arrow growth moves the covered pinned window to the first free cell' ([bool]$g1q -and (SlCells $g1q) -eq '2') "chrome pin: $(SlShort $g1q)"
+  Check 'resize: Shift+arrow growth moves the covered window''s stack with it' ([bool]$g1q -and (SlHasBehind $g1q 'Draft release')) "chrome pin: $(SlShort $g1q)"
+
+  SlCase (SlSceneJson $pinsGrowFree)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $w2 = SlStep 'span' 'cs' '1'
+  $w2s = SlGet 'work[selId]'; $w2r = SlPin $w2s 'Refactor'; $w2q = SlPin $w2s 'Quarterly'
+  Check 'control: the Width stepper grows a pinned window to a 2-column span' ($w2 -eq 'pressed' -and [bool]$w2r -and (SlCells $w2r) -eq '0,1') "stepper: $w2; claude pin: $(SlShort $w2r)"
+  Check 'resize: the Width stepper moves the covered pinned window to the first free cell' ([bool]$w2q -and (SlCells $w2q) -eq '2') "stepper: $w2; chrome pin: $(SlShort $w2q)"
+  Check 'resize: the Width stepper moves the covered window''s stack with it' ([bool]$w2q -and (SlHasBehind $w2q 'Draft release')) "chrome pin: $(SlShort $w2q)"
+
+  SlCase (SlSceneJson $pinsGrowFreeDown)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $h2 = SlStep 'span' 'rs' '1'
+  $h2s = SlGet 'work[selId]'; $h2r = SlPin $h2s 'Refactor'; $h2q = SlPin $h2s 'Quarterly'
+  Check 'control: the Height stepper grows a pinned window to a 2-row span' ($h2 -eq 'pressed' -and [bool]$h2r -and (SlCells $h2r) -eq '0,5') "stepper: $h2; claude pin: $(SlShort $h2r)"
+  Check 'resize: the Height stepper moves the covered pinned window to the first free cell' ([bool]$h2q -and (SlCells $h2q) -eq '1') "stepper: $h2; chrome pin: $(SlShort $h2q)"
+  Check 'resize: the Height stepper moves the covered window''s stack with it' ([bool]$h2q -and (SlHasBehind $h2q 'Draft release')) "chrome pin: $(SlShort $h2q)"
+
+  SlCase (SlSceneJson $pinsFullStack)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlKey 1001 'ArrowRight' 39 8
+  $b1 = SlGet 'work[selId]'; $b1r = SlPin $b1 'Refactor'
+  Check 'control: Shift+arrow grows a pinned window to a 2-column span on a full board' ([bool]$b1r -and (SlCells $b1r) -eq '0,1') "claude pin: $(SlShort $b1r)"
+  Check 'resize: with no free cell, Shift+arrow growth sends the covered pinned window to Windows That Stay Put' (SlHasBay $b1 'Pin parser') "bay: $(SlShort $b1.bay)"
+  Check 'resize: with no free cell, Shift+arrow growth sends its stack to Windows That Stay Put' (SlHasBay $b1 'Draft release') "bay: $(SlShort $b1.bay)"
+
+  SlCase (SlSceneJson $pinsFullStack)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $w3 = SlStep 'span' 'cs' '1'
+  $w3s = SlGet 'work[selId]'; $w3r = SlPin $w3s 'Refactor'
+  Check 'control: the Width stepper grows a pinned window to a 2-column span on a full board' ($w3 -eq 'pressed' -and [bool]$w3r -and (SlCells $w3r) -eq '0,1') "stepper: $w3; claude pin: $(SlShort $w3r)"
+  Check 'resize: with no free cell, the Width stepper sends the covered pinned window to Windows That Stay Put' (SlHasBay $w3s 'Pin parser') "bay: $(SlShort $w3s.bay)"
+  Check 'resize: with no free cell, the Width stepper sends its stack to Windows That Stay Put' (SlHasBay $w3s 'Draft release') "bay: $(SlShort $w3s.bay)"
+
+  SlCase (SlSceneJson $pinsFullStack)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $h3 = SlStep 'span' 'rs' '1'
+  $h3s = SlGet 'work[selId]'; $h3r = SlPin $h3s 'Refactor'
+  Check 'control: the Height stepper grows a pinned window to a 2-row span on a full board' ($h3 -eq 'pressed' -and [bool]$h3r -and (SlCells $h3r) -eq '0,5') "stepper: $h3; claude pin: $(SlShort $h3r)"
+  Check 'resize: with no free cell, the Height stepper sends the covered pinned window to Windows That Stay Put' (SlHasBay $h3s 'quoted') "bay: $(SlShort $h3s.bay)"
+
+  # Guard, not a new claim: Shift+arrow growth toward a locked tile stops. This passes on the old code (pinWin checks lockedHit).
+  # The status line names the refusal, so a key that never reached the page cannot pass it; the Shift control above covers the key.
+  SlCase (SlSceneJson $pinsResizeLock)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlKey 1001 'ArrowRight' 39 8
+  $lg = SlGet 'work[selId]'; $lgq = SlPin $lg 'Quarterly'; $lgr = SlPin $lg 'Refactor'
+  $lgmsg = SlJs "document.getElementById('msg').textContent"
+  Check 'guard: Shift+arrow growth toward a locked tile is refused, and says so' ("$lgmsg" -match 'locked tile is in the way') "status: $lgmsg"
+  Check 'guard: Shift+arrow growth toward a locked tile leaves the locked tile in its cell' ([bool]$lgq -and $lgq.lock -eq $true -and (SlCells $lgq) -eq '1') "locked pin: $(SlShort $lgq)"
+  Check 'guard: Shift+arrow growth toward a locked tile does not grow the window onto it' ([bool]$lgr -and (SlCells $lgr) -eq '0') "claude pin: $(SlShort $lgr)"
+
+  # A back window promoted because its front is not open is the front now (tile.ps1 promotes the first open back window).
+  # Control: the promoted window is the front of pin 0 on the board. Red: the inspector's Behind This Window still lists it.
+  SlCase (SlSceneJson $pinsFrontGone)
+  SlClick (SlAt (SlBox 1003) 0.5 0.5)
+  $pe = SlPlacedOf 1003
+  Check 'promoted, empty state: the open back window is the front of pin 0 (control)' ([bool]$pe -and $pe.pin -eq 0 -and -not $pe.behind) "placed: $(SlShort $pe)"
+  $pet = SlBehindText
+  Check 'promoted, empty state: Behind This Window does not list the promoted window' ("$pet" -notlike '*Draft release*') "Behind This Window: $pet"
+
+  SlCase (SlSceneJson $pinsFullFrontGone)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $pf = SlPlacedOf 1001
+  Check 'promoted, full state: the open back window is the front of pin 0 (control)' ([bool]$pf -and $pf.pin -eq 0 -and -not $pf.behind) "placed: $(SlShort $pf)"
+  $pft = SlBehindText
+  Check 'promoted, full state: Behind This Window does not list the promoted window' ("$pft" -notlike '*Refactor*') "Behind This Window: $pft"
+
+  SlCase (SlSceneJson $pinsNoMatchGone)
+  SlClick (SlAt (SlBox 1014) 0.5 0.5)
+  $pn = SlPlacedOf 1014
+  Check 'promoted, no title match: the open back window is the front of pin 0 (control)' ([bool]$pn -and $pn.pin -eq 0 -and -not $pn.behind) "placed: $(SlShort $pn)"
+  $pnt = SlBehindText
+  Check 'promoted, no title match: Behind This Window does not read "Not open" for the promoted window' ("$pnt" -notlike '*Not open*') "Behind This Window: $pnt"
 
   # Spanned drop: the whole 2x2 block is the target. Put Behind stacks behind it and keeps its span. Swap gives the block
   # to the dropped window and moves the spanned window to the dropped window's old 1x1 cell.
