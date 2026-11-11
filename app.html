@@ -300,6 +300,9 @@ dialog form{display:grid;gap:10px}
 .tile.lock .lk{background:var(--ink);color:var(--panel)}
 .tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 6px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1}
 .tile .stk svg{width:10px;height:10px}
+/* A narrow stacked tile (about 50x55) has a 20px grip at the bottom right. The badge gives up its icon and padding so its drawn box and its 3px hit extension end left of the grip: the two hit areas never meet, and a press on the +N reaches the badge. */
+.tile.stacked.narrow .stk{left:3px;padding:1px 3px}
+.tile.stacked.narrow .stk svg{display:none}
 .tile.stacked span{-webkit-line-clamp:2}
 .tile.stacked .stayput{bottom:24px;right:3px}
 /* Stack edge: the front tile keeps its box and its full border. The back window's edge is its own element, drawn 3px up and to the right of the front, under it. */
