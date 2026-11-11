@@ -65,12 +65,21 @@ function Get-WinRestore($win) {
   $o = Get-WorkspaceOffset
   [pscustomobject]@{ X = $p.normal.L + $o.X; Y = $p.normal.T + $o.Y; W = $p.normal.R - $p.normal.L; H = $p.normal.B - $p.normal.T; Arranged = [W]::Arranged($win) }
 }
+# A copy of $placement showing normal, with a new restore rect for the cell (screen coordinates x, y, ww, hh less the workspace offset).
+# The rect is built as a whole struct and assigned whole: `$p.normal.L = ...` would change a copy of the nested struct, never the placement.
+function New-CellPlacement($placement, $x, $y, $ww, $hh, $offset) {
+  $r = New-Object W+RECT; $r.L = $x - $offset.X; $r.T = $y - $offset.Y; $r.R = $r.L + $ww; $r.B = $r.T + $hh
+  $q = New-Object W+WPL
+  $q.length = $placement.length; $q.flags = $placement.flags; $q.showCmd = 1
+  $q.minX = $placement.minX; $q.minY = $placement.minY; $q.maxX = $placement.maxX; $q.maxY = $placement.maxY
+  $q.normal = $r
+  $q
+}
 # Show normal and set the restore rect in one call. Unlike ShowWindow, this also ends a snapped state.
 function Set-WinRestore($win, $x, $y, $ww, $hh) {
   $p = New-Object W+WPL; $p.length = [Runtime.InteropServices.Marshal]::SizeOf($p); [void][W]::GetWindowPlacement($win, [ref]$p)
-  $o = Get-WorkspaceOffset
-  $p.showCmd = 1; $p.normal.L = $x - $o.X; $p.normal.T = $y - $o.Y; $p.normal.R = $x - $o.X + $ww; $p.normal.B = $y - $o.Y + $hh
-  [void][W]::SetWindowPlacement($win, [ref]$p)
+  $q = New-CellPlacement $p $x $y $ww $hh (Get-WorkspaceOffset)
+  [void][W]::SetWindowPlacement($win, [ref]$q)
 }
 function Show-WinNormal($win) { [void][W]::ShowWindow($win, 9) }
 function Move-WinRect($win, $x, $y, $ww, $hh) { [void][W]::MoveWindow($win, $x, $y, $ww, $hh, $true) }
