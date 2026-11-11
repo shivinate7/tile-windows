@@ -11,6 +11,7 @@
 #   fill order, after pins (a pin wins its cell). Its bay ([{app, title}]) holds windows that stay put.
 #   left[].why says where a window without a cell came from: 'no free cell', 'zone full' or 'in the bay'.
 # -From <path|json>: use a -Json snapshot instead of the live desktop. Always a dry run.
+# -Lib: define Move-Win and the Win32 reads and writes behind it, then return (tests dot-source it and swap those for fakes).
 # Slots number row by row from 1 (top-left).
 # -Cells n: grid with n cells (rows picked for you). Ultrawide default = 10 cells (5x2).
 param([int]$Cols = 0, [int]$Rows = 0, [int]$Cells = 0, [string[]]$Proc = @('claude'), [string]$Monitor = 'wide', [string]$Pin = '', [switch]$List, [switch]$DryRun, [switch]$Json, [string]$Place = '', [string]$PlaceFile = '', [switch]$Default,
@@ -18,7 +19,7 @@ param([int]$Cols = 0, [int]$Rows = 0, [int]$Cells = 0, [string[]]$Proc = @('clau
   [string]$Order = '',
   # -Sort app|category|title|position: fill order. app = -Proc order (then -Order, then where windows sit now).
   [string]$Sort = 'app',
-  [string]$Scene = '', [string]$From = '',
+  [string]$Scene = '', [string]$From = '', [switch]$Lib,
   [string[]]$Skip = @('TextInputHost', 'PowerToys*', 'ShellExperienceHost', 'SearchHost', 'StartMenuExperienceHost', 'LockApp'))
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -44,9 +45,53 @@ public static class W {
         && (GetWindowLong(h, -20) & 0x80) == 0 && c == 0;
   }
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int hh, bool r);
+  [StructLayout(LayoutKind.Sequential)] public struct WPL { public int length, flags, showCmd, minX, minY, maxX, maxY; public RECT normal; }
+  [DllImport("user32.dll")] public static extern bool GetWindowPlacement(IntPtr h, ref WPL p);
+  [DllImport("user32.dll")] public static extern bool SetWindowPlacement(IntPtr h, ref WPL p);
+  [DllImport("user32.dll")] static extern bool IsWindowArranged(IntPtr h);
+  // Snapped or vertically maximized (Windows 11). Older Windows has no such call: never arranged.
+  public static bool Arranged(IntPtr h) { try { return IsWindowArranged(h); } catch (EntryPointNotFoundException) { return false; } }
 }
 '@
 . (Join-Path $PSScriptRoot 'config.ps1')
+
+# The Win32 reads and writes behind Move-Win, so a test can swap them for fakes and move no window.
+function Get-WinRect($win) { $r = New-Object W+RECT; [void][W]::GetWindowRect($win, [ref]$r); [pscustomobject]@{ W = $r.R - $r.L; H = $r.B - $r.T } }
+# A placement rect (rcNormalPosition) is in workspace coordinates: screen coordinates less the primary work area's offset.
+function Get-WorkspaceOffset { $s = [System.Windows.Forms.Screen]::PrimaryScreen; [pscustomobject]@{ X = $s.WorkingArea.X - $s.Bounds.X; Y = $s.WorkingArea.Y - $s.Bounds.Y } }
+# Where Windows sends a window when it is restored (screen coordinates), and whether it holds the window snapped.
+function Get-WinRestore($win) {
+  $p = New-Object W+WPL; $p.length = [Runtime.InteropServices.Marshal]::SizeOf($p); [void][W]::GetWindowPlacement($win, [ref]$p)
+  $o = Get-WorkspaceOffset
+  [pscustomobject]@{ X = $p.normal.L + $o.X; Y = $p.normal.T + $o.Y; W = $p.normal.R - $p.normal.L; H = $p.normal.B - $p.normal.T; Arranged = [W]::Arranged($win) }
+}
+# Show normal and set the restore rect in one call. Unlike ShowWindow, this also ends a snapped state.
+function Set-WinRestore($win, $x, $y, $ww, $hh) {
+  $p = New-Object W+WPL; $p.length = [Runtime.InteropServices.Marshal]::SizeOf($p); [void][W]::GetWindowPlacement($win, [ref]$p)
+  $o = Get-WorkspaceOffset
+  $p.showCmd = 1; $p.normal.L = $x - $o.X; $p.normal.T = $y - $o.Y; $p.normal.R = $x - $o.X + $ww; $p.normal.B = $y - $o.Y + $hh
+  [void][W]::SetWindowPlacement($win, [ref]$p)
+}
+function Show-WinNormal($win) { [void][W]::ShowWindow($win, 9) }
+function Move-WinRect($win, $x, $y, $ww, $hh) { [void][W]::MoveWindow($win, $x, $y, $ww, $hh, $true) }
+
+# One move path for slots and -Place: restore, move twice, warn if the size is off.
+function Move-Win($win, $x, $y, $ww, $hh) {
+  # A snapped window keeps its own restore rect, and moving it never touches that rect. Windows (or the
+  # app) later falls back to it, so the window lands the right width and a stale height (684 x 2663 for a
+  # cell of 683 x 840). ShowWindow does not end the snap, so set the restore rect to the cell first.
+  if ((Get-WinRestore $win).Arranged) { Set-WinRestore $win $x $y $ww $hh } else { Show-WinNormal $win }  # restore if maximized/minimized
+  # A window that crosses into a monitor with another display scale gets resized by Windows
+  # after the first move, so set the size again once it has landed.
+  Move-WinRect $win $x $y $ww $hh
+  Move-WinRect $win $x $y $ww $hh
+  $r = Get-WinRect $win; $rs = Get-WinRestore $win
+  if ([Math]::Abs($r.W - $ww) -gt 20 -or [Math]::Abs($r.H - $hh) -gt 20 -or [Math]::Abs($rs.W - $ww) -gt 20 -or [Math]::Abs($rs.H - $hh) -gt 20) {
+    Write-Warning ("Off size: '{0}' is {1}x{2} (restore rect {3}x{4}), wanted {5}x{6}." -f @($items | ? { $_.H -eq $win })[0].Title, $r.W, $r.H, $rs.W, $rs.H, $ww, $hh)
+    "off size: is {0}x{1}, restore rect {2}x{3}" -f $r.W, $r.H, $rs.W, $rs.H
+  }
+}
+if ($Lib) { return }
 
 function JsonText($s) { if ($s -match '^\s*[\[{]') { $s } else { [IO.File]::ReadAllText((Resolve-Path -LiteralPath $s), $TileUtf8) } }
 
@@ -113,19 +158,6 @@ $allProc = @(@($pins.App) + @($Proc | ? { $pins.App -notcontains $_ }) | ? { $_ 
 
 if ($List) { Ranked $allProc $Skip | Format-Table App, Title -AutoSize | Out-String -Width 200; $screens | % { "$($_.Name) {X=$($_.X),Y=$($_.Y),Width=$($_.W),Height=$($_.H)}" }; return }
 
-# One move path for slots and -Place: restore, move twice, warn if the size is off.
-function Move-Win($win, $x, $y, $ww, $hh) {
-  [void][W]::ShowWindow($win, 9)  # restore if maximized/minimized
-  # A window that crosses into a monitor with another display scale gets resized by Windows
-  # after the first move, so set the size again once it has landed.
-  [void][W]::MoveWindow($win, $x, $y, $ww, $hh, $true)
-  [void][W]::MoveWindow($win, $x, $y, $ww, $hh, $true)
-  $r = New-Object W+RECT; [void][W]::GetWindowRect($win, [ref]$r)
-  if ([Math]::Abs(($r.R - $r.L) - $ww) -gt 20 -or [Math]::Abs(($r.B - $r.T) - $hh) -gt 20) {
-    Write-Warning ("Off size: '{0}' is {1}x{2}, wanted {3}x{4}." -f ($items | ? { $_.H -eq $win }).Title, ($r.R - $r.L), ($r.B - $r.T), $ww, $hh)
-    "off size: is {0}x{1}" -f ($r.R - $r.L), ($r.B - $r.T)
-  }
-}
 if ($Json -and -not ($Place -or $PlaceFile -or $sc)) {
   $roles = Roles
   [pscustomobject]@{
