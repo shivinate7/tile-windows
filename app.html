@@ -141,15 +141,16 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 /* While dragging, a small chip follows the pointer, so the target and its neighbours stay readable. */
 #ghost{position:fixed;z-index:50;pointer-events:none;display:none;max-width:240px;padding:3px 8px;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);color:var(--ink);font:600 12px var(--f);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 8px 18px -8px color-mix(in srgb,var(--ink) 60%,transparent)}
 .tile.ztake{outline:2px dashed var(--select);outline-offset:-3px}
-.tile .stayput{display:none;position:absolute;right:19px;bottom:3px;padding:2px 5px;border:1px solid var(--ink);border-radius:3px;background:var(--panel);color:var(--ink);font:600 11px var(--f);white-space:nowrap;cursor:pointer}
+.tile .stayput{display:none;position:absolute;right:21px;bottom:3px;padding:2px 5px;border:1px solid var(--ink);border-radius:3px;background:var(--panel);color:var(--ink);font:600 11px var(--f);white-space:nowrap;cursor:pointer}
 .tile.sel .stayput{display:block}
 /* A narrow tile shows Stay Put as an icon alone, named by its tooltip and label, left of the grip and clear of the tag, lock, pin mark and badge. */
 .tile .stayput em{font-style:normal}
 .tile .stayput svg{display:none;width:12px;height:12px}
 .tile.sel .stayput.ico{display:grid;right:21px;bottom:3px;width:18px;height:18px;padding:0;place-items:center}
-/* On a stacked narrow tile the icon sits above the grip, under the lock; the pin mark gives way to it, and the inspector still says Pinned. */
-.tile.sel.stacked .stayput.ico{right:3px;bottom:19px}
-.tile.sel.stacked.narrow .pinmark{display:none}
+/* A selected stacked narrow tile (about 50x55) has no free 18px in its right column: the lock, the grip and the badge fill it. The icon takes the top row left of the lock, in the app tag's place. The pin mark and the tag give way to it; the inspector and the tile's label still say Pinned and name the app. */
+.tile.sel.stacked .stayput.ico{top:2px;bottom:auto;right:24px}
+.tile.sel.stacked.narrow .pinmark,.tile.sel.stacked.narrow b{display:none}
+.tile.sel.stacked.narrow span{margin-top:18px}
 .tile .stayput.ico svg{display:block}
 .tile .stayput.ico .spt{display:none}
 .tile .stayput:disabled{opacity:.55;cursor:not-allowed}
@@ -1043,7 +1044,7 @@ function frame(){raf=0;
     e.firstChild.textContent=`${plural(cs,"column")} × ${plural(rs,"row")} · ${n?`covers ${plural(n,"window")}`:"empty cells"} · Esc cancels`;return}
   if(rz){const r=rz,pl=r.plan=rzTarget(r),e=$("rzdraw"),n=pl.count,bay=pl.moves.filter(m=>!m.to).length;
     Object.assign(e.style,px(cellRect(r.m,r.gr,pl.c0,pl.r0,pl.cs,pl.rs)));e.style.display="block";
-    e.firstChild.innerHTML=`<b>${pl.cs}×${pl.rs}</b> · ${n?`${plural(n,"window")} move`:"no window moves"}${bay?` · ${bay} to the list`:""}${pl.stopped?" · stops at a locked tile":""}`;
+    e.firstChild.innerHTML=`<b>${pl.cs}×${pl.rs}</b> · ${n?(n===1?"1 window moves":`${n} windows move`):"no window moves"}${bay?` · ${bay} to the list`:""}${pl.stopped?" · stops at a locked tile":""}`;
     $("rzdest").innerHTML=pl.moves.filter(m=>m.to).map(m=>{const rr=px(cellRect(r.m,r.gr,m.to.c,m.to.r,m.to.cs,m.to.rs)),W=winById(m.wins[0]);
       return `<div class="rdest" style="left:${rr.left};top:${rr.top};width:${rr.width};height:${rr.height}"><span>${esc(W?appName(W.app):"")}</span></div>`}).join("");
     // The Width and Height steppers follow the grip.
