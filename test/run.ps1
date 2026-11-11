@@ -311,6 +311,11 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Stack, lock, resize and the spanned drop: their own file, run in a child powershell (its FAIL lines count here).
   $slOut = @(Child (Join-Path $PSScriptRoot 'stack-lock.ps1')); $slOut | % { "$_" }
   $script:fail += [Math]::Max(@($slOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
+  $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
+  & { . (Join-Path $PSScriptRoot 'move.ps1') }
+  $leaked = @(Get-Variable -Scope Script | ForEach-Object { $_.Name } | Where-Object { $_ -ne 'seenBefore' -and $seenBefore -notcontains $_ })
+  Check 'move: its variables stay in its own child scope' ($leaked.Count -eq 0) "leaked into run.ps1: $($leaked -join ', ')"
   $tprof = Profile 'tray'
   $tray = Start-Child $tprof "-File `"$(Join-Path $root 'tray.ps1')`" -NoIcon -NoApply"
   $real = $env:USERPROFILE; $env:USERPROFILE = $tprof
