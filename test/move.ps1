@@ -1,12 +1,13 @@
-# Checks for Move-Win in tile.ps1: a snapped window must end with its restore rect at its cell, and a stale restore rect must be reported.
-# Moves no window. Move-Win's Win32 calls reach one model of one window (below). Every handle passed is IntPtr.Zero, which is no window.
-#   tile.ps1 with -Lib: its five wrappers (Get-WinRect, Get-WinRestore, Set-WinRestore, Show-WinNormal, Move-WinRect) are replaced by fakes over the model.
-#   tile.ps1 without -Lib (an older copy): Move-Win is taken from its parse tree, and a stand-in W forwards its ShowWindow, MoveWindow and
-#     GetWindowRect to the model. The copy itself is never run, since without -Lib it would run a scene.
-# The model follows what the live desktop showed: moving a snapped window leaves its restore rect alone, ShowWindow does not end the snap,
-# and setting the placement ends it and sets both rects. So a green run proves Move-Win's logic on that model, not Windows itself.
+# Checks for Move-Win and the placement it uses in tile.ps1. Three kinds, each with its own scope:
+#   Model (cases 1-7): Move-Win runs on one window of a model, with its five wrappers faked. No Win32 call, no window touched.
+#   Placement: the real Set-WinRestore and Get-WinRestore on a hidden message-only window this file makes (no screen, no user window).
+#     Only the workspace offset is faked (10,40). Each case reads the rect back through the real GetWindowPlacement.
+#   Arranged: tile.ps1's own W.Arranged, compiled from a copy of its C# with IsWindowArranged stubbed (no snapped window can be made on demand).
+# The placement cases fail on a stale restore rect, a dropped workspace offset, or a placement that is never sent. A fix may build the
+# placement in a pure function (for example New-CellPlacement: placement, x, y, w, h, offset -> a placement with showCmd 1 and a whole new
+# normal RECT). No case calls that name: a call to a missing name is a crash, not a red.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\move.ps1 [-Tile <path to a tile.ps1 copy>]
-# test\run.ps1 dot-sources this file.
+# test\run.ps1 dot-sources this file in a child scope, so the variables it makes stay there.
 param([string]$Tile = (Join-Path (Split-Path $PSScriptRoot) 'tile.ps1'))
 $standalone = -not (Get-Command Check -ErrorAction SilentlyContinue)
 if ($standalone) {
@@ -14,7 +15,7 @@ if ($standalone) {
   function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 }
 & {
-  # The stand-in W for an older copy: the three Win32 calls Move-Win makes there, each forwarding to a hook set below.
+  # The stand-in W for an older copy: the three Win32 calls its Move-Win makes, each forwarding to a hook set below.
   $standIn = @'
 using System;
 public static class W {
@@ -35,18 +36,77 @@ public static class W {
     foreach ($f in $tree.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Move-Win' }, $false)) { . ([scriptblock]::Create($f.Extent.Text)) }
   }
 
-  # One window, screen coordinates. Live and Restore are x, y, w, h. Arr: the window is snapped. Works: false means Windows refuses a placement.
-  function New-Win($live, $restore, $arranged, $works = $true) { $script:mvWin = @{ Live = $live; Restore = $restore; Arr = $arranged; Works = $works; Moves = 0; Sets = 0 } }
-  function Mv-Live($win) { $script:mvWin.Live }
-  function Mv-Restore($win) { $s = $script:mvWin; [pscustomobject]@{ X = $s.Restore[0]; Y = $s.Restore[1]; W = $s.Restore[2]; H = $s.Restore[3]; Arranged = $s.Arr } }
-  function Mv-Show($win, $cmd) { }   # ShowWindow does not end a snap, and a plain window is already normal
+  # Placement: the real Set-WinRestore and Get-WinRestore, before any fake of them is defined below. Nothing shows on screen.
+  if (-not $hasLib) { 'SKIP  placement: needs tile.ps1 with -Lib (an older copy has no Set-WinRestore)' }
+  else {
+    $setBody = (Get-Command Set-WinRestore -CommandType Function).ScriptBlock.ToString()
+    Check 'placement: Set-WinRestore is tile.ps1''s own, not a fake' (($setBody -match '\[W\]::SetWindowPlacement') -and ($setBody -notmatch 'Mv-')) 'the function in scope is not the one in tile.ps1'
+    function Get-WorkspaceOffset { [pscustomobject]@{ X = 10; Y = 40 } }
+    function Get-PlaceRect($h) { $p = New-Object W+WPL; $p.length = [Runtime.InteropServices.Marshal]::SizeOf($p); [void][W]::GetWindowPlacement($h, [ref]$p); $p.normal }
+    function Set-PlaceRect($h, $l, $t, $r, $b) {
+      $p = New-Object W+WPL; $p.length = [Runtime.InteropServices.Marshal]::SizeOf($p); [void][W]::GetWindowPlacement($h, [ref]$p)
+      $p.showCmd = 1; $rc = New-Object W+RECT; $rc.L = $l; $rc.T = $t; $rc.R = $r; $rc.B = $b; $p.normal = $rc
+      [void][W]::SetWindowPlacement($h, [ref]$p)
+    }
+    $nw = $null; $made = $false; $madeErr = ''
+    try {
+      $cp = New-Object System.Windows.Forms.CreateParams; $cp.Parent = [IntPtr](-3)   # HWND_MESSAGE: a window with no screen presence
+      $nw = New-Object System.Windows.Forms.NativeWindow; $nw.CreateHandle($cp); $made = $nw.Handle -ne [IntPtr]::Zero
+    } catch { $madeErr = "$_" }
+    Check 'placement: a hidden window of this test can be made' $made "no handle: $madeErr"
+    if ($made) {
+      try {
+        $h = $nw.Handle
+        Set-PlaceRect $h 100 200 300 400
+        $g = Get-PlaceRect $h
+        Check 'placement: the readback returns the rect a placement wrote' ((@($g.L, $g.T, $g.R, $g.B) -join ',') -eq '100,200,300,400') "read $($g.L),$($g.T),$($g.R),$($g.B)"
+        # The stale restore rect the owner's desktop showed (684 x 2663), then the real call to the cell 683,0 683x840.
+        Set-PlaceRect $h 0 0 684 2663
+        Set-WinRestore $h 683 0 683 840
+        $n = Get-PlaceRect $h
+        Check 'placement: Set-WinRestore replaces a stale restore rect with the cell size' (($n.R - $n.L) -eq 683 -and ($n.B - $n.T) -eq 840) "restore rect $($n.R - $n.L)x$($n.B - $n.T), wanted 683x840"
+        Check 'placement: Set-WinRestore puts the restore rect at the cell, less the workspace offset' ((@($n.L, $n.T, $n.R, $n.B) -join ',') -eq '673,-40,1356,800') "restore rect at $($n.L),$($n.T) to $($n.R),$($n.B), wanted 673,-40 to 1356,800"
+      } finally { $nw.DestroyHandle() }
+    }
+  }
+
+  # Arranged: the real W.Arranged. The fakes never reach it, and no window can be made arranged on demand, so the copy is
+  # tile.ps1's own C# with its class renamed and IsWindowArranged stubbed to a flag. Arranged runs as written over that stub.
+  if (-not $hasLib) { 'SKIP  arranged: needs tile.ps1 with -Lib (an older copy has no W.Arranged)' }
+  else {
+    $csNodes = @($tree.FindAll({ param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -match 'public static class W \{' }, $true))
+    $src = if ($csNodes.Count) { [string]$csNodes[0].Value } else { '' }
+    $stub = $src -replace 'public static class W \{', 'public static class WArr {' -replace '\[DllImport\("user32\.dll"\)\]\s*static extern bool IsWindowArranged\(IntPtr h\);', 'public static bool ArrangedStub; static bool IsWindowArranged(IntPtr h) { return ArrangedStub; }'
+    $seamFound = ($stub -match 'class WArr \{') -and ($stub -match 'ArrangedStub; static bool IsWindowArranged')
+    Check 'arranged: tile.ps1 holds the Arranged seam (its C# class and IsWindowArranged)' $seamFound "no seam in $Tile"
+    $compiled = $false; $compileErr = ''
+    if ($seamFound) { try { Add-Type -TypeDefinition $stub -ErrorAction Stop; $compiled = $true } catch { $compileErr = "$_" } }
+    Check 'arranged: the copy of W with the stub compiles' $compiled "compile error: $compileErr"
+    if ($compiled) {
+      [WArr]::ArrangedStub = $true
+      Check 'arranged: a window the API reports arranged reads as arranged' ([WArr]::Arranged([IntPtr]::Zero)) 'Arranged gave false while IsWindowArranged gave true'
+      [WArr]::ArrangedStub = $false
+      Check 'arranged: a window the API reports not arranged reads as not' (-not [WArr]::Arranged([IntPtr]::Zero)) 'Arranged gave true while IsWindowArranged gave false'
+    }
+  }
+
+  # The model: one window in screen coordinates. Live and Restore are x, y, w, h. Arr: snapped. State: normal, max or min.
+  # Works: false means Windows refuses a placement. Log lists the calls in order, so a case can check their order.
+  function New-Win($live, $restore, $arranged, $works = $true, $state = 'normal') {
+    [pscustomobject]@{ Live = $live; Restore = $restore; Arr = $arranged; Works = $works; State = $state; Moves = 0; Sets = 0; Log = @(); FirstMoveRestore = $null }
+  }
+  function Mv-Live($win) { $mv.Live }
+  function Mv-Restore($win) { $s = $mv; [pscustomobject]@{ X = $s.Restore[0]; Y = $s.Restore[1]; W = $s.Restore[2]; H = $s.Restore[3]; Arranged = $s.Arr } }
+  function Mv-Show($win, $cmd) { $s = $mv; $s.Log += "show $cmd"; if ($cmd -eq 9) { $s.State = 'normal' } }
   function Mv-Move($win, $x, $y, $w, $h) {
-    $s = $script:mvWin; $s.Moves++; $s.Live = @($x, $y, $w, $h)
+    $s = $mv; $s.Moves++; $s.Log += 'move'
+    if ($s.Moves -eq 1) { $s.FirstMoveRestore = $s.Restore }
+    $s.Live = @($x, $y, $w, $h)
     if (-not $s.Arr) { $s.Restore = @($x, $y, $w, $h) }   # a normal window's restore rect follows its move; a snapped one keeps its own
   }
   function Mv-Set($win, $x, $y, $w, $h) {
-    $s = $script:mvWin; $s.Sets++
-    if ($s.Works) { $s.Arr = $false; $s.Live = @($x, $y, $w, $h); $s.Restore = @($x, $y, $w, $h) }
+    $s = $mv; $s.Sets++; $s.Log += 'set'
+    if ($s.Works) { $s.Arr = $false; $s.State = 'normal'; $s.Live = @($x, $y, $w, $h); $s.Restore = @($x, $y, $w, $h) }
   }
 
   # The five wrappers, as fakes over the model. The older copy's Move-Win calls the stand-in W instead.
@@ -64,39 +124,55 @@ public static class W {
   # Scope first: every seam is a fake over the model (no [W] call in it), and Move-Win is the one loaded here.
   $fakes = @('Get-WinRect', 'Get-WinRestore', 'Set-WinRestore', 'Show-WinNormal', 'Move-WinRect') | % { $b = (Get-Command $_ -CommandType Function).ScriptBlock.ToString(); $b -match 'Mv-' -and $b -notmatch '\[W\]::' }
   $hooked = $hasLib -or ($null -ne [W]::ShowHook -and $null -ne [W]::MoveHook -and $null -ne [W]::RectHook)
-  Check 'move: Move-Win runs against the test model, never Win32' ((@($fakes) -notcontains $false) -and $hooked -and [bool](Get-Command Move-Win -CommandType Function -ErrorAction SilentlyContinue)) "fakes $(@($fakes) -join ','), hooked $hooked"
+  Check 'move: the model cases run Move-Win against the test model, never Win32' ((@($fakes) -notcontains $false) -and $hooked -and [bool](Get-Command Move-Win -CommandType Function -ErrorAction SilentlyContinue)) "fakes $(@($fakes) -join ','), hooked $hooked"
 
   function Same($a, $b) { (@($a) -join ',') -eq (@($b) -join ',') }
   $cell = 683, 0, 683, 840    # the right-hand cell: x, y, w, h
   $stale = 0, 0, 684, 2663    # the restore rect the owner's desktop showed
   $snapped = 0, 0, 696, 846   # the live rect of that arranged window
   $plain = 0, 0, 480, 560
+  $minimized = -32000, -32000, 160, 28   # where Windows parks a minimized window
   $h0 = [IntPtr]::Zero
   $items = @()                # Move-Win reads this to name the window in its warning; the model has no titles
 
   # 1. A snapped window with a stale restore rect is moved into the cell.
-  New-Win $snapped $stale $true
+  $mv = New-Win $snapped $stale $true
   $null = Move-Win $h0 683 0 683 840 3>$null
-  $w = $script:mvWin
+  $w = $mv
   Check 'move: a snapped window ends with its restore rect at the cell' ((Same $w.Restore $cell) -and -not $w.Arr) "restore $($w.Restore -join ','), snapped $($w.Arr)"
   Check 'move: a snapped window ends at the cell' (Same $w.Live $cell) "window $($w.Live -join ',')"
 
   # 2. A snapped window placed right gives no off-size note.
-  New-Win $snapped $stale $true
+  $mv = New-Win $snapped $stale $true
   $note = Move-Win $h0 683 0 683 840 3>$null
-  Check 'move: a snapped window placed right gives no off-size note' ((-not $note) -and (Same $script:mvWin.Live $cell)) "note '$note', window $($script:mvWin.Live -join ',')"
+  Check 'move: a snapped window placed right gives no off-size note' ((-not $note) -and (Same $mv.Live $cell)) "note '$note', window $($mv.Live -join ',')"
 
   # 3. A plain window is moved twice to the cell, with no note and no placement call.
-  New-Win $plain $plain $false
+  $mv = New-Win $plain $plain $false
   $note = Move-Win $h0 683 0 683 840 3>$null
-  $w = $script:mvWin
+  $w = $mv
   Check 'move: a plain window ends at the cell, restore rect too, with no note' ((Same $w.Live $cell) -and (Same $w.Restore $cell) -and -not $w.Arr -and -not $note) "window $($w.Live -join ','), restore $($w.Restore -join ','), snapped $($w.Arr), note '$note'"
   Check 'move: a plain window is moved twice' ($w.Moves -eq 2) "moves $($w.Moves)"
   Check 'move: a plain window gets no placement call' ($w.Sets -eq 0) "placement calls $($w.Sets)"
 
   # 4. Windows refuses the placement: the stale restore rect is reported with the live size.
-  New-Win $snapped $stale $true $false
+  $mv = New-Win $snapped $stale $true $false
   $note = Move-Win $h0 683 0 683 840 3>$null
   Check 'move: a stale restore rect is reported with the live size' ("$note" -eq 'off size: is 683x840, restore rect 684x2663') "note '$note'"
+
+  # 5. A snapped window's placement sets its restore rect before the window first moves: moves never set it for a snapped window.
+  $mv = New-Win $snapped $stale $true
+  $null = Move-Win $h0 683 0 683 840 3>$null
+  Check 'move: a snapped window has its restore rect at the cell before its first move' (Same $mv.FirstMoveRestore $cell) "first move saw restore $($mv.FirstMoveRestore -join ',')"
+
+  # 6. A maximized window that is not snapped is restored (ShowWindow 9) before its first move.
+  $mv = New-Win $plain $plain $false $true 'max'
+  $null = Move-Win $h0 683 0 683 840 3>$null
+  Check 'move: a maximized window is restored before its first move' (($mv.Log.Count -gt 0) -and ($mv.Log[0] -eq 'show 9')) "calls $($mv.Log -join ' > ')"
+
+  # 7. A minimized window that is not snapped is restored (ShowWindow 9) before its first move.
+  $mv = New-Win $minimized $plain $false $true 'min'
+  $null = Move-Win $h0 683 0 683 840 3>$null
+  Check 'move: a minimized window is restored before its first move' (($mv.Log.Count -gt 0) -and ($mv.Log[0] -eq 'show 9')) "calls $($mv.Log -join ' > ')"
 }
 if ($standalone) { if ($script:fail) { "$script:fail check(s) failed"; exit 1 } else { 'all pass' } }

@@ -308,8 +308,11 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   Check 'tray tick: a change to the call scenes starts the call reading over' (($x -join '/') -eq '//' -and $ts.inCall -and $ts.streak -eq 0) ($x -join '/')
   # The automatic triggers (idle, new window, activity, meeting size, guards...) have their own file; a child scope keeps its variables out of this run.
   & { . (Join-Path $PSScriptRoot 'triggers.ps1') }
-  # Move-Win (tile.ps1): one window on a model, so no real window moves; its own child scope, as the triggers' is.
+  # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
+  $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }
+  $leaked = @(Get-Variable -Scope Script | ForEach-Object { $_.Name } | Where-Object { $_ -ne 'seenBefore' -and $seenBefore -notcontains $_ })
+  Check 'move: its variables stay in its own child scope' ($leaked.Count -eq 0) "leaked into run.ps1: $($leaked -join ', ')"
   $tprof = Profile 'tray'
   $tray = Start-Child $tprof "-File `"$(Join-Path $root 'tray.ps1')`" -NoIcon -NoApply"
   $real = $env:USERPROFILE; $env:USERPROFILE = $tprof
