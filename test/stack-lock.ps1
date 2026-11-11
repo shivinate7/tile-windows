@@ -27,6 +27,7 @@
 #     the first free cell, else to Windows That Stay Put, and growth stops at a locked tile.
 #     A stacked tile's +N badge (.stk) has a hit extension (its ::after inset). At 1024 and 1440 its hit box clears the
 #     .rsz grip, the .lk lock and the .stayput Stay Put (the badge-grip overlap debt).
+#     With ten or more windows behind, a narrow (1024) badge reads 9+ and its aria-label names the true count; at 1440 it reads +10.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 $ErrorActionPreference = 'Stop'
@@ -185,12 +186,13 @@ function SlMeets($a, $b) { [bool]($a -and $b -and $a.l -lt $b.r -and $b.l -lt $a
 function SlHit($b) { if (-not $b) { 'none' } else { '{0},{1} to {2},{3}' -f [int]$b.l, [int]$b.t, [int]$b.r, [int]$b.b } }
 # One state of the badge cases. A fresh scene; the front window is selected, or Quarterly is, so the stack is not. The boxes
 # are read after a hover on the badge text. The click on the text runs last, after every read of the state.
-function SlBadgeState($w, $h, [bool]$Selected) {
+# $Pins and $Behind (the windows behind Refactor) pick the scene. Ten or more: the narrow text caps at 9+.
+function SlBadgeState($w, $h, [bool]$Selected, $Pins = $pinsBadge, [int]$Behind = 2) {
   $state = 'not selected'; if ($Selected) { $state = 'selected' }
   $pre = ''; $gpre = 'guard: '; if ($w -eq 1440) { $pre = 'control: '; $gpre = $pre }
-  $tag = "badge $w, $state"
+  $tag = "badge $w, $state, $Behind behind"
   SlViewport $w $h
-  SlCase (SlSceneJson $pinsBadge)
+  SlCase (SlSceneJson $Pins)
   if ($Selected) { SlClick (SlAt (SlBox 1001) 0.5 0.5) } else { SlClick (SlAt (SlBox 1006) 0.5 0.5) }
   $r0 = SlHitBoxes 1001
   if ($r0 -and $r0.text) { SlMouse 'mouseMoved' $r0.text.x $r0.text.y 0; SlFrame }
@@ -205,6 +207,16 @@ function SlBadgeState($w, $h, [bool]$Selected) {
   }
   $inView = [bool]($b -and $b.text -and $b.tile -and $b.text.x -ge $b.tile.l -and $b.text.x -le $b.tile.r -and $b.text.y -ge $b.tile.t -and $b.text.y -le $b.tile.b -and $b.text.x -ge 0 -and $b.text.x -lt $w -and $b.text.y -ge 0 -and $b.text.y -lt $h)
   Check "${pre}${tag}: scope, the badge text centre is inside the viewport and inside the tile" $inView "text: $(SlShort $b.text), tile: $(SlShort $b.tile)"
+  # Ten or more behind: a narrow badge caps its text at 9+, and its aria-label keeps the true count (a guard). At 1440 the text is not capped.
+  if ($Behind -ge 10) {
+    $bt = SlGet "(() => { const s = els.get(1001) && els.get(1001).querySelector('.stk'); return s ? { text: s.textContent.trim(), label: s.getAttribute('aria-label') } : null; })()"
+    if ($w -eq 1024) {
+      Check "${tag}: the badge text reads 9+ on a narrow tile" ([bool]($bt -and $bt.text -eq '9+')) "text: $($bt.text)"
+      Check "${gpre}${tag}: the badge aria-label names 10 windows behind" ([bool]($bt -and $bt.label -match '(?<![0-9])10 ')) "aria-label: $($bt.label)"
+    } else {
+      Check "control: ${tag}: the badge text reads +10 at 1440" ([bool]($bt -and $bt.text -eq '+10')) "text: $($bt.text)"
+    }
+  }
   Check "${pre}${tag}: a press on the badge text reaches the badge, so no resize starts" ($b.hitAt -eq 'badge') "a press at the text centre lands on: $($b.hitAt)"
   if ($inView) { SlClick @([double]$b.text.x, [double]$b.text.y) }
   $after = SlGet "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, behind: !!p.behind }))"
@@ -302,6 +314,8 @@ $pinsFullStack = $pinsFull.Replace('{"app":"claude","match":"Pin parser","mon":"
 # Narrow stacked tile (the badge-grip overlap debt): Refactor in slot 0 with two windows behind it, so its badge reads +2.
 # Quarterly in slot 1 is the tile a state selects to leave the stack unselected.
 $pinsBadge = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"behind":[{"app":"claude","match":"Pin parser"},{"app":"claude","match":"Draft release"}]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}'
+# Ten windows behind the same front, so the badge reads +10 (and 9+ at 1024). They are fixture windows that no other pin here uses.
+$pinsBadge10 = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"behind":[{"app":"claude","match":"Pin parser"},{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Pull request"},{"app":"chrome","match":"quoted"},{"app":"WindowsTerminal","match":"tiler"},{"app":"WindowsTerminal","match":"docs watch"},{"app":"explorer","match":"Projects"},{"app":"explorer","match":"Downloads"},{"app":"ms-teams","match":"Design sync"},{"app":"outlook","match":"Inbox"}]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}'
 # Engine: the open back window takes the front's cell as the new front, as a window behind a removed front takes its cell on the board.
 $eGone = SlPlace (SlSceneJson $pinsFrontGone)
 $eGoneBack = @($eGone.placed | ? { $_.id -eq 1003 })[0]
@@ -595,6 +609,11 @@ try {
   SlBadgeState 1024 768 $false
   SlBadgeState 1440 900 $true
   SlBadgeState 1440 900 $false
+  # Ten behind: the same reads, with the text cap at 1024 and the +10 control at 1440.
+  SlBadgeState 1024 768 $true $pinsBadge10 10
+  SlBadgeState 1024 768 $false $pinsBadge10 10
+  SlBadgeState 1440 900 $true $pinsBadge10 10
+  SlBadgeState 1440 900 $false $pinsBadge10 10
   SlViewport 1440 900
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
