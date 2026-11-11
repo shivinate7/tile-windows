@@ -64,8 +64,11 @@ look.
    on, and "Only pinned windows move. The rest stay put." when off. Off disables Fill Order, with
    "Fill is off, so the fill order does nothing" on hover and focus (`ux-control-earns-place`).
    The monitor label reads "5×2 · fill off" instead of "· fills" (`render()`, `fills`).
-   Other place: the Scene section, under Name. Gain: always in view whatever monitor is picked.
-   Lose: two homes for fill settings. Pick: the Monitor section, beside Fill Order.
+   Gain: the fill's settings keep one home. Lose: while a monitor that does not fill is picked,
+   the switch is out of view (that monitor shows "This monitor does not fill itself.").
+   Other place: the Scene section, under Name: always in view, but a second home for fill
+   settings. Pick: the Monitor section, beside Fill Order.
+   Departs from: main, where the fill always runs and Fill Order sits alone in the Monitor section.
 5. **Windows That Stay Put with fill off.** Every window that is not pinned shows in the list with
    the reason "Fill is off" (a new `BAYWHY` entry). The list keeps today's "Show N More" cap: one
    row per category under 820px of window height, two above. Pins, locks and stacks stay.
@@ -76,9 +79,12 @@ look.
    with "Only pinned windows are on the board." on hover, and on focus through the inspector's
    `aria-describedby` reason pattern (`#whyoff`), since a disabled button takes no focus.
    Gain: one press on the board, where the owner sorts. Lose: a second control for the same state.
-7. **Clear Board writes no bay entries.** It only turns the switch off. If it also wrote each
-   window into the scene's bay (as Keep Where It Is does, `bayEdit()`), turning fill back on would
-   still leave them out. Pick: switch only.
+7. **How Clear Board sends windows to the list.** Option one: it only turns the switch off, and
+   the unpinned windows show in the list because fill is off. Option two: it also writes each one
+   into the scene's bay, as Keep Where It Is does (`bayEdit()`); then turning fill back on still
+   leaves them out, one by one. Pick: option one, so the switch alone brings the board back.
+   Departs from: the literal words of `decisions/fill-controls.md` ("sends every unpinned window
+   to Windows That Stay Put") if read as `bayEdit()`. Owner grant: yes.
 8. **Zones with fill off.** "Off places only pinned windows" reads as: zones stop too, since
    `tile.ps1` runs pins, then zones, then the fill. The mockup has no zone, so this is not drawn.
    Pick: zones pause while fill is off, and their outlines stay on the board. Owner grant: yes.
