@@ -16,6 +16,7 @@ Low findings. Each becomes a debt only after a real incident.
 - `config.ps1` The unique temp name cannot go red alone: the write lock already keeps two writers apart. It guards a writer that skips the lock.
 - `config.ps1` The re-check under the lock before a file moves to `.bad` guards a race between two readers. No test can time that race, so it has no red proof.
 - `install.ps1` `TILE_TEST_SWAP_FAIL` is a test seam: it throws between the two renames of the swap, so the rollback can be tested.
+- `serve.ps1` keeps serving the live desktop when -From does not resolve, so a dry-run review can read live windows (design review stack-and-lock round 1).
 
 ## From PR 2 review round 3 (2026-10-22)
 
@@ -23,7 +24,7 @@ Low findings. Each becomes a debt only after a real incident.
 - `serve.ps1` 37: `Get-TileNote` reads `note.txt` with no lock; a dismiss racing a read can drop that one reply.
 - `config.ps1` 34: the note file grows by one line per recovery until dismissed.
 - `install.ps1` 37: a failed delete of `app.old-<pid>` is never cleaned up by later installs.
-- Design round 3 rows 2 to 9 (`design/reviews/app-round3.md`).
+- Design round 3 rows 2 to 9 (`docs/design/reviews/app-round3.md`).
 
 ## From the triggers lane (2026-10-22)
 
@@ -62,3 +63,13 @@ Low findings. Each becomes a debt only after a real incident.
 - `app.html` A saved value over its cap shows uncapped; the tray acts on the cap.
 - `tray.ps1` A bad hand-edited value falls back to its default with no warning.
 - `app.html` Unverified: focus restore may snap back to an edited field after Tab out.
+
+## From design review stack-and-lock round 3 (2026-11-11)
+
+- `app.html` At 1440 the drag ghost covers the locked drop's "Put Behind" (design review stack-and-lock round 3, finding 3).
+- `app.html` At 1024 a resize destination chip clips "Chrome" to "Chrom" (design review stack-and-lock round 3, finding 4).
+- `app.html` At 1024 the taken-swap destination chip text runs 7px past its box but stays readable (design review stack-and-lock round 3, finding 5).
+- `app.html` A window resize during a drag leaves the dragged tile at its old size, off the board. Rare. Not checked against main (design review stack-and-lock round 3, finding 6).
+- `app.html` On tiles under 84px the Stay Put icon is 18px, under the 24px touch size, and its arrow-into-tray glyph reads as a download (design review stack-and-lock round 3).
+- `app.html` The pin mark is hidden on a narrow selected stacked tile (design review stack-and-lock round 3).
+- `app.html` The +N badge loses its chip outline in forced colours (design review stack-and-lock round 3).

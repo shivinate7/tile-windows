@@ -10,6 +10,8 @@
 #   A scene's zones ({mon, slots, app | cat}) fill their cells with that app's or category's windows in
 #   fill order, after pins (a pin wins its cell). Its bay ([{app, title}]) holds windows that stay put.
 #   left[].why says where a window without a cell came from: 'no free cell', 'zone full' or 'in the bay'.
+#   A pin's behind ([{app, match}]) stacks windows on its rect: each is placed with behind=true and the pin's index, never filled.
+#   A pin's lock (true) is read by the page, not here: a pin already beats zones and the fill for its cells.
 # -From <path|json>: use a -Json snapshot instead of the live desktop. Always a dry run.
 # -Lib: define Move-Win and the Win32 reads and writes behind it, then return (tests dot-source it and swap those for fakes).
 # Slots number row by row from 1 (top-left).
@@ -221,11 +223,20 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   if ($phase -in 'all', 'pins') {
     foreach ($pn in $pins) {
       $it = $its | ? { $_.App -eq $pn.App -and (-not $pn.Match -or (Contains $_.Title $pn.Match)) -and -not $placed.Contains($_) -and ($pn.Match -or (& $up)) } | Sort-Object { $_.X -le -20000 }, X, Y | Select-Object -First 1
+      if ($it) { $placed += $it } else { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' } }
+      # Windows stacked behind this pin: same rect, never in the fill. A minimized one counts (Apply restores it).
+      $bis = @(foreach ($b in @($pn.Behind)) {
+        $bi = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and -not $placed.Contains($_) -and $_.App -eq $b.App -and (-not $b.Match -or (Contains $_.Title $b.Match)) } | Sort-Object { $_.X -le -20000 }, X, Y | Select-Object -First 1)[0]
+        if ($bi) { $placed += $bi; $bi } else { Write-Warning "No open window for '$($b.App)' behind '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $b.App; match = $b.Match; why = 'no open window' } }
+      })
+      # The front is not open: the first open back window takes its cell as the new front, as the board promotes one when its front leaves.
+      if (-not $it -and $bis.Count) { $it = $bis[0]; $bis = @($bis | Select-Object -Skip 1) }
       $pn | Add-Member -Force Item $it
-      if (-not $it) { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' }; continue }
-      $placed += $it; $pn.Slots | % { $used[$_] = 1 }
+      if (-not $it) { continue }
+      $pn | Add-Member -Force BehindItems $bis
+      $pn.Slots | % { $used[$_] = 1 }
     }
-    $state.pinned = $placed.Count
+    $state.pinned = @($pins | ? { $_.Item }).Count
   }
   $free = @($its | ? { $placed -notcontains $_ -and ($fill -contains $_.App -or ($fill -contains '*' -and $all -notcontains $_.App)) -and $_.Title -ne 'Program Manager' -and (& $up) })
 
@@ -252,7 +263,7 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
     default    { $rank, { OrdIdx $_.Title }, $row, 'X' }
   } }
 
-  function Put($it, $slots, $pin, $zone = -1) {
+  function Put($it, $slots, $pin, $zone = -1, [switch]$behind) {
     $cs = $slots | % { $_ % $Cols }; $rs = $slots | % { [Math]::Floor($_ / $Cols) }
     $c0 = ($cs | Measure -Min).Minimum; $c1 = ($cs | Measure -Max).Maximum
     $r0 = ($rs | Measure -Min).Minimum; $r1 = ($rs | Measure -Max).Maximum
@@ -260,13 +271,16 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
     $script:claimed["$($it.H)"] = 1
     if ($Json) {
       $note = if ($DryRun) { 'dry run' } else { $m = Move-Win $it.H $x $y $ww $hh; if ($m) { "$m" } else { 'moved' } }
-      return [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; mon = $role; slots = @($slots | % { $_ + 1 }); pin = $pin; zone = $zone; x = $x; y = $y; w = $ww; h = $hh
+      $o = [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; mon = $role; slots = @($slots | % { $_ + 1 }); pin = $pin; zone = $zone; x = $x; y = $y; w = $ww; h = $hh
         from = [pscustomobject]@{ x = $it.X; y = $it.Y; w = $it.Wd; h = $it.Ht }; ok = $true; note = $note }
+      if ($behind) { $o | Add-Member behind $true }
+      return $o
     }
     if ($DryRun) { "{0,-9} slots {1,-6} x={2} y={3} {4}x{5}  {6}" -f $it.App, (($slots | % { $_ + 1 }) -join '+'), $x, $y, $ww, $hh, $it.Title; return }
     $null = Move-Win $it.H $x $y $ww $hh
   }
-  if ($phase -in 'all', 'pins') { foreach ($pn in $pins) { if ($pn.Item) { Put $pn.Item $pn.Slots $pn.Index } } }
+  # A back window moves first, so the front window (moved last) ends on top: a restore activates the window.
+  if ($phase -in 'all', 'pins') { foreach ($pn in $pins) { if ($pn.Item) { foreach ($bi in @($pn.BehindItems)) { Put $bi $pn.Slots $pn.Index -behind }; Put $pn.Item $pn.Slots $pn.Index } } }
 
   # Zones: each takes its cells (pins on every monitor already won theirs) and fills them with its app's
   # or category's windows in fill order, row by row. A category zone leaves out skipped apps, as the fill
@@ -321,7 +335,7 @@ foreach ($role in 'tall', 'laptop', 'wide') {
     $p = @($sc.pins)[$i]; if ($p.mon -ne $role) { continue }
     $sl = @($p.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
     if (-not $sl.Count) { $missing += [pscustomobject]@{ pin = $i; app = $p.app; match = [string]$p.match; why = 'slots outside the grid' }; continue }
-    [pscustomobject]@{ App = [string]$p.app; Match = [string]$p.match; Slots = $sl; Index = $i }
+    [pscustomobject]@{ App = [string]$p.app; Match = [string]$p.match; Slots = $sl; Index = $i; Behind = @(@($p.behind | ? { $_ }) | % { [pscustomobject]@{ App = [string]$_.app; Match = [string]$_.match } }) }
   })
   $zs = @(for ($i = 0; $i -lt @($sc.zones | ? { $_ }).Count; $i++) {
     $z = @($sc.zones)[$i]; if ($z.mon -ne $role) { continue }

@@ -308,6 +308,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   Check 'tray tick: a change to the call scenes starts the call reading over' (($x -join '/') -eq '//' -and $ts.inCall -and $ts.streak -eq 0) ($x -join '/')
   # The automatic triggers (idle, new window, activity, meeting size, guards...) have their own file; a child scope keeps its variables out of this run.
   & { . (Join-Path $PSScriptRoot 'triggers.ps1') }
+  # Stack, lock, resize and the spanned drop: their own file, run in a child powershell (its FAIL lines count here).
+  $slOut = @(Child (Join-Path $PSScriptRoot 'stack-lock.ps1')); $slOut | % { "$_" }
+  $script:fail += [Math]::Max(@($slOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
   $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }
