@@ -319,8 +319,8 @@ dialog form{display:grid;gap:10px}
 .lockrow{align-items:flex-start;white-space:normal;padding:4px 0;gap:10px;width:100%}
 .lockrow input{margin-top:2px;box-shadow:inset 0 0 0 1px var(--muted)}
 .lockrow input:checked{box-shadow:none}
-.behind{display:grid;gap:6px}
-.behind ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.bstack{display:grid;gap:6px}
+.bstack ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .bw{display:grid;gap:6px;padding:7px 8px;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel)}
 .bwt{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;font-size:12px}
 .bwt b{font-weight:600}
@@ -779,10 +779,10 @@ function renderInsp(V){
       <div class="t">${esc(w.title)}</div>
       <div class="m">${inBay(x)?`No cell: ${esc(bayWhy(x).toLowerCase())}. It stays where it is. Pick a cell below to place it.`:!LIVE?esc(where(x)):pin?"Pinned · "+esc(where(x)):x.kind==="fill"?`Fills ${esc(where(x))}`:esc(where(x)[0].toUpperCase()+where(x).slice(1))}.</div>`;
     if(onBoard)wh+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="lockSw" ${lockd?"checked":""}><span class="xt"><b>Lock</b><small>It never moves. Swaps, zones and fill go around it.</small></span></label>`;
-    if(stk.length)wh+=`<div class="behind"><h3 class="grp">Behind This Window <span class="ct2">${stk.length}</span></h3><ul>${stk.map(e=>{const bw=e.id&&winById(e.id);
+    if(stk.length)wh+=`<div class="bstack"><h3 class="grp">Behind This Window <span class="ct2">${stk.length}</span></h3><ul>${stk.map(e=>{const bw=e.id&&winById(e.id);
       return `<li class="bw cat-${catOf(e.b.app)}"><div class="bwt"><i class="sw"></i><b>${esc(appName(e.b.app))}</b><span>${esc(bw?bw.title:(e.b.match||"Not open"))}</span></div><div class="row2"><button type="button" class="btn" data-bf="${e.k}" ${bw?"":"disabled"} title="${esc(appName(e.b.app))} comes to the front. ${esc(appName(w.app))} goes behind it.">Bring to Front</button><button type="button" class="btn" data-bo="${e.k}" title="${esc(appName(e.b.app))} leaves this cell and goes to Windows That Stay Put.">Take Out</button></div></li>`}).join("")}</ul><p class="note">Take Out moves it to Windows That Stay Put.</p></div>`;
     if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,s.grids[pin.mon].c,lockd)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,s.grids[pin.mon].r,lockd)}</div>
-      <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" name="match" autocomplete="off" placeholder="Any ${esc(appName(w.app))} window…" spellcheck="false"></div>`;
+      <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" name="match" autocomplete="off" ${lockd?'disabled title="Locked. Unlock it first."':""} placeholder="Any ${esc(appName(w.app))} window…" spellcheck="false"></div>`;
     const mm=LIVE?snap.monitors.filter(q=>q.role&&s.grids[q.role]):snap.monitors;
     wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto" ${lockd?"disabled":""}><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(gg.c*gg.r).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
     if(pin)wh+=`<button type="button" class="btn" id="unpin" ${lockd?'disabled title="Locked. Unlock it first."':""}>Unpin and Let It Fill</button>`;
@@ -836,12 +836,12 @@ function bayEdit(x,id,grab=pinNow(x,id),promote=true){const w=winById(id);
   if(grab){if(promote)leavePin(x,grab);else x.pins=x.pins.filter(q=>q!==grab)}
   x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));x.bay.push({id:w.id,app:w.app,title:w.title})}
 // A drops on B's cell. From the list below, B goes there; from a cell, the two trade cells. One edit.
-// B keeps its span with the place: A takes B's whole block, and B takes A's old cell at one cell.
+// The span stays with the place: A takes B's whole block, and B takes A's old block (one cell for a one-cell A).
 function swapInto(aId,bId,mon,slot,fromBay){
   const P=prev(),pa=P.placed.find(p=>p.id===aId),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),gA=pinNow(s,aId),gB=pinNow(s,bId),
-    g=s.grids[mon.role],bb=pbox(pb,g);
+    g=s.grids[mon.role],bb=pbox(pb,g),ga=pa&&s.grids[pa.mon],ba=pa&&pbox(pa,ga);
   curMon=mon;selWin=aId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)};
-  return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>q.role===pa.mon),pa.slots[0]-1,1,1,gB);
+  return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>q.role===pa.mon),ba.r*ga.c+ba.c,ba.cs,ba.rs,gB);
     pinEdit(x,aId,mon,bb.r*g.c+bb.c,bb.cs,bb.rs,gA,fromBay&&gB?{behind:gB.behind}:{})},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${appName(A.app)} and ${appName(B.app)}.`)}
 // The cells of a placed window's block (a span is its whole block), on its monitor's grid g.
 const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r),g);
@@ -851,10 +851,13 @@ const isLockedId=id=>{const pp=LIVE&&pinOf(id);return !!(pp&&pp.pin&&pp.pin.lock
 // Is a locked pin (other than `except`) on any of these cells of the role's grid?
 function lockedHit(s,role,cells,except){const g=s.grids[role];
   return s.pins.some(q=>{if(!q.lock||q===except||q.mon!==role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>cells.includes(c))})}
-// The window in front on a drop target's cell (the whole block of a span), when a one-cell window is dropped on it: a swap or a Put Behind.
-function occupant(d,t){const P=LIVE&&prev();if(!P||!t||d.cs!==1||d.rs!==1)return null;const pa=P.placed.find(p=>p.id===d.id);
-  if(!d.fromBay&&!(pa&&pa.slots.length===1))return null;
-  return P.placed.find(p=>!p.behind&&p.id!==d.id&&p.mon===t.m.role&&pbox(p,t.g).cells.includes(t.slot))||null}
+// The window in front on a drop target (the whole block of a span): a swap or a Put Behind, never a Place here over it.
+// A one-cell window's target is one cell. A spanned window's target is its block: the window on the block's first cell, else the first window it covers.
+function occupant(d,t){const P=LIVE&&prev();if(!P||!t)return null;const pa=P.placed.find(p=>p.id===d.id),one=d.cs===1&&d.rs===1;
+  if(!d.fromBay&&!(pa&&(!one||pa.slots.length===1)))return null;
+  const blk=cellsOf(t.slot%t.g.c,Math.floor(t.slot/t.g.c),t.cs,t.rs,t.g);
+  const hit=P.placed.filter(p=>!p.behind&&p.id!==d.id&&p.mon===t.m.role&&pbox(p,t.g).cells.some(c=>blk.includes(c)));
+  return hit.find(p=>pbox(p,t.g).cells.includes(t.slot))||hit.sort((a,b)=>Math.min(...a.slots)-Math.min(...b.slots))[0]||null}
 // Which half of a taken cell the pointer is on: the top 64% swaps, the bottom band puts behind. A locked tile only puts behind.
 function dropZone(d,occ,t){const g=t.g,b=pbox(occ,g),r=px(cellRect(t.m,g,b.c,b.r,b.cs,b.rs)),sr=stage.getBoundingClientRect();
   return lockOfPlaced(occ)||(d.py-sr.top-parseFloat(r.top))/parseFloat(r.height)>=.64?"behind":"swap"}
@@ -952,6 +955,9 @@ async function newZone(m,g,c0,r0,c1,r1){
   if(!f)return;addZone(m,g,c0,r0,c1,r1,zoneFill(f.zf.value))}
 function setGrid(k,d){const m=curMon;
   if(!LIVE){const g=gridOf(m);g[k]=clamp(g[k]+d,1,k==="c"?8:4);m.el.dataset.g="";render();return}
+  // A grid that would cut off a locked tile's cells does not change: a locked tile never moves.
+  const cur=scene().grids[m.role],nxt={...cur,[k]:clamp(cur[k]+d,1,k==="c"?8:4)};
+  if(scene().pins.some(p=>p.lock&&p.mon===m.role&&p.slots.some(v=>v<cur.c*cur.r&&(v%cur.c>=nxt.c||Math.floor(v/cur.c)>=nxt.r)))){status("A locked tile is in the way. Nothing changed.");render();return}
   edit(s=>{const g=s.grids[m.role],o={...g};g[k]=clamp(g[k]+d,1,k==="c"?8:4);
     // Keep each pin on the same column and row; drop cells past the new edge.
     for(const p of s.pins)if(p.mon===m.role)p.slots=p.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
@@ -998,7 +1004,7 @@ function frame(){raf=0;
       // Labels by width: 110px or more name the window, 84 to 110 are short, and under 84 Put Behind reads "Behind" (the tooltip keeps the full name).
       const pill=k=>`<span title="${k==="swap"?"Swap with ":"Put Behind "}${esc(o)}">${big?(k==="swap"?SWAPI:BEHIND):""}${esc(k==="swap"?(big?(d.fromBay?`Swap: ${o} goes to the list`:`Swap with ${o}`):"Swap"):(big?`Put Behind ${o}`:mid?"Put Behind":"Behind"))}</span>`;
       Object.assign(dropEl.style,pr);dropEl.className=lk?"split one":"split";dropEl.style.display="grid";
-      dropEl.innerHTML=lk?`<div class="dz on">${pill("behind")}<span class="why">${LOCKC}${big?"Locked, so it stays":"Locked"}</span></div>`
+      dropEl.innerHTML=lk?`<div class="dz on">${pill("behind")}<span class="why">${LOCKC}${big?"Locked, so no Swap":"Locked"}</span></div>`
         :`<div class="dz${zone==="swap"?" on":""}">${pill("swap")}</div><div class="dz${zone==="behind"?" on":""}">${pill("behind")}</div>`;
       if(zone==="swap"){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=big?`${o} moves here`:o}}}
     else{Object.assign(dropEl.style,px(t.r));dropEl.className="";dropEl.style.display="block";
@@ -1091,6 +1097,12 @@ stage.addEventListener("keydown",ev=>{
     if(!LIVE){const[cs,rs]=spanOf(id,d);b.cs=cs;b.rs=rs;b.c=clamp(Math.round((d.x-m.x)/cw),0,g.c-cs);b.r=clamp(Math.round((d.y-m.y)/ch),0,g.r-rs)}}
   let{c,r,cs,rs}=b;
   if(ev.shiftKey){cs=clamp(cs+k[0],1,g.c-c);rs=clamp(rs+k[1],1,g.r-r)}else{c=clamp(c+k[0],0,g.c-cs);r=clamp(r+k[1],0,g.r-rs)}
+  // A move into cells a pinned window holds is a swap with it, so its pin and its stack stay. A locked one blocks the move.
+  const P=LIVE&&!ev.shiftKey&&prev(),pa=P&&P.placed.find(q=>q.id===id&&!q.behind);
+  if(pa){const blk=cellsOf(c,r,cs,rs,g),hit=P.placed.filter(q=>q.pin>=0&&!q.behind&&q.id!==id&&q.mon===m.role&&pbox(q,g).cells.some(v=>blk.includes(v)));
+    if(hit.length&&!(pp&&pp.pin.lock)){
+      if(hit.some(lockOfPlaced)||hit.length>1){status(hit.some(lockOfPlaced)?"A locked tile is in the way. Nothing changed.":"More than one pinned window is in the way. Nothing changed.");render();requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
+      swapInto(id,hit[0].id,m,r*g.c+c,false);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}}
   curMon=m;pinWin(id,m,r*g.c+c,cs,rs);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));
 });
 function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.");return}
@@ -1221,7 +1233,9 @@ document.addEventListener("change",ev=>{const t=ev.target;
   else if(t.dataset.xk){const v=clamp(Math.round(+t.value)||1,1,+t.max),f=t.dataset.xf,k=t.dataset.xk,sc=t.dataset.xs;
 
     edit(s=>{if(sc==="scene")s.screens=v;else if(sc==="grid")(s.claudeGrid||(s.claudeGrid={})).at=v;else((s.opt||(s.opt={}))[f]||(s.opt[f]={}))[k]=v},`Set to ${v}. Save to keep it.`)}
-  else if(t.id==="match")edit(s=>{const pp=pinOf(selWin);if(pp)s.pins[pp.p.pin].match=t.value.trim()},"The pin now matches any title containing that text.");
+  else if(t.id==="match"){const pp=pinOf(selWin);
+    if(pp&&pp.pin.lock){status("That window is locked. Unlock it first.");render()}
+    else edit(s=>{if(pp)s.pins[pp.p.pin].match=t.value.trim()},"The pin now matches any title containing that text.")}
   else if(t.id==="sceneName"&&t.value.trim())edit(s=>{s.name=t.value.trim().slice(0,40)});
   else if(t.id==="zfill"){const i=selZone,f=zoneFill(t.value);edit(s=>{const z=s.zones[i];delete z.app;delete z.cat;Object.assign(z,f)},`The zone now fills with ${f.app?appName(f.app):catName(f.cat)}.`)}
   else if(t.id==="wcat"){const w=winById(selWin),next=clone(cfg);next.cats[w.app]=t.value;saveConfig(next,`${appName(w.app)} is now ${catName(t.value)}.`).then(ok=>{if(ok){prevs={};previewAll()}})}

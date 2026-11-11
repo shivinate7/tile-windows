@@ -182,14 +182,18 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   if ($phase -in 'all', 'pins') {
     foreach ($pn in $pins) {
       $it = $its | ? { $_.App -eq $pn.App -and (-not $pn.Match -or (Contains $_.Title $pn.Match)) -and -not $placed.Contains($_) -and ($pn.Match -or (& $up)) } | Sort-Object { $_.X -le -20000 }, X, Y | Select-Object -First 1
-      $pn | Add-Member -Force Item $it
-      if (-not $it) { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' }; continue }
-      $placed += $it; $pn.Slots | % { $used[$_] = 1 }
+      if ($it) { $placed += $it } else { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' } }
       # Windows stacked behind this pin: same rect, never in the fill. A minimized one counts (Apply restores it).
-      $pn | Add-Member -Force BehindItems @(foreach ($b in @($pn.Behind)) {
+      $bis = @(foreach ($b in @($pn.Behind)) {
         $bi = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and -not $placed.Contains($_) -and $_.App -eq $b.App -and (-not $b.Match -or (Contains $_.Title $b.Match)) } | Sort-Object { $_.X -le -20000 }, X, Y | Select-Object -First 1)[0]
         if ($bi) { $placed += $bi; $bi } else { Write-Warning "No open window for '$($b.App)' behind '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $b.App; match = $b.Match; why = 'no open window' } }
       })
+      # The front is not open: the first open back window takes its cell as the new front, as the board promotes one when its front leaves.
+      if (-not $it -and $bis.Count) { $it = $bis[0]; $bis = @($bis | Select-Object -Skip 1) }
+      $pn | Add-Member -Force Item $it
+      if (-not $it) { continue }
+      $pn | Add-Member -Force BehindItems $bis
+      $pn.Slots | % { $used[$_] = 1 }
     }
     $state.pinned = @($pins | ? { $_.Item }).Count
   }
