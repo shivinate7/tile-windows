@@ -23,7 +23,7 @@ Low findings. Each becomes a debt only after a real incident.
 - `serve.ps1` 37: `Get-TileNote` reads `note.txt` with no lock; a dismiss racing a read can drop that one reply.
 - `config.ps1` 34: the note file grows by one line per recovery until dismissed.
 - `install.ps1` 37: a failed delete of `app.old-<pid>` is never cleaned up by later installs.
-- Design round 3 rows 2 to 9 (`design/reviews/app-round3.md`).
+- Design round 3 rows 2 to 9 (`docs/design/reviews/app-round3.md`).
 
 ## From the triggers lane (2026-10-22)
 
