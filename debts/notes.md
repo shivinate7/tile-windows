@@ -16,6 +16,7 @@ Low findings. Each becomes a debt only after a real incident.
 - `config.ps1` The unique temp name cannot go red alone: the write lock already keeps two writers apart. It guards a writer that skips the lock.
 - `config.ps1` The re-check under the lock before a file moves to `.bad` guards a race between two readers. No test can time that race, so it has no red proof.
 - `install.ps1` `TILE_TEST_SWAP_FAIL` is a test seam: it throws between the two renames of the swap, so the rollback can be tested.
+- `serve.ps1` keeps serving the live desktop when -From does not resolve, so a dry-run review can read live windows (design review stack-and-lock round 1).
 
 ## From PR 2 review round 3 (2026-10-22)
 
