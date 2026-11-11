@@ -141,10 +141,17 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 /* While dragging, a small chip follows the pointer, so the target and its neighbours stay readable. */
 #ghost{position:fixed;z-index:50;pointer-events:none;display:none;max-width:240px;padding:3px 8px;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);color:var(--ink);font:600 12px var(--f);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 8px 18px -8px color-mix(in srgb,var(--ink) 60%,transparent)}
 .tile.ztake{outline:2px dashed var(--select);outline-offset:-3px}
-.tile .stayput{display:none;position:absolute;right:3px;bottom:3px;padding:2px 5px;border:1px solid var(--ink);border-radius:3px;background:var(--panel);color:var(--ink);font:600 11px var(--f);white-space:nowrap;cursor:pointer}
+.tile .stayput{display:none;position:absolute;right:19px;bottom:3px;padding:2px 5px;border:1px solid var(--ink);border-radius:3px;background:var(--panel);color:var(--ink);font:600 11px var(--f);white-space:nowrap;cursor:pointer}
 .tile.sel .stayput{display:block}
-/* A tile too small for Stay Put on one line, clear of its tag, lock, pin mark and badge, leaves it to the inspector's Keep Where It Is. */
-.tile.sel.nosp .stayput{display:none}
+/* A narrow tile shows Stay Put as an icon alone, named by its tooltip and label, left of the grip and clear of the tag, lock, pin mark and badge. */
+.tile .stayput em{font-style:normal}
+.tile .stayput svg{display:none;width:12px;height:12px}
+.tile.sel .stayput.ico{display:grid;right:21px;bottom:3px;width:18px;height:18px;padding:0;place-items:center}
+/* On a stacked narrow tile the icon sits above the grip, under the lock; the pin mark gives way to it, and the inspector still says Pinned. */
+.tile.sel.stacked .stayput.ico{right:3px;bottom:19px}
+.tile.sel.stacked.narrow .pinmark{display:none}
+.tile .stayput.ico svg{display:block}
+.tile .stayput.ico .spt{display:none}
 .tile .stayput:disabled{opacity:.55;cursor:not-allowed}
 #drop>span,#dest span{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);width:max-content;max-width:calc(100% - 8px);text-align:center;padding:2px 8px;border-radius:999px;background:var(--select);color:var(--select-ink);font:600 12px var(--f)}
 .tile.swap{outline:3px solid var(--select);outline-offset:-3px}
@@ -293,7 +300,7 @@ dialog form{display:grid;gap:10px}
 .tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 6px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1}
 .tile .stk svg{width:10px;height:10px}
 .tile.stacked span{-webkit-line-clamp:2}
-.tile.stacked .stayput{bottom:24px}
+.tile.stacked .stayput{bottom:24px;right:3px}
 /* Stack edge: the front tile keeps its box and its full border. The back window's edge is its own element, drawn 3px up and to the right of the front, under it. */
 .tile.stacked{z-index:3}
 .stkedge{position:absolute;pointer-events:none;z-index:2;border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--cat) 14%,var(--panel))}
@@ -322,6 +329,9 @@ dialog form{display:grid;gap:10px}
 #drop .dz.on span{background:var(--select);color:var(--select-ink);box-shadow:none}
 #drop .dz span.why{border-radius:3px;background:var(--panel);color:var(--ink);box-shadow:none;font-size:11px;padding:1px 6px}
 #drop .dz span svg{width:12px;height:12px;flex:none}
+#drop .dz span.t{font-size:10px;padding:1px 3px;gap:2px}
+#drop.split.one>.dz:has(.t){padding-top:17px;gap:2px}
+#drop .dz span.why.t{padding:1px 3px}
 .lockrow{align-items:flex-start;white-space:normal;padding:4px 0;gap:10px;width:100%}
 .lockrow input{margin-top:2px;box-shadow:inset 0 0 0 1px var(--muted)}
 .lockrow input:checked{box-shadow:none}
@@ -460,6 +470,7 @@ const LOCKC='<svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><pa
 const LOCKO='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2.6" y="5.6" width="6.8" height="5" rx=".8"/><path d="M4.4 5.6V3.6a1.9 1.9 0 0 1 3.7-.6"/></svg>';
 const BEHIND='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.5" y="4" width="6.5" height="6.5" rx="1" fill="currentColor" fill-opacity=".25"/><path d="M4 4V1.5h6.5V8H8"/></svg>';
 const SWAPI='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4h8M7.5 1.5 10 4 7.5 6.5M10 8H2M4.5 5.5 2 8l2.5 2.5"/></svg>';
+const STAYI='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 1.5v5.5M3.8 5 6 7.2 8.2 5M2 9.5v1h8v-1"/></svg>';
 const GRIP='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M14 6 6 14M14 10l-4 4"/></svg>';
 const PIN='<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M4 1h4l-.6 3.2L9.5 6v1H6.6L6 11.5 5.4 7H2.5V6l2.1-1.8z"/></svg>';
 
@@ -587,7 +598,7 @@ function build(){
   }
   for(const w of snap.windows){
     const e=document.createElement("div");e.className="tile";e.tabIndex=0;e.setAttribute("role","button");e.dataset.id=w.id;
-    e.innerHTML=`<b></b><span></span>${LIVE?'<button type="button" class="stayput" tabindex="-1">Stay Put</button><button type="button" class="lk"></button><button type="button" class="stk" hidden></button><button type="button" class="rsz" tabindex="-1" aria-hidden="true" title="Drag to resize across cells">'+GRIP+'</button>':""}`;e.firstChild.textContent=appName(w.app);e.children[1].textContent=w.title;
+    e.innerHTML=`<b></b><span></span>${LIVE?'<button type="button" class="stayput" tabindex="-1">'+STAYI+'<em class="spt">Stay Put</em></button><button type="button" class="lk"></button><button type="button" class="stk" hidden></button><button type="button" class="rsz" tabindex="-1" aria-hidden="true" title="Drag to resize across cells">'+GRIP+'</button>':""}`;e.firstChild.textContent=appName(w.app);e.children[1].textContent=w.title;
     stg.appendChild(e);els.set(w.id,e);
   }
 }
@@ -656,9 +667,11 @@ function render(){
     if(sb){sb.hidden=!back.length;if(back.length){const nm=back.map(p=>appName(p.app));sb.innerHTML=`${BEHIND}+${back.length}`;
       sb.title=`Behind: ${nm.join(", ")}.\nClick to bring ${nm[0]} to the front.`;sb.setAttribute("aria-label",`${plural(back.length,"window")} behind. Bring ${nm[0]} to the front.`)}}
     e.hidden=false;const pr=px(x.r);Object.assign(e.style,pr);
-    // Stay Put needs 66px across; on a stacked tile it also needs 80px down, to sit between the pin mark and the badge.
-    e.classList.toggle("nosp",parseFloat(pr.width)<66||(back.length>0&&parseFloat(pr.height)<80));
-    if(sp){sp.disabled=locked;if(locked)sp.title="Locked. Unlock it first.";else sp.removeAttribute("title")}
+    // Stay Put reads in words from 84px across; a narrower tile shows the icon alone, named by its tooltip and label.
+    const ico=parseFloat(pr.width)<84;e.classList.toggle("narrow",ico);
+    if(sp){sp.disabled=locked;sp.classList.toggle("ico",ico);
+      if(ico){sp.title=locked?"Stay Put. Locked, unlock it first.":"Stay Put";sp.setAttribute("aria-label","Stay Put")}
+      else{sp.removeAttribute("aria-label");if(locked)sp.title="Locked. Unlock it first.";else sp.removeAttribute("title")}}
     if(back.length){const ed=edgeOf(w.id);ed.className=`stkedge cat-${catOf(back[0].app)}`;ed.hidden=false;Object.assign(ed.style,{...pr,left:parseFloat(pr.left)+EDGE+"px",top:parseFloat(pr.top)-EDGE+"px"})}
     if(!bh)drawn[w.id]={x:x.r.x,y:x.r.y,w:x.r.w,h:x.r.h,kind:x.kind};used.add(monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2));
     const mv=(x.kind==="pin"||x.kind==="fill"||bh)&&!same(x.r,w);if(mv)moves++;
@@ -688,7 +701,7 @@ function render(){
   $("undo").title=isBusy?"Wait for the current action to finish.":hist.length?"Undo the last change or "+(LIVE?verb():"Apply")+".":"Nothing to undo yet.";
   $("pend").textContent=moves?`${plural(moves,"window")} will move on ${LIVE?verb():"Apply"}`:"The board matches your screen";
   $("zadd").hidden=!(LIVE&&s);
-  $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell: middle swaps, bottom puts it behind.":
+  $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the middle swaps and the lower band puts it behind.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   overText(V);renderZones();renderBay(V);renderRail();renderInsp(V);
 }
@@ -1017,11 +1030,12 @@ function cellAt(x,y){const sr=stage.getBoundingClientRect(),sx=(x-sr.left)/G.S+G
   return g?{m,g,c:clamp(Math.floor((sx-m.x)/(m.w/g.c)),0,g.c-1),r:clamp(Math.floor((sy-m.y)/(m.h/g.r)),0,g.r-1)}:null}
 // Measured width of a drop label in the drop chip's font, for choosing the form that fits a cell.
 let measureCtx=null;
-function textW(t){if(!measureCtx){measureCtx=document.createElement("canvas").getContext("2d")}
-  measureCtx.font=`600 12px ${getComputedStyle(document.documentElement).getPropertyValue("--f")||"sans-serif"}`;return measureCtx.measureText(t).width}
-// The first [text, icon] form whose chip (padding, icon, text) fits inside a cell pw px wide; the last form always stands.
+function textW(t,sz=12){if(!measureCtx){measureCtx=document.createElement("canvas").getContext("2d")}
+  measureCtx.font=`600 ${sz}px ${getComputedStyle(document.documentElement).getPropertyValue("--f")||"sans-serif"}`;return measureCtx.measureText(t).width}
+// The first [text, icon, tight] form whose chip (padding, icon, text) fits inside a cell pw px wide; the last form always stands.
 // The chip sits in a zone with a 3px border and 2px padding on each side, and has 6px padding of its own.
-function pickForm(forms,pw){const room=pw-10-12;return forms.find(([t,ic],i)=>i===forms.length-1||textW(t)+(ic?16:0)<=room)||forms[forms.length-1]}
+// A tight form sets the words at 10px with 3px padding, so "Behind" and "Locked" keep their words in the narrowest cells.
+function pickForm(forms,pw){const fits=([t,ic,tight])=>tight?textW(t,10)+6<=pw-10:textW(t)+(ic?16:0)<=pw-10-12;return forms.find((f,i)=>i===forms.length-1||fits(f))||forms[forms.length-1]}
 function frame(){raf=0;
   if(zdraw){const z=zdraw,a=Math.min(z.c0,z.c1),b=Math.min(z.r0,z.r1),cs=Math.abs(z.c1-z.c0)+1,rs=Math.abs(z.r1-z.r0)+1,e=$("zdraw");
     const r=cellRect(z.m,z.g,a,b,cs,rs);Object.assign(e.style,px(r));e.style.display="block";let n=0;
@@ -1043,11 +1057,11 @@ function frame(){raf=0;
     if(occ){const g=t.g,bb=pbox(occ,g),pr=px(cellRect(t.m,g,bb.c,bb.r,bb.cs,bb.rs)),pw=parseFloat(pr.width),lk=lockOfPlaced(occ),zone=dropZone(d,occ,t),o=appName(winById(occ.id).app),big=pw>=110;
       // Each label tries its forms in order and takes the first that fits the cell by measured text width. The last form is the icon alone; the tooltip keeps the full name.
       const swapT=d.fromBay?`Swap: ${o} goes to the list`:`Swap with ${o}`;
-      const pill=(k,forms)=>{const [t,ic]=pickForm(forms,pw);return `<span title="${k==="swap"?"Swap with ":"Put Behind "}${esc(o)}">${ic||""}${esc(t)}</span>`};
-      const swapF=[[swapT,SWAPI],["Swap"],["",SWAPI]],behF=[[`Put Behind ${o}`,BEHIND],["Put Behind"],["Behind"],["",BEHIND]];
+      const pill=(k,forms)=>{const [t,ic,tg]=pickForm(forms,pw);return `<span${tg?' class="t"':""} title="${k==="swap"?"Swap with ":"Put Behind "}${esc(o)}">${ic||""}${esc(t)}</span>`};
+      const swapF=[[swapT,SWAPI],["Swap"],["Swap",0,1],["",SWAPI]],behF=[[`Put Behind ${o}`,BEHIND],["Put Behind"],["Behind"],["Behind",0,1],["",BEHIND]];
       Object.assign(dropEl.style,pr);dropEl.className=lk?"split one":"split";dropEl.style.display="grid";
-      const [wt,wi]=pickForm([["Locked, so no Swap",LOCKC],["Locked",LOCKC],["Locked"],["",LOCKC]],pw);
-      dropEl.innerHTML=lk?`<div class="dz on">${pill("behind",behF)}<span class="why" title="Locked, so no Swap">${wi||""}${esc(wt)}</span></div>`
+      const [wt,wi,wg]=pickForm([["Locked, so no Swap",LOCKC],["Locked",LOCKC],["Locked"],["Locked",0,1],["",LOCKC]],pw);
+      dropEl.innerHTML=lk?`<div class="dz on">${pill("behind",behF)}<span class="why${wg?" t":""}" title="Locked, so no Swap">${wi||""}${esc(wt)}</span></div>`
         :`<div class="dz${zone==="swap"?" on":""}">${pill("swap",swapF)}</div><div class="dz${zone==="behind"?" on":""}">${pill("behind",behF)}</div>`;
       if(zone==="swap"){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=big?`${o} moves here`:o}}}
     else{Object.assign(dropEl.style,px(t.r));dropEl.className="";dropEl.style.display="block";
