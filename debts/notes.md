@@ -63,3 +63,13 @@ Low findings. Each becomes a debt only after a real incident.
 - `app.html` A saved value over its cap shows uncapped; the tray acts on the cap.
 - `tray.ps1` A bad hand-edited value falls back to its default with no warning.
 - `app.html` Unverified: focus restore may snap back to an edited field after Tab out.
+
+## From design review stack-and-lock round 3 (2026-11-11)
+
+- `app.html` At 1440 the drag ghost covers the locked drop's "Put Behind" (design review stack-and-lock round 3, finding 3).
+- `app.html` At 1024 a resize destination chip clips "Chrome" to "Chrom" (design review stack-and-lock round 3, finding 4).
+- `app.html` At 1024 the taken-swap destination chip text runs 7px past its box but stays readable (design review stack-and-lock round 3, finding 5).
+- `app.html` A window resize during a drag leaves the dragged tile at its old size, off the board. Rare. Not checked against main (design review stack-and-lock round 3, finding 6).
+- `app.html` On tiles under 84px the Stay Put icon is 18px, under the 24px touch size, and its arrow-into-tray glyph reads as a download (design review stack-and-lock round 3).
+- `app.html` The pin mark is hidden on a narrow selected stacked tile (design review stack-and-lock round 3).
+- `app.html` The +N badge loses its chip outline in forced colours (design review stack-and-lock round 3).
