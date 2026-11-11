@@ -19,7 +19,7 @@
 #   app.html DOM the harness drives:
 #     Every window is a .tile. A locked tile's lock button is .tile .lk. The resize grip is .tile .rsz, bottom-right.
 #     #drop holds the drop label. On a taken cell, the lower 36% reads Put Behind and the upper 64% reads Swap. On a
-#     locked tile it reads Behind and Locked, never Swap. On a spanned block the same split covers the whole block, and it
+#     locked tile it reads Behind and "Locked, so no Swap" (Locked on narrow cells), with no Swap action. On a spanned block the same split covers the whole block, and it
 #     never reads Place here. A drop on the lower band stacks the dragged window behind; a drop on the upper zone swaps.
 #     The inspector, for the selected front tile, has a Bring to Front and a Take Out button for each window behind it.
 #     A grip drag of 1.4 cells to the right, on a 1x1 tile, makes a 2-column span (whole cells, rounded).
@@ -134,6 +134,17 @@ function SlSame($a, $b) { [bool]($a -and $b -and [Math]::Abs($a.l - $b.l) -lt 1 
 function SlFmt($b) { if (-not $b) { 'none' } else { '{0},{1} {2}x{3}' -f [int]$b.l, [int]$b.t, [int]$b.w, [int]$b.h } }
 function SlShort($x) { $j = ($x | ConvertTo-Json -Depth 6 -Compress); if ($j.Length -gt 400) { $j.Substring(0, 400) } else { $j } }
 function SlLabel { SlJs "document.getElementById('drop').textContent" }
+function SlLabelShown { SlJs "getComputedStyle(document.getElementById('drop')).display !== 'none'" }
+# Focuses a tile and presses one arrow key on it: the keydown the board reads.
+function SlKey($id, $key, $vk) {
+  [void](SlJs "(() => { els.get($id).focus({ preventScroll: true }); return true; })()")
+  [void](SlSend 'Input.dispatchKeyEvent' @{ type = 'keyDown'; key = $key; code = $key; windowsVirtualKeyCode = $vk })
+  [void](SlSend 'Input.dispatchKeyEvent' @{ type = 'keyUp'; key = $key; code = $key; windowsVirtualKeyCode = $vk })
+  SlSettle }
+# Types a Title contains value into the inspector's field, and fires its change, as a typed value does.
+function SlTitle($text) { [void](SlJs "(() => { const i = document.getElementById('match'); if (!i) return false; i.value = '$text'; i.dispatchEvent(new Event('change', { bubbles: true })); return true; })()"); SlSettle }
+# Presses the Fewer button of the monitor's Columns (k = c) or Rows (k = r) stepper, when it is enabled.
+function SlFewer($k) { [void](SlJs "(() => { const b = [...document.querySelectorAll('button')].find(x => x.dataset.g === '$k' && x.dataset.d === '-1'); if (!b || b.disabled) return false; b.click(); return true; })()"); SlSettle }
 # The scene the server holds (after a Save), and the scene the page holds (work).
 function SlSavedScene { ((Invoke-WebRequest -UseBasicParsing "$($script:url)config").Content | ConvertFrom-Json).scenes | ? { $_.id -eq 'sl' } | Select-Object -First 1 }
 function SlPin($s, $text) { @($s.pins | ? { "$($_.match)" -like "*$text*" })[0] }
@@ -204,6 +215,23 @@ $pinsResizeLock = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots
 $pinsSpan = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[0,1,5,6]}' '{"app":"WindowsTerminal","match":"tiler","mon":"wide","slots":[3]}'
 $pinsFull = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"claude","match":"Pin parser","mon":"wide","slots":[1]}' '{"app":"claude","match":"Draft release","mon":"wide","slots":[2]}' '{"app":"chrome","match":"Pull request","mon":"wide","slots":[3]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[4]}' '{"app":"chrome","match":"quoted","mon":"wide","slots":[5]}' '{"app":"WindowsTerminal","match":"tiler","mon":"wide","slots":[6]}' '{"app":"WindowsTerminal","match":"docs watch","mon":"wide","slots":[7]}' '{"app":"explorer","match":"Projects","mon":"wide","slots":[8]}' '{"app":"explorer","match":"Downloads","mon":"wide","slots":[9]}'
 
+$pinsOver = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"WindowsTerminal","match":"tiler","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"}]}'
+$pinsSpanOver = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[0,1,5,6]}' '{"app":"WindowsTerminal","match":"tiler","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"}]}'
+$pinsSpanArrow = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[0,1,5,6]}' '{"app":"WindowsTerminal","match":"tiler","mon":"wide","slots":[2],"behind":[{"app":"claude","match":"Draft release"}]}'
+$pinsOneWin = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}'
+$pinsGridLock = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[4],"lock":true}'
+$pinsGridFree = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[4]}'
+# A front that is not open. Empty state: the front is the only pin. Full state: the fixture's ten pins, with the Refactor pin's front not open.
+$pinsFrontGone = SlPins '{"app":"claude","match":"Nonexistent","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"}]}'
+$pinsFullFrontGone = $pinsFull.Replace('{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}', '{"app":"claude","match":"Nonexistent","mon":"wide","slots":[0],"behind":[{"app":"claude","match":"Refactor"}]}')
+# Engine: the open back window takes the front's cell as the new front, as a window behind a removed front takes its cell on the board.
+$eGone = SlPlace (SlSceneJson $pinsFrontGone)
+$eGoneBack = @($eGone.placed | ? { $_.id -eq 1003 })[0]
+Check 'front gone, empty state: the open back window takes the front''s cell, as the new front' ([bool]$eGoneBack -and ($eGoneBack.slots -join ',') -eq '4' -and $eGoneBack.pin -eq 0 -and $eGoneBack.behind -ne $true) "back: $($eGoneBack | ConvertTo-Json -Compress)"
+$eFull = SlPlace (SlSceneJson $pinsFullFrontGone)
+$eFullBack = @($eFull.placed | ? { $_.id -eq 1001 })[0]
+Check 'front gone, full state: the open back window takes the front''s cell, as the new front' ([bool]$eFullBack -and ($eFullBack.slots -join ',') -eq '1' -and $eFullBack.pin -eq 0 -and $eFullBack.behind -ne $true) "back: $($eFullBack | ConvertTo-Json -Compress)"
+
 try {
   $srvPair = SlStartServer; $srv = $srvPair[0]; $script:url = $srvPair[1]
   $edgeProc = SlStartBrowser
@@ -254,11 +282,22 @@ try {
 
   SlCase (SlSceneJson $pinsCQLock)
   SlDrag (SlAt (SlBox 1006) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.5) -Hold
+  Check 'scope: the drop label shows over the locked tile' (SlLabelShown) 'the drop label is hidden'
   $lbl = SlLabel
   Check 'lock: over a locked tile the drop label offers Behind' ("$lbl" -match 'Behind') "label: $lbl"
-  Check 'lock: over a locked tile the drop label never offers Swap' ("$lbl" -notmatch 'Swap') "label: $lbl"
+  Check 'lock: over a locked tile the drop label offers no Swap action' ("$lbl" -notmatch 'Swap with') "label: $lbl"
   Check 'lock: over a locked tile the drop label says Locked' ("$lbl" -match 'Locked') "label: $lbl"
   SlRelease (SlAt (SlBox 1001) 0.5 0.5)
+  # Lock in a wide cell: the chip reads the approved copy, "Locked, so no Swap". At 1440 the 5-column cells are narrower than
+  # 110 px, so this case widens the viewport, then sets it back for the cases after it.
+  [void](SlSend 'Emulation.setDeviceMetricsOverride' @{ width = 2560; height = 1440; deviceScaleFactor = 1; mobile = $false })
+  SlCase (SlSceneJson $pinsCQLock)
+  SlDrag (SlAt (SlBox 1006) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.5) -Hold
+  Check 'scope: the drop label shows over the locked tile, at 110 px or wider' ([bool](SlJs "getComputedStyle(document.getElementById('drop')).display !== 'none' && document.getElementById('drop').offsetWidth >= 110")) "width: $(SlJs "document.getElementById('drop').offsetWidth")"
+  $lw = SlLabel
+  Check 'lock: over a locked tile in a wide cell the drop label reads "Locked, so no Swap"' ("$lw" -match 'Locked, so no Swap') "label: $lw"
+  SlRelease (SlAt (SlBox 1001) 0.5 0.5)
+  [void](SlSend 'Emulation.setDeviceMetricsOverride' @{ width = 1440; height = 900; deviceScaleFactor = 1; mobile = $false })
 
   # Lock: the lock control locks the tile, and Save keeps the lock in the scene.
   SlCase (SlSceneJson $pinsCQ)
@@ -271,6 +310,30 @@ try {
   SlLoad
   $reloaded = SlPin (SlGet 'work[selId]') 'Refactor'
   Check 'lock: the saved lock is still on the tile after the page reloads' ([bool]($reloaded -and $reloaded.lock -eq $true)) "reloaded pin: $(SlShort $reloaded)"
+
+  # Lock: Title contains never re-points a locked tile. Control: it re-points an unlocked one.
+  SlCase (SlSceneJson $pinsCQ)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlTitle 'Draft release'
+  $tc = SlGet 'work[selId]'
+  Check 'control: Title contains re-points an unlocked pin' ([bool](SlPin $tc 'Draft release')) "pins: $(SlShort $tc.pins)"
+  SlCase (SlSceneJson $pinsCQLock)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlTitle 'Draft release'
+  $s12 = SlGet 'work[selId]'; $p12 = SlPin $s12 'Refactor'
+  Check 'lock: Title contains never re-points a locked tile (its pin keeps its window and cell)' ([bool]$p12 -and $p12.lock -eq $true -and (SlCells $p12) -eq '0') "locked pin: $(SlShort $p12); pins: $(SlShort $s12.pins)"
+
+  # Lock: Columns never cuts off a locked tile. Control: it shrinks the grid when no locked tile is in the way.
+  SlCase (SlSceneJson $pinsGridFree)
+  SlClick (SlAt (SlBox 1006) 0.5 0.5)
+  SlFewer 'c'
+  $gc = SlGet 'work[selId].grids.wide.c'
+  Check 'control: Fewer Columns shrinks the grid when no locked tile is in the way' ($gc -eq 4) "columns: $gc"
+  SlCase (SlSceneJson $pinsGridLock)
+  SlClick (SlAt (SlBox 1006) 0.5 0.5)
+  SlFewer 'c'
+  $s13 = SlGet 'work[selId]'; $g13 = SlPin $s13 'Quarterly'
+  Check 'lock: Fewer Columns never cuts off a locked tile (it keeps its cell)' ([bool]$g13 -and $g13.lock -eq $true -and (SlCells $g13) -eq '4') "locked pin: $(SlShort $g13); columns: $($s13.grids.wide.c)"
 
   # Resize: a span drag by the corner grip snaps to whole cells; a covered window moves to a free cell; no free cell
   # sends it to the bay; a resize stops at a locked tile.
@@ -324,6 +387,47 @@ try {
   Check 'span: after a swap on a spanned block, the spanned window keeps a cell' ([bool]@($placed10 | ? { $_.app -eq 'chrome' }).Count) "placed: $(SlShort $placed10)"
   # A guard, not a new claim: a swap that drops the spanned window still shows no overlap, so this one passes on the old code.
   Check 'span: after a swap on a spanned block, no two windows share a cell (no tile overlaps)' ($placed10.Count -gt 0 -and $dupCells -eq 0) "duplicate cells: $dupCells"
+
+  # Spanned window over a taken 1x1 cell: the split, never Place here, and the occupant keeps its pin and its stack.
+  # Control: a one-cell window over the same cell reads the split, as today.
+  SlCase (SlSceneJson $pinsOver)
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlAt (SlBox 1008) 0.5 0.5) -Hold
+  $lc = SlLabel
+  Check 'control: a one-cell window over a taken cell reads Swap and Behind (as today)' (("$lc" -match 'Swap') -and ("$lc" -match 'Behind')) "label: $lc"
+  SlRelease (SlAt (SlBox 1008) 0.5 0.5)
+
+  SlCase (SlSceneJson $pinsSpanOver)
+  SlDrag (SlAt (SlBox 1006) 0.25 0.25) (SlAt (SlBox 1008) 0.5 0.5) -Hold
+  Check 'scope: the drop label shows over the taken cell of a spanned drag' (SlLabelShown) 'the drop label is hidden'
+  $l1 = SlLabel
+  Check 'split: a spanned window over a taken 1x1 cell reads Swap and Behind' (("$l1" -match 'Swap') -and ("$l1" -match 'Behind')) "label: $l1"
+  SlRelease (SlAt (SlBox 1008) 0.5 0.5)
+
+  SlCase (SlSceneJson $pinsSpanOver)
+  SlDrag (SlAt (SlBox 1006) 0.25 0.25) (SlAt (SlBox 1008) 0.5 0.85)
+  $s14 = SlGet 'work[selId]'; $t14 = SlPin $s14 'tiler'
+  Check 'nothing dropped: a Put Behind drop on a taken cell keeps the occupant''s pin' ([bool]$t14) "pins: $(SlShort $s14.pins)"
+  Check 'nothing dropped: a Put Behind drop on a taken cell keeps the occupant''s stack' ([bool]$t14 -and (SlHasBehind $t14 'Draft release')) "occupant pin: $(SlShort $t14)"
+  Check 'split: a Put Behind drop puts the spanned window behind the occupant' ([bool]$t14 -and (SlHasBehind $t14 'Quarterly')) "occupant pin: $(SlShort $t14)"
+
+  SlCase (SlSceneJson $pinsSpanOver)
+  SlDrag (SlAt (SlBox 1006) 0.25 0.25) (SlAt (SlBox 1008) 0.5 0.35)
+  $s15 = SlGet 'work[selId]'; $t15 = SlPin $s15 'tiler'
+  Check 'nothing dropped: a swap onto a taken cell keeps the occupant''s pin' ([bool]$t15) "pins: $(SlShort $s15.pins)"
+  Check 'nothing dropped: a swap onto a taken cell keeps the occupant''s stack' ([bool]$t15 -and (SlHasBehind $t15 'Draft release')) "occupant pin: $(SlShort $t15)"
+
+  # Arrow keys into a taken cell take the same path: the occupant must survive. Control: an arrow key moves a one-cell window into an empty cell.
+  SlCase (SlSceneJson $pinsOneWin)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlKey 1001 'ArrowRight' 39
+  $s16 = SlGet 'work[selId]'; $r16 = SlPin $s16 'Refactor'
+  Check 'control: an arrow key moves a one-cell window into an empty cell (as today)' ([bool]$r16 -and (SlCells $r16) -eq '1') "pin: $(SlShort $r16)"
+  SlCase (SlSceneJson $pinsSpanArrow)
+  SlClick (SlAt (SlBox 1006) 0.5 0.5)
+  SlKey 1006 'ArrowRight' 39
+  $s17 = SlGet 'work[selId]'; $t17 = SlPin $s17 'tiler'
+  Check 'nothing dropped: an arrow key into a taken cell keeps the occupant''s pin' ([bool]$t17) "pins: $(SlShort $s17.pins)"
+  Check 'nothing dropped: an arrow key into a taken cell keeps the occupant''s stack' ([bool]$t17 -and (SlHasBehind $t17 'Draft release')) "occupant pin: $(SlShort $t17)"
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
 } finally {
