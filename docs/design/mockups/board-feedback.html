@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board Feedback</title>
+<style>
+/* Tokens copied from app.html :root (lines 13-23). No web fonts: this page opens from disk with no network, so the stacks fall back to Segoe UI. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --tmix:26%; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D; --ok:#17754B; --bad:#B42318;
+  /* Mockup chrome only, never product UI: the dashed Today and New labels, and the hit-area overlay. */
+  --ann-new:#C0267A; --ann-today:#4F574F;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- Mockup shell (not product UI) ---------- */
+.mk{display:grid;gap:12px;padding:16px}
+.banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
+.banner b{color:var(--ann-new)}
+.mkhead{display:grid;gap:4px}
+.mkhead h1{margin:0;font:700 20px var(--f-disp);letter-spacing:-.01em}
+.mkhead p{margin:0;color:var(--muted);max-width:76ch}
+.mkbar{display:grid;gap:8px}
+.mkrow{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.mkgrp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkgrp>span{color:var(--muted);font-size:12px;min-width:44px}
+.mkseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.mkseg button{min-height:32px;border:0;background:transparent;padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.mkseg button+button{border-left:1px solid var(--line)}
+.mkseg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.mkopts{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;font-size:12.5px}
+.mkopts label{display:inline-flex;gap:6px;align-items:center;min-height:32px;cursor:pointer}
+.mkopts input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.mkopts .sep{color:var(--muted);font-size:12px}
+.item{display:grid;gap:10px;padding-top:6px}
+.item>h2{margin:8px 0 0;font:700 18px var(--f-disp);letter-spacing:-.01em}
+.item>p{margin:0;color:var(--muted);max-width:90ch}
+.shot{display:grid;gap:6px}
+.shot h3.cap{margin:6px 0 0;font:700 15px var(--f-disp);letter-spacing:-.01em;color:var(--ink)}
+.shot h3.cap .note{font:12px var(--f);color:var(--muted)}
+.shot .capn{margin:0;color:var(--muted);max-width:90ch}
+.kind{font:600 11px var(--f);padding:1px 6px;border-radius:3px;border:1px dashed var(--ann-new);color:var(--ann-new);margin-left:6px;vertical-align:2px}
+.kind.today{border-color:var(--ann-today);color:var(--ann-today)}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.art{position:relative}
+.art.w1440{width:1440px}.art.w1440 .app{height:900px}
+.art.w1024{width:1024px}.art.w1024 .app{height:768px}
+
+/* Today / New labels */
+.ann{position:absolute;border:1.5px dashed var(--ann-new);border-radius:4px;pointer-events:none;z-index:40}
+.ann.today{border-color:var(--ann-today)}
+.ann>em,.abox>em{position:absolute;left:-2px;font:600 10.5px/1 var(--f);font-style:normal;white-space:nowrap;padding:2px 5px;border-radius:3px;background:var(--panel);color:var(--ann-new);border:1px dashed var(--ann-new)}
+.ann>em{top:calc(100% + 3px)}.ann.up>em{top:auto;bottom:calc(100% + 3px)}.ann.end>em{left:auto;right:-2px}
+.ann.today>em,.abox.today>em{color:var(--ann-today);border-color:var(--ann-today)}
+.abox{position:relative;outline:1.5px dashed var(--ann-new);outline-offset:3px;border-radius:2px;margin-top:14px}
+.abox.today{outline-color:var(--ann-today)}
+.abox>em{top:-19px;left:-4px}
+.abox.inl{margin-top:0;outline-offset:1px}
+.nolabels .ann{display:none}.nolabels .abox{outline:0;margin-top:0}.nolabels .abox>em{display:none}
+/* Hit areas of the resize handles: mockup only. */
+.hit{position:absolute;z-index:39;pointer-events:none;border:1px dashed var(--ann-new);background:color-mix(in srgb,var(--ann-new) 22%,transparent)}
+.nohit .hit{display:none}
+
+/* ---------- Product UI: copied from app.html ---------- */
+.app{display:grid;grid-template-columns:232px minmax(0,1fr) 268px;grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"top top top" "rail canvas insp" "status status status";background:var(--panel)}
+.top{grid-area:top;position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:9px 16px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font:700 15px var(--f-disp);letter-spacing:-.01em;margin:0}
+.brand svg{width:20px;height:20px;color:var(--select)}
+.crumb{color:var(--muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--ink);font-weight:600}
+.edited{color:var(--ink);font-weight:600}
+.edited::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hi);margin:0 6px 1px 8px}
+.tools{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;border:1px solid var(--line);background:var(--panel);padding:5px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:color-mix(in srgb,var(--ink) 40%,var(--line))}
+.btn.pri{background:var(--select);color:var(--select-ink);border-color:var(--select);font-weight:600}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn:disabled{cursor:not-allowed;color:var(--muted);background:transparent;border-style:dashed;border-color:var(--line)}
+.switch{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 6px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.switch input{appearance:none;width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;margin:0;cursor:pointer;flex:none}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel)}
+.switch input:checked{background:var(--ink)} .switch input:checked::after{left:14px}
+.toast{position:absolute;right:16px;top:calc(100% + 6px);z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;max-width:min(460px,calc(100vw - 32px));
+  padding:9px 10px 9px 14px;border-radius:8px;background:var(--ink);color:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent);font-weight:500}
+.toast .btn{min-height:28px;background:transparent;color:inherit;border-color:color-mix(in srgb,currentColor 40%,transparent)}
+.rail,.insp{min-width:0;min-height:0;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:auto}
+.rail{grid-area:rail;border-right:1px solid var(--line)}
+.insp{grid-area:insp;border-left:1px solid var(--line);gap:0;padding-top:4px}
+.isec{display:grid;gap:8px;padding:12px 0 16px;border-bottom:1px solid var(--line)}
+.isec:last-child{border-bottom:0}
+.app h2{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:10px 0 0;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.app h2:first-child{margin-top:0}
+.insp h2{margin:0;color:var(--ink);font-size:12px;font-weight:700}
+.cards{display:grid;gap:6px}
+.card{position:relative;display:grid;gap:4px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.card.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.pick{display:grid;gap:5px;border:0;background:transparent;padding:0;text-align:left;min-width:0;border-radius:4px}
+.pick strong{font:700 15px var(--f-disp);letter-spacing:-.01em;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pick small{color:var(--muted);font-size:12px}
+.live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.tag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden;display:block}
+.mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
+.mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
+.cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
+.legend{display:grid;gap:2px}
+.lg{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;border:0;background:transparent;padding:4px 6px;border-radius:4px;text-align:left}
+.lg .ct{margin-left:auto;font:12px var(--f-mono);color:var(--muted)}
+.note{font-size:12px;color:var(--muted);margin:0}
+
+.canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.canvas>*{width:100%;flex:none}
+.canvas>.stage{width:auto}
+.stage{position:relative;user-select:none}
+.mon{position:absolute;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
+.mon .cell{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);background:color-mix(in srgb,var(--ink) 6%,transparent);border-radius:2px;position:relative;min-width:0;min-height:0}
+.mon .cell i{position:absolute;right:3px;bottom:1px;font:normal 11px var(--f-mono);color:var(--muted)}
+.mon .empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:6px;font-size:12px;color:var(--muted);pointer-events:none}
+.mlab{position:absolute;display:flex;gap:6px;align-items:baseline;font-size:11px;color:var(--muted);white-space:nowrap;transform:translateY(-100%);padding-bottom:3px}
+.mlab button{border:0;background:transparent;padding:0;font-weight:600;color:var(--ink);font-size:11.5px}
+.mlab button[aria-pressed="true"]{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.tile{position:absolute;display:flex;flex-direction:column;align-items:flex-start;gap:2px;overflow:hidden;padding:3px 5px 3px 8px;border-radius:3px;
+  border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);background:color-mix(in srgb,var(--cat) var(--tmix),var(--panel));color:var(--ink);font-size:12px;line-height:1.2;cursor:grab;contain:layout paint}
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
+.tile b{font:600 11px var(--f);padding:1px 5px;border-radius:2px;background:var(--cat);color:var(--panel);max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;max-width:100%}
+.tile .pinmark{position:absolute;top:22px;right:5px;width:12px;height:12px;color:var(--cat)}
+.tile.pin span{max-width:calc(100% - 12px)}
+.tile.pin{border-width:2px;border-color:var(--cat);background:color-mix(in srgb,var(--cat) 34%,var(--panel))}
+.tile.pin,.tile.fill{z-index:2}
+.tile.sel{outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent);z-index:4}
+.tile.ztake{outline:2px dashed var(--select);outline-offset:-3px}
+.tile .stayput{display:none;position:absolute;right:21px;bottom:3px;padding:2px 5px;border:1px solid var(--ink);border-radius:3px;background:var(--panel);color:var(--ink);font:600 11px var(--f);white-space:nowrap;cursor:pointer}
+.tile.sel .stayput{display:block}
+.tile .stayput svg{display:none;width:12px;height:12px}
+.tile.sel .stayput.ico{display:grid;right:21px;bottom:3px;width:18px;height:18px;padding:0;place-items:center}
+.tile.sel.stacked .stayput.ico{top:2px;bottom:auto;right:24px}
+.tile.sel.stacked.narrow .pinmark,.tile.sel.stacked.narrow b{display:none}
+.tile.sel.stacked.narrow span{margin-top:18px}
+.tile .stayput.ico svg{display:block}
+.tile .stayput.ico .spt{display:none}
+.tile .stayput em{font-style:normal}
+.tile .lk{position:absolute;top:2px;right:2px;width:18px;height:18px;display:grid;place-items:center;border:0;border-radius:3px;background:transparent;color:var(--muted);padding:0;cursor:pointer;z-index:1}
+.tile .lk svg{width:12px;height:12px}
+.tile.lock{cursor:default}
+.tile.lock .lk{background:var(--ink);color:var(--panel)}
+.tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 6px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1}
+.tile .stk svg{width:10px;height:10px}
+.tile.stacked.narrow .stk{left:3px;padding:1px 3px}
+.tile.stacked.narrow .stk svg{display:none}
+.tile.stacked span{-webkit-line-clamp:2}
+.tile.stacked .stayput{bottom:24px;right:3px}
+.tile.stacked{z-index:3}
+.stkedge{position:absolute;pointer-events:none;z-index:2;border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--cat) 14%,var(--panel))}
+.tile .rsz{position:absolute;right:0;bottom:0;width:20px;height:20px;border:0;padding:0;background:transparent;color:var(--ink);cursor:nwse-resize;z-index:1;opacity:0}
+.tile.sel .rsz{opacity:1}
+.tile.lock .rsz{display:none}
+.tile .rsz svg{width:16px;height:16px;position:absolute;right:0;bottom:0}
+.rzdraw{position:absolute;border:2px dashed var(--select);background:color-mix(in srgb,var(--select) 16%,transparent);border-radius:4px;pointer-events:none;z-index:8}
+.rzdraw span{position:absolute;left:8px;top:100%;transform:translateY(-50%);white-space:nowrap;padding:1px 6px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px var(--f)}
+.rzdraw span b{font:700 12px var(--f-mono)}
+.cursor{position:absolute;z-index:51;width:20px;height:20px;pointer-events:none;color:var(--ink)}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
+.boardbar .hint{margin:0;flex:1 1 300px}
+.keys{font-size:12px;color:var(--muted)}
+.keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
+.keys ul{margin:4px 0 0;padding-left:18px}
+.status{grid-area:status;display:flex;flex-wrap:wrap;gap:4px 18px;padding:7px 16px;border-top:1px solid var(--line);font:12px var(--f-mono);color:var(--muted);align-items:center}
+.status .msg{color:var(--ink)}
+select,input[type=text]{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-height:32px;min-width:0;max-width:100%}
+select:disabled{color:var(--muted);border-style:dashed;cursor:not-allowed}
+input[type=text]{width:100%}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;min-height:30px;border:0;background:transparent;padding:5px 2px;font-size:12px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.field{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px}
+.field>label,.field>span:first-child{color:var(--muted)}
+.field.stack{flex-direction:column;align-items:stretch;gap:4px}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.step button{border:0;background:transparent;width:30px;height:30px;font-size:15px}
+.step span{min-width:26px;text-align:center;font:500 12.5px var(--f-mono)}
+.win{display:grid;gap:7px;padding:9px;border:1px solid var(--line);border-radius:8px}
+.win .t{font-weight:600;font-size:13px;word-break:break-word}
+.win .m{color:var(--muted);font-size:12px}
+.xt{display:grid;flex:1;min-width:0;white-space:normal}
+.xt small{display:block;color:var(--muted);font-size:12px}
+h3.grp{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:4px 0 0;display:flex;gap:6px;align-items:center}
+.bay{display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel))}
+.bay h2{margin:0;justify-content:flex-start;gap:10px}
+.bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
+.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
+.bgrp h3{display:flex;gap:6px;align-items:center;margin:0 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.bgrp ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;font-size:12px}
+.chip b{font-weight:600;white-space:nowrap}
+.chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip small{grid-column:1/-1;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bfoot{display:flex;gap:8px 12px;align-items:stretch;flex-wrap:wrap}
+.dropslot{flex:1 1 220px;display:flex;align-items:center;justify-content:center;min-height:32px;padding:4px 8px;border:1px dashed var(--muted);border-radius:5px;color:var(--muted);font-size:12px;text-align:center}
+.lockrow{align-items:flex-start;white-space:normal;padding:4px 0;gap:10px;width:100%}
+.lockrow input{margin-top:2px;box-shadow:inset 0 0 0 1px var(--muted)}
+.lockrow input:checked{box-shadow:none}
+.bstack{display:grid;gap:6px}
+.bstack ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.bw{display:grid;gap:6px;padding:7px 8px;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel)}
+.bwt{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;font-size:12px}
+.bwt b{font-weight:600}
+.bwt span{grid-column:1/-1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.bw .row2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.bw .btn{min-height:28px;padding:3px 8px;font-size:12px}
+.ct2{font:12px var(--f-mono);color:var(--muted);letter-spacing:0}
+
+/* 1024: app.html's @media (max-width:1180px) rules, keyed on the artboard instead of the viewport. */
+.w1024 .app{grid-template-columns:minmax(0,1fr) 252px;grid-template-rows:auto auto minmax(0,1fr) auto;grid-template-areas:"top top" "rail rail" "canvas insp" "status status"}
+.w1024 .rail{flex-direction:row;align-items:stretch;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;padding:8px 12px;gap:12px}
+.w1024 .rail>section{display:flex;flex-direction:column;gap:6px;flex:none}
+.w1024 .cards{grid-auto-flow:column;grid-auto-columns:176px}
+.w1024 .card .pick small,.w1024 .legend+.note{display:none}
+.w1024 .legend{grid-template-columns:repeat(2,auto);column-gap:6px}
+.w1024 .canvas{padding:18px 14px}
+
+/* ---------- New: item 1, Put Behind cues ---------- */
+/* Drop Note: the toast's look, anchored to the tile that took the drop. It names both windows and offers Undo. */
+.dnote{position:absolute;z-index:30;display:flex;align-items:center;gap:8px;width:max-content;max-width:240px;padding:5px 5px 5px 10px;border-radius:6px;background:var(--ink);color:var(--panel);font:500 12px/1.3 var(--f);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent)}
+.dnote::before{content:"";position:absolute;left:var(--ax,14px);top:-5px;width:10px;height:10px;background:var(--ink);transform:rotate(45deg);border-radius:1px}
+.dnote{pointer-events:none}.dnote .btn{pointer-events:auto}
+.dnote b{font-weight:700}
+.dnote .btn{min-height:26px;padding:2px 8px;font-size:12px;background:transparent;color:inherit;border-color:color-mix(in srgb,currentColor 40%,transparent)}
+/* Peeking Layer: the back window is a full layer under the front tile. The front tile gives up a strip at its top, where the back app's name shows. */
+.peek{position:absolute;z-index:2;display:flex;align-items:center;gap:3px;padding:0 6px 0 8px;border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--cat) 22%,var(--panel));font:600 10.5px/1 var(--f);color:var(--ink);overflow:hidden;pointer-events:none;white-space:nowrap}
+.peek::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
+.peek svg{width:10px;height:10px;flex:none}
+.peek.flash{outline:2px solid var(--select);outline-offset:1px;z-index:5}
+.tile.peeked.narrow span{display:none}
+/* Named Badge: the badge names the window right behind. A narrow tile shows the back app's initial in its category colour. */
+.tile .stk .ini{display:inline-grid;place-items:center;width:13px;height:13px;border-radius:2px;background:var(--cat);color:var(--panel);font:700 9.5px/1 var(--f)}
+.tile .stk.ring{outline:2px solid var(--select);outline-offset:1px}
+/* ---------- New: item 3, handles on every edge and corner ---------- */
+/* Drawn on the stage, not in the tile (the tile clips its children). They sit just outside the selection ring, so no tile control is covered. */
+.hdl{position:absolute;pointer-events:none;z-index:9}
+.hdl i{position:absolute;border:0 solid var(--select)}
+.hdl i.c{width:var(--arm);height:var(--arm)}
+.hdl i.tl{left:calc(-1 * var(--off));top:calc(-1 * var(--off));border-width:3px 0 0 3px;border-top-left-radius:3px}
+.hdl i.tr{right:calc(-1 * var(--off));top:calc(-1 * var(--off));border-width:3px 3px 0 0;border-top-right-radius:3px}
+.hdl i.bl{left:calc(-1 * var(--off));bottom:calc(-1 * var(--off));border-width:0 0 3px 3px;border-bottom-left-radius:3px}
+.hdl i.br{right:calc(-1 * var(--off));bottom:calc(-1 * var(--off));border-width:0 3px 3px 0;border-bottom-right-radius:3px}
+.hdl i.e{background:var(--select);border-radius:2px}
+.hdl i.n,.hdl i.s{left:50%;width:var(--bar);height:3px;transform:translateX(-50%)}
+.hdl i.n{top:calc(-1 * var(--off))}.hdl i.s{bottom:calc(-1 * var(--off))}
+.hdl i.w,.hdl i.ea{top:50%;height:var(--bar);width:3px;transform:translateY(-50%)}
+.hdl i.w{left:calc(-1 * var(--off))}.hdl i.ea{right:calc(-1 * var(--off))}
+.hdl i.on{border-color:var(--ink);border-width:4px 0 0 4px}
+@media (forced-colors:active){.hdl i{border-color:Highlight}.hdl i.e{background:Highlight}}
+@media (pointer:coarse){.tile .lk,.tile .stk{min-width:28px;min-height:28px}}
+</style>
+</head>
+<body>
+<div class="mk">
+  <p class="banner" role="note"><b>Sample.</b><span>Every window, title and count on this page is invented. No figure here is real.</span></p>
+  <header class="mkhead">
+    <h1>Board Feedback</h1>
+    <p>Options for the owner's three notes of 2026-11-11 16:10 CST: Put Behind is not clear, the fill keeps refilling, and resize works from one corner only. Dashed pink labels mark what is new; dashed grey labels mark what exists today. Each option has a switch below that hides it.</p>
+  </header>
+  <nav class="mkbar" aria-label="Mockup controls">
+    <div class="mkgrp"><span id="lblState">State</span><div class="mkseg" id="segState" role="group" aria-labelledby="lblState"></div></div>
+    <div class="mkrow">
+      <div class="mkgrp"><span id="lblW">Width</span><div class="mkseg" id="segW" role="group" aria-labelledby="lblW"></div></div>
+      <div class="mkgrp"><span id="lblT">Theme</span><div class="mkseg" id="segT" role="group" aria-labelledby="lblT"></div></div>
+    </div>
+    <div class="mkopts" role="group" aria-label="Show options">
+      <span class="sep">Options:</span>
+      <label><input type="checkbox" data-o="note" checked>Drop Note</label>
+      <label><input type="checkbox" data-o="layer" checked>Peeking Layer</label>
+      <label><input type="checkbox" data-o="named" checked>Named Badge</label>
+      <label><input type="checkbox" data-o="switch" checked>Fill Empty Cells Switch</label>
+      <label><input type="checkbox" data-o="clear" checked>Clear Board</label>
+      <label><input type="checkbox" data-o="handles" checked>Handles on Every Edge</label>
+      <span class="sep">Overlays:</span>
+      <label><input type="checkbox" id="oLabels" checked>Today and New Labels</label>
+      <label><input type="checkbox" id="oHit">Handle Hit Areas</label>
+    </div>
+  </nav>
+  <div id="frames"></div>
+</div>
+<script>
+"use strict";
+/* ---------- Sample (invented) ---------- */
+const MON={laptop:{role:"laptop",x:-1536,y:769,w:1536,h:912,g:[1,1]},wide:{role:"wide",x:0,y:0,w:4096,h:1680,g:[5,2]},tall:{role:"tall",x:4096,y:-1354,w:1200,h:1872,g:[1,2]}};
+const ROLE={wide:"Ultrawide",tall:"Portrait",laptop:"Laptop"};
+const X0=-1536,Y0=-1354,BW=6832,BH=3035,TOP=22;
+const BASE=[
+  {id:"ca",app:"Claude",cat:"code",title:"Refactor the grid solver",mon:"wide",c:0,r:0,kind:"fill"},
+  {id:"cb",app:"Claude",cat:"code",title:"Pin parser edge cases",mon:"wide",c:1,r:0,kind:"fill"},
+  {id:"np",app:"Notepad",cat:"other",title:"todo.txt - Notepad",mon:"wide",c:2,r:0,kind:"fill"},
+  {id:"ch",app:"Chrome",cat:"browse",title:"Quarterly roadmap",mon:"wide",c:3,r:0,cs:2,rs:2,kind:"pin"},
+  {id:"te",app:"Terminal",cat:"code",title:"pwsh - tiler",mon:"wide",c:0,r:1,kind:"fill"},
+  {id:"ex",app:"Excel",cat:"other",title:"Budget FY27.xlsx",mon:"wide",c:1,r:1,kind:"fill"},
+  {id:"fe",app:"File Explorer",cat:"other",title:"Projects",mon:"wide",c:2,r:1,kind:"fill"},
+  {id:"ou",app:"Outlook",cat:"comms",title:"Inbox - Outlook",mon:"tall",c:0,r:0,kind:"pin",lock:true},
+  {id:"tm",app:"Teams",cat:"comms",title:"Team chat",mon:"tall",c:0,r:1,kind:"pin"},
+  {id:"ol",app:"Outlook (new)",cat:"comms",title:"Calendar",mon:"laptop",c:0,r:0,kind:"pin"}];
+const CALC={id:"ka",app:"Calculator",cat:"other",title:"Calculator",mon:"wide",c:1,r:1,kind:"fill"};
+const BAY0=[{app:"Calculator",cat:"other",title:"Calculator",why:"No room: add a column"},{app:"Paint",cat:"other",title:"sketch.png - Paint",why:"No room: add a column"}];
+const CATN={code:"Code",browse:"Browse",comms:"Comms",other:"Other"};
+
+/* [key, item, option, name, caption] */
+const STATES=[
+  ["pb-today",1,"today","Today, Right After the Drop","Excel was dropped on the lower band of Claude's cell. Claude is selected, the back window shows as a 3px edge and a +1 chip, and the only words are in the status bar, far from the drop. The fill puts Calculator into Excel's old cell at once, so a tile is still there."],
+  ["pb-note-after",1,"note","Drop Note, Right After the Drop","A short note on the tile that took the drop names both windows and offers Undo. It stays about 6 seconds, or until the next press. The status bar keeps the same words."],
+  ["pb-note-rest",1,"note","Drop Note, at Rest","After the note goes, the tile looks as it does today: a 3px edge and a +1 chip. Nothing is selected."],
+  ["pb-layer-after",1,"layer","Peeking Layer, Right After the Drop","The back window is a full layer under the front tile. The front tile gives up a strip at its top, and the strip names the back app. Right after the drop the strip has a blue ring for about 1.5 seconds."],
+  ["pb-layer-rest",1,"layer","Peeking Layer, at Rest","The strip stays, so the stack reads without a click. At 1024 the front tile loses its title line to make room."],
+  ["pb-named-after",1,"named","Named Badge, Right After the Drop","The badge names the window right behind instead of a bare count. Right after the drop it has a blue ring for about 1.5 seconds."],
+  ["pb-named-rest",1,"named","Named Badge, at Rest","At 1440 the badge reads \"Excel\". A narrow tile at 1024 has no room for a name, so it shows Excel's initial in Excel's category colour."],
+  ["fill-on",2,"switch","Fill Empty Cells, On","The switch sits in the Monitor section, beside Fill Order, on the monitor that fills. On keeps today's behaviour."],
+  ["fill-off",2,"switch","Fill Empty Cells, Off, Two Pins","Off: only pinned windows move. This scene has two pins, so the board shows two tiles and every other window stays put in the list. The monitor label reads \"fill off\"."],
+  ["clear-before",2,"clear","Clear Board, Before","Clear Board sits in the board's action bar, beside Draw Zone."],
+  ["clear-after",2,"clear","Clear Board, After","Every window that is not pinned is in Windows That Stay Put. Fill Empty Cells is off. The pins, the lock and the stacks stay. Undo brings the board back."],
+  ["rs-handles",3,"handles","Handles on Every Edge, Selected","Excel is selected. Eight handles sit just outside its selection ring: four corner brackets and four edge bars. The tag, lock, badge, Stay Put and grip inside the tile are not covered."],
+  ["rs-drag",3,"handles","Handles on Every Edge, Dragging the Top-Left Corner","The top-left bracket is dragged up and left across whole cells. The outline and its label work as the corner grip does today."]];
+const ITEMS={1:["1. Put Behind Is Not Clear","After a Put Behind drop, the owner cannot tell that the window went behind."],
+  2:["2. Fill Keeps Refilling","When a window goes to Windows That Stay Put, the next window in fill order takes its cell at once, so the board can never be cleared for sorting."],
+  3:["3. Resize From Any Corner","Today only the bottom-right corner has a grip. The other corners hold the tag, the lock, and the badge or Stay Put."]};
+
+/* ---------- Icons ---------- */
+const I={
+  lockC:'<svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3.5 5V3.6a2.5 2.5 0 0 1 5 0V5H9.5v6h-7V5h1zm1.3 0h2.4V3.6a1.2 1.2 0 0 0-2.4 0V5z"/></svg>',
+  lockO:'<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2.6" y="5.6" width="6.8" height="5" rx=".8"/><path d="M4.4 5.6V3.6a1.9 1.9 0 0 1 3.7-.6"/></svg>',
+  behind:'<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.5" y="4" width="6.5" height="6.5" rx="1" fill="currentColor" fill-opacity=".25"/><path d="M4 4V1.5h6.5V8H8"/></svg>',
+  stay:'<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 1.5v5.5M3.8 5 6 7.2 8.2 5M2 9.5v1h8v-1"/></svg>',
+  grip:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M14 6 6 14M14 10l-4 4"/></svg>',
+  pin:'<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M4 1h4l-.6 3.2L9.5 6v1H6.6L6 11.5 5.4 7H2.5V6l2.1-1.8z"/></svg>',
+  rcur:'<svg class="cursor" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 3h6L7 5l8 8 2-2v6h-6l2-2-8-8-2 2z" fill="var(--ink)" stroke="var(--panel)" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+  logo:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1"/><rect x="11" y="3" width="7" height="6" rx="1"/><rect x="2" y="11" width="16" height="6" rx="1"/></svg>'};
+
+/* ---------- View state, from the URL hash ---------- */
+const OPTS=["note","layer","named","switch","clear","handles"];
+const V={s:"pb-today",w:"1440",t:"",labels:true,hit:false,off:new Set()};
+function readHash(){const h=new URLSearchParams(location.hash.slice(1));
+  V.s=[...STATES.map(s=>s[0]),"all"].includes(h.get("s"))?h.get("s"):"pb-today";
+  V.w=["1440","1024"].includes(h.get("w"))?h.get("w"):"1440";
+  V.t=["light","dark"].includes(h.get("t"))?h.get("t"):"";
+  V.hit=h.get("hit")==="1";
+  V.off=new Set((h.get("hide")||"").split(",").filter(o=>OPTS.includes(o)))}
+function writeHash(){const p=[`s=${V.s}`];if(V.w!=="1440")p.push(`w=${V.w}`);if(V.t)p.push(`t=${V.t}`);if(V.hit)p.push("hit=1");if(V.off.size)p.push(`hide=${[...V.off].join(",")}`);history.replaceState(null,"","#"+p.join("&"))}
+
+/* ---------- Geometry: the same math as app.html layout() and the .mon grid ---------- */
+// 1024 is drawn at the brief's cell size: 57px wide-monitor cells (the board is height-bound there). 1440 keeps the earlier mockup's width-bound scale.
+const SCALE={"1440":.1323,"1024":.0755};
+function monBox(m,S){return{l:(m.x-X0)*S+3,t:(m.y-Y0)*S+TOP,w:m.w*S-6,h:m.h*S}}
+function cellBox(mon,S,c,r,cs=1,rs=1){const m=MON[mon],b=monBox(m,S),[gc,gr]=m.g,iw=b.w-10,ih=b.h-10,cw=(iw-(gc-1)*2)/gc,ch=(ih-(gr-1)*2)/gr;
+  return{l:b.l+5+c*(cw+2),t:b.t+5+r*(ch+2),w:cs*cw+(cs-1)*2,h:rs*ch+(rs-1)*2}}
+const inset=(b,n=1)=>({l:b.l+n,t:b.t+n,w:b.w-2*n,h:b.h-2*n});
+const css=b=>`left:${b.l.toFixed(1)}px;top:${b.t.toFixed(1)}px;width:${b.w.toFixed(1)}px;height:${b.h.toFixed(1)}px`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ann=(b,text,o={})=>`<div class="ann${o.today?" today":""}${o.up?" up":""}${o.end?" end":""}" style="${css({l:b.l-3,t:b.t-3,w:b.w+6,h:b.h+6})}"><em>${o.today?"Today":"New"}: ${esc(text)}</em></div>`;
+
+/* ---------- Scenario per state ---------- */
+function scenario(st){
+  let W=BASE.map(w=>({cs:1,rs:1,...w})),bay=BAY0.map(b=>({...b})),sel=null,stacks={},fillOn=true,msg="Read 12 windows.",edited=false,undo=false;
+  const by=()=>Object.fromEntries(W.map(w=>[w.id,w]));
+  if(st.startsWith("pb-")){
+    // Excel goes behind Claude. Claude's tile gets a pin (a stack is saved on a pin). Calculator, next in fill order, takes Excel's old cell.
+    W=W.filter(w=>w.id!=="ex");W.push({cs:1,rs:1,...CALC});by().ca.kind="pin";stacks.ca=[{app:"Excel",cat:"other",title:"Budget FY27.xlsx"}];
+    bay=bay.filter(b=>b.app!=="Calculator");msg="Put Excel behind Claude.";edited=true;undo=true;
+    if(st.endsWith("after")||st==="pb-today")sel="ca"}
+  if(st==="fill-off"){
+    // A scene with two pins and the fill off: everything else stays put.
+    const keep=new Set(["ca","ch"]);bay=[...W.filter(w=>!keep.has(w.id)).map(w=>({app:w.app,cat:w.cat,title:w.title,why:"Fill is off"})),...bay.map(b=>({...b,why:"Fill is off"}))];
+    W=W.filter(w=>keep.has(w.id));by().ca.kind="pin";fillOn=false;msg="Turned off Fill Empty Cells.";edited=true;undo=true}
+  if(st==="clear-after"){
+    const out=W.filter(w=>w.kind!=="pin");bay=[...out.map(w=>({app:w.app,cat:w.cat,title:w.title,why:"Fill is off"})),...bay.map(b=>({...b,why:"Fill is off"}))];
+    W=W.filter(w=>w.kind==="pin");fillOn=false;msg=`Cleared the board. ${out.length} windows stay put, and Fill Empty Cells is off.`;edited=true;undo=true}
+  if(st.startsWith("rs-")){by().ex.kind="pin";sel="ex"}
+  return{W,bay,sel,stacks,fillOn,msg,edited,undo}}
+
+/* ---------- Board ---------- */
+function board(st,S,F,sc){
+  const opt=STATES.find(s=>s[0]===st)[2],after=st.endsWith("after"),narrowW=b=>b.w<84;
+  const byId=Object.fromEntries(sc.W.map(w=>[w.id,w]));
+  let tiles="",extra="",anns="";
+  for(const w of sc.W){
+    let b=inset(cellBox(w.mon,S,w.c,w.r,w.cs,w.rs));const stk=sc.stacks[w.id],nar=narrowW(b),sel=w.id===sc.sel;
+    const cls=["tile",`cat-${w.cat}`,w.kind,w.lock?"lock":"",sel?"sel":"",stk?"stacked":"",nar?"narrow":""];
+    if(st==="rs-drag"&&["ca","cb","te"].includes(w.id))cls.push("ztake");
+    let badgeInner=stk?`${I.behind}+${stk.length}`:"",badgeCls="stk";
+    if(stk){
+      if(opt==="layer"){
+        // The back layer takes the whole cell; the front tile starts below the strip.
+        const P=nar?13:15,bk=stk[0];
+        extra+=`<div class="peek cat-${bk.cat}${after?" flash":""}" id="${F}-peek" style="${css({l:b.l,t:b.t,w:b.w,h:b.h})};height:${(P+6).toFixed(1)}px;align-items:flex-start;padding-top:${nar?1:2}px" aria-hidden="true">${nar?"":I.behind}${esc(bk.app)}</div>`;
+        b={l:b.l,t:b.t+P,w:b.w,h:b.h-P};cls.push("peeked")}
+      else extra+=`<div class="stkedge cat-${stk[0].cat}" style="${css({l:b.l+3,t:b.t-3,w:b.w,h:b.h})}" aria-hidden="true"></div>`;
+      if(opt==="named"){badgeInner=nar?`<i class="ini cat-${stk[0].cat}">${esc(stk[0].app[0])}</i>`:`${I.behind}${esc(stk[0].app)}${stk.length>1?` +${stk.length-1}`:""}`;if(after)badgeCls+=" ring"}}
+    w.b=b;
+    const lk=`<button type="button" class="lk" aria-pressed="${!!w.lock}" title="${w.lock?"Unlock: it can move again":"Lock: it never moves"}" aria-label="${w.lock?"Unlock":"Lock"} ${esc(w.app)}: ${esc(w.title)}">${w.lock?I.lockC:I.lockO}</button>`;
+    const badge=stk?`<button type="button" class="${badgeCls}"${opt==="named"?` id="${F}-named-badge"`:` id="${F}-badge"`} title="Behind: ${esc(stk.map(s=>s.app).join(", "))}.&#10;Click to bring ${esc(stk[0].app)} to the front." aria-label="${stk.length} window behind: ${esc(stk[0].app)}. Bring ${esc(stk[0].app)} to the front.">${badgeInner}</button>`:"";
+    const sp=sel?`<button type="button" class="stayput${nar?" ico":""}" tabindex="-1"${nar?' title="Stay Put" aria-label="Stay Put"':""}>${I.stay}<em class="spt">Stay Put</em></button>`:"";
+    tiles+=`<div class="${cls.filter(Boolean).join(" ")}" style="${css(b)}" tabindex="0" aria-label="${esc(w.title)}, ${esc(w.app)}${w.kind==="pin"?", pinned":""}${w.lock?", locked":""}${stk?`, ${stk.length} window behind`:""}"><b>${esc(w.app)}</b><span>${esc(w.title)}</span>${w.kind==="pin"?I.pin:""}${sp}${lk}${badge}<button type="button" class="rsz" tabindex="-1" aria-hidden="true" title="Drag to resize across cells">${I.grip}</button></div>`}
+  let mons="";for(const m of Object.values(MON)){const b=monBox(m,S),[gc,gr]=m.g;let cells="";for(let i=0;i<gc*gr;i++)cells+=`<div class="cell"><i>${i+1}</i></div>`;
+    const used=sc.W.some(w=>w.mon===m.role),fl=m.role==="wide"?(sc.fillOn?" · fills":" · fill off"):"";
+    mons+=`<div class="mon" style="${css(b)};grid-template-columns:repeat(${gc},minmax(0,1fr));grid-template-rows:repeat(${gr},minmax(0,1fr))">${cells}${used?"":'<div class="empty">Empty. Drag a window here.</div>'}</div><div class="mlab" style="left:${b.l}px;top:${b.t}px"${m.role==="wide"&&opt==="switch"?` id="${F}-fill-label"`:""}><button type="button" aria-pressed="${m.role==="wide"}">${ROLE[m.role]}</button><span class="num">${gc}×${gr}${fl}</span></div>`}
+
+  if(st==="fill-off"){const b=monBox(MON.wide,S);anns+=ann({l:b.l,t:b.t-16,w:S>.1?132:118,h:14},"Label Says Fill Off",{up:true})}
+  /* Item 1 cues and labels */
+  if(st.startsWith("pb-")){const t=byId.ca.b,nar=narrowW(t);
+    if(st==="pb-note-after"){const nl=t.l+2,nt=t.t+t.h+9;
+      extra+=`<div class="dnote" id="${F}-drop-note" role="status" style="left:${nl}px;top:${nt}px;--ax:${Math.min(14,t.w/2-5)}px"><span><b>Excel</b> is behind <b>Claude</b></span><button type="button" class="btn">Undo</button></div>`;
+      anns+=ann({l:nl,t:nt,w:210,h:36},"Drop Note",{})}
+    if(st==="pb-today"){
+      anns+=ann({l:t.l,t:t.t-3,w:t.w+3,h:t.h+3},"3px Edge and +1 Chip",{today:true});
+      const k=byId.ka.b;anns+=ann(k,"Fill Takes Excel's Old Cell",{today:true})}
+    if(opt==="layer")anns+=ann({l:t.l,t:t.t-(nar?13:15),w:t.w,h:t.h+(nar?13:15)},"Strip Names the Back App",{});
+    if(opt==="named"){const bw=nar?19:52;anns+=ann({l:t.l+(nar?3:8),t:t.t+t.h-21,w:bw,h:18},nar?"Back App's Initial":"Badge Names the Back App",{})}}
+
+  /* Item 3: handles, drawn on the stage around the selected tile */
+  // While a handle drags, the handles follow the outline, so the pressed bracket stays under the pointer.
+  if(st.startsWith("rs-")){const drag=st==="rs-drag",t0=byId.ex.b,nar=narrowW(t0),t=drag?inset(cellBox("wide",S,0,0,2,2)):t0,arm=nar?8:10,bar=nar?12:16,off=nar?6:7;
+    extra+=`<div class="hdl" id="${F}-handles" style="${css(t)};--arm:${arm}px;--bar:${bar}px;--off:${off}px" aria-hidden="true"><i class="c tl${drag?" on":""}"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><i class="e n"></i><i class="e s"></i><i class="e w"></i><i class="e ea"></i></div>`;
+    // Hit areas: corners 10x10 and edge bands 7px, outside the tile's border only.
+    const H=10,E=7,hb=[[t.l-H,t.t-H,H+1,H+1],[t.l+t.w-1,t.t-H,H+1,H+1],[t.l-H,t.t+t.h-1,H+1,H+1],[t.l+t.w-1,t.t+t.h-1,H+1,H+1],
+      [t.l+1,t.t-E,t.w-2,E],[t.l+1,t.t+t.h,t.w-2,E],[t.l-E,t.t+1,E,t.h-2],[t.l+t.w,t.t+1,E,t.h-2]];
+    extra+=hb.map(([l,tp,w,h])=>`<div class="hit" style="${css({l,t:tp,w,h})}"></div>`).join("");
+    if(!drag){anns+=ann({l:t.l-off-2,t:t.t-off-2,w:t.w+2*off+4,h:t.h+2*off+4},"Handles on Every Edge and Corner",{up:true});
+      anns+=ann({l:t.l+t.w-20,t:t.t+t.h-20,w:19,h:19},"Corner Grip",{today:true,end:true})}
+    if(drag){const box=inset(cellBox("wide",S,0,0,2,2));
+      extra+=`<div class="rzdraw" style="${css(box)}"><span><b>2×2</b> · 3 windows move · 3 to the list</span></div>`;
+      extra+=I.rcur.replace('class="cursor"',`class="cursor" style="left:${box.l-6}px;top:${box.t-6}px"`);
+      anns+=ann({l:t.l-off-2,t:t.t-off-2,w:arm+6,h:arm+6},"Top-Left Handle",{})}}
+  return `<div class="stage" style="width:${Math.round(BW*S)}px;height:${Math.round(BH*S+TOP+4)}px" aria-label="Monitors and windows">${mons}${tiles}${extra}${anns}</div>`}
+
+/* ---------- Inspector ---------- */
+const stepper=(lbl,val)=>`<span class="step"><button type="button" aria-label="Fewer ${lbl}">−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" aria-label="More ${lbl}">+</button></span>`;
+function insp(st,F,sc){
+  const opt=STATES.find(s=>s[0]===st)[2];
+  const scene=`<section class="isec" aria-label="Scene"><h2>Scene</h2><div class="field stack"><label>Name</label><input type="text" value="Default" disabled title="Built-in scenes keep their name."></div><p class="note">Triggers, extras and Save sit here as today.</p></section>`;
+  const showSw=opt==="switch"||st==="clear-after";
+  const sw=`<label class="switch lockrow"><input type="checkbox" role="switch"${sc.fillOn?" checked":""}><span class="xt"><b>Fill Empty Cells</b><small>${sc.fillOn?"Windows that are not pinned fill the free cells.":"Only pinned windows move. The rest stay put."}</small></span></label>`;
+  const swBox=showSw?`<div class="abox" id="${F}-fill-switch"><em>New: ${st==="clear-after"?"Turned Off by Clear Board":"Fill Empty Cells"}</em>${sw}</div>`:"";
+  const order=`<div class="field stack"><label>Fill order</label><select${sc.fillOn?"":' disabled title="Fill is off, so the fill order does nothing. Turn on Fill Empty Cells to use it."'}><option>App Order (Default)</option></select><p class="note">${sc.fillOn?"Fills with Claude, Chrome, everything else.":"Not used while fill is off."}</p></div>`;
+  const mon=`<section class="isec"><h2>Monitor</h2><div class="seg" role="group" aria-label="Monitor"><button type="button" aria-pressed="false">Laptop</button><button type="button" aria-pressed="true">Ultrawide</button><button type="button" aria-pressed="false">Portrait</button></div><div class="field"><span>Columns</span>${stepper("columns",5)}</div><div class="field"><span>Rows</span>${stepper("rows",2)}</div>${swBox}${order}</section>`;
+  const tail=`<button type="button" class="btn">Unpin and Let It Fill</button><button type="button" class="btn">Keep Where It Is</button>`;
+  const moveTo=`<div class="field stack"><label>Move to</label><select><option>Choose a Cell</option></select></div>`;
+  const lockSw=`<label class="switch lockrow"><input type="checkbox" role="switch"><span class="xt"><b>Lock</b><small>It never moves. Swaps, zones and fill go around it.</small></span></label>`;
+  const head=(app,cat,t)=>`<div class="field" style="min-height:0"><span style="display:flex;gap:6px;align-items:center;color:var(--ink)"><i class="sw cat-${cat}"></i>${app}</span><select aria-label="Category of ${app}"><option>${CATN[cat]}</option></select></div><div class="t">${t}</div>`;
+  let win=`<p class="note">Click a window on the board to change it here.</p>`;
+  if(sc.sel==="ca")win=`<div class="win cat-code">${head("Claude","code","Refactor the grid solver")}<div class="m">Pinned · Ultrawide cell 1.</div>${lockSw}
+    <div class="bstack"><h3 class="grp">Behind This Window <span class="ct2">1</span></h3><ul><li class="bw cat-other"><div class="bwt"><i class="sw"></i><b>Excel</b><span>Budget FY27.xlsx</span></div><div class="row2"><button type="button" class="btn">Bring to Front</button><button type="button" class="btn">Take Out</button></div></li></ul><p class="note">Take Out moves it to Windows That Stay Put.</p></div>
+    <div class="field"><span>Width</span>${stepper("columns wide",1)}</div><div class="field"><span>Height</span>${stepper("rows tall",1)}</div>${moveTo}${tail}</div>`;
+  if(sc.sel==="ex"){const d=st==="rs-drag";win=`<div class="win cat-other">${head("Excel","other","Budget FY27.xlsx")}<div class="m">Pinned · Ultrawide cell ${d?"1+":"7"}.</div>${lockSw}
+    <div class="abox today"><em>Today: Width and Height Follow the Drag</em><div class="field"><span>Width</span>${stepper("columns wide",d?2:1)}</div><div class="field"><span>Height</span>${stepper("rows tall",d?2:1)}</div></div>${moveTo}${tail}</div>`}
+  return `${scene}${mon}<section class="isec"><h2>Window</h2>${win}</section>`}
+
+/* ---------- Whole app frame ---------- */
+function frame(st,w){const S=SCALE[w],F=st,sc=scenario(st),opt=STATES.find(s=>s[0]===st)[2];
+  const mini=bs=>`<span class="mini" aria-hidden="true"><i style="left:2%;top:40%;width:22%;height:56%"></i><i style="left:26%;top:6%;width:52%;height:58%"></i><i style="left:80%;top:4%;width:18%;height:92%"></i>${bs.map(([cat,l,t,ww,h])=>`<b class="cat-${cat}" style="left:${l}%;top:${t}%;width:${ww}%;height:${h}%"></b>`).join("")}</span>`;
+  const card=(name,blurb,sel,bs)=>`<article class="card${sel?" sel":""}"><button type="button" class="pick" aria-pressed="${sel}">${mini(bs)}<strong>${name}${sel?'<span class="live">On screen</span>':""}</strong><small>${blurb}</small></button><div class="crow"><span class="tag">Built-in${sel&&sc.edited?" · edited":""}</span><button type="button" class="btn">Apply</button></div></article>`;
+  const rail=`<aside class="rail" aria-label="Scenes and categories"><section><h2>Scenes</h2><div class="cards">
+    ${card("Default","Claude and Chrome fill the ultrawide.",true,[["code",27,8,10,26],["code",38,8,10,26],["browse",60,8,17,54],["comms",81,6,16,44],["comms",81,52,16,44]])}
+    ${card("Focus","Claude only, three wide.",false,[["code",27,8,16,54],["code",44,8,16,54],["browse",61,8,16,54]])}
+    ${card("Meetings","Teams big on the ultrawide.",false,[["comms",27,8,25,56],["code",53,8,12,27],["comms",81,6,16,44]])}</div></section>
+    <section><h2>Categories</h2><div class="legend">${[["code","Code",3],["browse","Browse",1],["comms","Comms",3],["other","Other",5]].map(([c,l,n])=>`<button type="button" class="lg cat-${c}" aria-pressed="true"><i class="sw"></i>${l}<span class="ct">${n}</span></button>`).join("")}</div><p class="note">Click a category to fade it on the board.</p></section></aside>`;
+  const hint=`Drag to a cell to pin, or to the list to keep put. On a taken cell, the middle swaps and the lower band puts it behind.`;
+  const clearOn=opt==="clear";
+  const clearBtn=clearOn?(st==="clear-after"?`<span class="abox inl" id="${F}-clear-board"><button type="button" class="btn" disabled title="Only pinned windows are on the board.">Clear Board</button></span>`
+    :`<span class="abox" id="${F}-clear-board"><em>New: Clear Board</em><button type="button" class="btn" title="Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.">Clear Board</button></span>`):"";
+  const keyLine=opt==="handles"?`<li><span class="abox inl">Ctrl+Shift+arrows move its top or left edge.</span></li>`:"";
+  const keys=`<details class="keys"${opt==="handles"?" open":""}><summary>Keyboard</summary><ul><li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>${keyLine}<li>Delete unpins it. K keeps it where it is (off the board).</li><li>L locks or unlocks it. B brings the window behind it to the front.</li><li>Esc cancels a drag, a resize or a zone you are drawing.</li></ul></details>`;
+  // The list shows one row per category below 820px of window height, two above, then Show N More (app.html renderBay).
+  const per=w==="1024"?1:2,cats=["code","browse","comms","other"];let more=0;
+  const groups=cats.map(c=>{const l=sc.bay.filter(b=>b.cat===c);if(!l.length)return"";
+    return `<div class="bgrp"><h3><i class="sw cat-${c}"></i>${CATN[c]}</h3><ul>${l.map((b,k)=>{const hide=k>=per;if(hide)more++;return hide?"":`<li><button type="button" class="chip cat-${b.cat}"><b>${esc(b.app)}</b><span>${esc(b.title)}</span><small>${esc(b.why)}</small></button></li>`}).join("")}</ul></div>`}).join("");
+  const bay=`<section class="bay" aria-label="Windows That Stay Put"><h2>Windows That Stay Put <span class="note">${sc.bay.length===1?"1 window":sc.bay.length+" windows"}. Apply leaves them where they are.</span></h2><div class="bgrps">${groups}</div><div class="bfoot">${more?`<button type="button" class="btn ghost">Show ${more} More</button>`:""}<div class="dropslot">Drag a window here to keep it where it is</div></div></section>`;
+  const msgBox=st==="pb-today"?`<span class="abox inl today msg" role="status">${esc(sc.msg)}</span>`:`<span class="msg" role="status">${esc(sc.msg)}</span>`;
+  return `<div class="art w${w}${V.labels?"":" nolabels"}${V.hit?"":" nohit"}" data-state="${st}"><div class="app">
+    <header class="top"><p class="brand">${I.logo}Tile Windows</p><span class="crumb">Scene: <b>Default</b>${sc.edited?'<span class="edited">Edited</span>':""}</span>
+      <div class="tools"><label class="switch"><input type="checkbox" checked>Grid Lines</label><label class="switch">Theme <select class="themesel"><option value="">Match Windows</option><option value="light"${V.t==="light"?" selected":""}>Light</option><option value="dark"${V.t==="dark"?" selected":""}>Dark</option></select></label><button class="btn" type="button"${sc.undo?' title="Undo the last change or Apply."':' disabled title="Nothing to undo yet."'}>Undo</button><button class="btn pri" type="button">Apply</button></div></header>
+    ${rail}
+    <main class="canvas">${board(st,S,F,sc)}<div class="boardbar"><p class="hint">${hint}</p><button type="button" class="btn">Draw Zone</button>${clearBtn}${keys}</div>${bay}</main>
+    <aside class="insp" aria-label="Inspector">${insp(st,F,sc)}</aside>
+    <footer class="status">${msgBox}</footer></div></div>`}
+
+/* ---------- Render ---------- */
+function visible(){return STATES.filter(s=>s[2]==="today"||!V.off.has(s[2]))}
+function render(){
+  if(V.t)document.documentElement.dataset.theme=V.t;else delete document.documentElement.dataset.theme;
+  const vis=visible();if(V.s!=="all"&&!vis.some(s=>s[0]===V.s))V.s=vis[0][0];
+  const segs=[["segState",[...vis.map(s=>[s[0],s[3].replace(", Right After the Drop"," (After)").replace(", at Rest"," (Rest)")]),["all","All"]],"s"],["segW",[["1440","1440"],["1024","1024"]],"w"],["segT",[["","Match Windows"],["light","Light"],["dark","Dark"]],"t"]];
+  for(const [id,opts,k] of segs)document.getElementById(id).innerHTML=opts.map(([v,l])=>`<button type="button" data-k="${k}" data-v="${v}" aria-pressed="${V[k]===v}">${l}</button>`).join("");
+  for(const cb of document.querySelectorAll("[data-o]"))cb.checked=!V.off.has(cb.dataset.o);
+  document.getElementById("oHit").checked=V.hit;
+  const list=V.s==="all"?vis:vis.filter(s=>s[0]===V.s);
+  let html="",cur=0;
+  for(const [k,item,o,name,cap] of list){
+    if(item!==cur){if(cur)html+="</section>";cur=item;html+=`<section class="item" aria-labelledby="i-${item}"><h2 id="i-${item}">${ITEMS[item][0]}</h2><p>${ITEMS[item][1]}</p>`}
+    html+=`<section class="shot" id="f-${k}" aria-labelledby="h-${k}"><h3 class="cap" id="h-${k}">${name}<span class="kind${o==="today"?" today":""}">${o==="today"?"Today":"Option"}</span> <span class="note">at ${V.w}</span></h3><p class="capn">${cap}</p><div class="scroll">${frame(k,V.w)}</div></section>`}
+  if(cur)html+="</section>";
+  document.getElementById("frames").innerHTML=html;
+  writeHash()}
+document.addEventListener("click",e=>{const b=e.target.closest(".mkseg button");if(!b)return;V[b.dataset.k]=b.dataset.v;render()});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.classList.contains("themesel")){V.t=t.value;render();return}
+  if(t.dataset.o){if(t.checked)V.off.delete(t.dataset.o);else V.off.add(t.dataset.o);render();return}
+  if(t.id==="oLabels"){V.labels=t.checked;render();return}
+  if(t.id==="oHit"){V.hit=t.checked;render()}});
+addEventListener("hashchange",()=>{readHash();render()});
+readHash();render();
+</script>
+</body>
+</html>
