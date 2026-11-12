@@ -211,7 +211,7 @@ $missing = @(); $left = @(); $roleState = @{}
 # A scene runs it once per phase on every monitor ('pins', then 'zones', then 'fill'), so a pin on any
 # monitor beats every zone, and every zone beats the fill. In a scene a minimized window stays where it
 # is (in the bay) unless a pin names it by title. -Proc runs (phase 'all') keep the old single pass.
-function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all') {
+function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all', $held = @()) {
   $scene = $phase -ne 'all'
   $all = @(@($pins.App) + @($fill | ? { $pins.App -notcontains $_ }) | ? { $_ })
   if (-not $script:roleState.ContainsKey("$role")) { $script:roleState["$role"] = @{ used = @{}; pinned = 0 } }
@@ -282,6 +282,20 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # A back window moves first, so the front window (moved last) ends on top: a restore activates the window.
   if ($phase -in 'all', 'pins') { foreach ($pn in $pins) { if ($pn.Item) { foreach ($bi in @($pn.BehindItems)) { Put $bi $pn.Slots $pn.Index -behind }; Put $pn.Item $pn.Slots $pn.Index } } }
 
+  # Fill Empty Cells off (scene fill.held): each held window goes back in its held cells, after every pin has taken its own.
+  # A held cell a pin or an earlier hold has taken is skipped, and a window that is closed, minimized or already placed
+  # is not held: the sweep after the phase loop lists the open ones as 'fill is off'.
+  if ($phase -eq 'held') {
+    foreach ($hd in $held) {
+      if (@($hd.Slots | ? { $used.ContainsKey($_) }).Count) { continue }
+      $it = if ($hd.Id) { @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and [int64]$_.H -eq [int64]$hd.Id -and $_.App -eq $hd.App -and (& $up) })[0] }
+      if (-not $it -and $hd.Title) { $it = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.App -eq $hd.App -and $_.Title -ceq $hd.Title -and (& $up) })[0] }
+      if (-not $it) { continue }
+      $hd.Slots | % { $used[$_] = 1 }
+      Put $it $hd.Slots (-1)
+    }
+  }
+
   # Zones: each takes its cells (pins on every monitor already won theirs) and fills them with its app's
   # or category's windows in fill order, row by row. A category zone leaves out skipped apps, as the fill
   # does for '*'. Windows that do not fit go to the bay.
@@ -346,16 +360,21 @@ foreach ($role in 'tall', 'laptop', 'wide') {
     $sl = @($z.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
     if ($sl.Count -and ($z.app -or $z.cat)) { [pscustomobject]@{ App = [string]$z.app; Cat = [string]$z.cat; Slots = $sl; Index = $i } }
   })
+  $hs = @(if ($sceneFillOff) { for ($i = 0; $i -lt @($sc.fill.held | ? { $_ }).Count; $i++) {
+    $h = @($sc.fill.held)[$i]; if ($h.mon -ne $role) { continue }
+    $sl = @($h.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
+    if ($sl.Count) { [pscustomobject]@{ Id = $h.id; App = [string]$h.app; Title = [string]$h.title; Slots = $sl } }
+  } })
   $isFill = $sc.fill.mon -eq $role
-  if (-not $ps.Count -and -not $isFill -and -not $zs.Count) { continue }
+  if (-not $ps.Count -and -not $isFill -and -not $zs.Count -and -not $hs.Count) { continue }
   $scr = $roles[$role]
   if (-not $scr) { Write-Warning "No $role monitor. That part of the scene is skipped."; $missing += @($ps | % { [pscustomobject]@{ pin = $_.Index; app = $_.App; match = $_.Match; why = "no $role monitor" } }); continue }
-  $passes += [pscustomobject]@{ Scr = $scr; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Role = $role
+  $passes += [pscustomobject]@{ Scr = $scr; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Held = $hs; Role = $role
     Skip = $(if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }); Sort = $(if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }) }
 }
-foreach ($phase in 'pins', 'zones', 'fill') {
+foreach ($phase in 'pins', 'held', 'zones', 'fill') {
   foreach ($q in $passes) {
-    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase
+    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase $q.Held
     if ($Json) { $out += @($r) } else { $r }
   }
 }

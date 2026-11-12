@@ -929,18 +929,22 @@ $("toastUndo").onclick=()=>{$("toast").hidden=true;$("undo").onclick()};
 $("toastMore").onclick=()=>{$("results").hidden=false;$("results").scrollIntoView({block:"nearest"});$("toast").hidden=true};
 
 /* ---------- Editing scenes ---------- */
-// Fill Empty Cells off keeps the layout: each window the fill or a zone placed is pinned in its current cell (a span keeps its block).
+// Fill Empty Cells off holds the layout: each window the fill or a zone placed is held in its current cells (a span keeps its block), in the scene's fill.held, apart from its pins. No pin is added.
 // P is the engine's newest answer, so the cells are the ones on the board now.
-// A locked pin for a closed window holds no cell in the engine, so the fill may have put a window there. The lock stays, and that window goes to Windows That Stay Put unpinned.
-function pinPlaced(x,P){if(!P)return 0;let n=0;
-  for(const p of P.placed){if(p.pin>=0||p.behind)continue;const g=x.grids[p.mon],m=snap.monitors.find(q=>q.role===p.mon);if(!g||!m)continue;
+// A locked pin for a closed window holds no cell in the engine, so the fill may have put a window there. The lock stays, and nothing is held over it: that window goes to Windows That Stay Put.
+function holding(x,P){if(!P)return 0;const h=[];
+  for(const p of P.placed){if(p.pin>=0||p.behind)continue;const g=x.grids[p.mon],w=winById(p.id);if(!g||!w)continue;
     const sl=p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r);if(!sl.length)continue;const b=bbox(sl,g);
     if(lockedHit(x,p.mon,b.cells,null)){bayEdit(x,p.id,null);continue}
-    pinEdit(x,p.id,m,b.r*g.c+b.c,b.cs,b.rs,null);n++}
-  return n}
+    h.push({id:w.id,app:w.app,title:w.title,mon:p.mon,slots:b.cells})}
+  x.fill=x.fill||{};if(h.length)x.fill.held=h;else delete x.fill.held;
+  return h.length}
+// A window leaves the held layout (it went to Windows That Stay Put, or a pin took it or its cells), so its cell stays empty.
+function heldOff(x,w,mon,cells){const f=x.fill;if(!f||!f.held)return;
+  f.held=f.held.filter(h=>!(w&&sameWin(h,w))&&!(cells&&h.mon===mon&&h.slots.some(c=>cells.has(c))));if(!f.held.length)delete f.held}
 // Clear Board: one edit that turns Fill Empty Cells off and pins nothing, so every unpinned window shows in Windows That Stay Put because fill is off. It keeps no list of them: the switch alone brings the board back.
 function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
-  edit(x=>{x.fill=x.fill||{};x.fill.off=true},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
+  edit(x=>{x.fill=x.fill||{};x.fill.off=true;delete x.fill.held},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
 // id: the scene to change, by default the selected one. A caller that waits first passes the scene it started on.
 function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();sceneMsg="";const s=work[id];hist.push({k:"edit",id,s:clone(s)});fn(s);if(msg)status(typeof msg==="function"?msg():msg);render();preview(id);return true}
 const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
@@ -971,6 +975,7 @@ function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id),opt={}){
   if(behind&&behind.length)np.behind=behind;if(grab&&grab.lock)np.lock=true;
   x.pins.unshift(np);
   x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));if(!x.bay.length)delete x.bay;
+  heldOff(x,w,mon.role,cells);
   return slots}
 // A front window leaves its pin: the window right behind it, if any, takes the cell.
 function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return;const b=pin.behind||[];
@@ -978,7 +983,7 @@ function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return;const b=pin.b
 // Into the bay: its pin goes, and the scene keeps it where it is.
 function bayEdit(x,id,grab=pinNow(x,id),promote=true){const w=winById(id);
   if(grab){if(promote)leavePin(x,grab);else x.pins=x.pins.filter(q=>q!==grab)}
-  x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));x.bay.push({id:w.id,app:w.app,title:w.title})}
+  x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));x.bay.push({id:w.id,app:w.app,title:w.title});heldOff(x,w)}
 // A drops on B's cell. From the list below, B goes there; from a cell, the two trade cells. One edit.
 // The span stays with the place: A takes B's whole block, and B takes A's old block (one cell for a one-cell A).
 function swapInto(aId,bId,mon,slot,fromBay){
@@ -1030,7 +1035,7 @@ function putBehind(aId,bId){
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
-    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay},`${appName(A.app)} is behind ${appName(B.app)}.`);
+    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay;heldOff(x,A)},`${appName(A.app)} is behind ${appName(B.app)}.`);
   if(ok)dropNote(px(cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)),A,B,hist[hist.length-1]);
   return ok}
 // Drop Note: it names the stack under the tile that took the drop, with Undo. It goes after about 6 seconds, at the next press, or at the next edit.
@@ -1054,7 +1059,7 @@ function bringFront(pi,k){const e=stackEntry(pi,k);if(!e){status("Nothing is beh
 // Take Out: the window leaves the stack for Windows That Stay Put.
 function takeOut(pi,k){const e=stackEntry(pi,k);if(!e)return;const W=e.id&&winById(e.id);
   edit(x=>{const q=x.pins[pi];q.behind.splice(e.k,1);if(!q.behind.length)delete q.behind;
-    if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title})}},
+    if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title});heldOff(x,W)}},
     W?`${appName(W.app)}: ${W.title} is out of the stack. ${verb()} leaves it where it is.`:"Removed a window that is not open from the stack.")}
 // Lock or unlock a window's tile. A window the fill places gets a pin on its cell first, because a lock is saved on a pin.
 function toggleLock(id){const w=winById(id),pp=pinOf(id);selWin=id;
@@ -1122,7 +1127,7 @@ function commitResize(r,pl){
   edit(x=>{
     for(const m of pl.moves){
       if(m.to)m.q.slots=cellsOf(m.to.c,m.to.r,m.to.cs,m.to.rs,g);
-      else{x.pins=x.pins.filter(q=>q!==m.q);for(const wid of m.wins){const W=winById(wid);if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title})}}}}
+      else{x.pins=x.pins.filter(q=>q!==m.q);for(const wid of m.wins){const W=winById(wid);if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title});heldOff(x,W)}}}}
     pinEdit(x,r.id,mon,pl.r0*g.c+pl.c0,pl.cs,pl.rs,self)},
     `${appName(w.app)} now spans ${pl.cs}×${pl.rs}.${moved?` ${plural(moved,"window")} moved to free cells.`:""}${toBay?` ${plural(toBay,"window")} went to Windows That Stay Put.`:""}${pl.stopped?" It stopped at a locked tile.":""}`)}
 // Zones: a rectangle of cells, filled with one app's or category's windows.
@@ -1387,7 +1392,9 @@ async function saveConfig(next,msg){
   cfg=next;status(msg);sceneMsg=msg;render();return true}
 // A saved scene keeps only list entries that match an open window, by app and exact title: a window
 // handle means nothing in the next session.
-function forSave(s){s=clone(s);if(s.bay){s.bay=s.bay.filter(b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title))).map(b=>({app:b.app,title:(winById(b.id)||b).title}));if(!s.bay.length)delete s.bay}return s}
+function forSave(s){s=clone(s);if(s.bay){s.bay=s.bay.filter(b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title))).map(b=>({app:b.app,title:(winById(b.id)||b).title}));if(!s.bay.length)delete s.bay}
+  if(s.fill&&s.fill.held){s.fill.held=s.fill.held.filter(h=>snap.windows.some(w=>w.app===h.app&&(w.id===h.id||w.title===h.title))).map(h=>({app:h.app,title:(winById(h.id)||h).title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
+  return s}
 async function saveScene(){const s=scene();if(s.builtIn&&!autoOnly(s,saved(selId)))return;const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId);
   if(i>=0)next.scenes[i]=forSave(s);else next.scenes.push(forSave(s));await saveConfig(next,`Saved ${s.name}.`)}
 async function saveAsNew(name){const s=forSave(scene()),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
@@ -1442,10 +1449,10 @@ document.addEventListener("toggle",e=>{if(e.target.id==="xtras")xOpen=e.target.o
 document.addEventListener("change",ev=>{const t=ev.target;
   if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
   else if(t.id==="fillSw"){const on=t.checked,id=selId;
-    // Off pins what the newest placement shows, so it waits for a preview still in flight (a drop just before it).
+    // Off holds what the newest placement shows, so it waits for a preview still in flight (a drop just before it).
     // The switch changes the scene it was pressed on, even when another scene is picked during the wait.
     (on?Promise.resolve(null):newestPrev(id)).then(P=>{let kept=0;
-      edit(s=>{if(on)delete s.fill.off;else{kept=pinPlaced(s,P);s.fill.off=true}},()=>on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":`Fill Empty Cells is off. ${kept?`${plural(kept,"window")} ${kept===1?"is":"are"} pinned where ${kept===1?"it is":"they are"}. `:""}Only pinned windows move.`,id);
+      edit(s=>{if(on){delete s.fill.off;delete s.fill.held}else{kept=holding(s,P);s.fill.off=true}},()=>on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":`Fill Empty Cells is off. ${kept?`${plural(kept,"window")} ${kept===1?"is":"are"} held where ${kept===1?"it is":"they are"}. `:""}Only pinned windows move.`,id);
       requestAnimationFrame(()=>{const e=$("fillSw");if(e)e.focus()})})}
   else if(t.id==="lockSw"){toggleLock(selWin);requestAnimationFrame(()=>{const e=$("lockSw");if(e)e.focus()})}
   else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
