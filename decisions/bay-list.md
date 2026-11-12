@@ -15,8 +15,7 @@ Flowing Columns is the pick (notes option 1). Category Blocks (option 2) is not 
 Departs from: main's one column per category (`app.html` line 287) and the reason under each chip (`renderBay()`).
 
 Open, for the owner:
-- What "group" means: the whole list, a category, or the windows that share one reason. The notes (item 4) say "more than half the windows" share a reason, and the mockup takes one shared reason for the whole list.
-- Whether Reason Said Once is on by default. The notes and the mockup say off; the ruling is silent.
+- Group = a category; shared = more than half of its windows; on by default (coordinator pick, 2026-11-12 13:45 CST, pending owner confirm).
 - The gains quoted in notes item 4 (271px at 1440, 390px at 1024) were for the "more than half" rule. The ruling's rule is unmeasured.
 
 **Why.** The list used three narrow columns and left most of its width empty, and the same reason repeated under almost every window.

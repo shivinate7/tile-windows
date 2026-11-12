@@ -59,11 +59,13 @@ there the gain grows (more columns), but that width is not drawn and not measure
    categories already fill three columns.
 3. **Show N More.** Both layouts keep today's cap from `renderBay()`: two windows per category
    (one under 820px of window height), then the layout packs what shows. No change from main.
-4. **Reason Said Once (off by default; `once=1`).** Approved by the owner, 2026-11-12 12:05 CST.
-   The approved wording is in `decisions/bay-list.md`, which governs; its group, threshold and
-   default are open there. Text below is the earlier draft. When more than half the windows share a
-   reason, the note says it once ("Most are here because fill is off; the others say why.") and
-   those chips drop their second line. Gain: with Flowing Columns, 271px at 1440 and 390px at
+4. **Reason Said Once (on by default; the mockup draws it only with `once=1`).** Approved by the
+   owner, 2026-11-12 12:05 CST. The approved wording is in `decisions/bay-list.md`, which governs.
+   Group = a category; shared = more than half of its windows; on by default (coordinator pick,
+   2026-11-12 13:45 CST, pending owner confirm). The reason shows once in the category heading, and
+   those chips drop their second line; windows with another reason keep theirs. The mockup draws one
+   shared reason for the whole list, in the note ("Most are here because fill is off; the others say
+   why."); the build puts it in each heading instead. Text below is the earlier draft. Gain: with Flowing Columns, 271px at 1440 and 390px at
    1024. Lose: a chip no longer says its own reason; the reader has to read the note.
    Earlier pick: leave it off; build it only on the owner's grant. The approval above is that grant.
    Departs from: `renderBay()`, which puts the reason in each chip's `<small>`, and

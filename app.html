@@ -284,9 +284,15 @@ dialog form{display:grid;gap:10px}
 .bay.drop .dropslot{outline:2px solid var(--select);outline-offset:-1px;background:color-mix(in srgb,var(--select) 14%,var(--panel));color:var(--ink);font-weight:600}
 .bay h2{margin:0;justify-content:flex-start;gap:10px}
 .bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
-.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
-.bgrp h3{display:flex;gap:6px;align-items:center;margin:0 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.bgrp ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.bgrps{display:grid;gap:0 12px;align-items:start}
+.bcol{list-style:none;margin:0;padding:0;display:grid;gap:4px;align-content:start}
+.bh{display:flex;flex-wrap:wrap;gap:0 6px;align-items:center;margin:0 0 4px;font:600 11px/16px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.bh.mid{margin-top:8px}
+.bh .ct{margin-left:auto;font:12px/16px var(--f-mono);letter-spacing:0}
+.bh .why{flex:0 0 100%;font:400 11px/16px var(--f);text-transform:none;letter-spacing:0}
+/* A column that opens partway through a category: a rule in its colour, no second name. 3px + 6px + 11px of margin = a heading's 16px line + 4px, so chips line up across columns. */
+.cont{height:3px;margin:6px 0 11px;border-radius:2px;background:var(--cat)}
+@media (forced-colors:active){.cont{background:CanvasText}}
 .chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;touch-action:none;font-size:12px}
 .chip b{font-weight:600;white-space:nowrap}
 .chip span{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -705,7 +711,8 @@ function view(){
 // In the bay: every window the scene gives no cell. Live only, once the engine has answered.
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
 const BAYWHY={"in the bay":"You kept it here","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","fill is off":"Fill is off"};
-const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized: it stays minimized":"Not in this scene";
+const BAYNOWHY="Not in this scene";
+const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized: it stays minimized":BAYNOWHY;
 // Cells as columns and rows, not numbers: "3 columns × 2 rows from column 1, row 1".
 function cellsText(slots,g){const b=bbox(slots,g);return `${plural(b.cs,"column")} × ${plural(b.rs,"row")} from column ${b.c+1}, row ${b.r+1}`}
 const sameWin=(b,w)=>b.id===w.id||(b.app===w.app&&b.title===w.title);
@@ -799,15 +806,55 @@ function renderZones(){
     e.className=`zone cat-${z.app?catOf(z.app):z.cat}${selZone===i?" sel":""}`;Object.assign(e.style,px(cellRect(m,g,b.c,b.r,b.cs,b.rs)));
     const n=prev()?prev().placed.filter(p=>p.zone===i).length:0;
     e.innerHTML=`<button type="button" data-zone="${i}" aria-pressed="${selZone===i}" title="Edit this zone" aria-label="${esc(zoneName(z))} zone, ${n} of ${sl.length} cells filled. Edit it in the inspector.">${esc(zoneName(z))} zone · ${n} of ${sl.length} filled</button><button type="button" class="zx" data-zdel="${i}" title="Remove this zone" aria-label="Remove the ${esc(zoneName(z))} zone">✕</button>`;$("stage").appendChild(e)})}
-// One or two rows per category until "Show more", so the list never cuts a row in half.
+// Windows That Stay Put, in Flowing Columns (decision bay-list): one list in category order, packed down and then across into as many
+// 170px columns as fit, at the shortest column height that fits. One or two windows per category until "Show more", so the list never cuts a row in half.
 let bayAll=false;
+const BAYGAP=12,BAYMIN=170;
+const bayChip=(w,c,V,sh)=>{const why=bayWhy(V[w.id]);
+  return `<button type="button" class="chip cat-${c}${w.id===selWin?" sel":""}" data-bay="${w.id}" title="${esc(appName(w.app))}: ${esc(w.title)}" aria-label="${esc(appName(w.app))}: ${esc(w.title)}. ${esc(why)}. Stays put. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(appName(w.app))}</b><span>${esc(w.title)}</span>${why!==BAYNOWHY&&why!==sh?`<small>${esc(why)}</small>`:""}</button>`};
+// Reason Said Once: the reason more than half a category's windows share shows once in its heading, and those windows drop their own line.
+const bayHead=(g,mid)=>`<h3 class="bh cat-${g.c}${mid?" mid":""}"><i class="sw"></i>${esc(catName(g.c))}<span class="ct">${g.n}</span>${g.sh?`<span class="why">${esc(g.sh)}</span>`:""}</h3>`;
+// Packs the groups into columns no taller than H, or returns null when H is too short. A heading keeps its first two windows with it (all
+// three of three). A split never leaves one window of a category alone in a column. A column that opens partway through a category starts with a rule.
+function bayPack(gs,mid,cont,H){
+  const cols=[[]];let h=0;
+  const put=(it,t)=>{const c=cols[cols.length-1];h+=(c.length?4:0)+t;c.push(it)};
+  for(const g of gs){
+    const n=g.chips.length,keep=g.chips.slice(0,n<=3?n:2);
+    if(cols[cols.length-1].length&&h+4+mid+g.head+keep.reduce((s,k)=>s+4+k.h,0)>H){cols.push([]);h=0}
+    const top=!cols[cols.length-1].length;put({k:"h",g,mid:!top},g.head+(top?0:mid));
+    let seg=0;
+    for(let i=0;i<n;i++){const ch=g.chips[i];
+      if(h+4+ch.h>H){if(i-seg<2||n-i<2)return null;cols.push([]);h=0;put({k:"cont",g},cont);seg=i}
+      put({k:"c",g,ch},ch.h)}}
+  return cols}
 function renderBay(V){
   const bay=$("bay");if(!LIVE)return;
   const ws=snap.windows.filter(w=>inBay(V[w.id]));let more=0;
   $("baynote").textContent=prev()?`${plural(ws.length,"window")}. ${verb()} leaves them where they are.`:"";
   const by=new Map(cfg.categories.map(([c])=>[c,[]]));for(const w of ws){const c=catOf(w.app);if(!by.has(c))by.set(c,[]);by.get(c).push(w)}
-  $("bgrps").innerHTML=[...by].filter(([,l])=>l.length).map(([c,l])=>`<div class="bgrp cat-${c}"><h3><i class="sw"></i>${esc(catName(c))}</h3><ul>${l.map((w,k)=>{const why=bayWhy(V[w.id]),hide=!bayAll&&k>=(innerHeight<820?1:2);if(hide)more++;
-    return `<li${hide?" hidden":""}><button type="button" class="chip cat-${c}${w.id===selWin?" sel":""}" data-bay="${w.id}" title="${esc(appName(w.app))}: ${esc(w.title)}" aria-label="${esc(appName(w.app))}: ${esc(w.title)}. ${esc(why)}. Stays put. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(appName(w.app))}</b><span>${esc(w.title)}</span>${why!=="Not in this scene"?`<small>${esc(why)}</small>`:""}</button></li>`}).join("")}</ul></div>`).join("");
+  const cap=innerHeight<820?1:2;
+  const gs=[...by].filter(([,l])=>l.length).map(([c,l])=>{
+    const tally=new Map();for(const w of l){const y=bayWhy(V[w.id]);if(y!==BAYNOWHY)tally.set(y,(tally.get(y)||0)+1)}
+    const hit=[...tally].find(([,n])=>n*2>l.length),sh=hit?hit[0]:null,shown=bayAll?l:l.slice(0,cap);more+=l.length-shown.length;
+    return{c,n:l.length,sh,chips:shown.map(w=>({html:bayChip(w,c,V,sh)}))}});
+  const list=$("bgrps");let cols=null;
+  if(gs.length){
+    const W=list.clientWidth||BAYMIN,K=Math.max(1,Math.floor((W+BAYGAP)/(BAYMIN+BAYGAP))),colW=(W-BAYGAP*(K-1))/K;
+    // Measure each piece at the column width, in a hidden column that uses the page's own CSS. The last three pieces measure a heading placed
+    // mid-column and a column's opening rule.
+    const probe=document.createElement("ul");probe.className="bcol";probe.style.cssText=`position:absolute;visibility:hidden;left:0;top:0;width:${colW}px`;
+    probe.innerHTML=gs.map(g=>`<li>${bayHead(g,false)}</li>${g.chips.map(k=>`<li>${k.html}</li>`).join("")}`).join("")
+      +`<li>${bayHead({...gs[0],sh:null},false)}</li><li>${bayHead({...gs[0],sh:null},true)}</li><li class="cont cat-${gs[0].c}"></li>`;
+    bay.appendChild(probe);const hs=[...probe.children].map(e=>e.getBoundingClientRect().height);probe.remove();
+    let i=0;for(const g of gs){g.head=hs[i++];for(const k of g.chips)k.h=hs[i++]}
+    const mid=hs[i+1]-hs[i],cont=hs[i+2];
+    const total=cont+gs.reduce((s,g)=>s+g.head+mid+4+g.chips.reduce((t,k)=>t+4+k.h,0),0);
+    const lo=Math.max(...gs.flatMap(g=>[g.head+4+g.chips[0].h,...g.chips.map(k=>cont+4+k.h)]));
+    for(let H=lo;H<=total&&!(cols&&cols.length<=K);H+=2)cols=bayPack(gs,mid,cont,H);
+    if(!cols||cols.length>K)cols=bayPack(gs,mid,cont,Infinity);
+    list.style.gridTemplateColumns=`repeat(${K},minmax(0,1fr))`}
+  list.innerHTML=(cols||[]).map(col=>`<ul class="bcol">${col.map(it=>it.k==="cont"?`<li class="cont cat-${it.g.c}" aria-hidden="true"></li>`:`<li>${it.k==="h"?bayHead(it.g,it.mid):it.ch.html}</li>`).join("")}</ul>`).join("");
   bay.classList.toggle("all",bayAll);
   const m=$("baymore");m.hidden=!more&&!bayAll;m.textContent=bayAll?"Show Fewer":`Show ${more} More`;
   $("dropslot").textContent=dropText()}
