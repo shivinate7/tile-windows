@@ -17,10 +17,13 @@
 #   Continuation rule: an element with classes cont and cat-<c> inside #bgrps, at the top of a column that opens partway
 #     through category c. Its left edge is the column's, it sits above that column's first chip, it is 4px tall or less, and
 #     its background is that chip's border-left colour.
-#   Reason Said Once (on by default, no setting): the shared reason of a category is the reason more than half its windows
-#     share. It shows once in that category's heading. Chips with it have no <small> (an empty one counts as none). A chip
-#     with another reason keeps its <small>. A category with no shared reason keeps every <small>. Decision bay-list says
-#     "every window" in its ruling and "more than half" in its notes; these cases use more than half, as the brief says.
+#   Reason Said Once (on by default, no setting): the shared reason of a category is the reason more than half the windows
+#     the list shows share (coordinator ruling, 2026-11-12 14:06 CST). Capped ("Show N More"), only the visible windows count.
+#     A window with no reason line ("Not in this scene") counts as not sharing and shows no line, as on main. The shared reason
+#     shows once in the category's heading, on the heading's own row, after the name. Chips with it have no <small> (an empty
+#     one counts as none). A chip with another reason keeps its <small>. A category with no shared reason keeps every <small>.
+#   Packed target: not in the DOM. The packed-height checks read its consequence: no column stops short of its next unit when
+#     that unit would still end within the list's height (each rule's full box counted).
 #   Height: the list's content (top of the first item to the bottom of the last) is shorter than today's list at the same
 #     width. Today's list is one column per category at the auto-fill track width, each chip with its reason line. This
 #     file builds that list in the page (probe) from the chips' own app and title text, so the reason lines count as today.
@@ -97,6 +100,10 @@ $BaySceneFillOn = '{"id":"bay","name":"Bay list","trigger":{"type":"manual","day
 $wins23 = BayWins $BayRows23; $wins6 = BayWins $BayRows6; $winsEmpty = BayWins $BayRowsEmpty
 $snap23 = Join-Path $run 'bay23.json'; $snap6 = Join-Path $run 'bay6.json'; $snapEmpty = Join-Path $run 'bay-empty.json'
 BaySnapFile $snap23 $wins23; BaySnapFile $snap6 $wins6; BaySnapFile $snapEmpty $winsEmpty
+# Mixed: three Other windows that Fill is off lists, and one PowerToys window, which the engine skips (it is in no reason's list): "Not in this scene".
+$BayRowsNone = @(@('stickynotes', 'Sticky Notes', 0), @('stickynotes', 'Sticky Notes', 0), @('stickynotes', 'Sticky Notes', 0), @('PowerToys', 'Settings', 0))
+$winsNone = BayWins $BayRowsNone; $winsNone[3].reason = 'none'
+$snapNone = Join-Path $run 'bay-none.json'; BaySnapFile $snapNone $winsNone
 
 # ---------- Engine: scope for the page cases (no page, no move) ----------
 $eng = (& $tile -Scene $BaySceneFillOff -From $snap23 -DryRun -Json 3>$null) -join '' | ConvertFrom-Json
@@ -301,6 +308,145 @@ function BayLoneProblems($items, $splits) {
   $problems
 }
 
+# The list's columns as the DOM has them, shown windows only: each column's full height (its ul, which holds each rule's margins), and its
+# items in order: kind (head, rule or chip), category, top within the column, height, window id, reason line and heading text.
+$BayColsJs = @'
+(() => {
+  const list = document.getElementById('bgrps'), LR = list.getBoundingClientRect();
+  const catIn = el => { const m = el && (el.getAttribute('class') || '').match(/(?:^|\s)cat-([a-z]+)/); return m ? m[1] : null; };
+  const cols = [...list.children].map(ul => {
+    const ur = ul.getBoundingClientRect();
+    return { h: ur.height, items: [...ul.children].map(li => {
+      const r = li.getBoundingClientRect(), h3 = li.querySelector('h3'), btn = li.querySelector('[data-bay]'), sm = li.querySelector('small');
+      const k = li.classList.contains('cont') ? 'rule' : h3 ? 'head' : 'chip';
+      return { k, cat: k === 'chip' ? catIn(btn) : catIn(k === 'rule' ? li : h3), t: +(r.top - ur.top).toFixed(2), h: r.height,
+        id: btn ? +btn.dataset.bay : null, small: sm ? sm.textContent.trim() : null, head: h3 ? h3.textContent.replace(/\s+/g, ' ').trim() : null };
+    }) };
+  });
+  const mid = list.querySelector('h3.mid');
+  const gap = list.children.length ? parseFloat(getComputedStyle(list.children[0]).rowGap) : 0;
+  return { listH: LR.height, cols, gap, midMargin: mid ? parseFloat(getComputedStyle(mid).marginTop) : null };
+})()
+'@
+
+# ---------- Packed height and heading rows: pure functions on the columns ----------
+# The packed target is not in the DOM, so these read its consequence. A column that stops short of its next column's first unit
+# could have taken that unit and still end within the list's height, which is the tallest column with each rule's full box counted.
+# A packer that packs to a target never leaves that room. The gap is the list's own row gap; a heading's own break adds the mid margin
+# (read from the page) and the windows it keeps with it, as the packer checks them.
+function BayPackProblems($cols, $midM, $gap) {
+  $problems = @()
+  if ($null -eq $midM -or -not $cols.Count) { return $problems }
+  $g = [double]$gap
+  $T = [double](($cols | % { $_.h } | Measure-Object -Maximum).Maximum)
+  $counts = @{}; foreach ($c in $cols) { foreach ($it in @($c.items)) { if ($it.k -eq 'chip') { $counts[$it.cat] = 1 + [int]$counts[$it.cat] } } }
+  for ($j = 0; $j -lt $cols.Count - 1; $j++) {
+    $cur = @($cols[$j].items); $nxt = @($cols[$j + 1].items)
+    if (-not $cur.Count -or -not $nxt.Count) { continue }
+    $s = $nxt[0]
+    if ($s.k -eq 'rule') {
+      if ($nxt.Count -lt 2) { continue }
+      $need = $g + [double]$nxt[1].h
+    } elseif ($s.k -eq 'head') {
+      $n = [int]$counts[$s.cat]; $keep = if ($n -le 3) { $n } else { 2 }
+      if ($nxt.Count -lt 1 + $keep) { continue }
+      $need = $g + [double]$midM + [double]$s.h
+      for ($q = 1; $q -le $keep; $q++) { $need += $g + [double]$nxt[$q].h }
+    } else { continue }
+    $F = [double]$cols[$j].h
+    if ($F + $need -le $T - 4) { $problems += "column $($j + 1) ends at $([int]$F)px and could take column $($j + 2)'s first unit ($([int]$need)px with its gap) under the list's $([int]$T)px" }
+  }
+  $problems
+}
+# A reasoned heading at a column's top, with a rule of its category at the top of the next column: the first window under each must line up.
+function BayHeadRowProblems($cols) {
+  $pairs = 0; $problems = @()
+  for ($j = 0; $j -lt $cols.Count - 1; $j++) {
+    $a = @($cols[$j].items); $b = @($cols[$j + 1].items)
+    if ($a.Count -lt 2 -or $b.Count -lt 2) { continue }
+    if ($a[0].k -ne 'head' -or $b[0].k -ne 'rule' -or $a[0].cat -ne $b[0].cat) { continue }
+    if (-not @($BayReason.Values | ? { $a[0].head -like "*$_*" }).Count) { continue }
+    $pairs++
+    if ($a[1].k -ne 'chip' -or $b[1].k -ne 'chip') { $problems += "$($BayCatName[$a[0].cat]): the window after its heading is not a window"; continue }
+    if ([Math]::Abs([double]$a[1].t - [double]$b[1].t) -gt 2) { $problems += "$($BayCatName[$a[0].cat]): the first window under its heading sits $([int]$a[1].t)px down, under the rule in column $($j + 2) it sits $([int]$b[1].t)px down" }
+  }
+  [pscustomobject]@{ pairs = $pairs; problems = $problems }
+}
+
+# ---------- Checks on the packed list and the capped list ----------
+# Full state, one width: the packed columns (scope, then height, then the packer's room) and the heading rows.
+function BayPackChecks($set, $w, $colsObj) {
+  $lbl = "$($set.tag) at $w px"; $cols = @($colsObj.cols)
+  $colsOf = @{}
+  for ($j = 0; $j -lt $cols.Count; $j++) { foreach ($it in @($cols[$j].items)) { if ($it.cat) { $colsOf[$it.cat] = @($colsOf[$it.cat]) + $j } } }
+  $splits = @($colsOf.Keys | ? { @($colsOf[$_] | Sort-Object -Unique).Count -gt 1 })
+  Check "bay: ${lbl}: a category splits across columns (scope for the packed-height checks)" ($splits.Count -gt 0) "no category splits: each sits in one column"
+  if ($splits.Count -eq 0) { return }
+  $T = [double](($cols | % { $_.h } | Measure-Object -Maximum).Maximum)
+  Check "bay: ${lbl}: the list is as tall as its tallest column, each rule's full box counted" ([Math]::Abs([double]$colsObj.listH - $T) -le 1) "list $([int]$colsObj.listH)px, tallest column $([int]$T)px"
+  $pp = @(BayPackProblems $cols $colsObj.midMargin $colsObj.gap)
+  Check "bay: ${lbl}: no column stops short of its next unit when that unit fits under the list's height" ($pp.Count -eq 0) ($pp -join ' | ')
+  $hr = BayHeadRowProblems $cols
+  Check "bay: ${lbl}: a reasoned heading at a column's top has its category's rule at the next column's top (scope for the heading row)" ($hr.pairs -gt 0) "no reasoned heading lines up with a rule in the next column"
+  Check "bay: ${lbl}: a heading with a reason is one row tall: its first window lines up with the next column's first window under a rule" ($hr.problems.Count -eq 0) ($hr.problems -join ' | ')
+}
+# Capped, before Show N More is pressed, one width: the heading's reason and the lines follow the windows shown (the ruling), and the
+# list is no taller than main's list for the same windows (today's probe; main puts a heading's first window 4px higher, so 4px is allowed).
+function BayCapChecks($set, $w, $mc, $capCols, $more, $wins) {
+  $lbl = "$($set.tag) capped at $w px"
+  $items = @(@($capCols.cols) | % { @($_.items) })
+  $vis = @($items | ? { $_.k -eq 'chip' })
+  $visWins = @($wins | ? { @($vis | % { $_.id }) -contains $_.id })
+  Check "bay: ${lbl}: the list is capped, with Show N More still to press (scope)" (($more -match '^Show \d+ More$') -and $visWins.Count -lt $wins.Count) "button reads '$more'; $($visWins.Count) of $($wins.Count) windows shown"
+  Check "bay: ${lbl}: the list is no taller than main's list for the same windows" ($mc.listH -le $mc.todayH + 4.5) "list $([int]$mc.listH)px, main $([int]$mc.todayH)px"
+  foreach ($c in 'code', 'browse', 'other') {
+    $vc = @($visWins | ? { $_.cat -eq $c })
+    if (-not $vc.Count) { continue }
+    $name = $BayCatName[$c]
+    $headItem = @($items | ? { $_.k -eq 'head' -and $_.cat -eq $c })
+    $headText = if ($headItem.Count) { $headItem[0].head } else { '' }
+    $chipsC = @($vis | ? { $_.cat -eq $c })
+    Check "bay: ${lbl}: all $name windows shown are drawn (scope for the reason checks)" ($chipsC.Count -eq $vc.Count) "$($chipsC.Count) of $($vc.Count) drawn"
+    # PowerShell names are case-blind: the reason key is $key, and the reason's text is $R.
+    foreach ($key in 'fill', 'min') {
+      $R = $BayReason[$key]
+      if ($headText -like "*$R*") {
+        $n = @($vc | ? { $_.reason -eq $key }).Count
+        Check "bay: ${lbl}: $name's heading reason is shared by more than half the windows it shows" ($n * 2 -gt $vc.Count) "heading reads '$headText'; $n of $($vc.Count) shown windows say '$R'"
+      }
+    }
+    $shared = $null; foreach ($key in 'fill', 'min') { if (@($vc | ? { $_.reason -eq $key }).Count * 2 -gt $vc.Count) { $shared = $key } }
+    if ($null -ne $shared) {
+      $R = $BayReason[$shared]
+      $occ = ([regex]::Matches($headText, [regex]::Escape($R))).Count
+      Check "bay: ${lbl}: $name's heading shows '$R' once, the reason the windows shown share" ($occ -eq 1) "heading reads '$headText'"
+      $lines = @($chipsC | ? { (BayText $wins $_.id) -eq $R -and $_.small })
+      Check "bay: ${lbl}: $name windows that share '$R' show no line of their own" ($lines.Count -eq 0) "$($lines.Count) still show a line"
+      $other = @($chipsC | ? { (BayText $wins $_.id) -ne $R })
+      $kept = @($other | ? { $_.small -eq (BayText $wins $_.id) })
+      if ($other.Count) { Check "bay: ${lbl}: $name windows with another reason keep their own line" ($kept.Count -eq $other.Count) "$($other.Count - $kept.Count) of $($other.Count) lost their line" }
+    } else {
+      $bad = @($chipsC | ? { $_.small -ne (BayText $wins $_.id) })
+      Check "bay: ${lbl}: $name shares no reason among the windows shown, so every window keeps its line" ($bad.Count -eq 0) "$($bad.Count) without their line"
+    }
+  }
+}
+# Mixed set, full state, one width: a window the scene gives no reason shows no line, and the reason the rest share shows once.
+function BayNoneChecks($set, $w, $m, $wins) {
+  $lbl = "$($set.tag) at $w px"
+  $items = @($m.chips | ? { -not $_.hidden })
+  Check "bay: ${lbl}: every window is in the list (scope)" ($items.Count -eq $wins.Count) "$($items.Count) of $($wins.Count) windows in the list"
+  $fillIds = @($wins | ? { $_.reason -eq 'fill' } | % { $_.id }); $noneIds = @($wins | ? { $_.reason -eq 'none' } | % { $_.id })
+  Check "bay: ${lbl}: the mixed set has its 'Not in this scene' window (scope)" ($noneIds.Count -eq 1 -and @($items | ? { $_.id -eq $noneIds[0] }).Count -eq 1) "no 'Not in this scene' window in the list"
+  $R = $BayReason['fill']
+  $head = @($m.heads | ? { $_.cat -eq 'other' })
+  $headText = if ($head.Count) { $head[0].text } else { 'no heading' }
+  $occ = if ($head.Count) { ([regex]::Matches($head[0].text, [regex]::Escape($R))).Count } else { 0 }
+  Check "bay: ${lbl}: Other's heading shows '$R' once, the reason three of its four windows share" ($occ -eq 1 -and @($fillIds).Count * 2 -gt $wins.Count) "heading reads '$headText'"
+  $lineOn = @($items | ? { $_.small -and (@($fillIds) + @($noneIds)) -contains $_.id })
+  Check "bay: ${lbl}: the windows that share '$R', and the 'Not in this scene' window, show no line (as on main)" ($lineOn.Count -eq 0) "$($lineOn.Count) show a line"
+}
+
 # ---------- The cases ----------
 # The list at one width, every window shown: columns, height, order, overlap, the rule, the lone window, and each category's reason.
 function BayListChecks($set, $w, $m) {
@@ -381,7 +527,8 @@ try {
   $sets = @(
     @{ tag = '23 windows'; kind = 'big'; wins = $wins23; snap = $snap23; scene = $BaySceneFillOff; home = 'home-23' },
     @{ tag = '6 windows'; kind = 'small'; wins = $wins6; snap = $snap6; scene = $BaySceneFillOff; home = 'home-6' },
-    @{ tag = 'empty bay'; kind = 'empty'; wins = $winsEmpty; snap = $snapEmpty; scene = $BaySceneFillOn; home = 'home-empty' }
+    @{ tag = 'empty bay'; kind = 'empty'; wins = $winsEmpty; snap = $snapEmpty; scene = $BaySceneFillOn; home = 'home-empty' },
+    @{ tag = 'mixed reasons'; kind = 'mixed'; wins = $winsNone; snap = $snapNone; scene = $BaySceneFillOff; home = 'home-mixed' }
   )
   $browser = BayStartBrowser; $pageRan = $true
   foreach ($set in $sets) {
@@ -393,9 +540,20 @@ try {
       foreach ($w in 1440, 1024) {
         BayViewport $w 900
         BayLoad $script:url
+        if ($set.kind -eq 'big') {
+          # Capped first: the list as it opens, before Show N More is pressed (the capped checks).
+          $more = BayJs "document.getElementById('baymore').textContent.trim()"
+          $capCols = BayGet $BayColsJs
+          $visIds = @(@($capCols.cols) | % { @($_.items) } | ? { $_.k -eq 'chip' } | % { [int]$_.id })
+          $mc = BayMeasure @($spec | ? { $visIds -contains $_.id })
+          BayCapChecks $set $w $mc $capCols $more $set.wins
+        }
         if ($set.kind -ne 'empty') { BayShowAll }
         $m = BayMeasure $spec
-        if ($set.kind -eq 'empty') { BayEmptyChecks $w $m } else { BayListChecks $set $w $m }
+        if ($set.kind -eq 'empty') { BayEmptyChecks $w $m }
+        elseif ($set.kind -eq 'mixed') { BayNoneChecks $set $w $m $set.wins }
+        else { BayListChecks $set $w $m }
+        if ($set.kind -eq 'big') { BayPackChecks $set $w (BayGet $BayColsJs) }
       }
     } finally { BayStopServer $srv }
   }
