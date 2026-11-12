@@ -211,7 +211,7 @@ $missing = @(); $left = @(); $roleState = @{}
 # A scene runs it once per phase on every monitor ('pins', then 'zones', then 'fill'), so a pin on any
 # monitor beats every zone, and every zone beats the fill. In a scene a minimized window stays where it
 # is (in the bay) unless a pin names it by title. -Proc runs (phase 'all') keep the old single pass.
-function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all') {
+function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all', $held = @()) {
   $scene = $phase -ne 'all'
   $all = @(@($pins.App) + @($fill | ? { $pins.App -notcontains $_ }) | ? { $_ })
   if (-not $script:roleState.ContainsKey("$role")) { $script:roleState["$role"] = @{ used = @{}; pinned = 0 } }
@@ -232,7 +232,8 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
       # The front is not open: the first open back window takes its cell as the new front, as the board promotes one when its front leaves.
       if (-not $it -and $bis.Count) { $it = $bis[0]; $bis = @($bis | Select-Object -Skip 1) }
       $pn | Add-Member -Force Item $it
-      if (-not $it) { continue }
+      # Fill off: a pin for a closed window still keeps its cell, so nothing held lands on it.
+      if (-not $it) { if ($script:sceneFillOff) { $pn.Slots | % { $used[$_] = 1 } }; continue }
       $pn | Add-Member -Force BehindItems $bis
       $pn.Slots | % { $used[$_] = 1 }
     }
@@ -282,19 +283,35 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # A back window moves first, so the front window (moved last) ends on top: a restore activates the window.
   if ($phase -in 'all', 'pins') { foreach ($pn in $pins) { if ($pn.Item) { foreach ($bi in @($pn.BehindItems)) { Put $bi $pn.Slots $pn.Index -behind }; Put $pn.Item $pn.Slots $pn.Index } } }
 
+  # Fill Empty Cells off (scene fill.held): each held window goes back in its held cells, after every pin has taken its own.
+  # A held cell a pin (open or closed) or an earlier hold has taken is skipped. An entry holds one window, matched as a pin
+  # matches: by its handle when it has one (a stale handle holds nothing), else by its app, and by its title only when the app
+  # has several windows (open, or held in the scene): its exact title first, else a title that contains it. A closed, minimized or already placed window is not held: the sweep after
+  # the phase loop lists the open ones as 'fill is off'.
+  if ($phase -eq 'held') {
+    foreach ($hd in $held) {
+      if (@($hd.Slots | ? { $used.ContainsKey($_) }).Count) { continue }
+      $pool = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.App -eq $hd.App -and (& $up) })
+      $it = if ($hd.Id) { @($pool | ? { [int64]$_.H -eq [int64]$hd.Id })[0] }
+      else {
+        $many = @($items | ? { $_.App -eq $hd.App }).Count -gt 1 -or @($sc.fill.held | ? { $_ -and [string]$_.app -eq $hd.App }).Count -gt 1
+        # An exact title wins over a containing one, so 'Projects' never takes 'Projects archive'; position orders only the chosen set.
+        $cand = $pool
+        if ($many) { $cand = @($pool | ? { $_.Title -ceq $hd.Title }); if (-not $cand.Count) { $cand = @($pool | ? { $hd.Title -and (Contains $_.Title $hd.Title) }) } }
+        @($cand | Sort-Object { $_.X -le -20000 }, X, Y)[0]
+      }
+      if (-not $it) { continue }
+      $hd.Slots | % { $used[$_] = 1 }
+      Put $it $hd.Slots (-1)
+    }
+  }
+
   # Zones: each takes its cells (pins on every monitor already won theirs) and fills them with its app's
   # or category's windows in fill order, row by row. A category zone leaves out skipped apps, as the fill
   # does for '*'. Windows that do not fit go to the bay.
-  # Fill Empty Cells off (scene fill.off): only pins are placed. The zone and fill steps place nothing; the windows they would
-  # have placed go to the list (left) as 'fill is off', so the board shows why they stay put.
+  # Fill Empty Cells off (scene fill.off): pins and held windows (fill.held) are placed. The zone and fill steps place nothing; the
+  # scene names the other windows, which stay where they are, once every pass has run (see the sweep after the phase loop).
   $fillOff = $scene -and $script:sceneFillOff
-  if ($phase -eq 'zones' -and $fillOff) {
-    foreach ($z in $zones) {
-      foreach ($it in @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.Title -ne 'Program Manager' -and (& $up) -and $(if ($z.App) { $_.App -eq $z.App } else { $a = $_.App; -not ($script:zSkip | ? { $a -like $_ }) -and $(if ($script:cats -and $script:cats.$a) { [string]$script:cats.$a } else { 'other' }) -eq $z.Cat }) })) {
-        $script:claimed["$($it.H)"] = 1; $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = 'fill is off' }
-      }
-    }
-  }
   if ($phase -eq 'zones' -and -not $fillOff) {
     $zkeys = KeysFor { FillIdx $_.App $script:zFill }
     foreach ($z in $zones) {
@@ -307,9 +324,6 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   }
 
   # Free windows fill the open slots row by row.
-  if ($phase -eq 'fill' -and $fillOff) {
-    $script:left += @($free | ? { -not $script:claimed.ContainsKey("$($_.H)") } | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = 'fill is off' } })
-  }
   if ($phase -in 'all', 'fill' -and -not $fillOff) {
     $free = @($free | ? { -not $script:claimed.ContainsKey("$($_.H)") } | Sort-Object (KeysFor 'Rank'))
     $open = @(0..($Cols * $Rows - 1) | ? { -not $used.ContainsKey($_) })
@@ -356,17 +370,27 @@ foreach ($role in 'tall', 'laptop', 'wide') {
     $sl = @($z.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
     if ($sl.Count -and ($z.app -or $z.cat)) { [pscustomobject]@{ App = [string]$z.app; Cat = [string]$z.cat; Slots = $sl; Index = $i } }
   })
+  $hs = @(if ($sceneFillOff) { for ($i = 0; $i -lt @($sc.fill.held | ? { $_ }).Count; $i++) {
+    $h = @($sc.fill.held)[$i]; if ($h.mon -ne $role) { continue }
+    $sl = @($h.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
+    if ($sl.Count) { [pscustomobject]@{ Id = $h.id; App = [string]$h.app; Title = [string]$h.title; Slots = $sl } }
+  } })
   $isFill = $sc.fill.mon -eq $role
-  if (-not $ps.Count -and -not $isFill -and -not $zs.Count) { continue }
+  if (-not $ps.Count -and -not $isFill -and -not $zs.Count -and -not $hs.Count) { continue }
   $scr = $roles[$role]
   if (-not $scr) { Write-Warning "No $role monitor. That part of the scene is skipped."; $missing += @($ps | % { [pscustomobject]@{ pin = $_.Index; app = $_.App; match = $_.Match; why = "no $role monitor" } }); continue }
-  $passes += [pscustomobject]@{ Scr = $scr; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Role = $role
+  $passes += [pscustomobject]@{ Scr = $scr; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Held = $hs; Role = $role
     Skip = $(if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }); Sort = $(if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }) }
 }
-foreach ($phase in 'pins', 'zones', 'fill') {
+foreach ($phase in 'pins', 'held', 'zones', 'fill') {
   foreach ($q in $passes) {
-    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase
+    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase $q.Held
     if ($Json) { $out += @($r) } else { $r }
   }
+}
+# Fill off: every window the page lists (as -Json does) that no pin, back slot or bay claimed and that is not minimized goes to
+# the list as 'fill is off', whatever its app: an app with a pinned window included.
+if ($sceneFillOff) {
+  $left += @(Ranked @('*') $Skip | ? { $_.Title -ne 'Program Manager' -and $_.X -gt -20000 } | % { $claimed["$($_.H)"] = 1; [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = 'fill is off' } })
 }
 if ($Json) { ConvertTo-Json -Depth 6 -Compress ([pscustomobject]@{ placed = @($out); missing = @($missing); left = @($left) }) }

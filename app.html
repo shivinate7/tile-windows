@@ -62,6 +62,8 @@ h1.brand{display:flex;align-items:center;gap:8px;font:700 15px var(--f-disp);let
 .switch input{appearance:none;width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;margin:0;cursor:pointer;flex:none}
 .switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel)}
 .switch input:checked{background:var(--ink)} .switch input:checked::after{left:14px}
+@media (forced-colors:active){.switch input{border:1px solid ButtonText;background:Canvas;forced-color-adjust:none}.switch input::after{top:1px;left:1px;background:ButtonText}
+  .switch input:checked{background:Highlight}.switch input:checked::after{left:13px;background:HighlightText}}
 @media (pointer:coarse){.btn,.switch,.lg,.seg button,.trig label,.mlab button,select,input[type=text],input[type=time]{min-height:44px}.step button,.days button{width:44px;height:44px}}
 .toast{position:absolute;right:16px;top:calc(100% + 6px);z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;max-width:min(460px,calc(100vw - 32px));
   padding:9px 10px 9px 14px;border-radius:8px;background:var(--ink);color:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent);font-weight:500}
@@ -150,6 +152,9 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 /* A selected stacked narrow tile (about 50x42 under its strip) has no free 18px: the tag and lock fill the top row, the badge and the grip the bottom row. The tag stays, so the front window keeps its name. Stay Put and the grip shrink to 14px, and Stay Put takes the bottom row between the badge and the grip, clear of the tag, lock, badge and grip. The pin mark gives way; the inspector and the tile's label still say Pinned. */
 .tile.sel.stacked .stayput.ico{top:auto;bottom:1px;right:14px;width:14px;height:14px}
 .tile.sel.stacked .stayput.ico svg{width:10px;height:10px}
+/* A selected narrow tile (about 50px across) shows the 20px grip, which the pin mark would overlap and whose title it would squeeze. The mark gives way and the title keeps its width; the thick border, the label and the inspector still say Pinned. */
+.tile.sel.narrow .pinmark{display:none}
+.tile.sel.narrow.pin span{max-width:100%}
 .tile.sel.stacked.narrow .pinmark{display:none}
 .tile.sel.stacked.narrow .rsz{width:14px;height:14px}
 .tile.sel.stacked.narrow .rsz svg{width:12px;height:12px}
@@ -651,7 +656,11 @@ function setSnap(d){
   if(selWin&&!winById(selWin))selWin=null;
   build();layout();render();
 }
-async function preview(id){
+// The newest answer for a scene: waits while a preview of it is in flight. A change that reads the placement (Fill Empty Cells off) reads it after this.
+const inflight={};
+async function newestPrev(id){while(inflight[id])await inflight[id];return prevs[id]}
+function preview(id){const p=previewRun(id).finally(()=>{if(inflight[id]===p)delete inflight[id]});inflight[id]=p;return p}
+async function previewRun(id){
   const n=pseq[id]=(pseq[id]||0)+1;
   try{const r=await post("preview",withCats(work[id]));if(!r.ok)throw new Error(await r.text());const j=await r.json();
     if(pseq[id]!==n)return;prevs[id]=j;if(id===selId)optim=null;render()}
@@ -674,7 +683,7 @@ function build(){
     stg.appendChild(e);els.set(w.id,e);
   }
 }
-let inspKey="";  // the selected window and whether it is stacked, as the inspector last scrolled for it
+let inspKey="";  // the selected window, whether it is stacked, and whether its pin mark is hidden, as the inspector last scrolled for it
 const peeks=new Map();  // front window id -> the strip that names the back window under it
 const peekOf=id=>{let e=peeks.get(id);if(!e){e=document.createElement("div");e.className="peek";e.hidden=true;e.setAttribute("aria-hidden","true");$("stage").appendChild(e);peeks.set(id,e)}return e};
 const INSET=3;  // drawn gap inside each monitor edge, so side-by-side monitors read as separate screens
@@ -706,7 +715,7 @@ function view(){
   snap.windows.forEach((w,i)=>{v[w.id]={w,r:LIVE?(w.min?null:rect(w)):(w.min&&same(offRects[i],offOrig[i])?null:offRects[i]),kind:"stay",p:null}});
   if(LIVE&&P){for(const p of P.placed){const x=v[p.id];if(x){x.r=rect(p);x.kind=p.behind?"behind":p.pin>=0?"pin":p.zone>=0?"zone":"fill";x.p=p}}for(const l of P.left)if(v[l.id]){v[l.id].kind="left";v[l.id].why=l.why}}
   if(!LIVE)snap.windows.forEach((w,i)=>{v[w.id].kind=same(offRects[i],offOrig[i])?"fill":"pin"});
-  if(optim&&v[optim.id]){v[optim.id].r=optim.r;v[optim.id].kind=optim.kind||"pin"}
+  if(optim&&v[optim.id]){v[optim.id].r=optim.r;v[optim.id].kind=optim.kind||"pin";if(optim.p)v[optim.id].p=optim.p}
   return v}
 // In the bay: every window the scene gives no cell. Live only, once the engine has answered.
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
@@ -715,7 +724,7 @@ const BAYNOWHY="Not in this scene";
 const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized: it stays minimized":BAYNOWHY;
 // Cells as columns and rows, not numbers: "3 columns × 2 rows from column 1, row 1".
 function cellsText(slots,g){const b=bbox(slots,g);return `${plural(b.cs,"column")} × ${plural(b.rs,"row")} from column ${b.c+1}, row ${b.r+1}`}
-const sameWin=(b,w)=>b.id===w.id||(b.app===w.app&&b.title===w.title);
+const sameWin=(b,w)=>b.id!=null?b.id===w.id:b.app===w.app&&b.title===w.title;
 const zoneName=z=>z.app?appName(z.app):catName(z.cat);
 function render(){
   if(!snap)return;
@@ -731,7 +740,9 @@ function render(){
     e.className=`tile cat-${catOf(w.app)} ${x.kind==="left"?"stay":x.kind==="zone"?"zfill":x.kind}`;
     const pm=e.querySelector(".pinmark");if(x.kind==="pin"&&!pm)e.insertAdjacentHTML("beforeend",PIN);else if(x.kind!=="pin"&&pm)pm.remove();
     if(!x.r||inBay(x)){e.hidden=true;continue}
-    const bh=x.kind==="behind",pi=x.p&&x.p.pin>=0&&!bh?x.p.pin:-1,back=pi>=0?nb[pi]||[]:[],locked=pi>=0&&!!((s&&s.pins[pi])||{}).lock;
+    const bh=x.kind==="behind",pi=x.p&&x.p.pin>=0&&!bh?x.p.pin:-1,back0=pi>=0?nb[pi]||[]:[],
+      // A Put Behind drop shows its badge and strip at the release: the optimistic back window counts until the engine answers.
+      back=optim&&optim.kind==="behind"&&optim.front===w.id&&!back0.some(q=>q.id===optim.id)?[...back0,optim.p]:back0,locked=pi>=0&&!!((s&&s.pins[pi])||{}).lock;
     e.classList.toggle("stacked",back.length>0);e.classList.toggle("lock",locked);e.tabIndex=bh?-1:0;if(bh)e.setAttribute("aria-hidden","true");else e.removeAttribute("aria-hidden");
     const lk=e.querySelector(".lk"),sb=e.querySelector(".stk"),sp=e.querySelector(".stayput");
     if(lk){lk.hidden=bh;if(!bh){lk.setAttribute("aria-pressed",locked);lk.title=locked?"Unlock: it can move again":"Lock: it never moves";
@@ -929,7 +940,7 @@ function renderInsp(V){
     <p class="note">${m.w}×${m.h} pixels.</p>`;
   if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
     if(s&&s.fill&&s.fill.mon===m.role){const off=!!s.fill.off;
-      h+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="fillSw" ${off?"":"checked"}><span class="xt"><b>Fill Empty Cells</b><small>${off?"Only pinned windows move. The rest stay put.":"Windows that are not pinned fill the free cells."}</small></span></label>
+      h+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="fillSw" ${off?"":"checked"}><span class="xt"><b>Fill Empty Cells</b><small>${off?"Windows stay where they are. A new window waits in Windows That Stay Put.":"Windows that are not pinned fill the free cells."}</small></span></label>
       <div class="field stack"><label for="sort">Fill order</label><select id="sort" ${off?'disabled title="Fill is off, so the fill order does nothing. Turn on Fill Empty Cells to use it." aria-describedby="fillwhy"':""}>${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note" id="fillwhy">${off?"Fill is off, so the fill order does nothing.":`Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.`}</p></div>`}
     else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`;
 }
@@ -953,7 +964,9 @@ function renderInsp(V){
     if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay" ${lockd?'disabled title="Locked. Unlock it first."':""}>Keep Where It Is</button>`;
     $("win").innerHTML=wh+"</div>";
     // Behind This Window sits below the Scene and Monitor sections: a newly selected stacked tile brings the Window section to the top.
-    const key=w.id+":"+(stk.length>0);if(key!==inspKey&&stk.length){const ins=$("winh").closest(".insp");if(ins)ins.scrollTop+=$("winh").getBoundingClientRect().top-ins.getBoundingClientRect().top-8}
+    // So does a selected narrow pinned tile: its pin mark is hidden (.tile.sel.narrow .pinmark), so the Pinned line is its only pin cue.
+    const te=els.get(w.id),markOff=!!(pin&&te&&te.classList.contains("narrow"));
+    const key=w.id+":"+(stk.length>0)+":"+markOff;if(key!==inspKey&&(stk.length||markOff)){const ins=$("winh").closest(".insp");if(ins)ins.scrollTop+=$("winh").getBoundingClientRect().top-ins.getBoundingClientRect().top-8}
     inspKey=key}
 }
 
@@ -965,10 +978,30 @@ $("toastUndo").onclick=()=>{$("toast").hidden=true;$("undo").onclick()};
 $("toastMore").onclick=()=>{$("results").hidden=false;$("results").scrollIntoView({block:"nearest"});$("toast").hidden=true};
 
 /* ---------- Editing scenes ---------- */
-// Clear Board: one edit that turns Fill Empty Cells off, so every window the fill or a zone had placed goes to Windows That Stay Put. It keeps no list of them: the switch alone brings the board back.
+// Fill Empty Cells off holds the layout: each window the fill or a zone placed is held in its current cells (a span keeps its block), in the scene's fill.held, apart from its pins. No pin is added.
+// P is the engine's newest answer, so the cells are the ones on the board now.
+// A pin for a closed window (P.missing, with no window placed for it), locked or not, holds no cell in the engine while fill is on, so the fill may have put a window there. With fill off the engine keeps that cell for the pin, so nothing is held over it: that window is not held, fill off lists it in Windows That Stay Put, and it fills as usual once fill goes on. A locked pin's cells are never held over either.
+function holding(x,P){if(!P)return 0;const h=[];
+  const shut=new Set(P.missing.map(m=>m.pin).filter(i=>!P.placed.some(p=>p.pin===i&&!p.behind)));
+  for(const p of P.placed){if(p.pin>=0||p.behind)continue;const g=x.grids[p.mon],w=winById(p.id);if(!g||!w)continue;
+    const sl=p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r);if(!sl.length)continue;const b=bbox(sl,g);
+    if(lockedHit(x,p.mon,b.cells,null,shut))continue;
+    h.push({id:w.id,app:w.app,title:w.title,mon:p.mon,slots:b.cells})}
+  x.fill=x.fill||{};if(h.length)x.fill.held=h;else delete x.fill.held;
+  return h.length}
+// The window a held entry holds, matched as a pin matches: by its handle while it has one (a stale handle holds no window), else by its app, and by its title (exact, else containing) only when the app has several windows, open or held. The engine reads an entry the same way.
+function heldWin(h,list){const ws=snap.windows.filter(w=>w.app===h.app);
+  if(h.id!=null)return ws.find(w=>w.id===h.id)||null;
+  if(ws.length<2&&list.filter(q=>q.app===h.app).length<2)return ws[0]||null;
+  const t=(h.title||"").toLowerCase();return ws.find(w=>w.title===h.title)||(t&&ws.find(w=>w.title.toLowerCase().includes(t)))||null}
+// A window leaves the held layout (it went to Windows That Stay Put, or a pin took it or its cells), so its cell stays empty. Only that window's own hold goes: another window with the same title keeps its hold.
+function heldOff(x,w,mon,cells){const f=x.fill;if(!f||!f.held)return;
+  f.held=f.held.filter(h=>!(w&&(heldWin(h,f.held)||{}).id===w.id)&&!(cells&&h.mon===mon&&h.slots.some(c=>cells.has(c))));if(!f.held.length)delete f.held}
+// Clear Board: one edit that turns Fill Empty Cells off and pins nothing, so every unpinned window shows in Windows That Stay Put because fill is off. It keeps no list of them: the switch alone brings the board back.
 function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
-  edit(x=>{x.fill=x.fill||{};x.fill.off=true},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
-function edit(fn,msg){if(isBusy)return false;removeNote();sceneMsg="";hist.push({k:"edit",id:selId,s:clone(scene())});fn(scene());if(msg)status(msg);render();preview(selId);return true}
+  edit(x=>{x.fill=x.fill||{};x.fill.off=true;delete x.fill.held},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
+// id: the scene to change, by default the selected one. A caller that waits first passes the scene it started on.
+function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();sceneMsg="";const s=work[id];hist.push({k:"edit",id,s:clone(s)});fn(s);if(msg)status(typeof msg==="function"?msg():msg);render();preview(id);return true}
 const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
 function pinWin(id,mon,slot,cs=1,rs=1){
   const w=winById(id);
@@ -997,6 +1030,7 @@ function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id),opt={}){
   if(behind&&behind.length)np.behind=behind;if(grab&&grab.lock)np.lock=true;
   x.pins.unshift(np);
   x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));if(!x.bay.length)delete x.bay;
+  heldOff(x,w,mon.role,cells);
   return slots}
 // A front window leaves its pin: the window right behind it, if any, takes the cell.
 function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return;const b=pin.behind||[];
@@ -1004,7 +1038,7 @@ function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return;const b=pin.b
 // Into the bay: its pin goes, and the scene keeps it where it is.
 function bayEdit(x,id,grab=pinNow(x,id),promote=true){const w=winById(id);
   if(grab){if(promote)leavePin(x,grab);else x.pins=x.pins.filter(q=>q!==grab)}
-  x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));x.bay.push({id:w.id,app:w.app,title:w.title})}
+  x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));x.bay.push({id:w.id,app:w.app,title:w.title});heldOff(x,w)}
 // A drops on B's cell. From the list below, B goes there; from a cell, the two trade cells. One edit.
 // The span stays with the place: A takes B's whole block, and B takes A's old block (one cell for a one-cell A).
 function swapInto(aId,bId,mon,slot,fromBay){
@@ -1018,9 +1052,9 @@ const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r),g);
 const cellsOf=(c0,r0,cs,rs,g)=>{const a=[];for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)a.push(r*g.c+c);return a};
 const lockOfPlaced=p=>!!(LIVE&&p&&p.pin>=0&&!p.behind&&(scene().pins[p.pin]||{}).lock);
 const isLockedId=id=>{const pp=LIVE&&pinOf(id);return !!(pp&&pp.pin&&pp.pin.lock)};
-// Is a locked pin (other than `except`) on any of these cells of the role's grid?
-function lockedHit(s,role,cells,except){const g=s.grids[role];
-  return s.pins.some(q=>{if(!q.lock||q===except||q.mon!==role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>cells.includes(c))})}
+// Is a locked pin (other than `except`) on any of these cells of the role's grid? A pin whose index is in `shut` counts too, locked or not.
+function lockedHit(s,role,cells,except,shut){const g=s.grids[role];
+  return s.pins.some((q,i)=>{if(!(q.lock||shut&&shut.has(i))||q===except||q.mon!==role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>cells.includes(c))})}
 // The window in front on a drop target (the whole block of a span): a swap or a Put Behind, never a Place here over it.
 // A one-cell window's target is one cell. A spanned window's target is its block: the window on the block's first cell, else the first window it covers.
 function occupant(d,t){const P=LIVE&&prev();if(!P||!t)return null;const pa=P.placed.find(p=>p.id===d.id),one=d.cs===1&&d.rs===1;
@@ -1047,7 +1081,8 @@ const frontOfPin=pi=>{const P=prev();return P&&P.placed.find(p=>p.pin===pi&&!p.b
 // A is dropped on B's lower band: A goes behind B, with any windows behind A.
 function putBehind(aId,bId){
   const P=prev(),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),mon=snap.monitors.find(q=>q.role===pb.mon),g=s.grids[pb.mon],bb=pbox(pb,g),gA=pinNow(s,aId);
-  curMon=mon;selWin=bId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs),kind:"behind"};
+  // A window from Windows That Stay Put has no placed entry yet, so the optimistic one stands in for it: what the engine will answer, on the front's cells.
+  curMon=mon;selWin=bId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs),kind:"behind",front:bId,p:{...pb,id:aId,app:A.app,behind:true}};
   // The new stack's cues (the strip and the badge) wear a blue ring for about 1.5 seconds.
   flashId=bId;clearTimeout(flashT);flashT=setTimeout(()=>{flashId=null;for(const q of stage.querySelectorAll(".peek.flash,.stk.ring"))q.classList.remove("flash","ring")},1500);
   const ok=edit(x=>{
@@ -1055,7 +1090,7 @@ function putBehind(aId,bId){
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
-    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay},`${appName(A.app)} is behind ${appName(B.app)}.`);
+    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay;heldOff(x,A)},`${appName(A.app)} is behind ${appName(B.app)}.`);
   if(ok)dropNote(px(cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)),A,B,hist[hist.length-1]);
   return ok}
 // Drop Note: it names the stack under the tile that took the drop, with Undo. It goes after about 6 seconds, at the next press, or at the next edit.
@@ -1079,7 +1114,7 @@ function bringFront(pi,k){const e=stackEntry(pi,k);if(!e){status("Nothing is beh
 // Take Out: the window leaves the stack for Windows That Stay Put.
 function takeOut(pi,k){const e=stackEntry(pi,k);if(!e)return;const W=e.id&&winById(e.id);
   edit(x=>{const q=x.pins[pi];q.behind.splice(e.k,1);if(!q.behind.length)delete q.behind;
-    if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title})}},
+    if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title});heldOff(x,W)}},
     W?`${appName(W.app)}: ${W.title} is out of the stack. ${verb()} leaves it where it is.`:"Removed a window that is not open from the stack.")}
 // Lock or unlock a window's tile. A window the fill places gets a pin on its cell first, because a lock is saved on a pin.
 function toggleLock(id){const w=winById(id),pp=pinOf(id);selWin=id;
@@ -1147,7 +1182,7 @@ function commitResize(r,pl){
   edit(x=>{
     for(const m of pl.moves){
       if(m.to)m.q.slots=cellsOf(m.to.c,m.to.r,m.to.cs,m.to.rs,g);
-      else{x.pins=x.pins.filter(q=>q!==m.q);for(const wid of m.wins){const W=winById(wid);if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title})}}}}
+      else{x.pins=x.pins.filter(q=>q!==m.q);for(const wid of m.wins){const W=winById(wid);if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title});heldOff(x,W)}}}}
     pinEdit(x,r.id,mon,pl.r0*g.c+pl.c0,pl.cs,pl.rs,self)},
     `${appName(w.app)} now spans ${pl.cs}×${pl.rs}.${moved?` ${plural(moved,"window")} moved to free cells.`:""}${toBay?` ${plural(toBay,"window")} went to Windows That Stay Put.`:""}${pl.stopped?" It stopped at a locked tile.":""}`)}
 // Zones: a rectangle of cells, filled with one app's or category's windows.
@@ -1179,6 +1214,8 @@ function setGrid(k,d){const m=curMon;
     // Keep each pin on the same column and row; drop cells past the new edge.
     for(const p of s.pins)if(p.mon===m.role)p.slots=p.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
     s.pins=s.pins.filter(p=>p.slots.length);
+    if(s.fill&&s.fill.held){for(const h of s.fill.held)if(h.mon===m.role)h.slots=h.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+      s.fill.held=s.fill.held.filter(h=>h.slots.length);if(!s.fill.held.length)delete s.fill.held}
     for(const z of s.zones||[])if(z.mon===m.role)z.slots=z.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
     if(s.zones){s.zones=s.zones.filter(z=>z.slots.length);selZone=null}},`${monName(m)} grid: ${scene().grids[m.role].c+(k==="c"?d:0)}×${scene().grids[m.role].r+(k==="r"?d:0)}.`)}
 function pinOf(id){const P=prev(),p=P&&P.placed.find(q=>q.id===id);return p&&p.pin>=0&&!p.behind?{p,pin:scene().pins[p.pin]}:null}
@@ -1412,7 +1449,9 @@ async function saveConfig(next,msg){
   cfg=next;status(msg);sceneMsg=msg;render();return true}
 // A saved scene keeps only list entries that match an open window, by app and exact title: a window
 // handle means nothing in the next session.
-function forSave(s){s=clone(s);if(s.bay){s.bay=s.bay.filter(b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title))).map(b=>({app:b.app,title:(winById(b.id)||b).title}));if(!s.bay.length)delete s.bay}return s}
+function forSave(s){s=clone(s);if(s.bay){s.bay=s.bay.filter(b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title))).map(b=>({app:b.app,title:(winById(b.id)||b).title}));if(!s.bay.length)delete s.bay}
+  if(s.fill&&s.fill.held){const L=s.fill.held;s.fill.held=L.map(h=>({h,w:heldWin(h,L)})).filter(e=>e.w).map(({h,w})=>({app:h.app,title:w.title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
+  return s}
 async function saveScene(){const s=scene();if(s.builtIn&&!autoOnly(s,saved(selId)))return;const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId);
   if(i>=0)next.scenes[i]=forSave(s);else next.scenes.push(forSave(s));await saveConfig(next,`Saved ${s.name}.`)}
 async function saveAsNew(name){const s=forSave(scene()),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
@@ -1466,7 +1505,12 @@ document.addEventListener("toggle",e=>{if(e.target.id==="xtras")xOpen=e.target.o
 
 document.addEventListener("change",ev=>{const t=ev.target;
   if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
-  else if(t.id==="fillSw"){const on=t.checked;edit(s=>{if(on)delete s.fill.off;else s.fill.off=true},on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":"Fill Empty Cells is off. Only pinned windows move.");requestAnimationFrame(()=>{const e=$("fillSw");if(e)e.focus()})}
+  else if(t.id==="fillSw"){const on=t.checked,id=selId;
+    // Off holds what the newest placement shows, so it waits for a preview still in flight (a drop just before it).
+    // The switch changes the scene it was pressed on, even when another scene is picked during the wait.
+    (on?Promise.resolve(null):newestPrev(id)).then(P=>{let kept=0;
+      edit(s=>{if(on){delete s.fill.off;delete s.fill.held}else{kept=holding(s,P);s.fill.off=true}},()=>on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":`Fill Empty Cells is off. ${kept?`${plural(kept,"window")} ${kept===1?"is":"are"} held where ${kept===1?"it is":"they are"}.`:"Windows stay where they are."}`,id);
+      requestAnimationFrame(()=>{const e=$("fillSw");if(e)e.focus()})})}
   else if(t.id==="lockSw"){toggleLock(selWin);requestAnimationFrame(()=>{const e=$("lockSw");if(e)e.focus()})}
   else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
   else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});

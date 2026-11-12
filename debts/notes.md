@@ -87,3 +87,17 @@ Low findings. Each becomes a debt only after a real incident.
 - `app.html` At 1024 the peek strip cuts a back app's name longer than about six letters ("Chro…"). (PR 13 design review round 2)
 - `app.html` Already on main: at 1024, on a selected narrow tile that is not stacked, the Stay Put icon covers the title's second line. (PR 13 design review round 2)
 - `app.html` The strip and the Named Badge both name the back app at 1440, against the one-label rule (`ux-label-once`). The owner ruled both in at 16:31 CST. An open option is to show only "+N" on the badge while the strip is visible. (PR 13 design review round 2)
+
+## From PR 14 code review round 2 (2026-11-12)
+
+- `app.html` (~1441-1445) Off then On within an in-flight preview runs On first, so the final state ignores the last click. A hung or failed preview leaves the switch inert or pinning from a stale answer. (code review round 2, PR 14, fill-keep)
+
+## From PR 14 hold review (2026-11-12)
+
+- `app.html` `newestPrev`: a failed board preview can leave stale previews, and the next fill-off may read them. (hold review, PR 14)
+- `app.html` At 1024, an old resize grip can cover a tile title's second line. (hold review, PR 14)
+- Test sweep: a stale test run folder in `%TEMP%` stops the sweep. Pointing TEMP at a fresh folder works around it. (hold review, PR 14)
+- Open owner question: a held window of an app with several open windows whose title changed finds no match, as a pin would not. (hold review, PR 14)
+- sameWin compares by id alone when a Windows That Stay Put entry has one; if that window closes and a same-app, same-title window opens, pinning the new one no longer clears the stale entry (app.html sameWin).
+- Held entries with no id (a reloaded saved scene) that share a title all resolve to the first window with that title; pinning it drops every such hold (app.html heldWin, heldOff).
+- The longer fill-off hint wraps at 1440 and 1024, and "Windows That Stay Put" breaks across two lines.
