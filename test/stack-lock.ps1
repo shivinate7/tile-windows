@@ -835,10 +835,12 @@ try {
 
   # Flash over the lock. A Put Behind drop flashes the front tile's peek strip for 1.5 s, and the strip (z5) lies over the
   # lock's top edge. The press follows the drop at once, inside the flash (SlDropNoSettle, no settle between). The strip is
-  # found by a bounded poll in the page; the press is then a real mouse press on the lock's top 2 px.
+  # found by a bounded poll in the page; the press is then a real mouse press on the lock's top 2 px, which the strip covers at rest
+  # (the strip ends 2 px into the lock). The drop slides the tile's top for .22 s, so the probe reads the lock once that slide has
+  # ended, where it rests: a point read mid-slide, or on the strip's lower edge, misses the lock.
   SlCase (SlSceneJson $pinsCQLock)
   SlDropNoSettle (SlAt (SlBox 1006) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.85)
-  $fl = SlJs "new Promise(res => { let n = 0; (function poll() { const k = els.get(1001) && els.get(1001).querySelector('.lk'); const p = document.querySelector('.peek.flash'); if (!p && ++n < 120) return requestAnimationFrame(poll); if (!k || !p) return res(null); const r = k.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + 2; const e = document.elementFromPoint(x, y); res({ x: x, y: y, covered: !!(e && e.closest('.peek.flash')) }); })(); })"
+  $fl = SlJs "new Promise(res => { let n = 0; (function poll() { const t = els.get(1001), k = t && t.querySelector('.lk'), p = document.querySelector('.peek.flash'); if (!p && ++n < 120) return requestAnimationFrame(poll); if (!k || !p) return res(null); Promise.all(t.getAnimations().map(a => a.finished.catch(() => null))).then(() => { const r = k.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + 1; const e = document.elementFromPoint(x, y); res({ x: x, y: y, covered: !!(e && e.closest('.peek.flash')) }); }); })(); })"
   Check 'lock top edge, flash: scope, the flash strip is drawn over the lock''s top edge' ([bool]($fl -and $fl.covered)) "flash probe: $(SlShort $fl)"
   $flPre = SlGet 'work[selId]'; $flPinPre = SlPin $flPre 'Refactor'
   Check 'lock top edge, flash: scope, the locked front window is stacked over the dropped one' ([bool]$flPinPre -and $flPinPre.lock -eq $true -and (SlHasBehind $flPinPre 'Quarterly')) "pin before the press: $(SlShort $flPinPre)"
