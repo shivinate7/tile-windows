@@ -36,12 +36,13 @@
 #                        Claude"), with a button "Undo" inside .dnote. Undo restores the scene from before the drop. The note
 #                        fades on its own (about 6 s); the harness reads it right after the release, never after a settle.
 #     .tile.stacked.peeked  a stacked tile carries the layer; .peek (on the stage, not in the tile) names the back app. The 3px
-#                        .stkedge is gone.
+#                        .stkedge is gone. A press on the .peek strip above the front tile is a press on the front tile.
 #     .tile .stk         the badge's visible content. At 1440 the back app's name ("Chrome", "Chrome +1" for two). On a narrow
 #                        tile (.tile.narrow, 1024) the back app's initial only. The count is in its title and aria-label.
 #     .hdl i             the eight handles of the selected tile, drawn outside it: corners i.c.tl, i.c.tr, i.c.bl, i.c.br;
 #                        edges i.e.n, i.e.s, i.e.w, i.e.ea (east is ea). A press at a handle's centre drags a resize in its
-#                        direction, snapped to whole cells, as the corner grip does. Hit areas (the mockup's .hit geometry):
+#                        direction, snapped to whole cells, as the corner grip does. A top or left handle moves only its own
+#                        edge, so a lock stops it short and the other dimension stays. Hit areas (the mockup's .hit geometry):
 #                        corners 10 by 10 and edge bands 7 px, outside the tile border. They never cover the lock, the tag
 #                        (the tile's b), the badge, the grip or Stay Put.
 #     keys               Ctrl+Shift+ArrowLeft and ArrowUp grow the left or top edge (the origin moves) with Shift+arrow's rules:
@@ -404,6 +405,13 @@ $pinsKeyLeft = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[
 $pinsKeyUp = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[6]}'
 $pinsKeySpan = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[0,1]}'
 $pinsKeyColSpan = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1,6]}'
+# Layered strip: Refactor in slot 0 with Draft release behind it, and Quarterly alone in slot 1 (so a press can select Refactor first).
+$pinsStrip = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"behind":[{"app":"claude","match":"Draft release"}]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}'
+# Top and left handles against a lock. Free: no lock, the control. Lock: Quarterly locked, the one case.
+$pinsTopFree = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[5,6,7]}'
+$pinsTopLock = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[5,6,7]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[2],"lock":true}'
+$pinsLeftFree = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[2,7]}'
+$pinsLeftLock = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[2,7]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[6],"lock":true}'
 
 # Engine: the open back window takes the front's cell as the new front, as a window behind a removed front takes its cell on the board.
 $eGone = SlPlace (SlSceneJson $pinsFrontGone)
@@ -769,6 +777,32 @@ try {
     Check "layered, ${vwTag}: the 3px stack edge is gone" ([bool](SlGet "document.querySelectorAll('.stkedge').length === 0")) 'a .stkedge is still drawn'
   }
 
+  # Layered strip: the strip above a stacked tile is the front tile's. A real press there selects the front tile, and a drag
+  # from it moves the front tile. Control: the same drag from the tile body moves it, as today.
+  SlCase (SlSceneJson $pinsStrip)
+  $stripBox = SlGet "(() => { const p = document.querySelector('.peek:not([hidden])'); if (!p) return null; const r = p.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  Check 'strip: the front tile has its strip drawn above it (scope)' ([bool]$stripBox -and [bool](SlGet "els.get(1001).classList.contains('peeked')")) "strip: $(SlFmt $stripBox)"
+  $selBefore = SlGet "els.get(1001).classList.contains('sel')"
+  Check 'strip: the front tile is not selected before the press (scope)' ($selBefore -eq $false) "selected before: $selBefore"
+  SlClick @([double]($stripBox.l + $stripBox.w * 0.5), [double]($stripBox.t + 5))
+  $selAfter = SlGet "els.get(1001).classList.contains('sel')"
+  Check 'strip: a real press in the strip selects the front tile' ($selAfter -eq $true) "selected after the press: $selAfter"
+
+  SlCase (SlSceneJson $pinsStrip)
+  $rbC = SlBox 1001; $qbC = SlBox 1006
+  $pitchC = ($qbC.l + $qbC.w / 2) - ($rbC.l + $rbC.w / 2)
+  SlDrag (SlAt $rbC 0.5 0.5) @([double]($rbC.l + $rbC.w / 2 + 3 * $pitchC), [double]($rbC.t + $rbC.h / 2))
+  $ctlS = SlGet 'work[selId]'; $ctlR = SlPin $ctlS 'Refactor'
+  Check 'control: a drag from the front tile body moves it to the cell under the pointer (as today)' ([bool]$ctlR -and (SlCells $ctlR) -eq '3') "claude pin: $(SlShort $ctlR)"
+
+  SlCase (SlSceneJson $pinsStrip)
+  $rbS = SlBox 1001; $qbS = SlBox 1006
+  $pitchS = ($qbS.l + $qbS.w / 2) - ($rbS.l + $rbS.w / 2)
+  $skS = SlGet "(() => { const p = document.querySelector('.peek:not([hidden])'); if (!p) return null; const r = p.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  SlDrag @([double]($skS.l + $skS.w * 0.5), [double]($skS.t + 5)) @([double]($rbS.l + $rbS.w / 2 + 3 * $pitchS), [double]($rbS.t + $rbS.h / 2))
+  $stS = SlGet 'work[selId]'; $stR = SlPin $stS 'Refactor'
+  Check 'strip: a real drag from the strip moves the front tile to the cell under the pointer' ([bool]$stR -and (SlCells $stR) -eq '3') "claude pin: $(SlShort $stR)"
+
   # Handles on every edge. Each case: the front tile is selected (scope), the handle is drawn (its own check), then the
   # drag resizes by whole cells. No press is made when the handle is missing.
   foreach ($vw in @(@(1440, 900), @(1024, 768))) {
@@ -817,6 +851,39 @@ try {
   $lsc = SlGet 'work[selId]'; $lr = SlPin $lsc 'Refactor'; $lq = SlPin $lsc 'Quarterly'
   Check 'guard: a locked tile stops the east handle, so the tile stays one cell' ([bool]$lr -and (SlCells $lr) -eq '0') "claude pin: $(SlShort $lr)"
   Check 'guard: a locked tile stops the east handle, and keeps its cell and lock' ([bool]$lq -and $lq.lock -eq $true -and (SlCells $lq) -eq '1') "chrome pin: $(SlShort $lq)"
+
+  # A top or left handle moves only its own edge. Toward a lock, the tile stops short of it and keeps the other dimension:
+  # the north handle keeps a 3-cell span's width, and the west handle keeps a 2-row tile's height. Control: no lock in the way.
+  # Negative drags are parenthesized: a bare -1 after a positional argument is read as the text "-1".
+  SlCase (SlSceneJson $pinsTopFree)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  Check 'edge: the north handle is drawn on the 3-cell span (control scope)' ([bool](SlHandle 'n')) 'no n handle'
+  [void](SlHandleDrag 'n' 0 (-1))
+  $tfp = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'control: the north handle grows the 3-cell span up when no lock is in the way' ([bool]$tfp -and (SlCells $tfp) -eq '0,1,2,5,6,7') "claude pin: $(SlShort $tfp)"
+
+  SlCase (SlSceneJson $pinsTopLock)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  Check 'edge: the north handle is drawn on the 3-cell span with a lock above its third cell' ([bool](SlHandle 'n')) 'no n handle'
+  [void](SlHandleDrag 'n' 0 (-1))
+  $tpS = SlGet 'work[selId]'; $tpR = SlPin $tpS 'Refactor'; $tpQ = SlPin $tpS 'Quarterly'
+  Check 'edge: a north handle drag toward the lock stops short of it, keeping the span''s width (cells 5,6,7)' ([bool]$tpR -and (SlCells $tpR) -eq '5,6,7') "claude pin: $(SlShort $tpR)"
+  Check 'guard: a north handle drag toward the lock leaves the locked tile in its cell' ([bool]$tpQ -and $tpQ.lock -eq $true -and (SlCells $tpQ) -eq '2') "locked pin: $(SlShort $tpQ)"
+
+  SlCase (SlSceneJson $pinsLeftFree)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  Check 'edge: the west handle is drawn on the 2-row tile (control scope)' ([bool](SlHandle 'w')) 'no w handle'
+  [void](SlHandleDrag 'w' (-1) 0)
+  $lfp = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'control: the west handle grows the 2-row tile left when no lock is in the way' ([bool]$lfp -and (SlCells $lfp) -eq '1,2,6,7') "claude pin: $(SlShort $lfp)"
+
+  SlCase (SlSceneJson $pinsLeftLock)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  Check 'edge: the west handle is drawn on the 2-row tile with a lock beside its lower row' ([bool](SlHandle 'w')) 'no w handle'
+  [void](SlHandleDrag 'w' (-1) 0)
+  $lpS = SlGet 'work[selId]'; $lpR = SlPin $lpS 'Refactor'; $lpQ = SlPin $lpS 'Quarterly'
+  Check 'edge: a west handle drag toward the lock stops short of it, keeping the tile''s height (cells 2,7)' ([bool]$lpR -and (SlCells $lpR) -eq '2,7') "claude pin: $(SlShort $lpR)"
+  Check 'guard: a west handle drag toward the lock leaves the locked tile in its cell' ([bool]$lpQ -and $lpQ.lock -eq $true -and (SlCells $lpQ) -eq '6') "locked pin: $(SlShort $lpQ)"
 
   # Ctrl+Shift+arrows (board-feedback-notes item 12): the Shift+arrow rules, on the top and left edges. Shift+arrows are the
   # green controls beside them, so a key that never reaches the page cannot pass.
