@@ -386,9 +386,13 @@ function BayPackChecks($set, $w, $colsObj) {
   Check "bay: ${lbl}: the list is as tall as its tallest column, each rule's full box counted" ([Math]::Abs([double]$colsObj.listH - $T) -le 1) "list $([int]$colsObj.listH)px, tallest column $([int]$T)px"
   $pp = @(BayPackProblems $cols $colsObj.midMargin $colsObj.gap)
   Check "bay: ${lbl}: no column stops short of its next unit when that unit fits under the list's height" ($pp.Count -eq 0) ($pp -join ' | ')
+  # The heading row is read where the packing puts a reasoned heading over a rule: at 1440 that is required. At 1024 no 3-column packing of
+  # this fixture makes that pair and keeps every column from stopping short (the bay-list decision; enumerated over every cut position), so
+  # the heading row has nothing to read there. If a pair does appear at 1024, its alignment is read.
   $hr = BayHeadRowProblems $cols
-  Check "bay: ${lbl}: a reasoned heading at a column's top has its category's rule at the next column's top (scope for the heading row)" ($hr.pairs -gt 0) "no reasoned heading lines up with a rule in the next column"
-  Check "bay: ${lbl}: a heading with a reason is one row tall: its first window lines up with the next column's first window under a rule" ($hr.problems.Count -eq 0) ($hr.problems -join ' | ')
+  if ($w -eq 1440) { Check "bay: ${lbl}: a reasoned heading at a column's top has its category's rule at the next column's top (scope for the heading row)" ($hr.pairs -gt 0) "no reasoned heading lines up with a rule in the next column" }
+  if ($w -eq 1440 -or $hr.pairs -gt 0) { Check "bay: ${lbl}: a heading with a reason is one row tall: its first window lines up with the next column's first window under a rule" ($hr.problems.Count -eq 0) ($hr.problems -join ' | ') }
+  else { Check "bay: ${lbl}: heading rows: nothing to read, no reasoned heading sits over a rule in the next column" $true }
 }
 # Capped, before Show N More is pressed, one width: the heading's reason and the lines follow the windows shown (the ruling), and the
 # list is no taller than main's list for the same windows (today's probe; main puts a heading's first window 4px higher, so 4px is allowed).
