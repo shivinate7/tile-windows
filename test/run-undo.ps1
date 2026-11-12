@@ -53,9 +53,9 @@ Add-Member -InputObject $icon -MemberType ScriptMethod -Name ShowBalloonTip -Val
 $tile = {
   param([string]$Scene = '', [string]$Place = '', [string]$PlaceFile = '', [switch]$Json, [switch]$DryRun)
   if ($Place -or $PlaceFile) {
-    $json = if ($PlaceFile) { [IO.File]::ReadAllText($PlaceFile) } else { $Place }
-    [void]$script:rec.places.Add([pscustomobject]@{ json = $json; dryRun = [bool]$DryRun })
-    return (ConvertTo-Json -InputObject @(@(ConvertFrom-Json $json) | ForEach-Object { [pscustomobject]@{ app = $_.app; title = $_.title; ok = $true; note = 'moved' } }) -Compress)
+    $placeSpec = if ($PlaceFile) { [IO.File]::ReadAllText($PlaceFile) } else { $Place }
+    [void]$script:rec.places.Add([pscustomobject]@{ json = $placeSpec; dryRun = [bool]$DryRun })
+    return (ConvertTo-Json -InputObject @(@(ConvertFrom-Json $placeSpec) | ForEach-Object { [pscustomobject]@{ app = $_.app; title = $_.title; ok = $true; note = 'moved' } }) -Compress)
   }
   if ($script:rec.tileFail) { throw 'tile failed' }
   ConvertTo-Json -Compress -Depth 6 ([pscustomobject]@{ placed = @($script:rec.placed) })
@@ -281,7 +281,7 @@ Scope 'a full run: undo puts all ten windows back' 'Invoke-RunUndo'
 if ($script:scopeOk) {
   $r10 = UndoNow $rid10 $w10 $tU
   $s10 = @(Sent)
-  Check 'a full run: undo sends all ten windows back to their from rects' ((@($s10).Count -eq 10) -and (@($s10 | ? { $_.id -eq 1001 -and $_.x -eq 100 }).Count -eq 1)) "sent $(@($s10).Count)"
+  Check 'a full run: undo sends all ten windows back to their from rects' ((@($s10).Count -eq 10) -and (@($s10 | ? { $_.id -eq 1001 -and $_.x -eq 20 -and $_.y -eq 20 }).Count -eq 1)) "sent $(@($s10).Count)"
   Check 'a full run: the follow-up says Put back 10 windows.' ([bool]($r10 -and $r10.text -ceq 'Put back 10 windows.')) "text '$($r10.text)'"
 }
 
