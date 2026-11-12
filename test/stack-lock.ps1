@@ -52,17 +52,23 @@
 #                        covered pins move to free cells with their stacks, else to Windows That Stay Put; a locked tile stops
 #                        it ("A locked tile is in the way"). Ctrl+Shift+ArrowRight and ArrowDown shrink that edge.
 #     input[role=switch] inside a label whose text is "Fill Empty Cells", in the Monitor section of the monitor that fills.
-#                        Checked is on. Turning it off pins each window the fill or a zone placed, in its current cell
-#                        (decisions/fill-controls.md, owner ruling 2026-11-12 09:57 CST); a freed cell then stays empty.
-#                        A locked pin for a closed window (no open window) keeps its cell and its lock; the window the fill had
-#                        on that cell goes to Windows That Stay Put, unpinned. The status line (#msg) names how many it pinned.
-#                        The pins come from the newest placement, even while a drop's answer is still pending.
+#                        Checked is on. Turning it off holds each window the fill or a zone placed where it is, in the scene's
+#                        held layout (decisions/fill-controls.md, owner ruling 2026-11-12 12:05 CST). It adds no pin, and no pin
+#                        mark shows. A freed cell stays empty. A locked pin for a closed window (no open window) keeps its cell
+#                        and its lock; nothing is held over a locked cell, so the window the fill had on that cell goes to
+#                        Windows That Stay Put, unpinned. The status line (#msg) names how many it holds: "N windows are held
+#                        where they are". The holds come from the newest placement, even while a drop's answer is still pending.
+#     scene fill.held    The held layout: an array with one entry per window that fill-off holds where it is. It is apart from
+#                        the pins, and empty or absent when nothing is held. Turning fill back on clears it. A window taken off
+#                        the board leaves it, so its cell stays empty. Clear Board holds nothing. While fill is off, tile.ps1
+#                        -Scene (and -DryRun) places each held window in its cell. The entry shape is the builder's: the cases
+#                        read only the count, and a dry run of the page's own scene.
 #     #bgrps [data-bay]  the chips of Windows That Stay Put. A chip dragged onto a tile's lower band puts that window behind it,
 #                        and the window leaves the list at once: the board, the Behind This Window list and the badge agree with
 #                        no other action (a passive wait for the engine's answer, never a settle).
-#     button "Clear Board" on the board's action bar. It sets fill.off; the status line (#msg) reads "Cleared the board. N windows
-#                        stay put, and Fill Empty Cells is off."; each window the fill had placed is in prevs[selId].left, and
-#                        Windows That Stay Put shows "Fill is off" for it.
+#     button "Clear Board" on the board's action bar. It sets fill.off and holds nothing (fill.held stays empty); the status line
+#                        (#msg) reads "Cleared the board. N windows stay put, and Fill Empty Cells is off."; each window the fill
+#                        had placed is in prevs[selId].left, and Windows That Stay Put shows "Fill is off" for it.
 #                        With fill off, every open window that is not pinned has the reason "fill is off" (engine left[]) and reads
 #                        "Fill is off" in its list reason line, whatever its app: an app with a pinned window included.
 #                        A tab click on another scene while the switch waits for its scene's preview leaves that scene as it was:
@@ -1143,6 +1149,9 @@ try {
   Check 'clear board: it turns Fill Empty Cells off in the scene' ($cbScene -eq $true) "fill.off: $cbScene"
   # Clear Board is unchanged by the switch's pins (decisions/fill-controls.md): it adds no pin, so the windows it clears stay unpinned.
   Check 'clear board: it adds no pins to the scene' ($cbPinsNow -eq $cbPinsWas) "pins before: $cbPinsWas, after: $cbPinsNow"
+  # Clear Board holds nothing (decisions/fill-controls.md): no held layout, so every cleared window is listed, not kept in its cell.
+  $cbHeld = SlList 'work[selId].fill.held'
+  Check 'clear board: it holds no windows (fill.held stays empty)' (@($cbHeld).Count -eq 0) "fill.held: $(SlShort $cbHeld)"
   Check 'clear board: only the pinned windows stay on the board' ($cbAfter -eq '1001,1006') "placed: $cbAfter"
   # The windows the fill placed before the press, minus the two pins (1001 Refactor, 1006 Quarterly). With '*' the fill skips
   # apps that have a pin (claude, chrome), so those windows were never on the board and are not in this set.
@@ -1155,43 +1164,46 @@ try {
   $cbOn = "$(SlJs $placedIds)"
   Check 'clear board: turning Fill Empty Cells back on refills the board to the same windows' ($cbOff -eq $false -and $cbWas -ne '' -and $cbOn -eq $cbWas) "switch was: $cbOff; placed before: $cbWas; after: $cbOn"
 
-  # Fill Empty Cells off writes pins (decisions/fill-controls.md, owner ruling 2026-11-12 09:57 CST). Turning the switch off
-  # leaves every window the fill or a zone placed in its current cell, and each one becomes a pin of the scene.
-  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ '["*"]' ',"zones":[{"mon":"wide","slots":[5,6],"app":"WindowsTerminal"}]')
+  # Fill Empty Cells off holds the windows the fill or a zone placed, each where it is (decisions/fill-controls.md, owner ruling
+  # 2026-11-12 12:05 CST). The scene keeps them in fill.held, apart from its pins: the switch adds no pin, no pin mark shows, and
+  # every held window keeps its cell on the board and in a dry run. The owner's pins and locks are not touched.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQLock '["*"]' ',"zones":[{"mon":"wide","slots":[5,6],"app":"WindowsTerminal"}]')
+  $pinsWas = SlList 'work[selId].pins'
   $offBefore = SlList "prevs[selId].placed.filter(p => p.pin < 0).map(p => ({ id: p.id, app: p.app, slots: p.slots, zone: p.zone }))"
   Check 'switch off, scope: before the switch, the fill and a zone have placed windows' ($offBefore.Count -gt 0 -and @($offBefore | ? { $_.zone -ge 0 }).Count -ge 1) "placed by fill or zone: $(SlShort $offBefore)"
   [void](SlSwitch -Click); SlSettle
   $offAfter = SlList "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, slots: p.slots }))"
   $offPins = SlList 'work[selId].pins'
+  $held = SlList 'work[selId].fill.held'
   $moved = @()
   foreach ($b in $offBefore) {
     $a = @($offAfter | ? { $_.id -eq $b.id })[0]
-    if (-not $a -or $a.pin -lt 0 -or ((@($a.slots) | Sort-Object) -join ',') -ne ((@($b.slots) | Sort-Object) -join ',')) { $moved += "$($b.id)" }
+    if (-not $a -or ((@($a.slots) | Sort-Object) -join ',') -ne ((@($b.slots) | Sort-Object) -join ',')) { $moved += "$($b.id)" }
   }
-  Check 'switch off: every window the fill or a zone placed stays in its cell' ($moved.Count -eq 0 -and $offBefore.Count -gt 0) "not kept in place: $($moved -join ','); placed after: $(SlShort $offAfter)"
-  $noPin = @()
-  foreach ($b in $offBefore) {
-    $cells = (@($b.slots) | % { [int]$_ - 1 } | Sort-Object) -join ','
-    $hit = @($offPins | ? { "$($_.app)" -eq "$($b.app)" -and ((@($_.slots) | Sort-Object) -join ',') -eq $cells })
-    if ($hit.Count -eq 0) { $noPin += "$($b.id)" }
-  }
-  Check 'switch off: each window the fill or a zone placed becomes a pin of the scene' ($noPin.Count -eq 0 -and $offBefore.Count -gt 0) "no pin for: $($noPin -join ','); pins: $(SlShort $offPins)"
+  Check 'switch off: every window the fill or a zone placed keeps its cell' ($moved.Count -eq 0 -and $offBefore.Count -gt 0) "not kept in place: $($moved -join ','); placed after: $(SlShort $offAfter)"
+  Check 'switch off: fill.held has one entry per window the fill or a zone placed' (@($held).Count -eq $offBefore.Count -and $offBefore.Count -gt 0) "fill.held: $(SlShort $held); placed: $(SlShort $offBefore)"
+  Check 'switch off: the switch adds no pin, so the scene''s pins are as they were' ((ConvertTo-Json -Depth 12 -Compress @($offPins)) -ceq (ConvertTo-Json -Depth 12 -Compress @($pinsWas))) "pins before: $(SlShort $pinsWas); after: $(SlShort $offPins)"
+  $offIdsJs = '[' + ((@($offBefore) | % { [int]$_.id }) -join ',') + ']'
+  $pmShown = SlList "prevs[selId].placed.filter(p => $offIdsJs.includes(p.id)).map(p => p.id).filter(id => { const t = els.get(id); return !!t && (t.classList.contains('pin') || !!t.querySelector('.pinmark')); })"
+  Check 'switch off: no pin mark shows on a held window' ($offBefore.Count -gt 0 -and @($pmShown).Count -eq 0) "pin mark on: $(SlShort $pmShown)"
 
-  # With the switch off, a freed cell stays empty. Sending one pinned window to Windows That Stay Put leaves its cell empty,
-  # and a dry-run Apply (tile.ps1 -DryRun) places the same windows in the same cells as the board shows.
+  # A held window's cell stays empty when the window is sent to Windows That Stay Put, and a dry-run Apply places the same windows
+  # in the same cells as the board shows (tile.ps1 -DryRun, through SlDry).
   $sendWin = @($offBefore | ? { $_.zone -lt 0 })[0]
   $sendId = if ($sendWin) { [int]$sendWin.id } else { 0 }
   $freedSlots = if ($sendWin) { @($sendWin.slots) } else { @() }
-  # One named cause when the switch did not pin: the steps below need that pin, so they wait on this check.
-  $sendPinned = @($offAfter | ? { $_.id -eq $sendId -and $_.pin -ge 0 }).Count -gt 0
-  Check 'switch off, precondition: a window the fill placed is now a pin, to send to Windows That Stay Put' $sendPinned "no pin from the fill after the switch; placed windows: $(SlShort $offAfter)"
-  if ($sendPinned) {
+  # One named cause when the switch did not hold it: the steps below need that window held in its cell, so they wait on this check.
+  $sendHeld = @($offAfter | ? { $_.id -eq $sendId -and $_.pin -lt 0 -and ((@($_.slots) | Sort-Object) -join ',') -eq ((@($freedSlots) | Sort-Object) -join ',') }).Count -gt 0
+  Check 'switch off, precondition: a window the fill placed is held in its cell, unpinned, to send to Windows That Stay Put' $sendHeld "no held window in its cell; placed windows: $(SlShort $offAfter)"
+  if ($sendHeld) {
   if (SlBox $sendId) { SlKey $sendId 'k' 75 }
   $bayAfterSend = SlBayIds
   Check 'send to bay: the window is listed in Windows That Stay Put' ($sendId -gt 0 -and ($bayAfterSend -contains $sendId)) "window: $sendId; bay ids: $($bayAfterSend -join ',')"
   $sentPlaced = SlList "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, zone: p.zone, slots: p.slots }))"
   $intoFreed = @($sentPlaced | ? { $_.id -ne $sendId -and @($_.slots | ? { $freedSlots -contains $_ }).Count -gt 0 })
   Check 'send to bay: its cell stays empty, since fill is off' ($sendId -gt 0 -and $freedSlots.Count -gt 0 -and $intoFreed.Count -eq 0) "freed cell $($freedSlots -join ','); taken by: $(SlShort $intoFreed)"
+  $heldNow = SlList 'work[selId].fill.held'
+  Check 'send to bay: the window leaves fill.held' (@($heldNow).Count -eq (@($held).Count - 1)) "fill.held before: $(@($held).Count); after: $(@($heldNow).Count)"
   $sceneNow = SlGet 'work[selId]'
   $dryNow = if ($sceneNow) { SlDry (ConvertTo-Json -Depth 12 -Compress $sceneNow) } else { $null }
   $pageMap = SlCellMap $sentPlaced
@@ -1200,17 +1212,27 @@ try {
   foreach ($k in (@($pageMap.Keys) + @($dryMap.Keys) | Select-Object -Unique)) { if ($pageMap[$k] -ne $dryMap[$k]) { $diffs += $k } }
   Check 'send to bay: a dry-run Apply places the same windows in the same cells' ($pageMap.Count -gt 0 -and $diffs.Count -eq 0) "differ: $($diffs -join ','); board: $($pageMap.Count) windows, dry run: $($dryMap.Count)"
 
-  # Turning Fill Empty Cells back on fills only the empty cells: the pins the switch added stay, and the freed cell is filled.
-  $pinsBeforeOn = SlList 'work[selId].pins'
+  # A window the scene does not hold (one opened after the switch) goes to Windows That Stay Put, and takes no freed cell. The
+  # fixture copy below adds one open window; the dry run is the page's own scene, so the held layout is whatever the page wrote.
+  $fxNew = Join-Path $run 'fixture-new.json'
+  $fxDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+  $fxDoc.windows = @($fxDoc.windows) + [pscustomobject]@{ id = 1020; app = 'claude'; title = 'Opened after the switch'; x = 3000; y = 100; w = 800; h = 600 }
+  [IO.File]::WriteAllText($fxNew, (ConvertTo-Json -Depth 10 -Compress $fxDoc), $utf8)
+  $newRes = (& $tile -Scene (ConvertTo-Json -Depth 12 -Compress $sceneNow) -From $fxNew -DryRun -Json 3>$null) -join '' | ConvertFrom-Json
+  $newIn = @(@($newRes.placed) + @($newRes.left) | ? { $_.id -eq 1020 }).Count
+  Check 'new window, scope: the dry run answers for the open window 1020 once, and places the held windows' ($newIn -eq 1 -and @($newRes.placed | ? { $_.id -ne 1020 }).Count -gt 0) "answers for 1020: $newIn; placed: $(SlShort @($newRes.placed))"
+  $newBay = @($newRes.left | ? { $_.id -eq 1020 -and $_.why -eq 'fill is off' }).Count
+  $newTakes = @($newRes.placed | ? { $_.id -eq 1020 -or @($_.slots | ? { $freedSlots -contains $_ }).Count -gt 0 }).Count
+  Check 'new window: it goes to Windows That Stay Put with "fill is off", and takes no freed cell' ($newBay -eq 1 -and $newTakes -eq 0) "left as fill is off: $newBay; placed in the freed cell or as 1020: $newTakes"
+
+  # Turning Fill Empty Cells back on clears the held layout and fills the empty cells as usual. The owner's pins and locks stay as they were.
+  Check 'fill on, scope: the scene holds windows in fill.held before the switch is turned on' (@($heldNow).Count -gt 0) "fill.held: $(SlShort $heldNow)"
   [void](SlSwitch -Click); SlSettle
   $onPins = SlList 'work[selId].pins'
+  $onHeld = SlList 'work[selId].fill.held'
   $onPlaced = SlList "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, zone: p.zone, slots: p.slots }))"
-  $lostPins = @()
-  foreach ($p in $pinsBeforeOn) {
-    $cells = (@($p.slots) | Sort-Object) -join ','
-    if (@($onPins | ? { "$($_.app)" -eq "$($p.app)" -and ((@($_.slots) | Sort-Object) -join ',') -eq $cells }).Count -eq 0) { $lostPins += "$($p.app) $cells" }
-  }
-  Check 'fill on: the pins the switch added stay' ($pinsBeforeOn.Count -gt 0 -and $lostPins.Count -eq 0) "pins lost: $($lostPins -join '; ')"
+  Check 'fill on: the owner''s pins and locks are as they were before the switch' ((ConvertTo-Json -Depth 12 -Compress @($onPins)) -ceq (ConvertTo-Json -Depth 12 -Compress @($pinsWas))) "pins before: $(SlShort $pinsWas); after: $(SlShort $onPins)"
+  Check 'fill on: it clears fill.held' (@($onHeld).Count -eq 0) "fill.held after: $(SlShort $onHeld)"
   $refilled = @($onPlaced | ? { $_.pin -lt 0 -and $_.zone -lt 0 -and $_.id -ne $sendId -and @($_.slots | ? { $freedSlots -contains $_ }).Count -gt 0 })
   Check 'fill on: the freed cell is filled by a window, not left empty' ($freedSlots.Count -gt 0 -and $refilled.Count -ge 1) "freed cell $($freedSlots -join ','); placed: $(SlShort $onPlaced)"
   Check 'fill on: the window sent to Windows That Stay Put stays there' ($sendId -gt 0 -and ((SlBayIds) -contains $sendId)) "window: $sendId"
@@ -1229,19 +1251,22 @@ try {
   $lkOver = @($lkPins | ? { "$($_.app)" -eq "$($lkWin.app)" -and (SlCells $_) -eq '0' })
   $lkBay = SlBayIds
   Check 'closed locked pin: the window the fill had on that cell goes to Windows That Stay Put, unpinned' ([bool]($lkWin -and $lkOver.Count -eq 0 -and ($lkBay -contains [int]$lkWin.id))) "pins on slot 0: $(SlShort $lkOver); bay ids: $($lkBay -join ',')"
+  # Nothing is held over a locked cell: no window is placed on that cell as a held one (no unpinned placement on slot 1).
+  $lkCell = SlList "prevs[selId].placed.filter(p => p.slots.includes(1)).map(p => ({ id: p.id, pin: p.pin }))"
+  Check 'closed locked pin: no window is held over the locked cell' (@($lkCell | ? { $_.pin -lt 0 }).Count -eq 0) "placed on the locked cell: $(SlShort $lkCell)"
 
-  # The status line names how many windows the switch pinned. The count is the windows the fill or a zone had placed before
-  # the switch (each is pinned in its cell), so the scope is read first and the line after the switch.
+  # The status line names how many windows the switch holds. The count is the windows the fill or a zone had placed before
+  # the switch (each is held in its cell), so the scope is read first and the line after the switch.
   SlCase (SlSceneJson $pinsCQ '["*"]')
   $kpIds = SlList "prevs[selId].placed.filter(p => p.pin < 0 && !p.behind).map(p => p.id)"
   $kpN = @($kpIds).Count
-  Check 'switch off status, scope: the fill has placed at least two windows the switch pins' ($kpN -ge 2) "fill-placed windows: $kpN"
+  Check 'switch off status, scope: the fill has placed at least two windows the switch holds' ($kpN -ge 2) "fill-placed windows: $kpN"
   [void](SlSwitch -Click); SlSettle
   $kpMsg = SlJs "document.getElementById('msg').textContent"
-  Check 'switch off status: the status line gives the count of windows pinned where they are' ([bool]("$kpMsg" -like "*$kpN windows are pinned where they are.*")) "status: $kpMsg"
+  Check 'switch off status: the status line gives the count of windows held where they are' ([bool]("$kpMsg" -like "*$kpN windows are held where they are.*")) "status: $kpMsg"
 
-  # A drop moves a window, and the switch is pressed before the drop's engine answer comes back. The switch must pin the window
-  # where it was dropped. The answer it reads is still the one from before the drop, so the old code pins the window back in
+  # A drop moves a window, and the switch is pressed before the drop's engine answer comes back. The switch must keep the window
+  # where it was dropped (the holds come from the newest placement). The answer it reads is still the one from before the drop, so the old code pins the window back in
   # its old cell. The scope says the answer is still pending (the switch is pressed while it is in flight).
   SlCase (SlSceneJson '[]' '["claude"]')
   $dpFrom = SlAt (SlBox 1002) 0.5 0.5
@@ -1254,13 +1279,16 @@ try {
   [void](SlSwitch -Click); SlSettle
   $dpAfter = SlPin (SlGet 'work[selId]') 'Pin parser'
   Check 'switch during a drop: Pin parser stays pinned where it was dropped, not in its old cell' ([bool]($dpAfter -and (SlCells $dpAfter) -eq '5')) "pin: $(SlShort $dpAfter)"
-  # Fill Empty Cells off, on the board. The switch pins the windows the fill placed, so their apps now have pinned windows. Each open
-  # window still unpinned in Windows That Stay Put must read "Fill is off" in its reason line, not "Not in this scene". The control is
-  # the same board before the switch: no window reads "Fill is off" there.
-  SlViewport 1440 900; SlCase (SlSceneJson '[]' '["*"]')
+  # Fill Empty Cells off, on the board. The owner's pins (Refactor in claude, Quarterly in chrome) give their apps a pinned window. Each
+  # open window still unpinned in Windows That Stay Put must read "Fill is off" in its reason line, not "Not in this scene". The switch
+  # holds the windows the fill placed and adds no pin. The control is the same board before the switch: no window reads "Fill is off".
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ '["*"]')
   $n1Before = SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => b.getAttribute('aria-label'))"
   Check 'control, fill on, board: no window in Windows That Stay Put reads "Fill is off"' (@($n1Before | ? { "$_" -like '*Fill is off*' }).Count -eq 0) "labels: $(SlShort $n1Before)"
+  $n1PinsWas = SlList 'work[selId].pins'
   [void](SlSwitch -Click); SlSettle
+  $n1PinsNow = SlList 'work[selId].pins'
+  Check 'fill off, board: the switch adds no pin' ((ConvertTo-Json -Depth 12 -Compress @($n1PinsNow)) -ceq (ConvertTo-Json -Depth 12 -Compress @($n1PinsWas))) "pins before: $(SlShort $n1PinsWas); after: $(SlShort $n1PinsNow)"
   $n1Scope = SlList "(() => { const pinned = new Set(work[selId].pins.map(p => p.app)); return [...document.querySelectorAll('#bgrps [data-bay]')].map(b => snap.windows.find(w => w.id === +b.dataset.bay)).filter(w => w && !w.min && pinned.has(w.app)).map(w => w.id); })()"
   Check 'fill off, board, scope: an unpinned window is in Windows That Stay Put, and its app has a pinned window' ($n1Scope.Count -ge 1) "windows: $($n1Scope -join ',')"
   $n1Chips = SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => ({ id: +b.dataset.bay, min: !!(snap.windows.find(w => w.id === +b.dataset.bay) || {}).min, reason: (b.querySelector('small') || { textContent: null }).textContent }))"
