@@ -285,7 +285,17 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # Zones: each takes its cells (pins on every monitor already won theirs) and fills them with its app's
   # or category's windows in fill order, row by row. A category zone leaves out skipped apps, as the fill
   # does for '*'. Windows that do not fit go to the bay.
-  if ($phase -eq 'zones') {
+  # Fill Empty Cells off (scene fill.off): only pins are placed. The zone and fill steps place nothing; the windows they would
+  # have placed go to the list (left) as 'fill is off', so the board shows why they stay put.
+  $fillOff = $scene -and $script:sceneFillOff
+  if ($phase -eq 'zones' -and $fillOff) {
+    foreach ($z in $zones) {
+      foreach ($it in @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.Title -ne 'Program Manager' -and (& $up) -and $(if ($z.App) { $_.App -eq $z.App } else { $a = $_.App; -not ($script:zSkip | ? { $a -like $_ }) -and $(if ($script:cats -and $script:cats.$a) { [string]$script:cats.$a } else { 'other' }) -eq $z.Cat }) })) {
+        $script:claimed["$($it.H)"] = 1; $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = 'fill is off' }
+      }
+    }
+  }
+  if ($phase -eq 'zones' -and -not $fillOff) {
     $zkeys = KeysFor { FillIdx $_.App $script:zFill }
     foreach ($z in $zones) {
       $cand = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.Title -ne 'Program Manager' -and (& $up) -and $(if ($z.App) { $_.App -eq $z.App } else { $a = $_.App; -not ($script:zSkip | ? { $a -like $_ }) -and $(if ($script:cats -and $script:cats.$a) { [string]$script:cats.$a } else { 'other' }) -eq $z.Cat }) } | Sort-Object $zkeys)
@@ -297,7 +307,10 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   }
 
   # Free windows fill the open slots row by row.
-  if ($phase -in 'all', 'fill') {
+  if ($phase -eq 'fill' -and $fillOff) {
+    $script:left += @($free | ? { -not $script:claimed.ContainsKey("$($_.H)") } | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = 'fill is off' } })
+  }
+  if ($phase -in 'all', 'fill' -and -not $fillOff) {
     $free = @($free | ? { -not $script:claimed.ContainsKey("$($_.H)") } | Sort-Object (KeysFor 'Rank'))
     $open = @(0..($Cols * $Rows - 1) | ? { -not $used.ContainsKey($_) })
     $n = [Math]::Min($free.Count, $open.Count)
@@ -320,6 +333,7 @@ if (-not $sc) {
 # A scene: pins on every monitor, then zones, then the fill; each phase runs portrait, laptop, ultrawide.
 $roles = Roles; $out = @(); $passes = @()
 # Zones on every monitor rank by the scene's fill list and leave out its skipped apps.
+$sceneFillOff = [bool]$sc.fill.off
 $zFill = @($sc.fill.apps); $zSkip = @($Skip + @($sc.fill.skip) | ? { $_ })
 # Windows that stay put never move. Held by window handle and app (the page sends a handle only within
 # its session; saved scenes drop it), else by app and exact title, one window per entry.

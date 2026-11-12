@@ -73,3 +73,17 @@ Low findings. Each becomes a debt only after a real incident.
 - `app.html` On tiles under 84px the Stay Put icon is 18px, under the 24px touch size, and its arrow-into-tray glyph reads as a download (design review stack-and-lock round 3).
 - `app.html` The pin mark is hidden on a narrow selected stacked tile (design review stack-and-lock round 3).
 - `app.html` The +N badge loses its chip outline in forced colours (design review stack-and-lock round 3).
+
+## From PR 13 code review round 3 (2026-11-11)
+
+- `test/stack-lock.ps1` The flash-strip check reads `elementFromPoint`, so it pins the hit-test mechanism, not the geometry. A CSS-only fix could turn it red while the behaviour is right. A geometric overlap check would fix it. (code review round 3, PR 13, board-feedback)
+- `app.html` `ctlUnderPeek` tests the button's own rect, not its 3px `::after` reach. During the 1.5s flash, the margin above the lock does not route the press. (code review round 3, PR 13, board-feedback)
+- `test/run.ps1` lines 57-60 (`-Place -DryRun matches all windows`) read the live desktop twice. Any window that opens, closes or changes its title between the reads fails it. Seen once, 22 of 23. Promote it to a debt on a second sighting. (code review round 3, PR 13, board-feedback)
+
+## From PR 13 design review round 2 (2026-11-11)
+
+- `app.html` At 1024, on a selected narrow stacked tile, the badge (15.8px), Stay Put (14px) and the grip (14px) sit side by side, under the 24px target size (accessibility rule `ux-a11y-floor`). It is accepted, because the inspector has the same actions at full size (Keep Where It Is, Bring to Front, the Width and Height steppers). (PR 13 design review round 2)
+- `app.html` At 1440 a selected stacked tile under 101px tall shows one title line ("Refactor…"), where the mockup shows two. The inspector shows the full title. (PR 13 design review round 2)
+- `app.html` At 1024 the peek strip cuts a back app's name longer than about six letters ("Chro…"). (PR 13 design review round 2)
+- `app.html` Already on main: at 1024, on a selected narrow tile that is not stacked, the Stay Put icon covers the title's second line. (PR 13 design review round 2)
+- `app.html` The strip and the Named Badge both name the back app at 1440, against the one-label rule (`ux-label-once`). The owner ruled both in at 16:31 CST. An open option is to show only "+N" on the badge while the strip is visible. (PR 13 design review round 2)

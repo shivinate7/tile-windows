@@ -285,6 +285,14 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $cases = @(ConvertFrom-Json (Get-Content -Raw (Join-Path $PSScriptRoot 'teams-call.json')) | % { $_ })
   $bad = @($cases | ? { (Test-TeamsCall $_.mic $_.wins) -ne $_.call } | % { $_.case })
   Check 'tray: Teams call detection, every fixture case' ($cases.Count -eq 11 -and $bad.Count -eq 0) ($bad -join '; ')
+  # Fill Empty Cells off (scene fill.off) places nothing, so its apps are not scene apps. A pinned app still is.
+  $foOn = ConvertFrom-Json '{"pins":[],"fill":{"apps":["*"],"skip":[]}}'
+  $foEmpty = ConvertFrom-Json '{"pins":[],"fill":{"apps":["*"],"skip":[],"off":true}}'
+  $foPinned = ConvertFrom-Json '{"pins":[{"app":"claude","match":"Refactor"}],"fill":{"apps":["*"],"skip":[],"off":true}}'
+  Check 'control: with fill on, a fill app is a scene app' ([bool](Test-SceneApp $foOn 'chrome')) 'a fill app is not a scene app'
+  Check 'tray: with fill off and no pins, a fill app is not a scene app' (-not (Test-SceneApp $foEmpty 'chrome')) 'a fill app counts as a scene app'
+  Check 'tray: with fill off beside a pin, a fill app is not a scene app' (-not (Test-SceneApp $foPinned 'chrome')) 'a fill app counts as a scene app'
+  Check 'tray: with fill off, a pinned app is still a scene app' ([bool](Test-SceneApp $foPinned 'claude')) 'a pinned app is not a scene app'
   $cc = ConvertFrom-Json '{"scenes":[{"id":"work","trigger":{"type":"manual"}},{"id":"meet","trigger":{"type":"call","back":true}}]}'
   $s1 = Step-CallTrigger $false $true $cc 'work' ''; $s2 = Step-CallTrigger $true $true $cc 'meet' $s1.back; $s3 = Step-CallTrigger $true $false $cc 'meet' $s2.back
   $cc.scenes[1].trigger.back = $false; $s4 = Step-CallTrigger $true $false $cc 'meet' 'work'
