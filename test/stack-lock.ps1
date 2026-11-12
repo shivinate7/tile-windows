@@ -54,6 +54,9 @@
 #     input[role=switch] inside a label whose text is "Fill Empty Cells", in the Monitor section of the monitor that fills.
 #                        Checked is on. Turning it off pins each window the fill or a zone placed, in its current cell
 #                        (decisions/fill-controls.md, owner ruling 2026-11-12 09:57 CST); a freed cell then stays empty.
+#                        A locked pin for a closed window (no open window) keeps its cell and its lock; the window the fill had
+#                        on that cell goes to Windows That Stay Put, unpinned. The status line (#msg) names how many it pinned.
+#                        The pins come from the newest placement, even while a drop's answer is still pending.
 #     #bgrps [data-bay]  the chips of Windows That Stay Put. A chip dragged onto a tile's lower band puts that window behind it,
 #                        and the window leaves the list at once: the board, the Behind This Window list and the badge agree with
 #                        no other action (a passive wait for the engine's answer, never a settle).
@@ -332,6 +335,8 @@ $SceneNorm = "JSON.stringify([(work[selId].pins || []).map(p => [p.app, p.match 
 function SlNoteText { SlJs "new Promise(res => { let n = 0; (function poll() { const e = document.querySelector('.dnote'); if (e) return res(e.textContent.replace(/\s+/g, ' ').trim()); if (++n > 160) return res(null); setTimeout(poll, 25); })(); })" }
 # Presses on $from, moves in eight steps to $to, and releases with no settle, so a Drop Note is read before it goes.
 function SlDropNoSettle($from, $to) { SlMouse 'mousePressed' $from[0] $from[1] 1; for ($i = 1; $i -le 8; $i++) { SlMouse 'mouseMoved' ($from[0] + ($to[0] - $from[0]) * $i / 8) ($from[1] + ($to[1] - $from[1]) * $i / 8) 1 }; SlFrame; SlMouse 'mouseReleased' $to[0] $to[1] 0 }
+# The centre of wide-monitor cell $slot (0-based) in the viewport, from the page's own cell geometry (cellRect, px and the stage).
+function SlSlotAt($slot) { SlJs "(() => { const m = snap.monitors.find(q => q.role === 'wide'), g = work[selId].grids.wide, p = px(cellRect(m, g, $slot % g.c, Math.floor($slot / g.c), 1, 1)), sr = stage.getBoundingClientRect(); return [sr.left + parseFloat(p.left) + parseFloat(p.width) / 2, sr.top + parseFloat(p.top) + parseFloat(p.height) / 2]; })()" }
 # The inspector's Fill Empty Cells switch: null when it is not drawn, else whether it is checked. -Click presses it first.
 function SlSwitch([switch]$Click) {
   $flag = if ($Click) { 'true' } else { 'false' }
@@ -1184,6 +1189,45 @@ try {
   Check 'fill on: the freed cell is filled by a window, not left empty' ($freedSlots.Count -gt 0 -and $refilled.Count -ge 1) "freed cell $($freedSlots -join ','); placed: $(SlShort $onPlaced)"
   Check 'fill on: the window sent to Windows That Stay Put stays there' ($sendId -gt 0 -and ((SlBayIds) -contains $sendId)) "window: $sendId"
   }
+  # A locked pin for a closed window holds no cell in the engine, so the fill puts an open window on that cell. Turning the
+  # switch off keeps the locked pin and its lock, and that window goes to Windows That Stay Put unpinned: nothing is placed
+  # over a locked tile (decisions/stack-and-lock.md, a locked tile never moves).
+  SlCase (SlSceneJson '[{"app":"closedapp","match":"","mon":"wide","slots":[0],"lock":true}]' '["*"]')
+  $lkOn = SlList "prevs[selId].placed.filter(p => p.slots.includes(1)).map(p => ({ id: p.id, app: p.app, pin: p.pin }))"
+  $lkWin = @($lkOn)[0]
+  Check 'closed locked pin, scope: the fill has put an open window on the locked pin cell' ([bool]($lkWin -and [int]$lkWin.pin -lt 0)) "placed on slot 1: $(SlShort $lkOn)"
+  [void](SlSwitch -Click); SlSettle
+  $lkPins = SlList 'work[selId].pins'
+  $lkLock = @($lkPins | ? { "$($_.app)" -eq 'closedapp' })[0]
+  Check 'closed locked pin: turning the switch off keeps the locked pin in its cell, with its lock' ([bool]($lkLock -and $lkLock.lock -eq $true -and (SlCells $lkLock) -eq '0')) "locked pin: $(SlShort $lkLock)"
+  $lkOver = @($lkPins | ? { "$($_.app)" -eq "$($lkWin.app)" -and (SlCells $_) -eq '0' })
+  $lkBay = SlBayIds
+  Check 'closed locked pin: the window the fill had on that cell goes to Windows That Stay Put, unpinned' ([bool]($lkWin -and $lkOver.Count -eq 0 -and ($lkBay -contains [int]$lkWin.id))) "pins on slot 0: $(SlShort $lkOver); bay ids: $($lkBay -join ',')"
+
+  # The status line names how many windows the switch pinned. The count is the windows the fill or a zone had placed before
+  # the switch (each is pinned in its cell), so the scope is read first and the line after the switch.
+  SlCase (SlSceneJson $pinsCQ '["*"]')
+  $kpIds = SlList "prevs[selId].placed.filter(p => p.pin < 0 && !p.behind).map(p => p.id)"
+  $kpN = @($kpIds).Count
+  Check 'switch off status, scope: the fill has placed at least two windows the switch pins' ($kpN -ge 2) "fill-placed windows: $kpN"
+  [void](SlSwitch -Click); SlSettle
+  $kpMsg = SlJs "document.getElementById('msg').textContent"
+  Check 'switch off status: the status line gives the count of windows pinned where they are' ([bool]("$kpMsg" -like "*$kpN windows are pinned where they are.*")) "status: $kpMsg"
+
+  # A drop moves a window, and the switch is pressed before the drop's engine answer comes back. The switch must pin the window
+  # where it was dropped. The answer it reads is still the one from before the drop, so the old code pins the window back in
+  # its old cell. The scope says the answer is still pending (the switch is pressed while it is in flight).
+  SlCase (SlSceneJson '[]' '["claude"]')
+  $dpFrom = SlAt (SlBox 1002) 0.5 0.5
+  $dpTo = SlSlotAt 5
+  SlMarkEngine
+  SlDropNoSettle $dpFrom $dpTo
+  $dpMoved = SlPin (SlGet 'work[selId]') 'Pin parser'
+  $dpPending = SlJs "prevs[selId] === window.bfEngine"
+  Check 'switch during a drop, scope: the drop pins Pin parser in the cell it was dropped on, and its engine answer is still pending' ([bool]($dpMoved -and (SlCells $dpMoved) -eq '5' -and $dpPending)) "pin: $(SlShort $dpMoved); answer still pending: $dpPending"
+  [void](SlSwitch -Click); SlSettle
+  $dpAfter = SlPin (SlGet 'work[selId]') 'Pin parser'
+  Check 'switch during a drop: Pin parser stays pinned where it was dropped, not in its old cell' ([bool]($dpAfter -and (SlCells $dpAfter) -eq '5')) "pin: $(SlShort $dpAfter)"
   SlViewport 1440 900
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
