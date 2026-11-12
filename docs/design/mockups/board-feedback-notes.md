@@ -69,7 +69,7 @@ look.
    Turning it off holds the layout (owner, 2026-11-12 12:05 CST): in the same `edit()`, each
    window the fill or a zone placed is held in its current cell, with no pin, then `fill.off` is
    set. Nothing moves. The held layout is kept apart from the pins (see the engine change, below).
-   A span keeps its block. A window the fill put on a closed locked pin's cell is not held: it
+   A span keeps its block. A window the fill put on a closed pin's cell (locked or not) is not held: it
    goes to Windows That Stay Put, unpinned, and the locked pin keeps its lock (decision
    `stack-and-lock`: nothing is placed over a locked tile, so nothing is held over one). A window
    taken off the board leaves its cell empty, and a new window goes to Windows That Stay Put.
