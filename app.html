@@ -321,7 +321,7 @@ dialog form{display:grid;gap:10px}
 .tile.stacked .stayput{bottom:24px;right:3px}
 /* Layered stack look: the back window is a layer under the front tile. The front tile gives up a strip at its top (15px, 13px on a narrow tile), and the strip names the back app. */
 .tile.stacked{z-index:3}
-.peek{position:absolute;z-index:2;display:flex;align-items:flex-start;gap:3px;padding:2px 6px 0 8px;border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--cat) 22%,var(--panel));font:600 10.5px/1 var(--f);color:var(--ink);overflow:hidden;pointer-events:none;white-space:nowrap}
+.peek{position:absolute;z-index:2;display:flex;align-items:flex-start;gap:3px;padding:2px 6px 0 8px;border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--cat) 22%,var(--panel));font:600 10.5px/1 var(--f);color:var(--ink);overflow:hidden;white-space:nowrap}
 .peek::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
 .peek svg{width:10px;height:10px;flex:none}
 .peek.narrow{padding-top:1px}
@@ -728,7 +728,7 @@ function render(){
     // The layered look: the back window is a layer under the front tile, whose top strip names the back app.
     const PK=ico?13:15,pk=back.length>0&&parseFloat(pr.height)>=PK+30;e.classList.toggle("peeked",pk);
     if(pk){const pe=peekOf(w.id);pe.className=`peek cat-${catOf(back[0].app)}${ico?" narrow":""}${flashId===w.id?" flash":""}`;
-      pe.innerHTML=`${ico?"":BEHIND}${esc(appName(back[0].app))}${back.length>1?` +${back.length-1}`:""}`;pe.hidden=false;
+      pe.innerHTML=`${ico?"":BEHIND}${esc(appName(back[0].app))}${back.length>1?` +${back.length-1}`:""}`;pe.hidden=false;pe.dataset.id=w.id;
       Object.assign(pe.style,{left:pr.left,top:pr.top,width:pr.width,height:PK+6+"px"});
       Object.assign(e.style,{top:parseFloat(pr.top)+PK+"px",height:parseFloat(pr.height)-PK+"px"})}
     if(sp){sp.disabled=locked;sp.classList.toggle("ico",ico);
@@ -1034,8 +1034,13 @@ function planResize(id,mon,c0,r0,cs,rs,fromL=false,fromT=false){
   const box=(a,b)=>cellsOf(fromL?c0+cs-a:c0,fromT?r0+rs-b:r0,a,b,g);
   const hitLock=(a,b)=>{const cc=box(a,b);return info.some(o=>o.q.lock&&cc.some(c=>o.cells.has(c)))};
   let stopped=false;
-  if(hitLock(cs,rs)){stopped=true;let best=null;for(let a=cs;a>=1;a--)for(let b=rs;b>=1;b--)if(!hitLock(a,b)&&(!best||a*b>best.a*best.b))best={a,b};
-    const na=best?best.a:1,nb=best?best.b:1;if(fromL)c0+=cs-na;if(fromT)r0+=rs-nb;cs=na;rs=nb}
+  if(hitLock(cs,rs)){stopped=true;
+    // A top or left edge alone changes only its own dimension, so the other span stays: the north handle keeps the width, the west handle the height.
+    let na=0,nb=0;
+    if(fromT&&!fromL){for(let b=rs;b>=1&&!nb;b--)if(!hitLock(cs,b)){na=cs;nb=b}}
+    else if(fromL&&!fromT){for(let a=cs;a>=1&&!na;a--)if(!hitLock(a,rs)){na=a;nb=rs}}
+    if(!na){let best=null;for(let a=cs;a>=1;a--)for(let b=rs;b>=1;b--)if(!hitLock(a,b)&&(!best||a*b>best.a*best.b))best={a,b};na=best?best.a:1;nb=best?best.b:1}
+    if(fromL)c0+=cs-na;if(fromT)r0+=rs-nb;cs=na;rs=nb}
   const nc=new Set(cellsOf(c0,r0,cs,rs,g)),cov=info.filter(o=>!o.q.lock&&[...o.cells].some(c=>nc.has(c))),covIdx=new Set(cov.map(o=>o.i)),occ=new Set(nc);
   for(const o of info)if(!covIdx.has(o.i))o.cells.forEach(c=>occ.add(c));
   if(P)for(const p of P.placed)if(!p.behind&&p.mon===role&&p.id!==id&&!covIdx.has(p.pin))pbox(p,g).cells.forEach(c=>occ.add(c));
@@ -1174,8 +1179,9 @@ function frame(){raf=0;
       dropEl.innerHTML=`<span>${blocked?"Locked tile in the way":nar?"Here":"Place here"}</span>`}}
   else dropEl.style.display="none"}
 stage.addEventListener("pointerdown",ev=>{
-  const lab=ev.target.closest(".mlab button,.zone button,.tile .stayput,.tile .lk,.tile .stk,.tile .rsz,.hdl i");if(lab||ev.button!==0||drag||zdraw||rz||isBusy)return;
-  const e=ev.target.closest(".tile");
+  const lab=ev.target.closest(".mlab button,.zone button,.tile .stayput,.tile .lk,.tile .stk,.tile .rsz,.hdl i,.dnote");if(lab||ev.button!==0||drag||zdraw||rz||isBusy)return;
+  // The strip above a stacked front tile is part of that tile.
+  const pk=ev.target.closest(".peek"),e=pk?els.get(+pk.dataset.id):ev.target.closest(".tile");
   // Zone drawing: from an empty cell, or with Shift from anywhere on a grid.
   if(LIVE&&(!e||ev.shiftKey)){const c=cellAt(ev.clientX,ev.clientY);if(!c)return;ev.preventDefault();
     try{stage.setPointerCapture(ev.pointerId)}catch(_){}

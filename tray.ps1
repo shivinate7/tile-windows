@@ -92,9 +92,10 @@ function Step-CallTrigger([bool]$was, [bool]$now, $config, [string]$active, [str
   [pscustomobject]@{ apply = $(if ($s.trigger.back -and $before -and @($config.scenes.id) -contains $before) { $before } else { '' }); back = '' }
 }
 
-# Does a scene place this app? A pin names it, or the fill takes it ('*' = any app not skipped).
+# Does a scene place this app? A pin names it, or the fill takes it unless fill.off is set ('*' = any app not skipped).
 function Test-SceneApp($sc, [string]$app) {
   if (@($sc.pins | ? { $app -like $_.app }).Count) { return $true }
+  if ($sc.fill.off) { return $false }
   foreach ($a in @($sc.fill.apps)) { if ($a -eq '*') { if (-not @($sc.fill.skip | ? { $app -like $_ }).Count) { return $true } } elseif ($app -like $a) { return $true } }
   $false
 }
