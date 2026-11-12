@@ -52,10 +52,30 @@
 #                        covered pins move to free cells with their stacks, else to Windows That Stay Put; a locked tile stops
 #                        it ("A locked tile is in the way"). Ctrl+Shift+ArrowRight and ArrowDown shrink that edge.
 #     input[role=switch] inside a label whose text is "Fill Empty Cells", in the Monitor section of the monitor that fills.
-#                        Checked is on.
-#     button "Clear Board" on the board's action bar. It sets fill.off; the status line (#msg) reads "Cleared the board. N windows
-#                        stay put, and Fill Empty Cells is off."; each window the fill had placed is in prevs[selId].left, and
-#                        Windows That Stay Put shows "Fill is off" for it.
+#                        Checked is on. Turning it off holds each window the fill or a zone placed where it is, in the scene's
+#                        held layout (decisions/fill-controls.md, owner ruling 2026-11-12 12:05 CST). It adds no pin, and no pin
+#                        mark shows. A freed cell stays empty. A pin for a closed window (no open window) keeps its cell, and its lock if it has one;
+#                        nothing is held over its cell, so the window the fill had on that cell goes to
+#                        Windows That Stay Put, unpinned. The status line (#msg) names how many it holds: "N windows are held
+#                        where they are". The holds come from the newest placement, even while a drop's answer is still pending.
+#     scene fill.held    The held layout: an array with one entry per window that fill-off holds where it is. It is apart from
+#                        the pins, and empty or absent when nothing is held. Turning fill back on clears it. A window taken off
+#                        the board leaves it, so its cell stays empty. Clear Board holds nothing. While fill is off, tile.ps1
+#                        -Scene (and -DryRun) places each held window in its cell. An entry is {app, title, mon, slots}, with the
+#                        page's handle as id while the page holds it. A held window matches as a pin does: by its app, and by its
+#                        title only when its app has several windows: the exact title first, then one that contains it. A stale id holds no window, so no other window takes its
+#                        cell. A held cell is never a pin's, locked or not. A pin of one of two windows with one title drops only its hold.
+#     #bgrps [data-bay]  the chips of Windows That Stay Put. A chip dragged onto a tile's lower band puts that window behind it,
+#                        and the window leaves the list at once: the board, the Behind This Window list and the badge agree with
+#                        no other action (a passive wait for the engine's answer, never a settle).
+#     button "Clear Board" on the board's action bar. It sets fill.off and holds nothing (fill.held stays empty); the status line
+#                        (#msg) reads "Cleared the board. N windows stay put, and Fill Empty Cells is off."; each window the fill
+#                        had placed is in prevs[selId].left, and Windows That Stay Put shows "Fill is off" for it.
+#                        With fill off, every open window that is not pinned has the reason "fill is off" (engine left[]) and reads
+#                        "Fill is off" in its list reason line, whatever its app: an app with a pinned window included.
+#                        A tab click on another scene while the switch waits for its scene's preview leaves that scene as it was:
+#                        the switch changes the scene it was pressed on.
+#     inspector          A narrow pinned tile (its pin mark hidden at 1024) selected: its "Pinned" line is in the inspector's visible area.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 $ErrorActionPreference = 'Stop'
@@ -92,8 +112,8 @@ function SlPlace($scene) { (& $tile -Scene $scene -From $fixture -Json 3>$null) 
 function SlSceneJson($pins, $fill = '[]', $extra = '', $off = '', $grid = '"c":5,"r":2') {
   '{"id":"sl","name":"Stack and lock","trigger":{"type":"manual","days":[],"time":"09:00"},"grids":{"wide":{' + $grid + '}},"pins":' + $pins + ',"fill":{"mon":"wide","apps":' + $fill + ',"skip":[],"sort":"app"' + $off + '}' + $extra + '}'
 }
-# A dry-run engine call (no window moves): the scene as tile.ps1 -Scene reads it, placed[] and left[] back.
-function SlDry($scene) { (& $tile -Scene $scene -From $fixture -DryRun -Json 3>$null) -join '' | ConvertFrom-Json }
+# A dry-run engine call (no window moves): the scene as tile.ps1 -Scene reads it, placed[] and left[] back. The fixture is the shared one unless a second argument names another.
+function SlDry($scene, $from = $fixture) { (& $tile -Scene $scene -From $from -DryRun -Json 3>$null) -join '' | ConvertFrom-Json }
 function SlPl($r) { (@($r.placed) | % { "$($_.id)p$($_.pin)z$($_.zone)" }) -join ' ' }
 function SlPins { '[' + (@($args) -join ',') + ']' }
 
@@ -124,7 +144,7 @@ $run = Join-Path $SlTempRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item 
 $savedEnv = @{ TILE_HOME = $env:TILE_HOME }
 $profile = Join-Path $run 'profile'; New-Item -ItemType Directory -Force (Join-Path $profile 'AppData\Roaming') | Out-Null
 $env:TILE_HOME = Join-Path $run 'home'
-$srv = $null; $edgeProc = $null; $script:ws = $null; $script:cdpId = 0; $script:url = ''; $script:udd = Join-Path $run 'edge'
+$srv = $null; $srvDup = $null; $edgeProc = $null; $script:ws = $null; $script:cdpId = 0; $script:url = ''; $script:udd = Join-Path $run 'edge'
 
 function SlSend($method, $params) {
   $script:cdpId++; $id = $script:cdpId
@@ -284,10 +304,10 @@ function SlLoad {
   }
   SlSettle
 }
-function SlStartServer {
-  $psi = New-Object Diagnostics.ProcessStartInfo 'powershell', "-NoProfile -ExecutionPolicy Bypass -File `"$serve`" -NoBrowser -From `"$fixture`""
+function SlStartServer($from = $fixture, $tileHome = $env:TILE_HOME) {
+  $psi = New-Object Diagnostics.ProcessStartInfo 'powershell', "-NoProfile -ExecutionPolicy Bypass -File `"$serve`" -NoBrowser -From `"$from`""
   $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.CreateNoWindow = $true
-  $psi.EnvironmentVariables['USERPROFILE'] = $profile; $psi.EnvironmentVariables['APPDATA'] = Join-Path $profile 'AppData\Roaming'; $psi.EnvironmentVariables['TILE_HOME'] = $env:TILE_HOME
+  $psi.EnvironmentVariables['USERPROFILE'] = $profile; $psi.EnvironmentVariables['APPDATA'] = Join-Path $profile 'AppData\Roaming'; $psi.EnvironmentVariables['TILE_HOME'] = $tileHome
   $p = [Diagnostics.Process]::Start($psi)
   $line = $p.StandardOutput.ReadLineAsync(); if (-not $line.Wait(60000)) { throw 'the server did not print its URL' }
   @($p, $line.Result)
@@ -328,6 +348,8 @@ $SceneNorm = "JSON.stringify([(work[selId].pins || []).map(p => [p.app, p.match 
 function SlNoteText { SlJs "new Promise(res => { let n = 0; (function poll() { const e = document.querySelector('.dnote'); if (e) return res(e.textContent.replace(/\s+/g, ' ').trim()); if (++n > 160) return res(null); setTimeout(poll, 25); })(); })" }
 # Presses on $from, moves in eight steps to $to, and releases with no settle, so a Drop Note is read before it goes.
 function SlDropNoSettle($from, $to) { SlMouse 'mousePressed' $from[0] $from[1] 1; for ($i = 1; $i -le 8; $i++) { SlMouse 'mouseMoved' ($from[0] + ($to[0] - $from[0]) * $i / 8) ($from[1] + ($to[1] - $from[1]) * $i / 8) 1 }; SlFrame; SlMouse 'mouseReleased' $to[0] $to[1] 0 }
+# The centre of wide-monitor cell $slot (0-based) in the viewport, from the page's own cell geometry (cellRect, px and the stage).
+function SlSlotAt($slot) { SlJs "(() => { const m = snap.monitors.find(q => q.role === 'wide'), g = work[selId].grids.wide, p = px(cellRect(m, g, $slot % g.c, Math.floor($slot / g.c), 1, 1)), sr = stage.getBoundingClientRect(); return [sr.left + parseFloat(p.left) + parseFloat(p.width) / 2, sr.top + parseFloat(p.top) + parseFloat(p.height) / 2]; })()" }
 # The inspector's Fill Empty Cells switch: null when it is not drawn, else whether it is checked. -Click presses it first.
 function SlSwitch([switch]$Click) {
   $flag = if ($Click) { 'true' } else { 'false' }
@@ -335,6 +357,22 @@ function SlSwitch([switch]$Click) {
 }
 # The visible text of the badge (.stk) on window $id, or null when it is not drawn.
 function SlBadgeText($id) { SlJs "(() => { const t = els.get($id), s = t && t.querySelector('.stk'); return s ? s.textContent.replace(/\s+/g, ' ').trim() : null; })()" }
+# The window ids drawn in Windows That Stay Put, read from the page's chips.
+function SlBayIds { @(("$(SlJs "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => b.dataset.bay).join(',')")") -split ',' | ? { $_ } | % { [int]$_ }) }
+# Call before the drop: keeps the engine's current answer, so the wait below can tell when a new one has replaced it, and
+# records the page's uncaught errors from then on, so a red case names the exception that stopped the redraw.
+function SlMarkEngine { [void](SlJs "(window.bfEngine = prevs[selId], window.bfErrs = [], addEventListener('error', e => window.bfErrs.push(String(e.message) + ' at ' + String((e.error && e.error.stack) || '').split('\n')[1].trim())), true)") }
+# A passive wait, no action: the page polls until the engine's answer to the drop replaces the marked one (bounded by a count,
+# a hang guard only), then two frames. It never calls preview() itself, since a settle would redraw the board and hide a stale screen.
+# Returns fresh (an answer came back) and behind (the engine placed window $id behind).
+function SlWaitBehind($id) {
+  $r = SlJs "new Promise(res => { let n = 0; (function poll() { const fresh = prevs[selId] !== window.bfEngine; const p = fresh && prevs[selId].placed.find(q => q.id === $id); if (fresh || ++n > 1500) return requestAnimationFrame(() => requestAnimationFrame(() => res(JSON.stringify({ fresh: fresh, behind: !!(p && p.behind), errs: (window.bfErrs || []).slice(0, 3) })))); setTimeout(poll, 25); })(); })"
+  if ($r) { $r | ConvertFrom-Json } else { [pscustomobject]@{ fresh = $false; behind = $false } }
+}
+# Window id to its cells (sorted, joined), for a placed list. Pass the same list shape from the page or the engine.
+function SlCellMap($list) { $h = @{}; foreach ($p in @($list)) { $h["$($p.id)"] = ((@($p.slots) | Sort-Object) -join ',') }; $h }
+# A JSON array from the page, as one array (SlGet hands a JSON array back wrapped, so @(SlGet ...) would nest it). Read its count with @().
+function SlList($expr) { $s = SlJs ('JSON.stringify(' + $expr + ')'); if (-not $s) { return ,@() }; return ,($s | ConvertFrom-Json) }
 # The handle of each direction, under .hdl: corners tl, tr, bl, br; edges n, s, w and ea (east).
 $HandleSel = @{ tl = 'i.c.tl'; tr = 'i.c.tr'; bl = 'i.c.bl'; br = 'i.c.br'; n = 'i.e.n'; s = 'i.e.s'; w = 'i.e.w'; ea = 'i.e.ea' }
 # The centre of a handle drawn on the selected tile, or null when it is not drawn.
@@ -439,6 +477,74 @@ $fOn = SlDry (SlSceneJson $offPins '["*"]' $offZone)
 Check 'control: fill on (no flag) still fills and zones, as today' (@($fOn.placed).Count -gt 3 -and @($fOn.placed | ? { $_.zone -ge 0 }).Count -ge 1) (SlPl $fOn)
 $fFull = SlDry (SlSceneJson $pinsFull '["*"]' '' $fillOff)
 Check 'guard: fill off on a full board places the ten pins, as today' (@($fFull.placed).Count -eq 10 -and @($fFull.placed | ? { $_.pin -lt 0 }).Count -eq 0) (SlPl $fFull)
+
+# Fill Empty Cells off gives every unpinned window the reason "Fill is off" (decisions/fill-controls.md; board-feedback notes, item 5),
+# not only the windows of the fill's apps. A window whose app has a pinned window is unpinned too, so it gets the reason as well.
+# Three states: empty, pins in two apps (the other windows of those apps stay unpinned), and a full board. Scope first: the pins are
+# placed and some open window is unpinned; then every open window that is not pinned has the reason.
+$fxOpen = @((Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json).windows | ? { $_.x -gt -20000 } | % { [int64]$_.id })
+$offStates = @(
+  @('no pins', '[]', 0),
+  @('pins in two apps', '[{"app":"WindowsTerminal","match":"docs watch","mon":"wide","slots":[9]},{"app":"explorer","match":"Downloads","mon":"wide","slots":[8]}]', 2),
+  @('full board', $pinsFull, 10)
+)
+foreach ($offState in $offStates) {
+  $fo = SlDry (SlSceneJson $offState[1] '["*"]' '' $fillOff)
+  $pinned = @($fo.placed | ? { $_.pin -ge 0 } | % { [int64]$_.id })
+  $unpinned = @($fxOpen | ? { $pinned -notcontains $_ })
+  $noReason = @($unpinned | ? { $id = $_; -not @($fo.left | ? { $_.id -eq $id -and $_.why -eq 'fill is off' }).Count })
+  Check "fill off, $($offState[0]), scope: the pins are placed, and some open window is unpinned" ($pinned.Count -eq $offState[2] -and $unpinned.Count -gt 0) "pinned: $($pinned -join ','); unpinned: $($unpinned -join ',')"
+  Check "fill off, $($offState[0]): every unpinned window has the reason 'fill is off'" ($noReason.Count -eq 0) "no 'fill is off' reason for: $($noReason -join ', ')"
+}
+
+# Held layout (fill.held, decisions/fill-controls.md), engine. SlHeldFill sets the held layout by hand on a fill-off scene.
+# SlSlotsOf gives a window's 1-based cells in a dry run, or 'none'. Each control is green on the head; each subject is the finding.
+function SlHeldFill($held) { ',"off":true,"held":' + $held }
+function SlSlotsOf($r, $id) { $p = @(@($r.placed) | ? { $_.id -eq $id })[0]; if ($p) { (@($p.slots) | Sort-Object) -join '+' } else { 'none' } }
+$fxWins = @((Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json).windows)
+# A held title that has changed: notepad has one window, so it matches by its app, as a pin does with no title text.
+$hSame = SlDry (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"app":"notepad","title":"todo.txt - Notepad","mon":"wide","slots":[0]}]'))
+Check 'held, control: a held window whose title is unchanged is placed in its held cell' ((SlSlotsOf $hSame 1014) -eq '1') (SlPl $hSame)
+$hOld = SlDry (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"app":"notepad","title":"Old todo title - Notepad","mon":"wide","slots":[0]}]'))
+Check 'held, scope: notepad has one open window, which is not titled as held' (@($fxWins | ? { $_.app -eq 'notepad' }).Count -eq 1 -and @($fxWins | ? { $_.app -eq 'notepad' -and $_.title -eq 'Old todo title - Notepad' }).Count -eq 0) "notepad windows: $(@($fxWins | ? { $_.app -eq 'notepad' }).Count)"
+Check 'held: a window whose title changed keeps its hold, as a pin does for the one window of its app' ((SlSlotsOf $hOld 1014) -eq '1') "notepad 1014 cells: $(SlSlotsOf $hOld 1014)"
+# A locked pin whose window is closed keeps its cell and its lock: no held window takes that cell.
+$hClosedPin = SlPins '{"app":"closedapp","match":"","mon":"wide","slots":[0],"lock":true}'
+$hOnPin = SlDry (SlSceneJson $hClosedPin '["*"]' '' (SlHeldFill '[{"app":"notepad","title":"todo.txt - Notepad","mon":"wide","slots":[0]}]'))
+Check 'held, scope: the locked pin for a closed window is in the scene and is not placed' ([bool]@($hOnPin.missing | ? { $_.app -eq 'closedapp' }).Count) (SlPl $hOnPin)
+Check 'held: no held window takes the cell of a locked pin whose window is closed' (-not @($hOnPin.placed | ? { @($_.slots) -contains 1 }).Count) "placed on slot 1: $(SlShort @($hOnPin.placed | ? { @($_.slots) -contains 1 }))"
+$hFreeCell = SlDry (SlSceneJson $hClosedPin '["*"]' '' (SlHeldFill '[{"app":"notepad","title":"todo.txt - Notepad","mon":"wide","slots":[2]}]'))
+Check 'held, control: beside the locked pin, a held window on a free cell is placed in it' ((SlSlotsOf $hFreeCell 1014) -eq '3') (SlPl $hFreeCell)
+# A stale handle holds no window: the open window with the held title does not take its cell.
+$hStale = SlDry (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"id":9999,"app":"chrome","title":"Pull request 212 - Example","mon":"wide","slots":[0]}]'))
+Check 'held, scope: no open window has handle 9999, and chrome 1005 has the held title' ((@($fxWins | ? { $_.id -eq 9999 }).Count -eq 0) -and (@($fxWins | ? { $_.id -eq 1005 -and $_.title -eq 'Pull request 212 - Example' }).Count -eq 1)) "windows: $($fxWins.Count)"
+Check 'held: a stale handle leaves its cell empty, and no other window with its title takes the cell' (-not @($hStale.placed | ? { @($_.slots) -contains 1 }).Count) "placed on slot 1: $(SlShort @($hStale.placed | ? { @($_.slots) -contains 1 }))"
+$hValid = SlDry (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"id":1005,"app":"chrome","title":"Pull request 212 - Example","mon":"wide","slots":[0]}]'))
+Check 'held, control: a held handle that is open places its window in the cell' ((SlSlotsOf $hValid 1005) -eq '1') (SlPl $hValid)
+# Empty and full-size held layouts (P8): none holds nothing; ten held windows, one per cell, each keeps its own cell by its exact title.
+$hNone = SlDry (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[]'))
+Check 'held, control: an empty held layout places no window' (@($hNone.placed).Count -eq 0) (SlPl $hNone)
+$hFullRows = @(@(1001, 'claude', 'Refactor the grid solver'), @(1002, 'claude', 'Pin parser edge cases'), @(1003, 'claude', 'Draft release notes'), @(1005, 'chrome', 'Pull request 212 - Example'), @(1006, 'chrome', 'Quarterly roadmap - Example'), @(1008, 'WindowsTerminal', 'pwsh - tiler'), @(1009, 'WindowsTerminal', 'pwsh - docs watch'), @(1010, 'explorer', 'Projects'), @(1011, 'explorer', 'Downloads'), @(1012, 'ms-teams', 'Design sync | Microsoft Teams'))
+$hFullJson = '[' + ((0..9 | % { $r = $hFullRows[$_]; '{"app":"' + $r[1] + '","title":"' + $r[2] + '","mon":"wide","slots":[' + $_ + ']}' }) -join ',') + ']'
+$hFull = SlDry (SlSceneJson '[]' '["*"]' '' (SlHeldFill $hFullJson))
+$hFullBad = @(0..9 | ? { (SlSlotsOf $hFull $hFullRows[$_][0]) -ne [string]($_ + 1) })
+Check 'held, control, full board: ten held windows each keep their own cell' ($hFullBad.Count -eq 0 -and @($hFull.placed).Count -eq 10) "not in their cells: $(@($hFullBad | % { $hFullRows[$_][0] }) -join ',')"
+# Nested titles (the held match, decisions/fill-controls.md): "Projects" and "Projects archive" are two windows of one app, and the
+# archive window is further left, so a sort by position alone hands it to the entry "Projects". Each entry takes the window with its
+# exact title first, then one whose title contains it. The fixture is the shared one plus the archive window, in the run folder.
+$fxNestDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+$fxNestDoc.windows = @($fxNestDoc.windows) + [pscustomobject]@{ id = 1018; app = 'explorer'; title = 'Projects archive'; x = 300; y = 200; w = 1000; h = 700 }
+$fxNest = Join-Path $run 'fixture-nested.json'
+[IO.File]::WriteAllText($fxNest, (ConvertTo-Json -Depth 10 -Compress $fxNestDoc), $utf8)
+$nestPA = @($fxNestDoc.windows | ? { $_.title -eq 'Projects' })[0]; $nestPB = @($fxNestDoc.windows | ? { $_.title -eq 'Projects archive' })[0]
+Check 'held, nested titles, scope: Projects and Projects archive are open explorer windows, the archive one further left' ([bool]($nestPA -and $nestPB -and $nestPB.app -eq 'explorer' -and $nestPA.app -eq 'explorer' -and $nestPB.x -lt $nestPA.x -and $nestPB.x -gt -20000)) "windows: $(SlShort @($nestPA, $nestPB))"
+$hNest = SlDry (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"app":"explorer","title":"Projects","mon":"wide","slots":[0]},{"app":"explorer","title":"Projects archive","mon":"wide","slots":[1]}]')) $fxNest
+Check 'held, nested titles: the window titled Projects takes its own cell 1' ((SlSlotsOf $hNest 1010) -eq '1') "1010 cells: $(SlSlotsOf $hNest 1010); placed: $(SlPl $hNest)"
+Check 'held, nested titles: the window titled Projects archive takes its own cell 2' ((SlSlotsOf $hNest 1018) -eq '2') "1018 cells: $(SlSlotsOf $hNest 1018); placed: $(SlPl $hNest)"
+# An unlocked pin for a closed window keeps its cell as a locked one does. The scope is read first; then no held window takes the cell.
+$hOpenPin = SlDry (SlSceneJson (SlPins '{"app":"closedapp","match":"","mon":"wide","slots":[0]}') '["*"]' '' (SlHeldFill '[{"app":"notepad","title":"todo.txt - Notepad","mon":"wide","slots":[0]}]'))
+Check 'held, unlocked pin, scope: the pin for a closed window is in the scene and is not placed' ([bool]@($hOpenPin.missing | ? { $_.app -eq 'closedapp' }).Count) (SlPl $hOpenPin)
+Check 'held, control: no held window takes the cell of an unlocked pin whose window is closed' (-not @($hOpenPin.placed | ? { @($_.slots) -contains 1 }).Count) "placed on slot 1: $(SlShort @($hOpenPin.placed | ? { @($_.slots) -contains 1 }))"
 
 try {
   $srvPair = SlStartServer; $srv = $srvPair[0]; $script:url = $srvPair[1]
@@ -759,12 +865,39 @@ try {
   $dBack = SlJs "($SceneNorm) === window.bfPre"
   Check 'drop note: a real press on its Undo restores the scene from before the drop' ([bool]$dBtn -and [bool]$dBack) "note Undo button: $(SlFmt $dBtn); scene restored: $dBack"
 
+  # Put Behind from Windows That Stay Put, with a real mouse drag and no other action (owner report, 2026-11-12 09:59 CST).
+  # The drop's engine answer is awaited passively (SlWaitBehind), then the screen is read: the window must be gone from the
+  # list, shown under Behind This Window, and drawn as a tile and a badge on the front, at once.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ '[]' ',"bay":[{"app":"chrome","title":"Pull request 212 - Example"}]')
+  $bayPre = SlBayIds
+  Check 'put behind, scope: before the drop, Windows That Stay Put lists the chrome window' ($bayPre -contains 1005) "bay ids: $($bayPre -join ',')"
+  $chipAt = SlGet "(() => { const e = [...document.querySelectorAll('#bgrps [data-bay]')].find(b => b.dataset.bay === '1005'); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  SlMarkEngine
+  if ($chipAt -and (SlBox 1001)) { SlDropNoSettle (SlAt $chipAt 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.85) }
+  $landed = SlWaitBehind 1005
+  $bsDrop = SlGet 'work[selId]'
+  Check 'put behind, control: the drop asks the engine for a new answer, with no page error' ([bool]$landed.fresh) "no new answer from the engine after the drop; page errors: $(SlShort $landed.errs)"
+  Check 'put behind, control: the engine places the dropped window behind Refactor' ([bool]$landed.behind) "placed 1005 behind: $($landed.behind)"
+  Check 'put behind, control: the scene stacks the window behind Refactor and drops its bay entry' ([bool]((SlHasBehind (SlPin $bsDrop 'Refactor') 'Pull request') -and -not (SlHasBay $bsDrop 'Pull request'))) "pins: $(SlShort $bsDrop.pins), bay: $(SlShort $bsDrop.bay)"
+  $bayPost = SlBayIds
+  Check 'put behind, no other action: the window is not listed in Windows That Stay Put' (-not ($bayPost -contains 1005)) "bay ids: $($bayPost -join ',')"
+  $bsPost = SlBehindText
+  Check 'put behind, no other action: Behind This Window lists the window' ("$bsPost" -like '*Pull request*') "Behind This Window: $bsPost"
+  $tilePost = SlGet "(() => { const e = els.get(1005); return e ? { hidden: e.hidden, behind: e.classList.contains('behind') } : null; })()"
+  $rect1005 = SlPlacedRect 1005; $rect1001 = SlPlacedRect 1001
+  Check 'put behind, no other action: the window is a tile behind the front, on the front''s rect' ([bool]($tilePost -and -not $tilePost.hidden -and $tilePost.behind -and (SlSameRect $rect1005 $rect1001))) "tile: $(SlShort $tilePost), placed 1005: $(SlShort $rect1005), placed 1001: $(SlShort $rect1001)"
+  $badgePost = SlBadgeText 1001
+  $stackedPost = SlGet "!!els.get(1001) && els.get(1001).classList.contains('stacked')"
+  Check 'put behind, no other action: the front badge names the window behind at once' ([bool]($stackedPost -and "$badgePost" -like '*Chrome*')) "stacked: $stackedPost, badge: $badgePost"
+
   # Flash over the lock. A Put Behind drop flashes the front tile's peek strip for 1.5 s, and the strip (z5) lies over the
   # lock's top edge. The press follows the drop at once, inside the flash (SlDropNoSettle, no settle between). The strip is
-  # found by a bounded poll in the page; the press is then a real mouse press on the lock's top 2 px.
+  # found by a bounded poll in the page; the press is then a real mouse press on the lock's top 2 px, which the strip covers at rest
+  # (the strip ends 2 px into the lock). The drop slides the tile's top for .22 s, so the probe reads the lock once that slide has
+  # ended, where it rests: a point read mid-slide, or on the strip's lower edge, misses the lock.
   SlCase (SlSceneJson $pinsCQLock)
   SlDropNoSettle (SlAt (SlBox 1006) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.85)
-  $fl = SlJs "new Promise(res => { let n = 0; (function poll() { const k = els.get(1001) && els.get(1001).querySelector('.lk'); const p = document.querySelector('.peek.flash'); if (!p && ++n < 120) return requestAnimationFrame(poll); if (!k || !p) return res(null); const r = k.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + 2; const e = document.elementFromPoint(x, y); res({ x: x, y: y, covered: !!(e && e.closest('.peek.flash')) }); })(); })"
+  $fl = SlJs "new Promise(res => { let n = 0; (function poll() { const t = els.get(1001), k = t && t.querySelector('.lk'), p = document.querySelector('.peek.flash'); if (!p && ++n < 120) return requestAnimationFrame(poll); if (!k || !p) return res(null); Promise.all(t.getAnimations().map(a => a.finished.catch(() => null))).then(() => { const r = k.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + 1; const e = document.elementFromPoint(x, y); res({ x: x, y: y, covered: !!(e && e.closest('.peek.flash')) }); }); })(); })"
   Check 'lock top edge, flash: scope, the flash strip is drawn over the lock''s top edge' ([bool]($fl -and $fl.covered)) "flash probe: $(SlShort $fl)"
   $flPre = SlGet 'work[selId]'; $flPinPre = SlPin $flPre 'Refactor'
   Check 'lock top edge, flash: scope, the locked front window is stacked over the dropped one' ([bool]$flPinPre -and $flPinPre.lock -eq $true -and (SlHasBehind $flPinPre 'Quarterly')) "pin before the press: $(SlShort $flPinPre)"
@@ -1054,15 +1187,22 @@ try {
   # Ids are joined in the page, so each comes back as one string, not as an array to unpack.
   $placedIds = "prevs[selId].placed.map(p => p.id).sort((a, b) => a - b).join(',')"
   $cbWas = "$(SlJs $placedIds)"
+  $cbPinsWasList = SlList 'work[selId].pins'; $cbPinsWas = @($cbPinsWasList).Count
   $cbPress = SlJs "(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Clear Board'); if (!b) return 'no such button'; if (b.disabled) return 'disabled'; b.click(); return 'pressed'; })()"
   SlSettle
   $cbAfter = "$(SlJs $placedIds)"
+  $cbPinsNowList = SlList 'work[selId].pins'; $cbPinsNow = @($cbPinsNowList).Count
   $cbLeft = @("$(SlJs "prevs[selId].left.map(p => p.id).join(',')")" -split ',' | ? { $_ } | % { [int]$_ })
   $cbScene = SlGet 'work[selId].fill.off'
   $cbMsg = SlJs "document.getElementById('msg').textContent"
   $cbList = SlJs "document.body.innerText.includes('Fill is off')"
   Check 'clear board: the board has a Clear Board button, and it presses' ($cbPress -eq 'pressed') "button: $cbPress"
   Check 'clear board: it turns Fill Empty Cells off in the scene' ($cbScene -eq $true) "fill.off: $cbScene"
+  # Clear Board is unchanged by the switch's pins (decisions/fill-controls.md): it adds no pin, so the windows it clears stay unpinned.
+  Check 'clear board: it adds no pins to the scene' ($cbPinsNow -eq $cbPinsWas) "pins before: $cbPinsWas, after: $cbPinsNow"
+  # Clear Board holds nothing (decisions/fill-controls.md): no held layout, so every cleared window is listed, not kept in its cell.
+  $cbHeld = SlList 'work[selId].fill.held'
+  Check 'clear board: it holds no windows (fill.held stays empty)' (@($cbHeld).Count -eq 0) "fill.held: $(SlShort $cbHeld)"
   Check 'clear board: only the pinned windows stay on the board' ($cbAfter -eq '1001,1006') "placed: $cbAfter"
   # The windows the fill placed before the press, minus the two pins (1001 Refactor, 1006 Quarterly). With '*' the fill skips
   # apps that have a pin (claude, chrome), so those windows were never on the board and are not in this set.
@@ -1074,6 +1214,260 @@ try {
   [void](SlSwitch -Click); SlSettle
   $cbOn = "$(SlJs $placedIds)"
   Check 'clear board: turning Fill Empty Cells back on refills the board to the same windows' ($cbOff -eq $false -and $cbWas -ne '' -and $cbOn -eq $cbWas) "switch was: $cbOff; placed before: $cbWas; after: $cbOn"
+
+  # Fill Empty Cells off holds the windows the fill or a zone placed, each where it is (decisions/fill-controls.md, owner ruling
+  # 2026-11-12 12:05 CST). The scene keeps them in fill.held, apart from its pins: the switch adds no pin, no pin mark shows, and
+  # every held window keeps its cell on the board and in a dry run. The owner's pins and locks are not touched.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQLock '["*"]' ',"zones":[{"mon":"wide","slots":[5,6],"app":"WindowsTerminal"}]')
+  $pinsWas = SlList 'work[selId].pins'
+  $offBefore = SlList "prevs[selId].placed.filter(p => p.pin < 0).map(p => ({ id: p.id, app: p.app, slots: p.slots, zone: p.zone }))"
+  Check 'switch off, scope: before the switch, the fill and a zone have placed windows' ($offBefore.Count -gt 0 -and @($offBefore | ? { $_.zone -ge 0 }).Count -ge 1) "placed by fill or zone: $(SlShort $offBefore)"
+  [void](SlSwitch -Click); SlSettle
+  $offAfter = SlList "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, slots: p.slots }))"
+  $offPins = SlList 'work[selId].pins'
+  $held = SlList 'work[selId].fill.held'
+  $moved = @()
+  foreach ($b in $offBefore) {
+    $a = @($offAfter | ? { $_.id -eq $b.id })[0]
+    if (-not $a -or ((@($a.slots) | Sort-Object) -join ',') -ne ((@($b.slots) | Sort-Object) -join ',')) { $moved += "$($b.id)" }
+  }
+  Check 'switch off: every window the fill or a zone placed keeps its cell' ($moved.Count -eq 0 -and $offBefore.Count -gt 0) "not kept in place: $($moved -join ','); placed after: $(SlShort $offAfter)"
+  Check 'switch off: fill.held has one entry per window the fill or a zone placed' (@($held).Count -eq $offBefore.Count -and $offBefore.Count -gt 0) "fill.held: $(SlShort $held); placed: $(SlShort $offBefore)"
+  Check 'switch off: the switch adds no pin, so the scene''s pins are as they were' ((ConvertTo-Json -Depth 12 -Compress @($offPins)) -ceq (ConvertTo-Json -Depth 12 -Compress @($pinsWas))) "pins before: $(SlShort $pinsWas); after: $(SlShort $offPins)"
+  $offIdsJs = '[' + ((@($offBefore) | % { [int]$_.id }) -join ',') + ']'
+  $pmShown = SlList "prevs[selId].placed.filter(p => $offIdsJs.includes(p.id)).map(p => p.id).filter(id => { const t = els.get(id); return !!t && (t.classList.contains('pin') || !!t.querySelector('.pinmark')); })"
+  Check 'switch off: no pin mark shows on a held window' ($offBefore.Count -gt 0 -and @($pmShown).Count -eq 0) "pin mark on: $(SlShort $pmShown)"
+
+  # A held window's cell stays empty when the window is sent to Windows That Stay Put, and a dry-run Apply places the same windows
+  # in the same cells as the board shows (tile.ps1 -DryRun, through SlDry).
+  $sendWin = @($offBefore | ? { $_.zone -lt 0 })[0]
+  $sendId = if ($sendWin) { [int]$sendWin.id } else { 0 }
+  $freedSlots = if ($sendWin) { @($sendWin.slots) } else { @() }
+  # One named cause when the switch did not hold it: the steps below need that window held in its cell, so they wait on this check.
+  $sendHeld = @($offAfter | ? { $_.id -eq $sendId -and $_.pin -lt 0 -and ((@($_.slots) | Sort-Object) -join ',') -eq ((@($freedSlots) | Sort-Object) -join ',') }).Count -gt 0
+  Check 'switch off, precondition: a window the fill placed is held in its cell, unpinned, to send to Windows That Stay Put' $sendHeld "no held window in its cell; placed windows: $(SlShort $offAfter)"
+  if ($sendHeld) {
+  if (SlBox $sendId) { SlKey $sendId 'k' 75 }
+  $bayAfterSend = SlBayIds
+  Check 'send to bay: the window is listed in Windows That Stay Put' ($sendId -gt 0 -and ($bayAfterSend -contains $sendId)) "window: $sendId; bay ids: $($bayAfterSend -join ',')"
+  $sentPlaced = SlList "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, zone: p.zone, slots: p.slots }))"
+  $intoFreed = @($sentPlaced | ? { $_.id -ne $sendId -and @($_.slots | ? { $freedSlots -contains $_ }).Count -gt 0 })
+  Check 'send to bay: its cell stays empty, since fill is off' ($sendId -gt 0 -and $freedSlots.Count -gt 0 -and $intoFreed.Count -eq 0) "freed cell $($freedSlots -join ','); taken by: $(SlShort $intoFreed)"
+  $heldNow = SlList 'work[selId].fill.held'
+  Check 'send to bay: the window leaves fill.held' (@($heldNow).Count -eq (@($held).Count - 1)) "fill.held before: $(@($held).Count); after: $(@($heldNow).Count)"
+  $sceneNow = SlGet 'work[selId]'
+  $dryNow = if ($sceneNow) { SlDry (ConvertTo-Json -Depth 12 -Compress $sceneNow) } else { $null }
+  $pageMap = SlCellMap $sentPlaced
+  $dryMap = SlCellMap @($dryNow.placed)
+  $diffs = @()
+  foreach ($k in (@($pageMap.Keys) + @($dryMap.Keys) | Select-Object -Unique)) { if ($pageMap[$k] -ne $dryMap[$k]) { $diffs += $k } }
+  Check 'send to bay: a dry-run Apply places the same windows in the same cells' ($pageMap.Count -gt 0 -and $diffs.Count -eq 0) "differ: $($diffs -join ','); board: $($pageMap.Count) windows, dry run: $($dryMap.Count)"
+
+  # A window the scene does not hold (one opened after the switch) goes to Windows That Stay Put, and takes no freed cell. The
+  # fixture copy below adds one open window; the dry run is the page's own scene, so the held layout is whatever the page wrote.
+  $fxNew = Join-Path $run 'fixture-new.json'
+  $fxDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+  $fxDoc.windows = @($fxDoc.windows) + [pscustomobject]@{ id = 1020; app = 'claude'; title = 'Opened after the switch'; x = 3000; y = 100; w = 800; h = 600 }
+  [IO.File]::WriteAllText($fxNew, (ConvertTo-Json -Depth 10 -Compress $fxDoc), $utf8)
+  $newRes = (& $tile -Scene (ConvertTo-Json -Depth 12 -Compress $sceneNow) -From $fxNew -DryRun -Json 3>$null) -join '' | ConvertFrom-Json
+  $newIn = @(@($newRes.placed) + @($newRes.left) | ? { $_.id -eq 1020 }).Count
+  Check 'new window, scope: the dry run answers for the open window 1020 once, and places the held windows' ($newIn -eq 1 -and @($newRes.placed | ? { $_.id -ne 1020 }).Count -gt 0) "answers for 1020: $newIn; placed: $(SlShort @($newRes.placed))"
+  $newBay = @($newRes.left | ? { $_.id -eq 1020 -and $_.why -eq 'fill is off' }).Count
+  $newTakes = @($newRes.placed | ? { $_.id -eq 1020 -or @($_.slots | ? { $freedSlots -contains $_ }).Count -gt 0 }).Count
+  Check 'new window: it goes to Windows That Stay Put with "fill is off", and takes no freed cell' ($newBay -eq 1 -and $newTakes -eq 0) "left as fill is off: $newBay; placed in the freed cell or as 1020: $newTakes"
+
+  # Turning Fill Empty Cells back on clears the held layout and fills the empty cells as usual. The owner's pins and locks stay as they were.
+  Check 'fill on, scope: the scene holds windows in fill.held before the switch is turned on' (@($heldNow).Count -gt 0) "fill.held: $(SlShort $heldNow)"
+  [void](SlSwitch -Click); SlSettle
+  $onPins = SlList 'work[selId].pins'
+  $onHeld = SlList 'work[selId].fill.held'
+  $onPlaced = SlList "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, zone: p.zone, slots: p.slots }))"
+  Check 'fill on: the owner''s pins and locks are as they were before the switch' ((ConvertTo-Json -Depth 12 -Compress @($onPins)) -ceq (ConvertTo-Json -Depth 12 -Compress @($pinsWas))) "pins before: $(SlShort $pinsWas); after: $(SlShort $onPins)"
+  Check 'fill on: it clears fill.held' (@($onHeld).Count -eq 0) "fill.held after: $(SlShort $onHeld)"
+  $refilled = @($onPlaced | ? { $_.pin -lt 0 -and $_.zone -lt 0 -and $_.id -ne $sendId -and @($_.slots | ? { $freedSlots -contains $_ }).Count -gt 0 })
+  Check 'fill on: the freed cell is filled by a window, not left empty' ($freedSlots.Count -gt 0 -and $refilled.Count -ge 1) "freed cell $($freedSlots -join ','); placed: $(SlShort $onPlaced)"
+  Check 'fill on: the window sent to Windows That Stay Put stays there' ($sendId -gt 0 -and ((SlBayIds) -contains $sendId)) "window: $sendId"
+  }
+  # A locked pin for a closed window holds no cell in the engine, so the fill puts an open window on that cell. Turning the
+  # switch off keeps the locked pin and its lock, and that window goes to Windows That Stay Put unpinned: nothing is placed
+  # over a locked tile (decisions/stack-and-lock.md, a locked tile never moves).
+  SlCase (SlSceneJson '[{"app":"closedapp","match":"","mon":"wide","slots":[0],"lock":true}]' '["*"]')
+  $lkOn = SlList "prevs[selId].placed.filter(p => p.slots.includes(1)).map(p => ({ id: p.id, app: p.app, pin: p.pin }))"
+  $lkWin = @($lkOn)[0]
+  Check 'closed locked pin, scope: the fill has put an open window on the locked pin cell' ([bool]($lkWin -and [int]$lkWin.pin -lt 0)) "placed on slot 1: $(SlShort $lkOn)"
+  [void](SlSwitch -Click); SlSettle
+  $lkPins = SlList 'work[selId].pins'
+  $lkLock = @($lkPins | ? { "$($_.app)" -eq 'closedapp' })[0]
+  Check 'closed locked pin: turning the switch off keeps the locked pin in its cell, with its lock' ([bool]($lkLock -and $lkLock.lock -eq $true -and (SlCells $lkLock) -eq '0')) "locked pin: $(SlShort $lkLock)"
+  $lkOver = @($lkPins | ? { "$($_.app)" -eq "$($lkWin.app)" -and (SlCells $_) -eq '0' })
+  $lkBay = SlBayIds
+  Check 'closed locked pin: the window the fill had on that cell goes to Windows That Stay Put, unpinned' ([bool]($lkWin -and $lkOver.Count -eq 0 -and ($lkBay -contains [int]$lkWin.id))) "pins on slot 0: $(SlShort $lkOver); bay ids: $($lkBay -join ',')"
+  # Nothing is held over a locked cell: no window is placed on that cell as a held one (no unpinned placement on slot 1).
+  $lkCell = SlList "prevs[selId].placed.filter(p => p.slots.includes(1)).map(p => ({ id: p.id, pin: p.pin }))"
+  Check 'closed locked pin: no window is held over the locked cell' (@($lkCell | ? { $_.pin -lt 0 }).Count -eq 0) "placed on the locked cell: $(SlShort $lkCell)"
+  # Fill on again: the window the switch sent to Windows That Stay Put is filled as usual. The bay entry the hold left must not outlive it.
+  $lkId = if ($lkWin) { [int]$lkWin.id } else { 0 }
+  [void](SlSwitch -Click); SlSettle
+  $lkBackPlaced = SlList "prevs[selId].placed.filter(p => p.id === $lkId).map(p => ({ id: p.id, pin: p.pin, slots: p.slots }))"
+  $lkBackBay = SlBayIds
+  Check 'closed locked pin, fill on again: the window is filled as usual and is not in Windows That Stay Put' ([bool]($lkId -gt 0 -and @($lkBackPlaced).Count -eq 1 -and $lkBackPlaced[0].pin -lt 0 -and -not ($lkBackBay -contains $lkId))) "placed: $(SlShort $lkBackPlaced); bay ids: $($lkBackBay -join ',')"
+  # An unlocked pin for a closed window holds its cell as a locked one does: nothing is held onto that cell (decisions/fill-controls.md).
+  # The fill puts an open window on the cell while the switch is on. Turning the switch off must not hold that window there: it goes to
+  # Windows That Stay Put, and the status line counts the windows held without it.
+  SlCase (SlSceneJson '[{"app":"closedapp","match":"","mon":"wide","slots":[0]}]' '["*"]')
+  $ucOn = SlList "prevs[selId].placed.filter(p => p.slots.includes(1)).map(p => ({ id: p.id, app: p.app, pin: p.pin }))"
+  $ucWin = @($ucOn)[0]
+  $ucId = if ($ucWin) { [int]$ucWin.id } else { 0 }
+  $ucPins = SlList 'work[selId].pins'
+  $ucPin = @($ucPins | ? { "$($_.app)" -eq 'closedapp' })[0]
+  $ucIds = SlList "prevs[selId].placed.filter(p => p.pin < 0 && !p.behind).map(p => p.id)"
+  $ucFill = @($ucIds).Count
+  Check 'unlocked closed pin, scope: the pin has no lock, and the fill has put an open window on its cell among three or more placed' ([bool]($ucPin -and -not $ucPin.lock -and $ucId -gt 0 -and $ucFill -ge 3)) "pin: $(SlShort $ucPin); on slot 1: $(SlShort $ucOn); fill-placed: $ucFill"
+  [void](SlSwitch -Click); SlSettle
+  $ucHeld = SlList 'work[selId].fill.held'
+  Check 'unlocked closed pin: the window the fill had on its cell is not held over it' (-not @($ucHeld | ? { [int]$_.id -eq $ucId }).Count) "fill.held: $(SlShort $ucHeld)"
+  $ucBay = SlBayIds
+  Check 'unlocked closed pin: that window goes to Windows That Stay Put' ([bool]($ucId -gt 0 -and ($ucBay -contains $ucId))) "bay ids: $($ucBay -join ',')"
+  $ucMsg = SlJs "document.getElementById('msg').textContent"
+  $ucWant = $ucFill - 1
+  Check "unlocked closed pin: the status line counts $ucWant windows held, one fewer than the fill placed" ([bool]("$ucMsg" -like "*$ucWant windows are held where they are.*")) "status: $ucMsg"
+
+  # The status line names how many windows the switch holds. The count is the windows the fill or a zone had placed before
+  # the switch (each is held in its cell), so the scope is read first and the line after the switch.
+  SlCase (SlSceneJson $pinsCQ '["*"]')
+  $kpIds = SlList "prevs[selId].placed.filter(p => p.pin < 0 && !p.behind).map(p => p.id)"
+  $kpN = @($kpIds).Count
+  Check 'switch off status, scope: the fill has placed at least two windows the switch holds' ($kpN -ge 2) "fill-placed windows: $kpN"
+  [void](SlSwitch -Click); SlSettle
+  $kpMsg = SlJs "document.getElementById('msg').textContent"
+  Check 'switch off status: the status line gives the count of windows held where they are' ([bool]("$kpMsg" -like "*$kpN windows are held where they are.*")) "status: $kpMsg"
+
+  # A drop moves a window, and the switch is pressed before the drop's engine answer comes back. The switch must keep the window
+  # where it was dropped (the holds come from the newest placement). The answer it reads is still the one from before the drop, so the old code pins the window back in
+  # its old cell. The scope says the answer is still pending (the switch is pressed while it is in flight).
+  SlCase (SlSceneJson '[]' '["claude"]')
+  $dpFrom = SlAt (SlBox 1002) 0.5 0.5
+  $dpTo = SlSlotAt 5
+  SlMarkEngine
+  SlDropNoSettle $dpFrom $dpTo
+  $dpMoved = SlPin (SlGet 'work[selId]') 'Pin parser'
+  $dpPending = SlJs "prevs[selId] === window.bfEngine"
+  Check 'switch during a drop, scope: the drop pins Pin parser in the cell it was dropped on, and its engine answer is still pending' ([bool]($dpMoved -and (SlCells $dpMoved) -eq '5' -and $dpPending)) "pin: $(SlShort $dpMoved); answer still pending: $dpPending"
+  [void](SlSwitch -Click); SlSettle
+  $dpAfter = SlPin (SlGet 'work[selId]') 'Pin parser'
+  Check 'switch during a drop: Pin parser stays pinned where it was dropped, not in its old cell' ([bool]($dpAfter -and (SlCells $dpAfter) -eq '5')) "pin: $(SlShort $dpAfter)"
+  # Fill Empty Cells off, on the board. The owner's pins (Refactor in claude, Quarterly in chrome) give their apps a pinned window. Each
+  # open window still unpinned in Windows That Stay Put must read "Fill is off" in its reason line, not "Not in this scene". The switch
+  # holds the windows the fill placed and adds no pin. The control is the same board before the switch: no window reads "Fill is off".
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ '["*"]')
+  $n1Before = SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => b.getAttribute('aria-label'))"
+  Check 'control, fill on, board: no window in Windows That Stay Put reads "Fill is off"' (@($n1Before | ? { "$_" -like '*Fill is off*' }).Count -eq 0) "labels: $(SlShort $n1Before)"
+  $n1PinsWas = SlList 'work[selId].pins'
+  [void](SlSwitch -Click); SlSettle
+  $n1PinsNow = SlList 'work[selId].pins'
+  Check 'fill off, board: the switch adds no pin' ((ConvertTo-Json -Depth 12 -Compress @($n1PinsNow)) -ceq (ConvertTo-Json -Depth 12 -Compress @($n1PinsWas))) "pins before: $(SlShort $n1PinsWas); after: $(SlShort $n1PinsNow)"
+  $n1Scope = SlList "(() => { const pinned = new Set(work[selId].pins.map(p => p.app)); return [...document.querySelectorAll('#bgrps [data-bay]')].map(b => snap.windows.find(w => w.id === +b.dataset.bay)).filter(w => w && !w.min && pinned.has(w.app)).map(w => w.id); })()"
+  Check 'fill off, board, scope: an unpinned window is in Windows That Stay Put, and its app has a pinned window' ($n1Scope.Count -ge 1) "windows: $($n1Scope -join ',')"
+  $n1Chips = SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => ({ id: +b.dataset.bay, min: !!(snap.windows.find(w => w.id === +b.dataset.bay) || {}).min, reason: (b.querySelector('small') || { textContent: null }).textContent }))"
+  $n1Open = @($n1Chips | ? { -not $_.min })
+  $n1Bad = @($n1Open | ? { $_.reason -ne 'Fill is off' })
+  Check 'fill off, board: every unpinned window in Windows That Stay Put has the reason line "Fill is off"' ($n1Open.Count -gt 0 -and $n1Bad.Count -eq 0) "open: $($n1Open.Count); not 'Fill is off': $(@($n1Bad | % { "$($_.id) (reason line: $(if ($_.reason) { $_.reason } else { 'none' }))" }) -join ', ')"
+  # The inspector says the same for one of them: Draft release notes (1003, unpinned, its app Claude has pinned windows).
+  SlJs 'document.querySelector("[data-bay=\"1003\"]").click(); true'
+  $n1Insp = SlGet '(() => { const m = document.querySelector("#win .m"); return m ? m.textContent.replace(/\s+/g, " ").trim() : null; })()'
+  Check 'fill off, board: the inspector gives "fill is off" as the reason for Draft release notes' ([bool]("$n1Insp" -like '*fill is off*')) "inspector line: $n1Insp"
+
+  # A narrow pinned tile loses its pin mark, so the inspector's "Pinned" line is the only cue left. Selecting it scrolls the inspector
+  # so that line is in its visible area. At 1440 the mark stays: that is the control.
+  $pinnedLine = { SlGet '(() => { const t = els.get(1001), ins = document.querySelector(".insp"), m = [...document.querySelectorAll("#win .m")].find(e => e.textContent.trim().startsWith("Pinned")), pmk = t.querySelector(".pinmark"); const q = ins.getBoundingClientRect(), r = m ? m.getBoundingClientRect() : null; return { narrow: t.classList.contains("narrow"), pin: t.classList.contains("pin"), sel: t.classList.contains("sel"), pinmark: pmk ? getComputedStyle(pmk).display : "absent", line: !!m, lineTop: r ? r.top : null, lineBottom: r ? r.bottom : null, insTop: q.top, insBottom: q.bottom }; })()' }
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ '["*"]')
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $n3c = & $pinnedLine
+  Check 'control, 1440: the selected pinned tile keeps its pin mark' ([bool]($n3c.pin -and $n3c.sel -and $n3c.pinmark -eq 'block')) "pin: $($n3c.pin), selected: $($n3c.sel), pin mark: $($n3c.pinmark)"
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCQ '["*"]')
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $n3 = & $pinnedLine
+  Check 'narrow pinned tile, 1024, scope: the selected pinned tile is narrow and its pin mark is hidden' ([bool]($n3.narrow -and $n3.pin -and $n3.sel -and $n3.pinmark -eq 'none')) "narrow: $($n3.narrow), pin: $($n3.pin), selected: $($n3.sel), pin mark: $($n3.pinmark)"
+  Check 'narrow pinned tile, 1024: the inspector''s Pinned line is in the inspector''s visible area' ([bool]($n3.line -and $n3.lineTop -ge $n3.insTop -and $n3.lineBottom -le $n3.insBottom)) "line $($n3.lineTop) to $($n3.lineBottom); inspector $($n3.insTop) to $($n3.insBottom)"
+
+  # A scene tab click while the switch waits for a preview in flight. The switch reads the answer of the scene it was pressed on, so it
+  # changes that scene, and the scene clicked second stays as it was. The first preview is held in the page (a fetch wrapper), so the
+  # wait is real, and it ends only when the case releases it.
+  SlViewport 1440 900
+  $sceneA = SlSceneJson (SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}') '["*"]'
+  $sceneB = $sceneA.Replace('"id":"sl","name":"Stack and lock"', '"id":"sl2","name":"Second scene"').Replace('"match":"Refactor"', '"match":"Pin parser"')
+  $cfgTwo = (Invoke-WebRequest -UseBasicParsing "$($script:url)config").Content | ConvertFrom-Json
+  $cfgTwo.scenes = @((ConvertFrom-Json $sceneA), (ConvertFrom-Json $sceneB))
+  $bodyTwo = ConvertTo-Json -Depth 12 -Compress $cfgTwo
+  if ((Invoke-WebRequest -UseBasicParsing "$($script:url)config" -Method Post -ContentType 'application/json; charset=utf-8' -Body ($utf8.GetBytes($bodyTwo))).Content -ne 'Saved') { throw 'the two-scene config was not saved' }
+  SlLoad
+  SlJs 'previewAll().then(() => true)'
+  SlJs 'document.querySelector("[data-pick=sl]").click(); true'
+  SlJs 'window.__hold = false; if (!window.__origFetch) { window.__origFetch = window.fetch; window.fetch = (u, o) => (window.__hold && String(u).endsWith("preview")) ? new Promise(res => { window.__release = () => res(window.__origFetch(u, o)); }) : window.__origFetch(u, o); } true'
+  SlJs 'window.__bSecond = JSON.stringify(work["sl2"]); true'
+  # Control: no preview in flight. The switch writes fill.off to the scene it was pressed on, and the second scene does not change.
+  [void](SlSwitch -Click); SlSettle
+  $ctlOff = SlGet 'work["sl"].fill.off'
+  $ctlSecond = SlJs 'JSON.stringify(work["sl2"]) === window.__bSecond'
+  Check 'control, no preview in flight: the switch writes fill.off to the scene it was pressed on, and the other scene is unchanged' ([bool]($ctlOff -eq $true -and $ctlSecond -eq $true)) "fill.off on the first: $ctlOff; second unchanged: $ctlSecond"
+  [void](SlSwitch -Click); SlSettle
+  SlJs 'window.__bSecond = JSON.stringify(work["sl2"]); true'
+  # The wait: the switch is pressed while the first scene's preview is held, then the second scene is clicked, then the answer comes back.
+  SlJs 'window.__hold = true; preview("sl"); true'
+  [void](SlSwitch -Click)
+  $scopeA = SlGet '({ inflight: !!inflight["sl"], sel: selId })'
+  Check 'scene tab click during the wait, scope: the switch on Scene A waits for A''s preview, and Scene A is the selected scene' ([bool]($scopeA.inflight -and $scopeA.sel -eq 'sl')) "in flight: $($scopeA.inflight), selected: $($scopeA.sel)"
+  SlJs 'document.querySelector("[data-pick=sl2]").click(); true'
+  SlJs 'window.__hold = false; window.__release(); true'
+  SlJs 'newestPrev("sl").then(() => true)'
+  SlSettle
+  $secondNow = SlJs 'JSON.stringify(work["sl2"]) === window.__bSecond'
+  $firstNow = SlGet 'work["sl"].fill.off'
+  Check 'scene tab click during the wait: the scene clicked second is unchanged' ([bool]($secondNow -eq $true)) "second scene unchanged: $secondNow; its fill.off: $(SlGet 'work["sl2"].fill.off')"
+  Check 'scene tab click during the wait: the switch lands on the scene it was pressed on' ([bool]($firstNow -eq $true)) "first scene fill.off: $(if ($null -eq $firstNow) { 'none' } else { $firstNow })"
+
+  # Held title changed (decisions/fill-controls.md): notepad has one window, so its held title does not decide the match, as with a pin.
+  # The page places it in its held cell; a save keeps the entry, and a dry run from the saved scene places it in the same cell.
+  SlViewport 1440 900; SlCase (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"app":"notepad","title":"Old todo title - Notepad","mon":"wide","slots":[0]}]'))
+  $tcHeld = SlList 'work[selId].fill.held'
+  Check 'held title changed, scope: the scene holds the notepad window under its old title' ($tcHeld.Count -eq 1 -and "$($tcHeld[0].app)" -eq 'notepad') "fill.held: $(SlShort $tcHeld)"
+  $tcPage = SlPlacedOf 1014
+  Check 'held title changed: the page places the window in its held cell' ([bool]($tcPage -and @($tcPage.slots) -contains 1)) "page cells of 1014: $(if ($tcPage) { (@($tcPage.slots) | Sort-Object) -join '+' } else { 'none' })"
+  [void](SlJs 'saveScene().then(() => true)'); SlSettle
+  $tcSaved = SlSavedScene
+  $tcSavedHeld = @($tcSaved.fill.held | ? { $_ })
+  Check 'held title changed: a save keeps the held window' ($tcSavedHeld.Count -eq 1 -and "$($tcSavedHeld[0].app)" -eq 'notepad') "saved fill.held entries: $($tcSavedHeld.Count)"
+  $tcDry = SlDry (ConvertTo-Json -Depth 12 -Compress $tcSaved)
+  Check 'held title changed: a dry run from the saved scene places the window in its held cell' ((SlSlotsOf $tcDry 1014) -eq '1') "saved held entries: $($tcSavedHeld.Count); 1014 cells: $(SlSlotsOf $tcDry 1014)"
+
+  # A grid change keeps a held window on its column and row, as it keeps a pin (setGrid remaps the held layout as it remaps the pins).
+  SlViewport 1440 900; SlCase (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"app":"claude","title":"Draft release notes","mon":"wide","slots":[5]},{"app":"notepad","title":"todo.txt - Notepad","mon":"wide","slots":[1]}]'))
+  $gScope = SlPlacedOf 1003
+  Check 'grid, scope: the held window 1003 is placed in its held cell, column 1 of row 2' ([bool]($gScope -and @($gScope.slots) -contains 6)) "placed: $(SlShort $gScope)"
+  SlJs "(() => { curMon = snap.monitors.find(m => m.role === 'wide'); setGrid('c', 1); return true; })()"; SlSettle
+  $gHeld = SlList 'work[selId].fill.held'
+  $gClaude = @($gHeld | ? { "$($_.app)" -eq 'claude' })[0]
+  $gNotepad = @($gHeld | ? { "$($_.app)" -eq 'notepad' })[0]
+  Check 'grid: a column added to the right keeps the held window of row 2, column 1 in that column and row' ([bool]($gClaude -and (SlCells $gClaude) -eq '6')) "claude held slots: $(if ($gClaude) { SlCells $gClaude } else { 'none' }); fill.held: $(SlShort $gHeld)"
+  Check 'grid, control: the held window in row 1, column 2 stays in its cell' ([bool]($gNotepad -and (SlCells $gNotepad) -eq '1')) "notepad held slots: $(if ($gNotepad) { SlCells $gNotepad } else { 'none' })"
+
+  # Two windows with one title (1006 and 1017, a copy of the fixture with 1017 added). Pinning 1017 drops its own hold, and only its own:
+  # the hold of 1006, the other window with that title, stays in its cell. The copy is served by a second dry-run server.
+  $fxDup = Join-Path $run 'fixture-dup.json'
+  $fxDupDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+  $fxDupDoc.windows = @($fxDupDoc.windows) + [pscustomobject]@{ id = 1017; app = 'chrome'; title = 'Quarterly roadmap - Example'; x = 300; y = 200; w = 1400; h = 1000 }
+  [IO.File]::WriteAllText($fxDup, (ConvertTo-Json -Depth 10 -Compress $fxDupDoc), $utf8)
+  $dupPair = SlStartServer $fxDup (Join-Path $run 'home-dup'); $srvDup = $dupPair[0]; $urlMain = $script:url; $script:url = $dupPair[1]
+  SlCase (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"id":1006,"app":"chrome","title":"Quarterly roadmap - Example","mon":"wide","slots":[2]},{"id":1017,"app":"chrome","title":"Quarterly roadmap - Example","mon":"wide","slots":[3]}]'))
+  $dScope = SlList 'work[selId].fill.held'
+  Check 'same title, scope: both windows with the title are held, one entry each' (@($dScope | ? { "$($_.app)" -eq 'chrome' }).Count -eq 2) "fill.held: $(SlShort $dScope)"
+  SlJs "(() => { pinWin(1017, snap.monitors.find(m => m.role === 'wide'), 8); return true; })()"; SlSettle
+  $dAfter = SlList 'work[selId].fill.held'
+  $dIds = @($dAfter | % { [int]$_.id }) -join ','; if (-not $dIds) { $dIds = 'none' }
+  Check 'same title: pinning 1017 drops its own hold' (-not @($dAfter | ? { [int]$_.id -eq 1017 }).Count) "held ids after the pin: $dIds"
+  Check 'same title: pinning 1017 keeps the hold of 1006, the other window with that title' (@($dAfter | ? { [int]$_.id -eq 1006 }).Count -eq 1) "held ids after the pin: $dIds"
+  [void](Invoke-WebRequest -UseBasicParsing "$($script:url)quit" -Method Post -Body 'quit'); [void]$srvDup.WaitForExit(5000)
+  $script:url = $urlMain
   SlViewport 1440 900
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
@@ -1082,6 +1476,7 @@ try {
   Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*$($script:udd)*" } | % { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   if ($script:ws) { $script:ws.Dispose() }
   if ($srv -and -not $srv.HasExited) { $srv.Kill() }
+  if ($srvDup -and -not $srvDup.HasExited) { $srvDup.Kill() }
   foreach ($k in $savedEnv.Keys) { if ($null -eq $savedEnv[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $savedEnv[$k] } }
   if (Test-Path -LiteralPath $run) { Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue }
 }
