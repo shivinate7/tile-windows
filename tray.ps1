@@ -6,8 +6,9 @@
 # -Open: open the app (starts the agent first if it is not running).
 # -NoIcon: run without the icon (tests). -NoApply: every apply is a dry run (tests).
 # -Lib: define the functions and return (tests dot-source it).
+# -Link <tilewindows://...>: what the link handler passes (install.ps1 registers it). undo?run=<id> puts a run's windows back; open opens the app.
 # One agent per profile. Signal the Quit event (as uninstall.ps1 does) to stop it.
-param([switch]$Open, [switch]$NoIcon, [switch]$NoApply, [switch]$Lib)
+param([switch]$Open, [switch]$NoIcon, [switch]$NoApply, [switch]$Lib, [string]$Link = '')
 . (Join-Path $PSScriptRoot 'config.ps1')
 
 # Named objects are per profile, so a test profile never talks to the real agent.
@@ -267,13 +268,95 @@ function Get-MicUsage {
     % { $p = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue; if ($p -and $null -ne $p.LastUsedTimeStop) { [pscustomobject]@{ name = $_.PSChildName; stop = [int64]$p.LastUsedTimeStop } } })
 }
 function Get-TeamsWindows { @(Get-Process ms-teams, Teams -ErrorAction SilentlyContinue | ? { $_.MainWindowTitle } | % { [pscustomobject]@{ app = $_.Name; title = $_.MainWindowTitle } }) }
+# ---- Run toast and Undo (decision run-undo). A run that moved windows shows one toast with an Undo button; the button opens
+# tilewindows://undo?run=<id>, which signals this agent. The newest run only, until the next run or a restart: no timer.
+# The AppUserModelID the Start shortcut carries (install.ps1), so the toast header says Tile Windows. Tag and group are one pair for every
+# run toast, so a new run replaces the old toast on screen and in the centre.
+$TileAppId = 'TileWindows.Tray'; $TileToastTag = 'tw-run'; $TileToastGroup = 'tile-windows'
+# The registry rows for the tilewindows:// link, as data: install.ps1 writes them and uninstall.ps1 removes the first row's key. Pure.
+function Get-UndoProtocolKeys([string]$AppDir = (Join-Path $TileHome 'app')) {
+  $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'; $root = 'HKCU:\Software\Classes\tilewindows'
+  @([pscustomobject]@{ path = $root; name = '(default)'; value = 'URL:Tile Windows' },
+    [pscustomobject]@{ path = $root; name = 'URL Protocol'; value = '' },
+    [pscustomobject]@{ path = "$root\shell\open\command"; name = '(default)'; value = "`"$ps`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$AppDir\tray.ps1`" -Link `"%1`"" })
+}
+# The toast as the XML Windows reads. A button opens its link without starting a window (activationType protocol).
+function Get-RunToastXml($n) {
+  $e = { param($t) [Security.SecurityElement]::Escape([string]$t) }
+  $acts = (@($n.actions) | ForEach-Object { "<action content=`"$(& $e $_.label)`" arguments=`"$(& $e $_.launch)`" activationType=`"protocol`"/>" }) -join ''
+  "<toast launch=`"tilewindows://open`" activationType=`"protocol`"><visual><binding template=`"ToastGeneric`"><text>$(& $e $n.title)</text><text>$(& $e $n.body)</text></binding></visual>$(if ($acts) { "<actions>$acts</actions>" })</toast>"
+}
+# The one display call for a run toast. $n.quiet puts the toast in the centre without a pop-up (Undo's own answer).
+function Send-RunToast($n) {
+  [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+  [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
+  $xml = New-Object Windows.Data.Xml.Dom.XmlDocument; $xml.LoadXml((Get-RunToastXml $n))
+  $t = New-Object Windows.UI.Notifications.ToastNotification $xml
+  $t.Tag = $n.tag; $t.Group = $n.group; if ($n.quiet) { $t.SuppressPopup = $true }
+  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($TileAppId).Show($t)
+}
+function Clear-RunToasts { try { [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]; [Windows.UI.Notifications.ToastNotificationManager]::History.Clear($TileAppId) } catch {} }
+function New-RunToast([string]$title, [string]$body, $actions = @(), [bool]$quiet = $false) {
+  $n = [pscustomobject]@{ kind = 'toast'; title = $title; body = $body; actions = @($actions); tag = $TileToastTag; group = $TileToastGroup }
+  if ($quiet) { $n | Add-Member quiet $true }
+  $n
+}
+function Format-AppName([string]$app) { if ($app) { $app.Substring(0, 1).ToUpper() + $app.Substring(1) } else { 'A window' } }
+function Join-Names($names) { $a = @($names); if ($a.Count -le 1) { $a -join '' } else { ($a[0..($a.Count - 2)] -join ', ') + ' and ' + $a[-1] } }
+# Put a run's windows back. $rec is the newest run's record ($null after a restart); $wins the windows now. A window goes back only when
+# every edge is within 4 px of where the run put it (else you moved it since); a window closed since, or minimised before the run, is skipped.
+# Places through tile.ps1 -Place, as the board's Undo does. Returns {status, text, scene, manualAt, placed, stayed, closed}.
+function Invoke-RunUndo($rec, [string]$runId, $wins, [datetime]$now) {
+  $r = [ordered]@{ status = ''; text = ''; scene = ''; manualAt = $null; placed = 0; stayed = @(); closed = @() }
+  if (-not $rec) { $r.status = 'gone'; $r.text = 'Tile Windows restarted since, so it lost the old places.'; return [pscustomobject]$r }
+  if ($rec.id -ne $runId) { $r.status = 'later'; $r.text = 'A later run replaced this one.'; return [pscustomobject]$r }
+  $send = @(); $stay = @(); $gone = @(); $eligible = 0
+  foreach ($m in @($rec.moved)) {
+    if ([double]$m.from.x -le -20000) { continue }
+    $eligible++
+    $w = @($wins | Where-Object { $_.id -eq $m.id })[0]
+    if (-not $w) { $gone += (Format-AppName $m.app); continue }
+    # Edges: left, top, right, bottom. Numbers are cast, since a rect read from JSON text may hold strings.
+    $now4 = @([double]$w.x, [double]$w.y, ([double]$w.x + [double]$w.w), ([double]$w.y + [double]$w.h)); $run4 = @([double]$m.x, [double]$m.y, ([double]$m.x + [double]$m.w), ([double]$m.y + [double]$m.h))
+    $far = @(0..3 | Where-Object { [Math]::Abs($now4[$_] - $run4[$_]) -gt 4 })
+    if (-not $far.Count) { $send += [pscustomobject]@{ id = $m.id; app = $m.app; title = $m.title; x = $m.from.x; y = $m.from.y; w = $m.from.w; h = $m.from.h } } else { $stay += (Format-AppName $m.app) }
+  }
+  $n = 0
+  if ($send.Count) {
+    # ConvertFrom-Json hands a JSON array back as one object (Windows PowerShell 5.1): the second pipe flattens it.
+    $res = @(((& $tile -Place (ConvertTo-Json -InputObject @($send) -Compress) -Json -DryRun:$NoApply 3>$null) -join '') | ConvertFrom-Json | ForEach-Object { $_ })
+    # tile.ps1 answers one entry per window sent; only an entry that says ok = false (no open window) is not counted.
+    $n = $send.Count - @($res | Where-Object { $_.ok -eq $false }).Count
+  }
+  $r.status = 'undone'; $r.placed = $n; $r.stayed = $stay; $r.closed = $gone
+  $r.scene = if ($rec.changed) { [string]$rec.prev } else { '' }
+  if ($n) { $r.manualAt = $now }
+  $win = { param($c) if ($c -eq 1) { 'window' } else { 'windows' } }
+  $t = if ($n -eq $eligible) { "Put back $n $(& $win $n)." } else { "Put back $n of $eligible $(& $win $eligible)." }
+  if ($stay.Count) { $t += " You moved $(Join-Names $stay) since, so $(if ($stay.Count -eq 1) { 'it stays' } else { 'they stay' })." }
+  if ($gone.Count) { $t += " $(Join-Names $gone) closed." }
+  $r.text = $t
+  [pscustomobject]$r
+}
 if ($Lib) { return }
 
 $quitName = TrayName 'Quit'; $openName = TrayName 'Open'
 $created = $false; $mutex = New-Object Threading.Mutex($true, (TrayName 'Agent'), [ref]$created)
-if (-not $created) { if ($Open) { $e = [Threading.EventWaitHandle]::OpenExisting($openName); [void]$e.Set() }; return }
+$linkOk = '^tilewindows://(open|undo\?run=[0-9a-f]{1,32})/?$'
+if (-not $created) {
+  if ($Link -match $linkOk) { Write-TileFile (Join-Path $TileHome 'link.txt') $Link; $e = [Threading.EventWaitHandle]::OpenExisting((TrayName 'Link')); [void]$e.Set() }
+  elseif ($Open) { $e = [Threading.EventWaitHandle]::OpenExisting($openName); [void]$e.Set() }
+  return
+}
+# A link with no agent running (a stale Undo after a quit): this process is not an agent, so it says so and ends.
+if ($Link) {
+  $mutex.ReleaseMutex(); $mutex.Dispose()
+  if ($Link -match '^tilewindows://undo') { Send-RunToast (New-RunToast 'Nothing to undo' 'Tile Windows restarted since, so it lost the old places.' @(@{ label = 'Open Tile Windows'; launch = 'tilewindows://open' })) }
+  return
+}
 $quitEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $quitName)
 $openEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $openName)
+$linkEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', (TrayName 'Link'))
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # The handler only sets a flag: SystemEvents may call it off the PowerShell thread. The timer does the work.
@@ -325,7 +408,8 @@ function Offer-Scene($s, [string]$why) {
   if ($icon) { $icon.ShowBalloonTip(15000, 'Meeting in 2 minutes', "Click to arrange your windows for $($s.name).", 'Info') }
 }
 function Read-Windows { try { @((((& $tile -Json 3>$null) -join '') | ConvertFrom-Json).windows) } catch { $null } }
-function Apply-Scene($s, [string]$why) {
+# $prev: the scene on screen before this run ('' when unknown), so Undo can put it back.
+function Apply-Scene($s, [string]$why, [string]$prev = '') {
   try {
     $arg = $s.id
     # Grid follows the Claude count: the scene runs from its JSON with the ultrawide grid swapped.
@@ -337,8 +421,42 @@ function Apply-Scene($s, [string]$why) {
     $n = @($r.placed | ? { $_.note -eq 'moved' }).Count
     $msg = "$($s.name) applied $why. Moved $n window(s)."
     if (-not $NoApply) { Add-TileLog $s.id $msg }
-    Note $msg
+    if ($n -eq 0) { Note $msg }
+    elseif (-not $NoIcon) {
+      # A run that moved windows shows the toast and keeps what Undo needs. A run that moved nothing, a failure and the offer keep the balloon.
+      $script:offer = $null
+      $script:runUndo = [pscustomobject]@{ id = [guid]::NewGuid().ToString('n').Substring(0, 12); at = Get-Date; scene = $s.id; name = $s.name; prev = $prev; changed = [bool]($prev -and $prev -ne $s.id)
+        moved = @($r.placed | ? { $_.note -eq 'moved' } | % { [pscustomobject]@{ id = $_.id; app = $_.app; title = $_.title; x = $_.x; y = $_.y; w = $_.w; h = $_.h; from = $_.from } }) }
+      $head = if ($why) { $why.Substring(0, 1).ToUpper() + $why.Substring(1) } else { 'Done' }
+      try { Send-RunToast (New-RunToast "$($s.name) applied" "$head. Moved $n $(if ($n -eq 1) { 'window' } else { 'windows' })." @(@{ label = 'Undo'; launch = "tilewindows://undo?run=$($script:runUndo.id)" })) }
+      catch { Note $msg }
+    }
   } catch { Note "$($s.name) failed: $($_.Exception.Message)" }
+}
+# With -NoIcon the agent shows no toast.
+function Show-Toast($n) { if (-not $NoIcon) { Send-RunToast $n } }
+# A tilewindows:// link the launcher left in link.txt: open the app, or put the newest run back. Undo counts as your own move, so waiting
+# triggers cancel and nothing re-applies the run (Step-Tray reads the move time and manualApplyAt).
+function Invoke-Link {
+  $f = Join-Path $TileHome 'link.txt'
+  $l = try { $t = Read-TileFile $f; Remove-Item -LiteralPath $f -Force; $t.Trim() } catch { '' }
+  if ($l -notmatch $linkOk) { return }
+  if ($l -match '^tilewindows://open') { Open-App; return }
+  $rid = $l -replace '^.*run=', '' -replace '/$', ''
+  $rec = $script:runUndo
+  try {
+    $wins = Read-Windows; if ($null -eq $wins) { throw 'Tile Windows could not read the windows.' }
+    $res = Invoke-RunUndo $rec $rid @($wins) (Get-Date)
+    if ($res.status -eq 'undone') {
+      if ($res.manualAt) { [TileInput]::MoveEndTicks = $res.manualAt.ToUniversalTime().Ticks; $script:state.manualApplyAt = $res.manualAt }
+      if ($res.scene -and -not $NoApply) { Add-TileLog $res.scene "Undid $($rec.name): $($res.text)" }
+      $quiet = (-not @($res.stayed).Count -and -not @($res.closed).Count -and $res.placed -gt 0)
+      Show-Toast (New-RunToast "$($rec.name) undone" $res.text @() $quiet)
+    } elseif ($res.status -eq 'later') {
+      $acts = if ($script:runUndo) { @(@{ label = "Undo $($script:runUndo.name)"; launch = "tilewindows://undo?run=$($script:runUndo.id)" }) } else { @() }
+      Show-Toast (New-RunToast 'Already replaced' $res.text $acts)
+    } else { Show-Toast (New-RunToast 'Nothing to undo' $res.text @(@{ label = 'Open Tile Windows'; launch = 'tilewindows://open' })) }
+  } catch { Show-Toast (New-RunToast 'Undo failed' $_.Exception.Message) }
 }
 function Open-App {
   if (-not $srv -or $srv.HasExited) {
@@ -360,7 +478,7 @@ $quitItem = $menu.Items.Add('Quit'); $quitItem.add_Click({ [Windows.Forms.Applic
 $menu.add_Opening({
   $scenesItem.DropDownItems.Clear()
   try { $cfg = ConvertFrom-Json (Get-TileConfigText) } catch { $cfg = $null }
-  foreach ($s in @($cfg.scenes)) { $it = $scenesItem.DropDownItems.Add($s.name); $it.Tag = $s; $it.add_Click({ param($o) Apply-Scene $o.Tag 'from the tray' }) }
+  foreach ($s in @($cfg.scenes)) { $it = $scenesItem.DropDownItems.Add($s.name); $it.Tag = $s; $it.add_Click({ param($o) Apply-Scene $o.Tag 'from the tray' (Get-ActiveId) }) }
 })
 
 $icon = $null
@@ -372,13 +490,14 @@ if (-not $NoIcon) {
   $icon = New-Object Windows.Forms.NotifyIcon
   $icon.Icon = [Drawing.Icon]::FromHandle($bmp.GetHicon()); $icon.Text = 'Tile Windows'; $icon.ContextMenuStrip = $menu; $icon.Visible = $true
   $icon.add_DoubleClick({ Open-App })
-  $icon.add_BalloonTipClicked({ $o = $script:offer; if ($o -and $o.exp -gt (Get-Date)) { $script:offer = $null; Apply-Scene $o.scene 'because you chose to arrange for the meeting' } })
+  $icon.add_BalloonTipClicked({ $o = $script:offer; if ($o -and $o.exp -gt (Get-Date)) { $script:offer = $null; Apply-Scene $o.scene 'because you chose to arrange for the meeting' (Get-ActiveId) } })
 }
 
 $timer = New-Object Windows.Forms.Timer; $timer.Interval = 1000
 $timer.add_Tick({
   if ($quitEv.WaitOne(0)) { [Windows.Forms.Application]::Exit(); return }
   if ($openEv.WaitOne(0)) { Open-App }
+  if ($linkEv.WaitOne(0)) { Invoke-Link }
   try { $cfg = ConvertFrom-Json (Get-TileConfigText) } catch { return }
   # The monitor key: on the first tick (seeds), then 2 s after the display last changed.
   if ([TileDisplayWatch]::Dirty) { [TileDisplayWatch]::Dirty = $false; $script:dirtyAt = Get-Date }
@@ -401,13 +520,16 @@ $timer.add_Tick({
   $active = try { (ConvertFrom-Json (Get-TileStateText)).active } catch { '' }
   # A read here recovered from a bad file: the page shows the note until dismissed; the tray says it once.
   if ($TileNote) { Note $TileNote; $script:TileNote = '' }
-  foreach ($a in (Step-Tray $state (Get-Date) $cfg $key $call $active $sig)) { $sc = @($cfg.scenes | ? { $_.id -eq $a.id })[0]; if ($sc) { if ($a.offer) { Offer-Scene $sc $a.why } else { Apply-Scene $sc $a.why } } }
+  foreach ($a in (Step-Tray $state (Get-Date) $cfg $key $call $active $sig)) { $sc = @($cfg.scenes | ? { $_.id -eq $a.id })[0]; if ($sc) { if ($a.offer) { Offer-Scene $sc $a.why } else { Apply-Scene $sc $a.why (Get-ActiveId) } } }
 })
 $timer.Start()
+# The undo record lives in memory only, so toasts from an earlier agent (with an Undo button that could not work) are cleared at start and at Quit.
+if (-not $NoIcon) { Clear-RunToasts }
 if ($Open) { Open-App }
 try { [Windows.Forms.Application]::Run() }
 finally {
   $timer.Stop(); Stop-App
+  if (-not $NoIcon) { Clear-RunToasts }
   if ($icon) { $icon.Visible = $false; $icon.Dispose() }
-  $mutex.ReleaseMutex(); $mutex.Dispose(); $quitEv.Dispose(); $openEv.Dispose()
+  $mutex.ReleaseMutex(); $mutex.Dispose(); $quitEv.Dispose(); $openEv.Dispose(); $linkEv.Dispose()
 }

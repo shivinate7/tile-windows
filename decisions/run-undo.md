@@ -11,6 +11,6 @@ Plan: docs/design/mockups/run-undo-notes.md#notification (windows)
 
 **Why.** The owner wants to reverse an unwanted run from the notification itself. A tray balloon cannot hold a button.
 
-**Open.** What Undo restores, how long it is offered, and what a stale Undo does: set by the design notes (run-undo) and the build.
+**Open.** Settled by the coordinator, 2026-11-12 15:16 CST: Undo restores the moved windows' places and the scene the run changed (not a scene it left as it was). Undo is offered until the next run or a tray restart, with no timer. Undo counts as the owner's own move. A tray-menu Apply Scene gets the same toast and Undo. No Apply Again. A stale Undo says so: a later run replaced it, or the tray restarted since.
 
-**Check.** None yet. The run-undo lane adds one.
+**Check.** `test/run-undo.ps1` (the run toast, Undo's places and guards, the protocol keys); `test/run.ps1` runs it.
