@@ -64,16 +64,25 @@ look.
    on, and "Only pinned windows move. The rest stay put." when off. Off disables Fill Order, with
    "Fill is off, so the fill order does nothing" on hover and focus (`ux-control-earns-place`).
    The monitor label reads "5×2 · fill off" instead of "· fills" (`render()`, `fills`).
+   Turning it off keeps the layout (owner, 2026-11-12 09:57 CST): in the same `edit()`, each
+   window the fill or a zone placed is pinned in its current cell (`pinPlaced()`, through
+   `pinEdit()`; a span keeps its block), then `fill.off` is set. Nothing moves. A freed cell then
+   stays empty, and a new window goes to Windows That Stay Put. Turning the switch back on fills
+   only the empty cells; the pins it added stay, and the owner can unpin them. The status line
+   names the count: "Fill Empty Cells is off. 6 windows are pinned where they are. Only pinned
+   windows move."
    Gain: the fill's settings keep one home. Lose: while a monitor that does not fill is picked,
    the switch is out of view (that monitor shows "This monitor does not fill itself.").
    Other place: the Scene section, under Name: always in view, but a second home for fill
    settings. Pick: the Monitor section, beside Fill Order.
    Departs from: main, where the fill always runs and Fill Order sits alone in the Monitor section.
 5. **Windows That Stay Put with fill off.** Every window that is not pinned shows in the list with
-   the reason "Fill is off" (a new `BAYWHY` entry). The list keeps today's "Show N More" cap: one
+   the reason "Fill is off" (a new `BAYWHY` entry): the windows Clear Board cleared and any window
+   that opens later. The switch alone leaves none, since it pins what was placed. The list keeps today's "Show N More" cap: one
    row per category under 820px of window height, two above. Pins, locks and stacks stay.
-6. **Clear Board.** A button in the board's action bar, beside Draw Zone. One `edit()`: it turns
-   Fill Empty Cells off, so every unpinned window goes to Windows That Stay Put, and the header's
+6. **Clear Board.** A button in the board's action bar, beside Draw Zone. One `edit()`: it clears
+   first, then turns Fill Empty Cells off without pinning anything (unlike the switch, which pins
+   what was placed), so every unpinned window goes to Windows That Stay Put, and the header's
    Undo brings the board back. The status line says "Cleared the board. 6 windows stay put, and
    Fill Empty Cells is off." When only pinned windows are on the board, the button is disabled,
    with "Only pinned windows are on the board." on hover, and on focus through the inspector's
@@ -87,7 +96,8 @@ look.
    to Windows That Stay Put") if read as `bayEdit()`. Owner grant: yes.
 8. **Zones with fill off.** "Off places only pinned windows" reads as: zones stop too, since
    `tile.ps1` runs pins, then zones, then the fill. The mockup has no zone, so this is not drawn.
-   Pick: zones pause while fill is off, and their outlines stay on the board. Owner grant: yes.
+   Pick: zones pause while fill is off, and their outlines stay on the board. Windows a zone had
+   placed are pinned in their cells when the switch goes off, so they stay. Owner grant: yes.
 9. **Engine change.** The switch adds a scene field (for example `fill.off`), and `tile.ps1`
    `Pass` must skip the zone and fill phases when it is set. This is outside the design folder.
 

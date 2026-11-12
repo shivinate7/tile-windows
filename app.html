@@ -700,7 +700,7 @@ function view(){
   snap.windows.forEach((w,i)=>{v[w.id]={w,r:LIVE?(w.min?null:rect(w)):(w.min&&same(offRects[i],offOrig[i])?null:offRects[i]),kind:"stay",p:null}});
   if(LIVE&&P){for(const p of P.placed){const x=v[p.id];if(x){x.r=rect(p);x.kind=p.behind?"behind":p.pin>=0?"pin":p.zone>=0?"zone":"fill";x.p=p}}for(const l of P.left)if(v[l.id]){v[l.id].kind="left";v[l.id].why=l.why}}
   if(!LIVE)snap.windows.forEach((w,i)=>{v[w.id].kind=same(offRects[i],offOrig[i])?"fill":"pin"});
-  if(optim&&v[optim.id]){v[optim.id].r=optim.r;v[optim.id].kind=optim.kind||"pin"}
+  if(optim&&v[optim.id]){v[optim.id].r=optim.r;v[optim.id].kind=optim.kind||"pin";if(optim.p)v[optim.id].p=optim.p}
   return v}
 // In the bay: every window the scene gives no cell. Live only, once the engine has answered.
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
@@ -918,7 +918,14 @@ $("toastUndo").onclick=()=>{$("toast").hidden=true;$("undo").onclick()};
 $("toastMore").onclick=()=>{$("results").hidden=false;$("results").scrollIntoView({block:"nearest"});$("toast").hidden=true};
 
 /* ---------- Editing scenes ---------- */
-// Clear Board: one edit that turns Fill Empty Cells off, so every window the fill or a zone had placed goes to Windows That Stay Put. It keeps no list of them: the switch alone brings the board back.
+// Fill Empty Cells off keeps the layout: each window the fill or a zone placed is pinned in its current cell (a span keeps its block).
+// P is the engine's answer from before the edit, so the cells are the ones on the board now.
+function pinPlaced(x,P){if(!P)return 0;let n=0;
+  for(const p of P.placed){if(p.pin>=0||p.behind)continue;const g=x.grids[p.mon],m=snap.monitors.find(q=>q.role===p.mon);if(!g||!m)continue;
+    const sl=p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r);if(!sl.length)continue;const b=bbox(sl,g);
+    pinEdit(x,p.id,m,b.r*g.c+b.c,b.cs,b.rs,null);n++}
+  return n}
+// Clear Board: one edit that turns Fill Empty Cells off and pins nothing, so every unpinned window shows in Windows That Stay Put because fill is off. It keeps no list of them: the switch alone brings the board back.
 function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
   edit(x=>{x.fill=x.fill||{};x.fill.off=true},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
 function edit(fn,msg){if(isBusy)return false;removeNote();sceneMsg="";hist.push({k:"edit",id:selId,s:clone(scene())});fn(scene());if(msg)status(msg);render();preview(selId);return true}
@@ -1000,7 +1007,8 @@ const frontOfPin=pi=>{const P=prev();return P&&P.placed.find(p=>p.pin===pi&&!p.b
 // A is dropped on B's lower band: A goes behind B, with any windows behind A.
 function putBehind(aId,bId){
   const P=prev(),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),mon=snap.monitors.find(q=>q.role===pb.mon),g=s.grids[pb.mon],bb=pbox(pb,g),gA=pinNow(s,aId);
-  curMon=mon;selWin=bId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs),kind:"behind"};
+  // A window from Windows That Stay Put has no placed entry yet, so the optimistic one stands in for it: what the engine will answer, on the front's cells.
+  curMon=mon;selWin=bId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs),kind:"behind",p:{...pb,id:aId,app:A.app,behind:true}};
   // The new stack's cues (the strip and the badge) wear a blue ring for about 1.5 seconds.
   flashId=bId;clearTimeout(flashT);flashT=setTimeout(()=>{flashId=null;for(const q of stage.querySelectorAll(".peek.flash,.stk.ring"))q.classList.remove("flash","ring")},1500);
   const ok=edit(x=>{
@@ -1419,7 +1427,7 @@ document.addEventListener("toggle",e=>{if(e.target.id==="xtras")xOpen=e.target.o
 
 document.addEventListener("change",ev=>{const t=ev.target;
   if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
-  else if(t.id==="fillSw"){const on=t.checked;edit(s=>{if(on)delete s.fill.off;else s.fill.off=true},on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":"Fill Empty Cells is off. Only pinned windows move.");requestAnimationFrame(()=>{const e=$("fillSw");if(e)e.focus()})}
+  else if(t.id==="fillSw"){const on=t.checked;let kept=0;edit(s=>{if(on)delete s.fill.off;else{kept=pinPlaced(s,prev());s.fill.off=true}},on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":`Fill Empty Cells is off. ${kept?`${plural(kept,"window")} ${kept===1?"is":"are"} pinned where ${kept===1?"it is":"they are"}. `:""}Only pinned windows move.`);requestAnimationFrame(()=>{const e=$("fillSw");if(e)e.focus()})}
   else if(t.id==="lockSw"){toggleLock(selWin);requestAnimationFrame(()=>{const e=$("lockSw");if(e)e.focus()})}
   else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
   else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});
