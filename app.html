@@ -290,12 +290,12 @@ dialog form{display:grid;gap:10px}
 .bay h2{margin:0;justify-content:flex-start;gap:10px}
 .bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
 .bgrps{display:grid;gap:0 12px;align-items:start}
-/* The grid gap spaces the items of a column. A heading is one row (--bhrow) tall, with its reason on that row. A column that opens with a rule gives the rule an item as tall as a heading's, so chips line up across columns. */
-.bcol{--bhrow:16px;list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:4px;align-content:start}
+/* The grid gap spaces the items of a column. A heading is one row (--bhrow) tall, with its reason on that row; a heading that starts mid-column gets its 8px above from its row, so the packer measures it as a row. A column that opens with a rule gives the rule an item as tall as a heading's, so chips line up across columns. */
+.bcol{--bhrow:15px;list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:4px;align-content:start}
 .bcol.open{grid-template-rows:var(--bhrow)}
 .bh{display:flex;gap:0 6px;align-items:center;margin:0;white-space:nowrap;font:600 11px/var(--bhrow) var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.bh.mid{margin-top:8px}
-.bh .why{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font:400 11px/var(--bhrow) var(--f);text-transform:none;letter-spacing:0}
+.bcol>li:has(>.bh.mid){padding-top:8px}
+.bh .why{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font:400 11px/var(--bhrow) var(--f);text-transform:none;letter-spacing:0}
 .bh .ct{margin-left:auto;font:12px/var(--bhrow) var(--f-mono);letter-spacing:0}
 .cont{height:3px;align-self:center;border-radius:2px;background:var(--cat)}
 @media (forced-colors:active){.cont{background:CanvasText}}
