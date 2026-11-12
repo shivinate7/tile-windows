@@ -107,12 +107,16 @@ function Test-CallIn([string]$text, [string]$name) {
   [bool]@($ast.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq $name }, $true)).Count
 }
 
-# ---- Run-toast setup. The Start shortcut that gates a toast is a real .lnk, made with install.ps1's own TileShortcut class (its
-# here-string, loaded from install.ps1's AST). $appWithId holds one with the AppUserModelID, $appNoId one without, $appNone none.
+# ---- Run-toast setup. The Start shortcut that gates a toast is a real .lnk. Its AppUserModelID comes from TileShortcut, the class that
+# tray.ps1 holds in a here-string and compiles before its -Lib return. install.ps1 uses the same class. $appWithId holds one with the
+# AppUserModelID, $appNoId one without, $appNone none. A tray.ps1 without the class fails its check, and gets no shortcut with an ID.
 $lnkRel = 'Microsoft\Windows\Start Menu\Programs\Tile Windows.lnk'
+$tsSrc = @($tree.FindAll({ param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -match 'public static class TileShortcut' }, $true))
+$tsOk = ($tsSrc.Count -eq 1)
+Check 'tray.ps1 holds the TileShortcut here-string the Start shortcut uses' $tsOk "found $($tsSrc.Count) in tray.ps1"
 $instTree = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'install.ps1'), [ref]$null, [ref]$null)
-$tsSrc = @($instTree.FindAll({ param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -match 'public static class TileShortcut' }, $true))
-if ($tsSrc.Count -eq 1 -and -not ('TileShortcut' -as [type])) { Add-Type -TypeDefinition $tsSrc[0].Value }
+$instUses = @($instTree.FindAll({ param($n) $n -is [Management.Automation.Language.TypeExpressionAst] -and $n.TypeName.Name -eq 'TileShortcut' }, $true))
+Check 'install.ps1 sets the Start shortcut AppUserModelID with TileShortcut (a use in code)' ($instUses.Count -ge 1) "found $($instUses.Count) uses in install.ps1"
 function New-StartShortcut([string]$name, [bool]$withId) {
   $appData = Join-Path $runDir $name; $file = Join-Path $appData $lnkRel
   New-Item -ItemType Directory -Force (Split-Path $file) | Out-Null
@@ -120,8 +124,9 @@ function New-StartShortcut([string]$name, [bool]$withId) {
   if ($withId) { [TileShortcut]::SetAppId($file, $TileAppId) }
   $appData
 }
-$appWithId = New-StartShortcut 'appdata-id' $true; $appNoId = New-StartShortcut 'appdata-noid' $false
 $appNone = Join-Path $runDir 'appdata-none'; New-Item -ItemType Directory -Force $appNone | Out-Null
+$appWithId = if ($tsOk) { New-StartShortcut 'appdata-id' $true } else { $appNone }
+$appNoId = New-StartShortcut 'appdata-noid' $false
 $env:APPDATA = $appWithId
 # The tray's script state, which sits after its -Lib return: set here as the tray sets it at start. $linkOk is the link check, read from the file.
 $script:state = New-TrayState; $gridMode = @{}; $linkOk = $null
@@ -294,7 +299,7 @@ if ($script:scopeOk) {
   $sU = New-TrayState
   $null = Step-Tray $sU $b0 $cfgU $null $null 'focus' (TSig @{ idleSec = 3600 })
   $null = Step-Tray $sU $b0.AddSeconds(30) $cfgU $null $null 'focus' (TSig @{ idleSec = 5; mouseDown = $true })
-  $mt = if ($r6) { $r6.manualAt } else { [datetime]::MinValue }
+  $mt = if ($r6 -and $r6.manualAt) { $r6.manualAt } else { [datetime]::MinValue }
   $late = Ids (Step-Tray $sU $b0.AddSeconds(41) $cfgU $null $null 'focus' (TSig @{ idleSec = 5; manualAt = $mt }))
   Check 'a desk return that was waiting does not come back after the undo' ($late -eq '') "applied: '$late'"
 }
