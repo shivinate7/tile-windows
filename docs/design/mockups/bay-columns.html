@@ -198,7 +198,7 @@ const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
 
 /* ---------- The list ---------- */
 // The reason most windows share; Reason Said Once names it in the note and drops it from those chips.
-function common(ws){const m=new Map();for(const w of ws)m.set(w[3],(m.get(w[3])||0)+1);let best=null,n=0;for(const [k,v] of m)if(v>n){best=k;n=v}return n>1?best:null}
+function common(ws){const m=new Map();for(const w of ws)m.set(w[3],(m.get(w[3])||0)+1);let best=null,n=0;for(const [k,v] of m)if(v>n){best=k;n=v}return n>ws.length/2?best:null} // "most" means more than half
 function chip(w,once,shared){const [app,c,title,why]=w,show=!(once&&why===shared);
   return `<li><button type="button" class="chip cat-${c}" title="${esc(app)}: ${esc(title)}" aria-label="${esc(app)}: ${esc(title)}. ${esc(why)}. Stays put. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(app)}</b><span>${esc(title)}</span>${show?`<small>${esc(why)}</small>`:""}</button></li>`}
 function groups(ws){const by=new Map(CATS.map(([c])=>[c,[]]));for(const w of ws)by.get(w[1]).push(w);return [...by].filter(([,l])=>l.length)}
@@ -245,7 +245,9 @@ function renderFlow(body,ws,once,shared,width){
 function renderBlocks(body,ws,once,shared,width){
   const {vis}=capped(ws),gs=groups(vis),nb=gs.length;
   const K=Math.max(1,Math.floor((width+GAP)/(MINCOL+GAP)));
-  let R=1;while(gs.reduce((s,[,l])=>s+Math.ceil(l.length/R),0)>K&&R<99)R++;
+  // The same rule as Flowing Columns: a split never leaves one window alone in a column.
+  const lone=R=>gs.some(([,l])=>{const k=Math.ceil(l.length/R);if(k<2)return false;const per=Math.ceil(l.length/k);return l.length-(k-1)*per<2});
+  let R=1;while((gs.reduce((s,[,l])=>s+Math.ceil(l.length/R),0)>K||lone(R))&&R<99)R++;
   const used=gs.reduce((s,[,l])=>s+Math.ceil(l.length/R),0),fits=used<=K;
   // Columns keep today's width share; the 20px gap between blocks comes out of the columns.
   const colW=fits?(width-GAP*(K-1)-(20-GAP)*(nb-1))/K:MINCOL;

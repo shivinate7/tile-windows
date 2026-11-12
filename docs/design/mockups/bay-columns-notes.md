@@ -27,14 +27,15 @@ categories use three tracks and the rest stay empty. The longest category sets t
 
 | Case | Today | Flowing Columns | Category Blocks |
 |---|---|---|---|
-| 1440, 23 windows | 531px | 332px | 490px |
-| 1024, 23 windows | 531px | 409px | 536px |
-| 1440, 6 windows | 155px | 159px | 114px |
-| 1024, 6 windows | 155px | 159px | 161px |
-| 23, Show N More | 108px | 112px | 114px |
+| 1440, 23 windows | 536px | 335px | 494px |
+| 1024, 23 windows | 536px | 413px | 542px |
+| 1440, 6 windows | 157px | 161px | 163px |
+| 1024, 6 windows | 157px | 161px | 163px |
+| 23, Show N More | 110px | 114px | 116px |
 
 Reader: the "List body height" line under each drawing (`getBoundingClientRect` of the list body),
-read 2026-11-12 in the Browser pane. The screenshot's list is about twice as wide as 1440's 878px;
+read 2026-11-12 in the Browser pane, page served from a local static server. Fonts fall back to
+Segoe UI, so the app's own figures will differ by a few pixels. The screenshot's list is about twice as wide as 1440's 878px;
 there the gain grows (more columns), but that width is not drawn and not measured.
 
 ## Options
@@ -49,19 +50,20 @@ there the gain grows (more columns), but that width is not drawn and not measure
    gives the board more height, because `layout()` subtracts `bay.offsetHeight` when it sizes the
    board (lines 683-685). Lose: a category can share a column with the next, so categories are
    told apart by header, rule and chip edge, not by column; adding one window can move later
-   chips to the next column; with 6 windows it is no shorter than today (159px against 155px).
+   chips to the next column; with 6 windows it is no shorter than today (161px against 157px).
 2. **Category Blocks (alternative).** Each category takes one or more whole columns, at the
-   fewest rows that fit; its header, count and a 2px colour rule span its columns, and blocks
-   are 20px apart (columns 12px). Gain: each category stays one block, as today; a change in one
-   category moves no other category's chips. Lose: little gain while categories are few: 8%
-   shorter at 1440, and 1% taller at 1024, where three categories already fill three columns.
-   It wins only with a small list (114px for 6 windows at 1440).
+   fewest rows that fit, split evenly, with the same no-lone-window rule; its header, count and a
+   2px colour rule span its columns, and blocks are 20px apart (columns 12px). Gain: each category
+   stays one block, as today; a change in one category moves no other category's chips. Lose:
+   little gain while categories are few: 8% shorter at 1440, and 1% taller at 1024, where three
+   categories already fill three columns.
 3. **Show N More.** Both layouts keep today's cap from `renderBay()`: two windows per category
    (one under 820px of window height), then the layout packs what shows. No change from main.
-4. **Reason Said Once (off by default; `once=1`).** When most windows share a reason, the note
-   says it once ("Most are here because fill is off; the others say why.") and those chips drop
-   their second line. Gain: with Flowing Columns, 270px at 1440 and 389px at 1024. Lose: a chip
-   no longer says its own reason; the reader has to read the note.
+4. **Reason Said Once (off by default; `once=1`).** When more than half the windows share a
+   reason, the note says it once ("Most are here because fill is off; the others say why.") and
+   those chips drop their second line. Gain: with Flowing Columns, 271px at 1440 and 390px at
+   1024. Lose: a chip no longer says its own reason; the reader has to read the note.
+   Pick: leave it off; build it only on the owner's grant.
    Departs from: `renderBay()`, which puts the reason in each chip's `<small>`, and
    `board-feedback-notes.md` item 5, which shows "Fill is off" on every window. Owner grant: yes.
 
