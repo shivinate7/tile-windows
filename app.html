@@ -147,10 +147,14 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .tile .stayput em{font-style:normal}
 .tile .stayput svg{display:none;width:12px;height:12px}
 .tile.sel .stayput.ico{display:grid;right:21px;bottom:3px;width:18px;height:18px;padding:0;place-items:center}
-/* A selected stacked narrow tile (about 50x55) has no free 18px in its right column: the lock, the grip and the badge fill it. The icon takes the top row left of the lock, in the app tag's place. The pin mark and the tag give way to it; the inspector and the tile's label still say Pinned and name the app. */
-.tile.sel.stacked .stayput.ico{top:2px;bottom:auto;right:24px}
-.tile.sel.stacked.narrow .pinmark,.tile.sel.stacked.narrow b{display:none}
-.tile.sel.stacked.narrow span{margin-top:18px}
+/* A selected stacked narrow tile (about 50x42 under its strip) has no free 18px: the tag and lock fill the top row, the badge and the grip the bottom row. The tag stays, so the front window keeps its name. Stay Put and the grip shrink to 14px, and Stay Put takes the bottom row between the badge and the grip, clear of the tag, lock, badge and grip. The pin mark gives way; the inspector and the tile's label still say Pinned. */
+.tile.sel.stacked .stayput.ico{top:auto;bottom:1px;right:14px;width:14px;height:14px}
+.tile.sel.stacked .stayput.ico svg{width:10px;height:10px}
+.tile.sel.stacked.narrow .pinmark{display:none}
+.tile.sel.stacked.narrow .rsz{width:14px;height:14px}
+.tile.sel.stacked.narrow .rsz svg{width:12px;height:12px}
+/* At 1440 a selected stacked tile is too short for two title lines above Stay Put: it keeps one, so Stay Put never covers the second. */
+.tile.sel.stacked.tight span{-webkit-line-clamp:1}
 .tile .stayput.ico svg{display:block}
 .tile .stayput.ico .spt{display:none}
 .tile .stayput:disabled{opacity:.55;cursor:not-allowed}
@@ -267,6 +271,8 @@ dialog form{display:grid;gap:10px}
 .zone [data-zone]{max-width:calc(100% - 44px)}
 .zone button{pointer-events:auto;position:absolute;left:8px;top:100%;transform:translateY(-50%);border:0;border-radius:3px;padding:2px 7px;background:var(--cat);color:var(--panel);font:600 11px var(--f);cursor:pointer;max-width:calc(100% - 8px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #zdraw,#rzdraw{position:absolute;display:none;border:2px dashed var(--select);background:color-mix(in srgb,var(--select) 16%,transparent);border-radius:4px;pointer-events:none;z-index:8}
+/* The resize outline and its live label sit over the handles, which follow the outline: a bar over the label would hide it. */
+#rzdraw{z-index:10}
 #zdraw span,#rzdraw span{position:absolute;left:8px;top:100%;transform:translateY(-50%);white-space:nowrap;padding:1px 6px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px var(--f)}
 /* The bay: every window without a cell, by category. It stays where it is on Apply. */
 .bay{position:sticky;bottom:0;z-index:6;display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel));box-shadow:0 -10px 18px -14px color-mix(in srgb,var(--ink) 40%,transparent),0 23px 0 var(--canvas)}
@@ -298,7 +304,7 @@ dialog form{display:grid;gap:10px}
 .tile .lk:hover{background:color-mix(in srgb,var(--ink) 12%,transparent);color:var(--ink)}
 .tile.lock{cursor:default}
 .tile.lock .lk{background:var(--ink);color:var(--panel)}
-.tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 6px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1}
+.tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 5px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1}
 .tile .stk svg{width:10px;height:10px}
 /* Named badge: it names the window right behind. A narrow tile shows that app's initial in its category colour. */
 .tile .stk .ini{display:inline-grid;place-items:center;width:13px;height:13px;border-radius:2px;background:var(--cat);color:var(--panel);font:700 9.5px/1 var(--f)}
@@ -314,9 +320,11 @@ dialog form{display:grid;gap:10px}
 /* The named badge never grows under the grip: it stops 31px short of the tile's right edge (8px left, the 20px grip, and its own 3px hit extension) and cuts a long name with an ellipsis. */
 .tile .stk{max-width:calc(100% - 31px)}
 .tile .stk span{display:block;max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}
-.tile .stk span.n{flex:none;overflow:visible;margin-left:-3px}
+.tile .stk span.n{flex:none;overflow:visible}
+/* The space before "+N" keeps the text readable as "Claude +1" but takes no width: the badge's gap is the only gap. With 5px padding, "Claude +1" fits the 65px a first-column pinned tile leaves at 1440, so a name is cut only when its box is truly too short. */
+.sp{font-size:0}
 /* Forced colours drop the badge's fill, so a 1px ButtonText border makes it read as a button. The padding gives up 1px a side, so the box keeps its width and its hit box stays clear of the grip. */
-@media (forced-colors:active){.tile .stk{border:1px solid ButtonText}.tile.stacked.narrow .stk{padding:1px}}
+@media (forced-colors:active){.tile .stk{border:1px solid ButtonText;padding:1px 4px}.tile.stacked.narrow .stk{padding:1px}}
 .tile.stacked span{-webkit-line-clamp:2}
 .tile.stacked .stayput{bottom:24px;right:3px}
 /* Layered stack look: the back window is a layer under the front tile. The front tile gives up a strip at its top (15px, 13px on a narrow tile), and the strip names the back app. */
@@ -324,7 +332,10 @@ dialog form{display:grid;gap:10px}
 .peek{position:absolute;z-index:2;display:flex;align-items:flex-start;gap:3px;padding:2px 6px 0 8px;border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--cat) 22%,var(--panel));font:600 10.5px/1 var(--f);color:var(--ink);overflow:hidden;white-space:nowrap}
 .peek::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
 .peek svg{width:10px;height:10px;flex:none}
-.peek.narrow{padding-top:1px}
+.peek.narrow{padding:1px 2px 0 6px}
+/* The strip keeps "+N" whole and cuts the name with an ellipsis. The name's padding keeps its descenders out of the clip. */
+.peek .pn{min-width:0;overflow:hidden;text-overflow:ellipsis;padding-bottom:3px;margin-bottom:-3px}
+.peek .pc{flex:none}
 .peek[hidden]{display:none}
 .peek.flash{outline:2px solid var(--select);outline-offset:1px;z-index:5}
 .tile.peeked.narrow span{display:none}
@@ -394,6 +405,8 @@ dialog form{display:grid;gap:10px}
 .dnote b{font-weight:700}
 .dnote .btn{pointer-events:auto;min-height:26px;padding:2px 8px;font-size:12px;background:transparent;color:inherit;border-color:color-mix(in srgb,currentColor 40%,transparent)}
 @media (prefers-reduced-motion:no-preference){.dnote{animation:pop .18s ease-out}.dnote.out{opacity:0;transition:opacity .4s}}
+/* Forced colours drop the fill, so the note and the toast get a 1px border (the note's pointer too), or they read as loose text. */
+@media (forced-colors:active){.toast,.dnote{border:1px solid CanvasText}.dnote::before{border:solid CanvasText;border-width:1px 0 0 1px}.dnote.up::before{border-width:0 1px 1px 0}}
 @media (pointer:coarse){.tile .lk,.tile .stk{min-width:28px;min-height:28px}}
 @media (prefers-reduced-motion:no-preference){#drop .dz{transition:background-color .08s,border-color .08s}}
 
@@ -723,14 +736,16 @@ function render(){
     const ico=parseFloat(pr.width)<84;e.classList.toggle("narrow",ico);
     // The badge names the window right behind ("Chrome", "Chrome +1"). A narrow tile has no room for a name, so it shows that app's initial; the label and tooltip keep the true count.
     if(sb&&back.length){const bn=appName(back[0].app);
-      sb.innerHTML=ico?`<i class="ini cat-${catOf(back[0].app)}">${esc(bn.charAt(0))}</i>`:`${parseFloat(pr.width)>=140?BEHIND:""}<span>${esc(bn)}</span>${back.length>1?`<span class="n"> +${back.length-1}</span>`:""}`;
+      sb.innerHTML=ico?`<i class="ini cat-${catOf(back[0].app)}">${esc(bn.charAt(0))}</i>`:`${parseFloat(pr.width)>=140?BEHIND:""}<span>${esc(bn)}</span>${back.length>1?`<span class="n"><i class="sp"> </i>+${back.length-1}</span>`:""}`;
       sb.classList.toggle("ring",flashId===w.id)}
     // The layered look: the back window is a layer under the front tile, whose top strip names the back app.
     const PK=ico?13:15,pk=back.length>0&&parseFloat(pr.height)>=PK+30;e.classList.toggle("peeked",pk);
     if(pk){const pe=peekOf(w.id);pe.className=`peek cat-${catOf(back[0].app)}${ico?" narrow":""}${flashId===w.id?" flash":""}`;
-      pe.innerHTML=`${ico?"":BEHIND}${esc(appName(back[0].app))}${back.length>1?` +${back.length-1}`:""}`;pe.hidden=false;pe.dataset.id=w.id;
+      pe.innerHTML=`${ico?"":BEHIND}<span class="pn">${esc(appName(back[0].app))}</span>${back.length>1?`<span class="pc"><i class="sp"> </i>+${back.length-1}</span>`:""}`;pe.hidden=false;pe.dataset.id=w.id;
       Object.assign(pe.style,{left:pr.left,top:pr.top,width:pr.width,height:PK+6+"px"});
       Object.assign(e.style,{top:parseFloat(pr.top)+PK+"px",height:parseFloat(pr.height)-PK+"px"})}
+    // A word-form Stay Put sits 44px above the tile's inner bottom, so two title lines (to 53px) need a tile 101px tall; a shorter one keeps one line.
+    e.classList.toggle("tight",back.length>0&&!ico&&parseFloat(e.style.height)<101);
     if(sp){sp.disabled=locked;sp.classList.toggle("ico",ico);
       if(ico){sp.title=locked?"Stay Put. Locked, unlock it first.":"Stay Put";sp.setAttribute("aria-label","Stay Put")}
       else{sp.removeAttribute("aria-label");if(locked)sp.title="Locked. Unlock it first.";else sp.removeAttribute("title")}}
@@ -770,11 +785,11 @@ function render(){
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   overText(V);renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);
 }
-// The eight handles go around the selected tile's drawn box (a peeked tile starts below its strip). A locked tile has none: it never resizes.
+// The eight handles go around the selected tile's whole cell block: a stacked tile's strip is inside the frame, so the handles never sit on the name of the window behind. A locked tile has none: it never resizes.
 function placeHandles(V){const e=selWin&&els.get(selWin),x=selWin&&V[selWin],P=prev();
   const ok=LIVE&&!drag&&e&&!e.hidden&&x&&x.r&&P&&P.placed.some(p=>p.id===selWin&&!p.behind)&&!e.classList.contains("lock");
   hdl.hidden=!ok;if(!ok)return;
-  Object.assign(hdl.style,{left:e.style.left,top:e.style.top,width:e.style.width,height:e.style.height});
+  Object.assign(hdl.style,px(x.r));
   const nar=e.classList.contains("narrow");hdl.style.setProperty("--arm",nar?"8px":"10px");hdl.style.setProperty("--bar",nar?"12px":"16px");hdl.style.setProperty("--off",nar?"6px":"7px")}
 function renderZones(){
   for(const z of [...$("stage").querySelectorAll(".zone")])z.remove();
