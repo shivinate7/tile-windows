@@ -232,7 +232,8 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
       # The front is not open: the first open back window takes its cell as the new front, as the board promotes one when its front leaves.
       if (-not $it -and $bis.Count) { $it = $bis[0]; $bis = @($bis | Select-Object -Skip 1) }
       $pn | Add-Member -Force Item $it
-      if (-not $it) { continue }
+      # Fill off: a pin for a closed window still keeps its cell, so nothing held lands on it.
+      if (-not $it) { if ($script:sceneFillOff) { $pn.Slots | % { $used[$_] = 1 } }; continue }
       $pn | Add-Member -Force BehindItems $bis
       $pn.Slots | % { $used[$_] = 1 }
     }
@@ -283,13 +284,20 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   if ($phase -in 'all', 'pins') { foreach ($pn in $pins) { if ($pn.Item) { foreach ($bi in @($pn.BehindItems)) { Put $bi $pn.Slots $pn.Index -behind }; Put $pn.Item $pn.Slots $pn.Index } } }
 
   # Fill Empty Cells off (scene fill.held): each held window goes back in its held cells, after every pin has taken its own.
-  # A held cell a pin or an earlier hold has taken is skipped, and a window that is closed, minimized or already placed
-  # is not held: the sweep after the phase loop lists the open ones as 'fill is off'.
+  # A held cell a pin (open or closed) or an earlier hold has taken is skipped. An entry holds one window, matched as a pin
+  # matches: by its handle when it has one (a stale handle holds nothing), else by its app, and by its title only when the app
+  # has several windows (open, or held in the scene). A closed, minimized or already placed window is not held: the sweep after
+  # the phase loop lists the open ones as 'fill is off'.
   if ($phase -eq 'held') {
     foreach ($hd in $held) {
       if (@($hd.Slots | ? { $used.ContainsKey($_) }).Count) { continue }
-      $it = if ($hd.Id) { @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and [int64]$_.H -eq [int64]$hd.Id -and $_.App -eq $hd.App -and (& $up) })[0] }
-      if (-not $it -and $hd.Title) { $it = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.App -eq $hd.App -and $_.Title -ceq $hd.Title -and (& $up) })[0] }
+      $pool = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.App -eq $hd.App -and (& $up) })
+      $it = if ($hd.Id) { @($pool | ? { [int64]$_.H -eq [int64]$hd.Id })[0] }
+      else {
+        $many = @($items | ? { $_.App -eq $hd.App }).Count -gt 1 -or @($sc.fill.held | ? { $_ -and [string]$_.app -eq $hd.App }).Count -gt 1
+        $cand = @(if ($many) { @($pool | ? { $_.Title -ceq $hd.Title }) + @($pool | ? { $hd.Title -and (Contains $_.Title $hd.Title) }) } else { $pool })
+        @($cand | Sort-Object { $_.X -le -20000 }, X, Y)[0]
+      }
       if (-not $it) { continue }
       $hd.Slots | % { $used[$_] = 1 }
       Put $it $hd.Slots (-1)
@@ -299,8 +307,8 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # Zones: each takes its cells (pins on every monitor already won theirs) and fills them with its app's
   # or category's windows in fill order, row by row. A category zone leaves out skipped apps, as the fill
   # does for '*'. Windows that do not fit go to the bay.
-  # Fill Empty Cells off (scene fill.off): only pins are placed. The zone and fill steps place nothing; the scene names the
-  # windows that stay put once every pass has run (see the sweep after the phase loop).
+  # Fill Empty Cells off (scene fill.off): pins and held windows (fill.held) are placed. The zone and fill steps place nothing; the
+  # scene names the other windows, which stay where they are, once every pass has run (see the sweep after the phase loop).
   $fillOff = $scene -and $script:sceneFillOff
   if ($phase -eq 'zones' -and -not $fillOff) {
     $zkeys = KeysFor { FillIdx $_.App $script:zFill }
