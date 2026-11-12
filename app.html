@@ -159,8 +159,8 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 #dest{position:absolute;border:2px dashed var(--select);border-radius:3px;pointer-events:none;display:none;z-index:8}
 #drop{position:absolute;border:3px solid var(--select);background:color-mix(in srgb,var(--select) 26%,transparent);border-radius:3px;pointer-events:none;display:none;z-index:8}
 @media (prefers-reduced-motion:no-preference){
-  .tile,.stkedge{transition:left .22s cubic-bezier(.2,.7,.2,1),top .22s cubic-bezier(.2,.7,.2,1),width .22s,height .22s,opacity .15s}
-  .tile.drag,.tile.now,.still .tile,.still .stkedge{transition:none}
+  .tile,.peek,.hdl{transition:left .22s cubic-bezier(.2,.7,.2,1),top .22s cubic-bezier(.2,.7,.2,1),width .22s,height .22s,opacity .15s}
+  .tile.drag,.tile.now,.still .tile,.still .peek,.still .hdl{transition:none}
   #drop{transition:left .08s,top .08s,width .08s,height .08s}}
 .hint,.over{font-size:12px;color:var(--muted);margin:0}
 .boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
@@ -300,18 +300,34 @@ dialog form{display:grid;gap:10px}
 .tile.lock .lk{background:var(--ink);color:var(--panel)}
 .tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 6px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1}
 .tile .stk svg{width:10px;height:10px}
+/* Named badge: it names the window right behind. A narrow tile shows that app's initial in its category colour. */
+.tile .stk .ini{display:inline-grid;place-items:center;width:13px;height:13px;border-radius:2px;background:var(--cat);color:var(--panel);font:700 9.5px/1 var(--f)}
+.tile .stk.ring{outline:2px solid var(--select);outline-offset:1px}
 /* A narrow stacked tile (about 50x55) has a 20px grip at the bottom right. The badge gives up its icon and padding so its drawn box and its 3px hit extension end left of the grip: the two hit areas never meet, and a press on the +N reaches the badge. */
-.tile.stacked.narrow .stk{left:3px;padding:1px 3px}
+.tile.stacked.narrow .stk{left:3px;padding:1px 2px}
 .tile.stacked.narrow .stk svg{display:none}
+/* The layered look makes a narrow stacked tile 13px shorter, so its lock and badge hit extensions would reach the tile's centre, where a press selects it. On a narrow tile they grow away from the centre only. A selected narrow stacked tile has no room for the badge and Stay Put one above the other with a hit extension between them: the badge sits flush at the bottom and drops its upper and lower extensions (the south handle band starts at the tile's edge). */
+.tile.narrow .lk::after{inset:-3px -3px -3px 0}
+.tile.stacked.narrow .stk::after{inset:-3px 0 -3px -3px}
+.tile.sel.stacked.narrow .stk{bottom:0}
+.tile.sel.stacked.narrow .stk::after{inset:0 0 0 -3px}
+/* The named badge never grows under the grip: it stops 31px short of the tile's right edge (8px left, the 20px grip, and its own 3px hit extension) and cuts a long name with an ellipsis. */
+.tile .stk{max-width:calc(100% - 31px)}
+.tile .stk span{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Forced colours drop the badge's fill, so a 1px ButtonText border makes it read as a button. The padding gives up 1px a side, so the box keeps its width and its hit box stays clear of the grip. */
-@media (forced-colors:active){.tile .stk{border:1px solid ButtonText}.tile.stacked.narrow .stk{padding:1px 2px}}
+@media (forced-colors:active){.tile .stk{border:1px solid ButtonText}.tile.stacked.narrow .stk{padding:1px}}
 .tile.stacked span{-webkit-line-clamp:2}
 .tile.stacked .stayput{bottom:24px;right:3px}
-/* Stack edge: the front tile keeps its box and its full border. The back window's edge is its own element, drawn 3px up and to the right of the front, under it. */
+/* Layered stack look: the back window is a layer under the front tile. The front tile gives up a strip at its top (15px, 13px on a narrow tile), and the strip names the back app. */
 .tile.stacked{z-index:3}
-.stkedge{position:absolute;pointer-events:none;z-index:2;border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--cat) 14%,var(--panel))}
-.stkedge[hidden]{display:none}
-@media (forced-colors:active){.stkedge{border-color:CanvasText;background:Canvas}}
+.peek{position:absolute;z-index:2;display:flex;align-items:flex-start;gap:3px;padding:2px 6px 0 8px;border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--cat) 22%,var(--panel));font:600 10.5px/1 var(--f);color:var(--ink);overflow:hidden;pointer-events:none;white-space:nowrap}
+.peek::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
+.peek svg{width:10px;height:10px;flex:none}
+.peek.narrow{padding-top:1px}
+.peek[hidden]{display:none}
+.peek.flash{outline:2px solid var(--select);outline-offset:1px;z-index:5}
+.tile.peeked.narrow span{display:none}
+@media (forced-colors:active){.peek{border-color:CanvasText;background:Canvas;color:CanvasText}}
 .tile.behind{pointer-events:none;z-index:1;background:color-mix(in srgb,var(--cat) 14%,var(--panel))}
 .tile.behind::before{display:none}
 .tile.behind>*{visibility:hidden}
@@ -350,6 +366,33 @@ dialog form{display:grid;gap:10px}
 .bw .row2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .bw .btn{min-height:28px;padding:3px 8px;font-size:12px}
 .ct2{font:12px var(--f-mono);color:var(--muted);letter-spacing:0}
+/* Resize handles on every edge and corner of the selected tile. They sit on the stage, not in the tile (the tile clips its children), just outside its border: corners 10 by 10 and edge bands 7px, so the tag, lock, badge, Stay Put and grip keep every pixel. Each hit area is the element; the drawn bracket or bar is its ::before. */
+.hdl{position:absolute;pointer-events:none;z-index:9;--arm:10px;--bar:16px;--off:7px}
+.hdl i{position:absolute;pointer-events:auto;touch-action:none}
+.hdl i::before{content:"";position:absolute;pointer-events:none;border:0 solid var(--select)}
+.hdl i.c{width:11px;height:11px}
+.hdl i.c::before{width:var(--arm);height:var(--arm)}
+.hdl i.tl{left:-10px;top:-10px;cursor:nwse-resize}.hdl i.tl::before{left:calc(10px - var(--off));top:calc(10px - var(--off));border-width:3px 0 0 3px;border-top-left-radius:3px}
+.hdl i.tr{left:calc(100% - 1px);top:-10px;cursor:nesw-resize}.hdl i.tr::before{left:calc(var(--off) - var(--arm) + 1px);top:calc(10px - var(--off));border-width:3px 3px 0 0;border-top-right-radius:3px}
+.hdl i.bl{left:-10px;top:calc(100% - 1px);cursor:nesw-resize}.hdl i.bl::before{left:calc(10px - var(--off));top:calc(var(--off) - var(--arm) + 1px);border-width:0 0 3px 3px;border-bottom-left-radius:3px}
+.hdl i.br{left:calc(100% - 1px);top:calc(100% - 1px);cursor:nwse-resize}.hdl i.br::before{left:calc(var(--off) - var(--arm) + 1px);top:calc(var(--off) - var(--arm) + 1px);border-width:0 3px 3px 0;border-bottom-right-radius:3px}
+.hdl i.e::before{background:var(--select);border-radius:2px}
+.hdl i.n,.hdl i.s{left:1px;right:1px;height:7px;cursor:ns-resize}
+.hdl i.n{top:-7px}.hdl i.s{top:100%}
+.hdl i.n::before,.hdl i.s::before{left:50%;width:var(--bar);height:3px;transform:translateX(-50%)}
+.hdl i.n::before{top:calc(7px - var(--off))}.hdl i.s::before{top:calc(var(--off) - 3px)}
+.hdl i.w,.hdl i.ea{top:1px;bottom:1px;width:7px;cursor:ew-resize}
+.hdl i.w{left:-7px}.hdl i.ea{left:100%}
+.hdl i.w::before,.hdl i.ea::before{top:50%;height:var(--bar);width:3px;transform:translateY(-50%)}
+.hdl i.w::before{left:calc(7px - var(--off))}.hdl i.ea::before{left:calc(var(--off) - 3px)}
+@media (forced-colors:active){.hdl i::before{border-color:Highlight}.hdl i.e::before{background:Highlight}}
+/* Drop Note: the toast's look, anchored under the tile that took a Put Behind drop. Only its Undo takes the pointer. */
+.dnote{position:absolute;z-index:30;display:flex;align-items:center;gap:8px;width:max-content;max-width:240px;padding:5px 5px 5px 10px;border-radius:6px;background:var(--ink);color:var(--panel);font:500 12px/1.3 var(--f);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent);pointer-events:none}
+.dnote::before{content:"";position:absolute;left:var(--ax,14px);top:-5px;width:10px;height:10px;background:var(--ink);transform:rotate(45deg);border-radius:1px}
+.dnote.up::before{top:auto;bottom:-5px}
+.dnote b{font-weight:700}
+.dnote .btn{pointer-events:auto;min-height:26px;padding:2px 8px;font-size:12px;background:transparent;color:inherit;border-color:color-mix(in srgb,currentColor 40%,transparent)}
+@media (prefers-reduced-motion:no-preference){.dnote{animation:pop .18s ease-out}.dnote.out{opacity:0;transition:opacity .4s}}
 @media (pointer:coarse){.tile .lk,.tile .stk{min-width:28px;min-height:28px}}
 @media (prefers-reduced-motion:no-preference){#drop .dz{transition:background-color .08s,border-color .08s}}
 
@@ -395,9 +438,10 @@ dialog form{display:grid;gap:10px}
 
   <main class="canvas">
     <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"></div><div id="dest"><span></span></div><div id="zdraw"><span></span></div><div id="rzdraw"><span></span></div><div id="rzdest"></div></div><div id="ghost" aria-hidden="true"></div>
-    <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" hidden>Draw Zone</button>
+    <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" hidden>Draw Zone</button><button type="button" class="btn" id="clearbd" aria-describedby="whyclear" hidden>Clear Board</button><span class="vh" id="whyclear"></span>
     <details id="keys" class="keys"><summary>Keyboard</summary><ul>
       <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
+      <li>Ctrl+Shift+arrows resize it from its top or left edge.</li>
       <li>Delete unpins it. K keeps it where it is (off the board).</li>
       <li>L locks or unlocks it. B brings the window behind it to the front.</li>
       <li>Enter on a window that stays put opens it in the inspector, where Move To places it.</li>
@@ -482,7 +526,7 @@ const PIN='<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hid
 
 let snap=null,cfg={scenes:[],cats:LIVE?{}:OFFLINE_CATS,categories:CATS0},work={},selId=null,prevs={},pseq={},selWin=null,curMon=null,hist=[],isBusy=false,serverDry=false,
   st={active:"",log:[]},hidden=new Set(),showGrid=true,G={x0:0,y0:0,S:1},els=new Map(),drawn={},optim=null,drag=null,raf=0,
-  offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zanchor=null,selZone=null,xOpen=false,rz=null;
+  offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zanchor=null,selZone=null,xOpen=false,rz=null,hdl=null,noteEl=null,noteT=0,flashId=null,flashT=0;
 const clone=o=>JSON.parse(JSON.stringify(o));
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
@@ -597,7 +641,9 @@ async function previewAll(){await preview(selId);for(const s of cfg.scenes)if(s.
 
 /* ---------- Drawing ---------- */
 function build(){
-  const stg=$("stage"),drop=$("drop"),dest=$("dest"),zd=$("zdraw"),rd=$("rzdraw"),rdd=$("rzdest");stg.textContent="";stg.append(drop,dest,zd,rd,rdd);els.clear();edges.clear();
+  const stg=$("stage"),drop=$("drop"),dest=$("dest"),zd=$("zdraw"),rd=$("rzdraw"),rdd=$("rzdest");stg.textContent="";stg.append(drop,dest,zd,rd,rdd);els.clear();peeks.clear();noteEl=null;clearTimeout(noteT);
+  // The eight handles of the selected tile; one element, so a press on a handle keeps its pointer while the outline moves.
+  hdl=document.createElement("div");hdl.className="hdl";hdl.hidden=true;hdl.setAttribute("aria-hidden","true");hdl.innerHTML='<i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><i class="e n"></i><i class="e s"></i><i class="e w"></i><i class="e ea"></i>';stg.appendChild(hdl);
   for(const m of snap.monitors){
     const e=document.createElement("div");e.className="mon";m.el=e;stg.appendChild(e);
     const l=document.createElement("div");l.className="mlab";m.lab=l;stg.appendChild(l);
@@ -609,9 +655,8 @@ function build(){
   }
 }
 let inspKey="";  // the selected window and whether it is stacked, as the inspector last scrolled for it
-const EDGE=3;  // how far the back window's edge shows past the front tile's top and right
-const edges=new Map();  // front window id -> its stack edge element
-const edgeOf=id=>{let e=edges.get(id);if(!e){e=document.createElement("div");e.className="stkedge";e.hidden=true;e.setAttribute("aria-hidden","true");$("stage").appendChild(e);edges.set(id,e)}return e};
+const peeks=new Map();  // front window id -> the strip that names the back window under it
+const peekOf=id=>{let e=peeks.get(id);if(!e){e=document.createElement("div");e.className="peek";e.hidden=true;e.setAttribute("aria-hidden","true");$("stage").appendChild(e);peeks.set(id,e)}return e};
 const INSET=3;  // drawn gap inside each monitor edge, so side-by-side monitors read as separate screens
 // The only layout reads: the canvas size, on load and on resize. The board fills the canvas width, up to the window height.
 function layout(){
@@ -645,7 +690,7 @@ function view(){
   return v}
 // In the bay: every window the scene gives no cell. Live only, once the engine has answered.
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
-const BAYWHY={"in the bay":"You kept it here","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column"};
+const BAYWHY={"in the bay":"You kept it here","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","fill is off":"Fill is off"};
 const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized: it stays minimized":"Not in this scene";
 // Cells as columns and rows, not numbers: "3 columns × 2 rows from column 1, row 1".
 function cellsText(slots,g){const b=bbox(slots,g);return `${plural(b.cs,"column")} × ${plural(b.rs,"row")} from column ${b.c+1}, row ${b.r+1}`}
@@ -661,7 +706,7 @@ function render(){
   const nb={};if(LIVE&&prevs[selId])for(const p of prevs[selId].placed)if(p.behind)(nb[p.pin]=nb[p.pin]||[]).push(p);
   for(const w of snap.windows){
     const e=els.get(w.id),x=V[w.id];if(drag&&drag.id===w.id){used.add(monAt(drag.start.x+drag.start.w/2,drag.start.y+drag.start.h/2));continue}
-    edgeOf(w.id).hidden=true;
+    peekOf(w.id).hidden=true;
     e.className=`tile cat-${catOf(w.app)} ${x.kind==="left"?"stay":x.kind==="zone"?"zfill":x.kind}`;
     const pm=e.querySelector(".pinmark");if(x.kind==="pin"&&!pm)e.insertAdjacentHTML("beforeend",PIN);else if(x.kind!=="pin"&&pm)pm.remove();
     if(!x.r||inBay(x)){e.hidden=true;continue}
@@ -670,17 +715,24 @@ function render(){
     const lk=e.querySelector(".lk"),sb=e.querySelector(".stk"),sp=e.querySelector(".stayput");
     if(lk){lk.hidden=bh;if(!bh){lk.setAttribute("aria-pressed",locked);lk.title=locked?"Unlock: it can move again":"Lock: it never moves";
       lk.setAttribute("aria-label",`${locked?"Unlock":"Lock"} ${appName(w.app)}: ${w.title}`);const ic=locked?"c":"o";if(lk.dataset.ic!==ic){lk.dataset.ic=ic;lk.innerHTML=locked?LOCKC:LOCKO}}}
-    if(sb){sb.hidden=!back.length;if(back.length){const nm=back.map(p=>appName(p.app));sb.innerHTML=`${BEHIND}+${back.length}`;
+    if(sb){sb.hidden=!back.length;if(back.length){const nm=back.map(p=>appName(p.app));
       sb.title=`Behind: ${nm.join(", ")}.\nClick to bring ${nm[0]} to the front.`;sb.setAttribute("aria-label",`${plural(back.length,"window")} behind. Bring ${nm[0]} to the front.`)}}
     e.hidden=false;const pr=px(x.r);Object.assign(e.style,pr);
     // Stay Put reads in words from 84px across; a narrower tile shows the icon alone, named by its tooltip and label.
     const ico=parseFloat(pr.width)<84;e.classList.toggle("narrow",ico);
-    // A narrow badge for ten or more windows behind would grow under the grip, so its text caps at 9+. The label and tooltip keep the true count.
-    if(sb&&back.length)sb.lastChild.textContent=ico&&back.length>9?"9+":`+${back.length}`;
+    // The badge names the window right behind ("Chrome", "Chrome +1"). A narrow tile has no room for a name, so it shows that app's initial; the label and tooltip keep the true count.
+    if(sb&&back.length){const bn=appName(back[0].app);
+      sb.innerHTML=ico?`<i class="ini cat-${catOf(back[0].app)}">${esc(bn.charAt(0))}</i>`:`${parseFloat(pr.width)>=140?BEHIND:""}<span>${esc(bn)}${back.length>1?` +${back.length-1}`:""}</span>`;
+      sb.classList.toggle("ring",flashId===w.id)}
+    // The layered look: the back window is a layer under the front tile, whose top strip names the back app.
+    const PK=ico?13:15,pk=back.length>0&&parseFloat(pr.height)>=PK+30;e.classList.toggle("peeked",pk);
+    if(pk){const pe=peekOf(w.id);pe.className=`peek cat-${catOf(back[0].app)}${ico?" narrow":""}${flashId===w.id?" flash":""}`;
+      pe.innerHTML=`${ico?"":BEHIND}${esc(appName(back[0].app))}${back.length>1?` +${back.length-1}`:""}`;pe.hidden=false;
+      Object.assign(pe.style,{left:pr.left,top:pr.top,width:pr.width,height:PK+6+"px"});
+      Object.assign(e.style,{top:parseFloat(pr.top)+PK+"px",height:parseFloat(pr.height)-PK+"px"})}
     if(sp){sp.disabled=locked;sp.classList.toggle("ico",ico);
       if(ico){sp.title=locked?"Stay Put. Locked, unlock it first.":"Stay Put";sp.setAttribute("aria-label","Stay Put")}
       else{sp.removeAttribute("aria-label");if(locked)sp.title="Locked. Unlock it first.";else sp.removeAttribute("title")}}
-    if(back.length){const ed=edgeOf(w.id);ed.className=`stkedge cat-${catOf(back[0].app)}`;ed.hidden=false;Object.assign(ed.style,{...pr,left:parseFloat(pr.left)+EDGE+"px",top:parseFloat(pr.top)-EDGE+"px"})}
     if(!bh)drawn[w.id]={x:x.r.x,y:x.r.y,w:x.r.w,h:x.r.h,kind:x.kind};used.add(monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2));
     const mv=(x.kind==="pin"||x.kind==="fill"||bh)&&!same(x.r,w);if(mv)moves++;
     e.classList.toggle("sel",w.id===selWin);e.classList.toggle("dim",hidden.has(catOf(w.app)));
@@ -696,7 +748,7 @@ function render(){
       const em=document.createElement("div");em.className="empty";e.appendChild(em)}
     e.querySelector(".empty").textContent=used.has(m)?"":g?"Empty. Drag a window here.":"Empty. Not in this scene.";
     const fills=s&&s.fill&&s.fill.mon===m.role;
-    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${g.c}×${g.r}`:""}${fills?" · fills":""}</span>`;
+    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${g.c}×${g.r}`:""}${fills?s.fill.off?" · fill off":" · fills":""}</span>`;
     m.lab.title=`${monName(m)}: ${m.w}×${m.h}`;
   }
   // Header
@@ -709,10 +761,20 @@ function render(){
   $("undo").title=isBusy?"Wait for the current action to finish.":hist.length?"Undo the last change or "+(LIVE?verb():"Apply")+".":"Nothing to undo yet.";
   $("pend").textContent=moves?`${plural(moves,"window")} will move on ${LIVE?verb():"Apply"}`:"The board matches your screen";
   $("zadd").hidden=!(LIVE&&s);
+  // Clear Board turns Fill Empty Cells off. With only pinned windows on the board there is nothing to clear.
+  const cb=$("clearbd"),unpinned=prevs[selId]?prevs[selId].placed.filter(p=>p.pin<0&&!p.behind).length:0;
+  cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
+  $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
   $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the middle swaps and the lower band puts it behind.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
-  overText(V);renderZones();renderBay(V);renderRail();renderInsp(V);
+  overText(V);renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);
 }
+// The eight handles go around the selected tile's drawn box (a peeked tile starts below its strip). A locked tile has none: it never resizes.
+function placeHandles(V){const e=selWin&&els.get(selWin),x=selWin&&V[selWin],P=prev();
+  const ok=LIVE&&!drag&&e&&!e.hidden&&x&&x.r&&P&&P.placed.some(p=>p.id===selWin&&!p.behind)&&!e.classList.contains("lock");
+  hdl.hidden=!ok;if(!ok)return;
+  Object.assign(hdl.style,{left:e.style.left,top:e.style.top,width:e.style.width,height:e.style.height});
+  const nar=e.classList.contains("narrow");hdl.style.setProperty("--arm",nar?"8px":"10px");hdl.style.setProperty("--bar",nar?"12px":"16px");hdl.style.setProperty("--off",nar?"6px":"7px")}
 function renderZones(){
   for(const z of [...$("stage").querySelectorAll(".zone")])z.remove();
   const s=LIVE?scene():null;if(!s)return;
@@ -803,7 +865,9 @@ function renderInsp(V){
   let h=`<div class="seg" role="group" aria-label="Monitor">${mons.map(x=>`<button type="button" data-mon="${snap.monitors.indexOf(x)}" aria-pressed="${x===m}">${esc(monName(x))}</button>`).join("")}</div>
     <p class="note">${m.w}×${m.h} pixels.</p>`;
   if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
-    if(s&&s.fill&&s.fill.mon===m.role)h+=`<div class="field stack"><label for="sort">Fill order</label><select id="sort">${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note">Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.</p></div>`;
+    if(s&&s.fill&&s.fill.mon===m.role){const off=!!s.fill.off;
+      h+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="fillSw" ${off?"":"checked"}><span class="xt"><b>Fill Empty Cells</b><small>${off?"Only pinned windows move. The rest stay put.":"Windows that are not pinned fill the free cells."}</small></span></label>
+      <div class="field stack"><label for="sort">Fill order</label><select id="sort" ${off?'disabled title="Fill is off, so the fill order does nothing. Turn on Fill Empty Cells to use it." aria-describedby="fillwhy"':""}>${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note" id="fillwhy">${off?"Fill is off, so the fill order does nothing.":`Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.`}</p></div>`}
     else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`;
 }
   else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>`;
@@ -838,7 +902,10 @@ $("toastUndo").onclick=()=>{$("toast").hidden=true;$("undo").onclick()};
 $("toastMore").onclick=()=>{$("results").hidden=false;$("results").scrollIntoView({block:"nearest"});$("toast").hidden=true};
 
 /* ---------- Editing scenes ---------- */
-function edit(fn,msg){if(isBusy)return false;sceneMsg="";hist.push({k:"edit",id:selId,s:clone(scene())});fn(scene());if(msg)status(msg);render();preview(selId);return true}
+// Clear Board: one edit that turns Fill Empty Cells off, so every window the fill or a zone had placed goes to Windows That Stay Put. It keeps no list of them: the switch alone brings the board back.
+function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
+  edit(x=>{x.fill=x.fill||{};x.fill.off=true},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
+function edit(fn,msg){if(isBusy)return false;removeNote();sceneMsg="";hist.push({k:"edit",id:selId,s:clone(scene())});fn(scene());if(msg)status(msg);render();preview(selId);return true}
 const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
 function pinWin(id,mon,slot,cs=1,rs=1){
   const w=winById(id);
@@ -918,12 +985,26 @@ const frontOfPin=pi=>{const P=prev();return P&&P.placed.find(p=>p.pin===pi&&!p.b
 function putBehind(aId,bId){
   const P=prev(),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),mon=snap.monitors.find(q=>q.role===pb.mon),g=s.grids[pb.mon],bb=pbox(pb,g),gA=pinNow(s,aId);
   curMon=mon;selWin=bId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs),kind:"behind"};
-  return edit(x=>{
+  // The new stack's cues (the strip and the badge) wear a blue ring for about 1.5 seconds.
+  flashId=bId;clearTimeout(flashT);flashT=setTimeout(()=>{flashId=null;for(const q of stage.querySelectorAll(".peek.flash,.stk.ring"))q.classList.remove("flash","ring")},1500);
+  const ok=edit(x=>{
     let fb=pinNow(x,bId);if(!fb){pinEdit(x,bId,mon,bb.r*g.c+bb.c,bb.cs,bb.rs,null);fb=x.pins[0]}
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
-    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay},`Put ${appName(A.app)} behind ${appName(B.app)}.`)}
+    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay},`Put ${appName(A.app)} behind ${appName(B.app)}.`);
+  if(ok)dropNote(px(cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)),A,B,hist[hist.length-1]);
+  return ok}
+// Drop Note: it names the stack under the tile that took the drop, with Undo. It goes after about 6 seconds, at the next press, or at the next edit.
+function removeNote(){clearTimeout(noteT);if(noteEl)noteEl.remove();noteEl=null}
+function dropNote(r,A,B,entry){removeNote();const el=document.createElement("div");el.className="dnote";el.setAttribute("role","status");
+  el.innerHTML=`<span><b>${esc(appName(A.app))}</b> is behind <b>${esc(appName(B.app))}</b></span><button type="button" class="btn">Undo</button>`;
+  stage.appendChild(el);noteEl=el;
+  const l=parseFloat(r.left),t=parseFloat(r.top),w=parseFloat(r.width),h=parseFloat(r.height),nw=el.offsetWidth,nh=el.offsetHeight,x=Math.max(0,Math.min(l+2,stage.offsetWidth-nw)),up=t+h+9+nh>stage.offsetHeight&&t-nh-9>=0;
+  el.style.left=x+"px";el.style.top=(up?t-nh-9:t+h+9)+"px";el.classList.toggle("up",up);el.style.setProperty("--ax",clamp(l+w/2-5-x,6,Math.max(6,nw-16))+"px");
+  el.querySelector("button").onclick=()=>{const last=hist[hist.length-1]===entry;removeNote();if(last)$("undo").onclick();else status("That change is no longer the last one. Use Undo in the header.")};
+  noteT=setTimeout(()=>{el.classList.add("out");noteT=setTimeout(removeNote,400)},5600)}
+document.addEventListener("pointerdown",ev=>{if(noteEl&&!noteEl.contains(ev.target))removeNote()},true);
 // The stack entry pin.behind[k] of pin pi, or its first listed entry when k is left out.
 const stackEntry=(pi,k)=>{const st=stackOf(pi);return k===undefined?st[0]:st.find(e=>e.k===k)};
 // The window at pin.behind[k] comes to the front; the old front takes its place in the stack.
@@ -943,14 +1024,17 @@ function toggleLock(id){const w=winById(id),pp=pinOf(id);selWin=id;
   const P=prev(),p=P&&P.placed.find(q=>q.id===id&&!q.behind);if(!p){status(`${w.title} has no cell to lock. Place it first.`);return}
   const mon=snap.monitors.find(q=>q.role===p.mon),g=scene().grids[p.mon],b=pbox(p,g);
   edit(x=>{pinEdit(x,id,mon,b.r*g.c+b.c,b.cs,b.rs,null);x.pins[0].lock=true},`Locked ${w.title}. It stays in ${monName(mon)} cell${b.cs*b.rs>1?"s":""} ${p.slots.join("+")}.`)}
-/* ---------- Resize by the corner grip ---------- */
-// The span the grip is over, in whole cells, stopped by a locked tile. Covered pinned windows go to free cells in fill order, else to the list.
-function planResize(id,mon,c0,r0,cs,rs){
+/* ---------- Resize by a handle, the corner grip, or the keys ---------- */
+// The span the pointer is over, in whole cells, stopped by a locked tile. Covered pinned windows go to free cells in fill order, else to the list.
+// fromL and fromT: the left or top edge is the one that moves, so the right or bottom edge stays put when a lock cuts the span short.
+function planResize(id,mon,c0,r0,cs,rs,fromL=false,fromT=false){
   const s=scene(),P=prev(),role=mon.role,g=s.grids[role],self=pinNow(s,id),info=[];
   s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<g.c*g.r);if(qs.length){const b=bbox(qs,g);info.push({q,i,b,cells:new Set(b.cells)})}});
-  const hitLock=(a,b)=>{const cc=cellsOf(c0,r0,a,b,g);return info.some(o=>o.q.lock&&cc.some(c=>o.cells.has(c)))};
+  const box=(a,b)=>cellsOf(fromL?c0+cs-a:c0,fromT?r0+rs-b:r0,a,b,g);
+  const hitLock=(a,b)=>{const cc=box(a,b);return info.some(o=>o.q.lock&&cc.some(c=>o.cells.has(c)))};
   let stopped=false;
-  if(hitLock(cs,rs)){stopped=true;let best=null;for(let a=cs;a>=1;a--)for(let b=rs;b>=1;b--)if(!hitLock(a,b)&&(!best||a*b>best.a*best.b))best={a,b};cs=best?best.a:1;rs=best?best.b:1}
+  if(hitLock(cs,rs)){stopped=true;let best=null;for(let a=cs;a>=1;a--)for(let b=rs;b>=1;b--)if(!hitLock(a,b)&&(!best||a*b>best.a*best.b))best={a,b};
+    const na=best?best.a:1,nb=best?best.b:1;if(fromL)c0+=cs-na;if(fromT)r0+=rs-nb;cs=na;rs=nb}
   const nc=new Set(cellsOf(c0,r0,cs,rs,g)),cov=info.filter(o=>!o.q.lock&&[...o.cells].some(c=>nc.has(c))),covIdx=new Set(cov.map(o=>o.i)),occ=new Set(nc);
   for(const o of info)if(!covIdx.has(o.i))o.cells.forEach(c=>occ.add(c));
   if(P)for(const p of P.placed)if(!p.behind&&p.mon===role&&p.id!==id&&!covIdx.has(p.pin))pbox(p,g).cells.forEach(c=>occ.add(c));
@@ -966,16 +1050,26 @@ function planResize(id,mon,c0,r0,cs,rs){
   return{c0,r0,cs,rs,stopped,moves,count}}
 // A resize's start for placed window p: its monitor, its grid and its block now.
 function rzBase(p){const g=scene().grids[p.mon];return{id:p.id,m:snap.monitors.find(q=>q.role===p.mon),gr:g,b:pbox(p,g)}}
-// Shift+arrows and the Width and Height steppers: the grip's resize, dc columns and dr rows from the block now.
+// Shift+arrows, Ctrl+Shift+arrows and the Width and Height steppers: the grip's resize, dc columns and dr rows from the block now.
+// With fromL or fromT the left or top edge moves (Ctrl+Shift+arrows): dc -1 grows it left, +1 shrinks it from the left.
 // A step onto a locked tile is refused, so the block stays as it is; the grip instead keeps the largest span short of the lock.
-function resizeStep(p,dc,dr){const r=rzBase(p),w=winById(p.id);curMon=r.m;
+function resizeStep(p,dc,dr,fromL=false,fromT=false){const r=rzBase(p),w=winById(p.id),b=r.b,g=r.gr;curMon=r.m;
   if(lockOfPlaced(p)){status(`${w.title} is locked. Unlock it first.`);render();return}
-  const pl=planResize(p.id,r.m,r.b.c,r.b.r,clamp(r.b.cs+dc,1,r.gr.c-r.b.c),clamp(r.b.rs+dr,1,r.gr.r-r.b.r));
+  let c0=b.c,cs=clamp(b.cs+dc,1,g.c-b.c),r0=b.r,rs=clamp(b.rs+dr,1,g.r-b.r);
+  if(fromL){c0=clamp(b.c+dc,0,b.c+b.cs-1);cs=b.c+b.cs-c0}
+  if(fromT){r0=clamp(b.r+dr,0,b.r+b.rs-1);rs=b.r+b.rs-r0}
+  const pl=planResize(p.id,r.m,c0,r0,cs,rs,fromL,fromT);
   if(pl.stopped){status("A locked tile is in the way. Nothing changed.");render();return}
   commitResize(r,pl)}
-function rzTarget(r){const m=r.m,g=r.gr,cw=m.w/g.c,ch=m.h/g.r,ex=r.start.x+r.start.w+(r.px-r.sx)/G.S,ey=r.start.y+r.start.h+(r.py-r.sy)/G.S;
-  const cs=clamp(Math.round((ex-(m.x+r.b.c*cw))/cw),1,g.c-r.b.c),rs=clamp(Math.round((ey-(m.y+r.b.r*ch))/ch),1,g.r-r.b.r);
-  return planResize(r.id,m,r.b.c,r.b.r,cs,rs)}
+// Where a handle's drag leaves the block: each edge the handle holds moves to the nearest cell line, and the opposite edge stays.
+const HDIR={tl:{l:1,t:1},tr:{r:1,t:1},bl:{l:1,b:1},br:{r:1,b:1},n:{t:1},s:{b:1},w:{l:1},ea:{r:1}};
+function rzTarget(r){const m=r.m,g=r.gr,b=r.b,d=r.dir,cw=m.w/g.c,ch=m.h/g.r,dx=(r.px-r.sx)/G.S,dy=(r.py-r.sy)/G.S;
+  let c0=b.c,cs=b.cs,r0=b.r,rs=b.rs;
+  if(d.r)cs=clamp(Math.round((r.start.x+r.start.w+dx-m.x)/cw),c0+1,g.c)-c0;
+  if(d.l){c0=clamp(Math.round((r.start.x+dx-m.x)/cw),0,b.c+b.cs-1);cs=b.c+b.cs-c0}
+  if(d.b)rs=clamp(Math.round((r.start.y+r.start.h+dy-m.y)/ch),r0+1,g.r)-r0;
+  if(d.t){r0=clamp(Math.round((r.start.y+dy-m.y)/ch),0,b.r+b.rs-1);rs=b.r+b.rs-r0}
+  return planResize(r.id,m,c0,r0,cs,rs,!!d.l,!!d.t)}
 function commitResize(r,pl){
   const s=scene(),mon=r.m,g=r.gr,self=pinNow(s,r.id),w=winById(r.id);
   if(pl.c0===r.b.c&&pl.r0===r.b.r&&pl.cs===r.b.cs&&pl.rs===r.b.rs){render();if(pl.stopped)status("A locked tile is in the way. Nothing changed.");return}
@@ -1050,7 +1144,9 @@ function frame(){raf=0;
     for(const [id,d] of Object.entries(drawn)){const x=d.x+d.w/2,y=d.y+d.h/2,in_=x>r.x&&x<r.x+r.w&&y>r.y&&y<r.y+r.h&&d.kind!=="stay";els.get(+id).classList.toggle("ztake",in_);if(in_)n++}
     e.firstChild.textContent=`${plural(cs,"column")} × ${plural(rs,"row")} · ${n?`covers ${plural(n,"window")}`:"empty cells"} · Esc cancels`;return}
   if(rz){const r=rz,pl=r.plan=rzTarget(r),e=$("rzdraw"),n=pl.count,bay=pl.moves.filter(m=>!m.to).length;
-    Object.assign(e.style,px(cellRect(r.m,r.gr,pl.c0,pl.r0,pl.cs,pl.rs)));e.style.display="block";
+    const orr=px(cellRect(r.m,r.gr,pl.c0,pl.r0,pl.cs,pl.rs));Object.assign(e.style,orr);e.style.display="block";
+    // The handles follow the outline, so the pressed one stays under the pointer.
+    if(!hdl.hidden)Object.assign(hdl.style,orr);
     e.firstChild.innerHTML=`<b>${pl.cs}×${pl.rs}</b> · ${n?(n===1?"1 window moves":`${n} windows move`):"no window moves"}${bay?` · ${bay} to the list`:""}${pl.stopped?" · stops at a locked tile":""}`;
     $("rzdest").innerHTML=pl.moves.filter(m=>m.to).map(m=>{const rr=px(cellRect(r.m,r.gr,m.to.c,m.to.r,m.to.cs,m.to.rs)),W=winById(m.wins[0]);
       return `<div class="rdest" style="left:${rr.left};top:${rr.top};width:${rr.width};height:${rr.height}"><span>${esc(W?appName(W.app):"")}</span></div>`}).join("");
@@ -1058,7 +1154,7 @@ function frame(){raf=0;
     const wn=$("win").querySelector('.num[aria-label="columns wide"]'),hn=$("win").querySelector('.num[aria-label="rows tall"]');if(wn)wn.textContent=pl.cs;if(hn)hn.textContent=pl.rs;
     return}
   if(!drag||drag.locked)return;const d=drag,w=winById(d.id),gh=$("ghost"),dest=$("dest");
-  if(Math.abs(d.px-d.sx)+Math.abs(d.py-d.sy)>4){gh.className=`cat-${catOf(w.app)}`;gh.textContent=`${appName(w.app)}: ${w.title}`;Object.assign(gh.style,{left:d.px+14+"px",top:d.py-34+"px",display:"block"})}
+  if(Math.abs(d.px-d.sx)+Math.abs(d.py-d.sy)>4){hdl.hidden=true;gh.className=`cat-${catOf(w.app)}`;gh.textContent=`${appName(w.app)}: ${w.title}`;Object.assign(gh.style,{left:d.px+14+"px",top:d.py-34+"px",display:"block"})}
   const ob=!d.fromBay&&LIVE&&overBay(d.px,d.py);$("bay").classList.toggle("drop",ob);$("dropslot").textContent=ob?dropText(w,catOf(w.app)):dropText();
   const t=ob?null:target(d);d.t=t;for(const e of stage.querySelectorAll(".tile.swap"))e.classList.remove("swap");dest.style.display="none";
   if(t){const occ=occupant(d,t);
@@ -1077,7 +1173,7 @@ function frame(){raf=0;
       dropEl.innerHTML=`<span>${blocked?"Locked tile in the way":nar?"Here":"Place here"}</span>`}}
   else dropEl.style.display="none"}
 stage.addEventListener("pointerdown",ev=>{
-  const lab=ev.target.closest(".mlab button,.zone button,.tile .stayput,.tile .lk,.tile .stk,.tile .rsz");if(lab||ev.button!==0||drag||zdraw||rz||isBusy)return;
+  const lab=ev.target.closest(".mlab button,.zone button,.tile .stayput,.tile .lk,.tile .stk,.tile .rsz,.hdl i");if(lab||ev.button!==0||drag||zdraw||rz||isBusy)return;
   const e=ev.target.closest(".tile");
   // Zone drawing: from an empty cell, or with Shift from anywhere on a grid.
   if(LIVE&&(!e||ev.shiftKey)){const c=cellAt(ev.clientX,ev.clientY);if(!c)return;ev.preventDefault();
@@ -1090,13 +1186,15 @@ stage.addEventListener("pointerdown",ev=>{
   if(!locked)e.classList.add("drag","now");
   drag={id,el:e,start,cs,rs,pmon,locked,sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,pid:ev.pointerId,t:null};
 });
-// The corner grip resizes. The drag handler above skips it, as it skips the lock and the badge.
+// A handle on any edge or corner, or the corner grip, resizes. The drag handler above skips them, as it skips the lock and the badge.
 stage.addEventListener("pointerdown",ev=>{
-  const gr=ev.target.closest(".tile .rsz");if(!gr||ev.button!==0||drag||zdraw||rz||isBusy||!LIVE)return;
-  const e=gr.closest(".tile"),id=+e.dataset.id,d=drawn[id],P=prev(),p=P&&P.placed.find(q=>q.id===id&&!q.behind);
+  const gr=ev.target.closest(".tile .rsz,.hdl i");if(!gr||ev.button!==0||drag||zdraw||rz||isBusy||!LIVE)return;
+  const hd=gr.closest(".hdl"),e=hd?els.get(selWin):gr.closest(".tile");if(!e)return;
+  const id=+e.dataset.id,d=drawn[id],P=prev(),p=P&&P.placed.find(q=>q.id===id&&!q.behind);
   if(!d||!p||lockOfPlaced(p))return;
   ev.preventDefault();e.focus({preventScroll:true});try{gr.setPointerCapture(ev.pointerId)}catch(_){}
-  rz={...rzBase(p),el:e,grip:gr,start:{x:d.x,y:d.y,w:d.w,h:d.h},sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,pid:ev.pointerId,plan:null};
+  const dir=hd?HDIR[[...gr.classList].find(c=>HDIR[c])]:HDIR.br;
+  rz={...rzBase(p),el:e,grip:gr,dir,start:{x:d.x,y:d.y,w:d.w,h:d.h},sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,pid:ev.pointerId,plan:null};
   selWin=id;render()});
 $("bay").addEventListener("pointerdown",ev=>{
   const e=ev.target.closest(".chip");if(!e||ev.button!==0||drag||zdraw||isBusy)return;
@@ -1153,9 +1251,9 @@ stage.addEventListener("keydown",ev=>{
   if((ev.key==="Delete"||ev.key==="Backspace")&&LIVE){ev.preventDefault();unpin(id);return}
   if((ev.key==="k"||ev.key==="K")&&LIVE&&prev()){ev.preventDefault();unplace(id);return}
   const k={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];if(!k)return;ev.preventDefault();
-  // Shift+arrows on the board resize by one cell, as the corner grip does.
+  // Shift+arrows on the board resize by one cell, as the corner grip does. With Ctrl they move the top or left edge.
   const pz=ev.shiftKey&&LIVE&&prev()&&prev().placed.find(q=>q.id===id&&!q.behind);
-  if(pz){resizeStep(pz,k[0],k[1]);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
+  if(pz){resizeStep(pz,k[0],k[1],ev.ctrlKey,ev.ctrlKey);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
   const d=drawn[id];if(!d)return;
   const pp=LIVE&&pinOf(id);let m,g,b;
   if(pp){m=snap.monitors.find(q=>q.role===pp.pin.mon);g=gridOf(m);b=bbox(pp.pin.slots,g)}
@@ -1217,7 +1315,7 @@ $("apply").onclick=async()=>{
   $("results").hidden=true;$("fileout").hidden=false;$("cmd").textContent=cmd();$("cmsg").textContent="";
   toast("Downloaded last-place.json. Run the command below it.","",{});
 };
-$("undo").onclick=async()=>{if(isBusy)return;const e=hist.pop();if(!e)return;
+$("undo").onclick=async()=>{if(isBusy)return;const e=hist.pop();if(!e)return;removeNote();
   if(e.k==="rects"){offRects=e.r;render();toast("Undid the last move.");return}
   if(e.k==="edit"){selId=e.id;work[e.id]=e.s;optim=null;render();preview(selId);toast("Undid the last change.");return}
   if(e.k==="apply"){if(e.back.length)await placeBack(e.back);else toast("That Apply moved nothing.")}};
@@ -1267,6 +1365,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="baymore"){bayAll=!bayAll;render()}
   else if(t.id==="tobay")unplace(selWin);
   else if(t.id==="zadd")drawZoneDialog();
+  else if(t.id==="clearbd")clearBoard();
   else if(t.dataset.pick){selId=t.dataset.pick;optim=null;selZone=null;zanchor=null;render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}
   else if(t.dataset.apply){selId=t.dataset.apply;render();if(!prevs[selId])await preview(selId);applyScene()}
   else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
@@ -1288,6 +1387,7 @@ document.addEventListener("toggle",e=>{if(e.target.id==="xtras")xOpen=e.target.o
 
 document.addEventListener("change",ev=>{const t=ev.target;
   if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
+  else if(t.id==="fillSw"){const on=t.checked;edit(s=>{if(on)delete s.fill.off;else s.fill.off=true},on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":"Fill Empty Cells is off. Only pinned windows move.");requestAnimationFrame(()=>{const e=$("fillSw");if(e)e.focus()})}
   else if(t.id==="lockSw"){toggleLock(selWin);requestAnimationFrame(()=>{const e=$("lockSw");if(e)e.focus()})}
   else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
   else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});

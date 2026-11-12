@@ -11,6 +11,7 @@ Plan: docs/design/mockups/stack-and-lock-notes.md#stack-and-lock (windows)
   After a Put Behind drop, a Drop Note on the tile that took the drop names the stack ("Excel is behind Claude") with Undo. It stays about 6 seconds or until the next press. The status bar keeps the same words.
 - Lock: a padlock on every tile. A locked tile never moves (no swap; zone and fill flow around it). A drop on it offers only Put Behind. The lock saves in the scene.
 - Resize: handles on every edge and corner, drawn just outside the tile. A drag snaps the span to whole cells, with a live "2×2" label. Covered windows move to free cells in fill order, else to Windows That Stay Put. A resize stops at a locked tile. Shift+arrows stays.
+  Ctrl+Shift+arrows resize from the top and left edges.
 - Spanned drop: a drop on a spanned block targets the whole block, as Swap or Put Behind, never a 1x1 Place here and never a tile over another. Swap keeps the span with the place.
 - On cells under 84px the Put Behind label reads "Behind"; the tooltip keeps the full name.
 
