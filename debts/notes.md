@@ -78,7 +78,6 @@ Low findings. Each becomes a debt only after a real incident.
 
 - `test/stack-lock.ps1` The flash-strip check reads `elementFromPoint`, so it pins the hit-test mechanism, not the geometry. A CSS-only fix could turn it red while the behaviour is right. A geometric overlap check would fix it. (code review round 3, PR 13, board-feedback)
 - `app.html` `ctlUnderPeek` tests the button's own rect, not its 3px `::after` reach. During the 1.5s flash, the margin above the lock does not route the press. (code review round 3, PR 13, board-feedback)
-- `test/run.ps1` lines 57-60 (`-Place -DryRun matches all windows`) read the live desktop twice. Any window that opens, closes or changes its title between the reads fails it. Seen once, 22 of 23. Promote it to a debt on a second sighting. (code review round 3, PR 13, board-feedback)
 
 ## From PR 13 design review round 2 (2026-11-11)
 
