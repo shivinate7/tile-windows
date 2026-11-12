@@ -87,3 +87,7 @@ Low findings. Each becomes a debt only after a real incident.
 - `app.html` At 1024 the peek strip cuts a back app's name longer than about six letters ("Chro…"). (PR 13 design review round 2)
 - `app.html` Already on main: at 1024, on a selected narrow tile that is not stacked, the Stay Put icon covers the title's second line. (PR 13 design review round 2)
 - `app.html` The strip and the Named Badge both name the back app at 1440, against the one-label rule (`ux-label-once`). The owner ruled both in at 16:31 CST. An open option is to show only "+N" on the badge while the strip is visible. (PR 13 design review round 2)
+
+## From PR 14 code review round 2 (2026-11-12)
+
+- `app.html` (~1441-1445) Off then On within an in-flight preview runs On first, so the final state ignores the last click. A hung or failed preview leaves the switch inert or pinning from a stale answer. (code review round 2, PR 14, fill-keep)

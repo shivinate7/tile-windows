@@ -66,8 +66,11 @@ look.
    The monitor label reads "5×2 · fill off" instead of "· fills" (`render()`, `fills`).
    Turning it off keeps the layout (owner, 2026-11-12 09:57 CST): in the same `edit()`, each
    window the fill or a zone placed is pinned in its current cell (`pinPlaced()`, through
-   `pinEdit()`; a span keeps its block), then `fill.off` is set. Nothing moves. A freed cell then
-   stays empty, and a new window goes to Windows That Stay Put. Turning the switch back on fills
+   `pinEdit()`; a span keeps its block), then `fill.off` is set. Nothing moves. A window the fill
+   put on a closed locked pin's cell is the exception: it goes to Windows That Stay Put, unpinned,
+   and the locked pin keeps its lock (decision `stack-and-lock`: nothing is placed over a locked
+   tile). A freed cell then stays empty, and a new window goes to Windows That Stay Put. Turning
+   the switch back on fills
    only the empty cells; the pins it added stay, and the owner can unpin them. The status line
    names the count: "Fill Empty Cells is off. 6 windows are pinned where they are. Only pinned
    windows move."
