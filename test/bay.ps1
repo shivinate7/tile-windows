@@ -22,6 +22,9 @@
 #     A window with no reason line ("Not in this scene") counts as not sharing and shows no line, as on main. The shared reason
 #     shows once in the category's heading, on the heading's own row, after the name. Chips with it have no <small> (an empty
 #     one counts as none). A chip with another reason keeps its <small>. A category with no shared reason keeps every <small>.
+#   Heading reason, capped at 1440: a <span class="why"> in the heading, cut with an ellipsis on a block box (not grid or flex).
+#   Heading space, full state at 1440: a heading that starts mid-column takes its space above from its column (the gap or its row),
+#     not from a margin on the heading.
 #   Packed target: not in the DOM. The packed-height checks read its consequence: no column stops short of its next unit when
 #     that unit would still end within the list's height (each rule's full box counted).
 #   Height: the list's content (top of the first item to the bottom of the last) is shorter than today's list at the same
@@ -323,9 +326,37 @@ $BayColsJs = @'
         id: btn ? +btn.dataset.bay : null, small: sm ? sm.textContent.trim() : null, head: h3 ? h3.textContent.replace(/\s+/g, ' ').trim() : null };
     }) };
   });
-  const mid = list.querySelector('h3.mid');
   const gap = list.children.length ? parseFloat(getComputedStyle(list.children[0]).rowGap) : 0;
-  return { listH: LR.height, cols, gap, midMargin: mid ? parseFloat(getComputedStyle(mid).marginTop) : null };
+  // The space a mid-column heading takes above it, beyond the row gap. It is read where the column gives it, so it holds whether the
+  // heading's own margin or its row carries it.
+  let midExtra = null;
+  for (const ul of list.children) for (const [i, li] of [...ul.children].entries()) {
+    const h3 = li.querySelector('h3');
+    if (midExtra === null && h3 && i > 0) midExtra = h3.getBoundingClientRect().top - li.previousElementSibling.getBoundingClientRect().bottom - gap;
+  }
+  return { listH: LR.height, cols, gap, midMargin: midExtra };
+})()
+'@
+# The headings as the DOM has them, shown windows only: each heading's column and place (idx 0 is the column's top), its computed margin,
+# the space above it beyond the row gap (null at the top), and its reason line when it has one: the text, scroll and client widths, the
+# computed text-overflow and display, and the reason's right edge against its column's right edge.
+$BayHeadJs = @'
+(() => {
+  const list = document.getElementById('bgrps');
+  const gap = list.children.length ? parseFloat(getComputedStyle(list.children[0]).rowGap) : 0;
+  const out = [];
+  [...list.children].forEach((ul, j) => {
+    const cr = ul.getBoundingClientRect().right;
+    [...ul.children].forEach((li, i) => {
+      const h3 = li.querySelector('h3'); if (!h3) return;
+      const hr = h3.getBoundingClientRect(), cs = getComputedStyle(h3), prev = li.previousElementSibling;
+      const why = h3.querySelector('.why'); let w = null;
+      if (why) { const ws = getComputedStyle(why); w = { text: why.textContent.trim(), sw: why.scrollWidth, cw: why.clientWidth, to: ws.textOverflow, disp: ws.display, rr: why.getBoundingClientRect().right, cr }; }
+      out.push({ col: j, idx: i, text: h3.textContent.replace(/\s+/g, ' ').trim(), mt: parseFloat(cs.marginTop),
+        extra: prev ? hr.top - prev.getBoundingClientRect().bottom - gap : null, why: w });
+    });
+  });
+  return { gap, heads: out };
 })()
 '@
 
@@ -333,7 +364,7 @@ $BayColsJs = @'
 # The packed target is not in the DOM, so these read its consequence. A column that stops short of its next column's first unit
 # could have taken that unit and still end within the list's height, which is the tallest column with each rule's full box counted.
 # A packer that packs to a target never leaves that room. The gap is the list's own row gap; a heading's own break adds the mid margin
-# (read from the page) and the windows it keeps with it, as the packer checks them.
+# (read from the page, where its column gives it) and the windows it keeps with it, as the packer checks them.
 function BayPackProblems($cols, $midM, $gap) {
   $problems = @()
   if ($null -eq $midM -or -not $cols.Count) { return $problems }
@@ -395,14 +426,16 @@ function BayPackChecks($set, $w, $colsObj) {
   else { Check "bay: ${lbl}: heading rows: nothing to read, no reasoned heading sits over a rule in the next column" $true }
 }
 # Capped, before Show N More is pressed, one width: the heading's reason and the lines follow the windows shown (the ruling), and the
-# list is no taller than main's list for the same windows (today's probe; main puts a heading's first window 4px higher, so 4px is allowed).
+# list is no taller than main's list for the same windows. Main's list is the probe, built in this same page at this width. At 1440 the
+# slack is half a pixel: the probe reads 109.7px there on 10998ba, and the list's heading row is 16px (--bhrow). At 1024 it stays 4.5px.
 function BayCapChecks($set, $w, $mc, $capCols, $more, $wins) {
   $lbl = "$($set.tag) capped at $w px"
   $items = @(@($capCols.cols) | % { @($_.items) })
   $vis = @($items | ? { $_.k -eq 'chip' })
   $visWins = @($wins | ? { @($vis | % { $_.id }) -contains $_.id })
   Check "bay: ${lbl}: the list is capped, with Show N More still to press (scope)" (($more -match '^Show \d+ More$') -and $visWins.Count -lt $wins.Count) "button reads '$more'; $($visWins.Count) of $($wins.Count) windows shown"
-  Check "bay: ${lbl}: the list is no taller than main's list for the same windows" ($mc.listH -le $mc.todayH + 4.5) "list $([int]$mc.listH)px, main $([int]$mc.todayH)px"
+  $slack = if ($w -eq 1440) { 0.5 } else { 4.5 }
+  Check "bay: ${lbl}: the list is no taller than main's list for the same windows" ($mc.listH -le $mc.todayH + $slack) "list $([math]::Round($mc.listH, 1))px, main $([math]::Round($mc.todayH, 1))px, slack $($slack)px"
   foreach ($c in 'code', 'browse', 'other') {
     $vc = @($visWins | ? { $_.cat -eq $c })
     if (-not $vc.Count) { continue }
@@ -433,6 +466,38 @@ function BayCapChecks($set, $w, $mc, $capCols, $more, $wins) {
       $bad = @($chipsC | ? { $_.small -ne (BayText $wins $_.id) })
       Check "bay: ${lbl}: $name shares no reason among the windows shown, so every window keeps its line" ($bad.Count -eq 0) "$($bad.Count) without their line"
     }
+  }
+}
+# Capped, 1440 px only (decision bay-list, the design check): a heading's shared reason is cut with an ellipsis on a block box, and it stays
+# inside its column. Scope comes first, and each subject is read only once its scope has been found.
+function BayCapHeadChecks($set, $hd) {
+  $lbl = "$($set.tag) capped at 1440 px"; $heads = @($hd.heads)
+  $withWhy = @($heads | ? { $_.why })
+  Check "bay: ${lbl}: a heading shows a shared reason (scope for the reason checks)" ($withWhy.Count -gt 0) "no heading shows a reason line"
+  if ($withWhy.Count) {
+    $spill = @($withWhy | ? { $_.why.rr -gt $_.why.cr + 0.5 } | % { $_.text })
+    Check "bay: ${lbl}: no heading's reason runs past its column's right edge" ($spill.Count -eq 0) "past the edge: $($spill -join ' | ')"
+    $min = @($withWhy | ? { $_.why.text -eq $BayReason['min'] })
+    $cut = @($min | ? { $_.why.sw -gt $_.why.cw })
+    Check "bay: ${lbl}: the 'Minimized' heading reason is cut by its heading (scope for the ellipsis and display checks)" ($cut.Count -eq 1) "$($min.Count) 'Minimized' heading reason(s), $($cut.Count) cut"
+    if ($cut.Count) {
+      $wy = $cut[0].why
+      Check "bay: ${lbl}: the cut 'Minimized' heading reason ends in an ellipsis" ($wy.to -eq 'ellipsis') "text-overflow is '$($wy.to)'"
+      Check "bay: ${lbl}: the cut 'Minimized' heading reason is a block box, so its ellipsis shows" (@('block', 'inline-block') -contains $wy.disp) "display is '$($wy.disp)'"
+    }
+  }
+}
+# Full state, 1440 px only (decision bay-list, the design check): a heading that starts mid-column takes the 8px above it from its column
+# (its row or the gap), not from a margin of its own. The capped state has none: each category opens a column there. Scope comes first.
+function BayMidHeadChecks($set, $hd) {
+  $lbl = "$($set.tag) at 1440 px"
+  $mid = @(@($hd.heads) | ? { $_.idx -gt 0 })
+  Check "bay: ${lbl}: a heading starts mid-column (scope for the space above it)" ($mid.Count -gt 0) "every heading starts a column"
+  if ($mid.Count) {
+    $mg = @($mid | ? { [Math]::Abs($_.mt) -gt 0.5 } | % { "$($_.text) $($_.mt)px" })
+    Check "bay: ${lbl}: a heading that starts mid-column has no margin of its own" ($mg.Count -eq 0) "margin above: $($mg -join ' | ')"
+    $sp = @($mid | ? { [Math]::Abs($_.extra - 8) -gt 0.5 } | % { "$($_.text) $([math]::Round($_.extra, 1))px" })
+    Check "bay: ${lbl}: a heading that starts mid-column keeps 8px of space above it, from its column" ($sp.Count -eq 0) "space above: $($sp -join ' | ')"
   }
 }
 # Mixed set, full state, one width: a window the scene gives no reason shows no line, and the reason the rest share shows once.
@@ -551,6 +616,7 @@ try {
           $visIds = @(@($capCols.cols) | % { @($_.items) } | ? { $_.k -eq 'chip' } | % { [int]$_.id })
           $mc = BayMeasure @($spec | ? { $visIds -contains $_.id })
           BayCapChecks $set $w $mc $capCols $more $set.wins
+          if ($w -eq 1440) { BayCapHeadChecks $set (BayGet $BayHeadJs) }
         }
         if ($set.kind -ne 'empty') { BayShowAll }
         $m = BayMeasure $spec
@@ -558,6 +624,7 @@ try {
         elseif ($set.kind -eq 'mixed') { BayNoneChecks $set $w $m $set.wins }
         else { BayListChecks $set $w $m }
         if ($set.kind -eq 'big') { BayPackChecks $set $w (BayGet $BayColsJs) }
+        if ($set.kind -eq 'big' -and $w -eq 1440) { BayMidHeadChecks $set (BayGet $BayHeadJs) }
       }
     } finally { BayStopServer $srv }
   }
