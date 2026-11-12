@@ -1027,18 +1027,19 @@ function toggleLock(id){const w=winById(id),pp=pinOf(id);selWin=id;
   edit(x=>{pinEdit(x,id,mon,b.r*g.c+b.c,b.cs,b.rs,null);x.pins[0].lock=true},`Locked ${w.title}. It stays in ${monName(mon)} cell${b.cs*b.rs>1?"s":""} ${p.slots.join("+")}.`)}
 /* ---------- Resize by a handle, the corner grip, or the keys ---------- */
 // The span the pointer is over, in whole cells, stopped by a locked tile. Covered pinned windows go to free cells in fill order, else to the list.
-// fromL and fromT: the left or top edge is the one that moves, so the right or bottom edge stays put when a lock cuts the span short.
-function planResize(id,mon,c0,r0,cs,rs,fromL=false,fromT=false){
-  const s=scene(),P=prev(),role=mon.role,g=s.grids[role],self=pinNow(s,id),info=[];
+// dir: the edges that move, as in HDIR. With dir.l or dir.t the left or top edge moves, so the right or bottom edge stays put when a lock cuts the span short.
+function planResize(id,mon,c0,r0,cs,rs,dir=HDIR.br){
+  const s=scene(),P=prev(),role=mon.role,g=s.grids[role],self=pinNow(s,id),info=[],fromL=!!dir.l,fromT=!!dir.t,edge=Object.keys(dir).length===1;
   s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<g.c*g.r);if(qs.length){const b=bbox(qs,g);info.push({q,i,b,cells:new Set(b.cells)})}});
   const box=(a,b)=>cellsOf(fromL?c0+cs-a:c0,fromT?r0+rs-b:r0,a,b,g);
   const hitLock=(a,b)=>{const cc=box(a,b);return info.some(o=>o.q.lock&&cc.some(c=>o.cells.has(c)))};
   let stopped=false;
   if(hitLock(cs,rs)){stopped=true;
-    // A top or left edge alone changes only its own dimension, so the other span stays: the north handle keeps the width, the west handle the height.
+    // A pure edge handle changes only its own dimension, so the other span stays: north and south keep the width, east and west the height.
+    // A corner keeps the largest span short of the lock, as the grip does.
     let na=0,nb=0;
-    if(fromT&&!fromL){for(let b=rs;b>=1&&!nb;b--)if(!hitLock(cs,b)){na=cs;nb=b}}
-    else if(fromL&&!fromT){for(let a=cs;a>=1&&!na;a--)if(!hitLock(a,rs)){na=a;nb=rs}}
+    if(edge&&(dir.t||dir.b)){for(let b=rs;b>=1&&!nb;b--)if(!hitLock(cs,b)){na=cs;nb=b}}
+    else if(edge){for(let a=cs;a>=1&&!na;a--)if(!hitLock(a,rs)){na=a;nb=rs}}
     if(!na){let best=null;for(let a=cs;a>=1;a--)for(let b=rs;b>=1;b--)if(!hitLock(a,b)&&(!best||a*b>best.a*best.b))best={a,b};na=best?best.a:1;nb=best?best.b:1}
     if(fromL)c0+=cs-na;if(fromT)r0+=rs-nb;cs=na;rs=nb}
   const nc=new Set(cellsOf(c0,r0,cs,rs,g)),cov=info.filter(o=>!o.q.lock&&[...o.cells].some(c=>nc.has(c))),covIdx=new Set(cov.map(o=>o.i)),occ=new Set(nc);
@@ -1064,7 +1065,7 @@ function resizeStep(p,dc,dr,fromL=false,fromT=false){const r=rzBase(p),w=winById
   let c0=b.c,cs=clamp(b.cs+dc,1,g.c-b.c),r0=b.r,rs=clamp(b.rs+dr,1,g.r-b.r);
   if(fromL){c0=clamp(b.c+dc,0,b.c+b.cs-1);cs=b.c+b.cs-c0}
   if(fromT){r0=clamp(b.r+dr,0,b.r+b.rs-1);rs=b.r+b.rs-r0}
-  const pl=planResize(p.id,r.m,c0,r0,cs,rs,fromL,fromT);
+  const pl=planResize(p.id,r.m,c0,r0,cs,rs,{[fromL?"l":"r"]:1,[fromT?"t":"b"]:1});
   if(pl.stopped){status("A locked tile is in the way. Nothing changed.");render();return}
   commitResize(r,pl)}
 // Where a handle's drag leaves the block: each edge the handle holds moves to the nearest cell line, and the opposite edge stays.
@@ -1075,7 +1076,7 @@ function rzTarget(r){const m=r.m,g=r.gr,b=r.b,d=r.dir,cw=m.w/g.c,ch=m.h/g.r,dx=(
   if(d.l){c0=clamp(Math.round((r.start.x+dx-m.x)/cw),0,b.c+b.cs-1);cs=b.c+b.cs-c0}
   if(d.b)rs=clamp(Math.round((r.start.y+r.start.h+dy-m.y)/ch),r0+1,g.r)-r0;
   if(d.t){r0=clamp(Math.round((r.start.y+dy-m.y)/ch),0,b.r+b.rs-1);rs=b.r+b.rs-r0}
-  return planResize(r.id,m,c0,r0,cs,rs,!!d.l,!!d.t)}
+  return planResize(r.id,m,c0,r0,cs,rs,d)}
 function commitResize(r,pl){
   const s=scene(),mon=r.m,g=r.gr,self=pinNow(s,r.id),w=winById(r.id);
   if(pl.c0===r.b.c&&pl.r0===r.b.r&&pl.cs===r.b.cs&&pl.rs===r.b.rs){render();if(pl.stopped)status("A locked tile is in the way. Nothing changed.");return}
@@ -1133,7 +1134,8 @@ function target(d){
 function spanOf(id,start){const pp=LIVE&&pinOf(id);if(pp){const b=bbox(pp.pin.slots,scene().grids[pp.pin.mon]);return[b.cs,b.rs,pp.pin.mon]}
   if(!LIVE){const m=monAt(start.x+start.w/2,start.y+start.h/2),g=m&&gridOf(m);if(g)return[clamp(Math.round(start.w/(m.w/g.c)),1,g.c),clamp(Math.round(start.h/(m.h/g.r)),1,g.r),null]}
   return[1,1,null]}
-const overBay=(x,y)=>{const b=$("bay");if(b.hidden)return false;const r=b.getBoundingClientRect();return x>=r.left&&x<r.right&&y>=r.top&&y<r.bottom};
+const overEl=(el,x,y)=>{const r=el.getBoundingClientRect();return x>=r.left&&x<r.right&&y>=r.top&&y<r.bottom};
+const overBay=(x,y)=>{const b=$("bay");return !b.hidden&&overEl(b,x,y)};
 function cellAt(x,y){const sr=stage.getBoundingClientRect(),sx=(x-sr.left)/G.S+G.x0,sy=(y-sr.top)/G.S+G.y0,m=monAt(sx,sy),g=m&&gridOf(m);
   return g?{m,g,c:clamp(Math.floor((sx-m.x)/(m.w/g.c)),0,g.c-1),r:clamp(Math.floor((sy-m.y)/(m.h/g.r)),0,g.r-1)}:null}
 // Measured width of a drop label in the drop chip's font, for choosing the form that fits a cell.
@@ -1178,8 +1180,14 @@ function frame(){raf=0;
       const nar=parseFloat(px(t.r).width)<110,blocked=(d.cs>1||d.rs>1)&&lockedHit(scene(),t.m.role,cellsOf(t.slot%t.g.c,Math.floor(t.slot/t.g.c),t.cs,t.rs,t.g),pinNow(scene(),d.id));
       dropEl.innerHTML=`<span>${blocked?"Locked tile in the way":nar?"Here":"Place here"}</span>`}}
   else dropEl.style.display="none"}
-stage.addEventListener("pointerdown",ev=>{
-  const lab=ev.target.closest(".mlab button,.zone button,.tile .stayput,.tile .lk,.tile .stk,.tile .rsz,.hdl i,.dnote");if(lab||ev.button!==0||drag||zdraw||rz||isBusy)return;
+// The front tile's button under a press on its strip. The Put Behind flash lifts the strip over the tile's top edge, lock included.
+// peekBtn holds it from the press, so the click still reaches it when the flash ends between press and release (the click then lands on the stage).
+let peekBtn=null;
+function ctlUnderPeek(ev){const pk=ev.target.closest&&ev.target.closest(".peek"),e=pk&&els.get(+pk.dataset.id);if(!e)return null;
+  for(const b of e.querySelectorAll(".lk,.stk,.stayput"))if(!b.disabled&&overEl(b,ev.clientX,ev.clientY))return b;
+  return null}
+stage.addEventListener("pointerdown",ev=>{peekBtn=ctlUnderPeek(ev);
+  const lab=ev.target.closest(".mlab button,.zone button,.tile .stayput,.tile .lk,.tile .stk,.tile .rsz,.hdl i,.dnote")||peekBtn;if(lab||ev.button!==0||drag||zdraw||rz||isBusy)return;
   // The strip above a stacked front tile is part of that tile.
   const pk=ev.target.closest(".peek"),e=pk?els.get(+pk.dataset.id):ev.target.closest(".tile");
   // Zone drawing: from an empty cell, or with Shift from anywhere on a grid.
@@ -1358,7 +1366,9 @@ function ask(title,body,ok,danger){return new Promise(res=>{const d=$("dlg"),f=$
 
 /* ---------- Events ---------- */
 document.addEventListener("click",async ev=>{
-  const t=ev.target.closest("button");if(!t||t.classList.contains("tile")||t.closest("#toast"))return;
+  // A press routed through the strip clicks its button when the release lands on that button too.
+  const pb=peekBtn;peekBtn=null;
+  const t=ev.target.closest("button")||(pb&&pb.isConnected&&overEl(pb,ev.clientX,ev.clientY)?pb:null);if(!t||t.classList.contains("tile")||t.closest("#toast"))return;
   if(t.dataset.mon!==undefined){curMon=snap.monitors[+t.dataset.mon];render()}
   else if(t.dataset.bay){selWin=+t.dataset.bay;render();requestAnimationFrame(()=>{const m=$("moveto");if(m)m.focus()})}
   else if(t.dataset.zone!==undefined){selZone=+t.dataset.zone;render()}
