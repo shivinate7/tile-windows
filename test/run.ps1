@@ -322,6 +322,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Run Undo (the run toast, Undo's puts and guards, the protocol registration): its own file, in a child powershell (its FAIL lines count here).
   $ruOut = @(Child (Join-Path $PSScriptRoot 'run-undo.ps1')); $ruOut | % { "$_" }
   $script:fail += [Math]::Max(@($ruOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # The Windows That Stay Put list (decision bay-list): its own file, run in a child powershell like stack-lock.ps1.
+  $bayOut = @(Child (Join-Path $PSScriptRoot 'bay.ps1')); $bayOut | % { "$_" }
+  $script:fail += [Math]::Max(@($bayOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
   $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }
