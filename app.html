@@ -675,7 +675,7 @@ function build(){
     stg.appendChild(e);els.set(w.id,e);
   }
 }
-let inspKey="";  // the selected window and whether it is stacked, as the inspector last scrolled for it
+let inspKey="";  // the selected window, whether it is stacked, and whether its pin mark is hidden, as the inspector last scrolled for it
 const peeks=new Map();  // front window id -> the strip that names the back window under it
 const peekOf=id=>{let e=peeks.get(id);if(!e){e=document.createElement("div");e.className="peek";e.hidden=true;e.setAttribute("aria-hidden","true");$("stage").appendChild(e);peeks.set(id,e)}return e};
 const INSET=3;  // drawn gap inside each monitor edge, so side-by-side monitors read as separate screens
@@ -915,7 +915,9 @@ function renderInsp(V){
     if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay" ${lockd?'disabled title="Locked. Unlock it first."':""}>Keep Where It Is</button>`;
     $("win").innerHTML=wh+"</div>";
     // Behind This Window sits below the Scene and Monitor sections: a newly selected stacked tile brings the Window section to the top.
-    const key=w.id+":"+(stk.length>0);if(key!==inspKey&&stk.length){const ins=$("winh").closest(".insp");if(ins)ins.scrollTop+=$("winh").getBoundingClientRect().top-ins.getBoundingClientRect().top-8}
+    // So does a selected narrow pinned tile: its pin mark is hidden (.tile.sel.narrow .pinmark), so the Pinned line is its only pin cue.
+    const te=els.get(w.id),markOff=!!(pin&&te&&te.classList.contains("narrow"));
+    const key=w.id+":"+(stk.length>0)+":"+markOff;if(key!==inspKey&&(stk.length||markOff)){const ins=$("winh").closest(".insp");if(ins)ins.scrollTop+=$("winh").getBoundingClientRect().top-ins.getBoundingClientRect().top-8}
     inspKey=key}
 }
 
@@ -939,7 +941,8 @@ function pinPlaced(x,P){if(!P)return 0;let n=0;
 // Clear Board: one edit that turns Fill Empty Cells off and pins nothing, so every unpinned window shows in Windows That Stay Put because fill is off. It keeps no list of them: the switch alone brings the board back.
 function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
   edit(x=>{x.fill=x.fill||{};x.fill.off=true},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
-function edit(fn,msg){if(isBusy)return false;removeNote();sceneMsg="";hist.push({k:"edit",id:selId,s:clone(scene())});fn(scene());if(msg)status(typeof msg==="function"?msg():msg);render();preview(selId);return true}
+// id: the scene to change, by default the selected one. A caller that waits first passes the scene it started on.
+function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();sceneMsg="";const s=work[id];hist.push({k:"edit",id,s:clone(s)});fn(s);if(msg)status(typeof msg==="function"?msg():msg);render();preview(id);return true}
 const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
 function pinWin(id,mon,slot,cs=1,rs=1){
   const w=winById(id);
@@ -1438,10 +1441,11 @@ document.addEventListener("toggle",e=>{if(e.target.id==="xtras")xOpen=e.target.o
 
 document.addEventListener("change",ev=>{const t=ev.target;
   if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
-  else if(t.id==="fillSw"){const on=t.checked;
+  else if(t.id==="fillSw"){const on=t.checked,id=selId;
     // Off pins what the newest placement shows, so it waits for a preview still in flight (a drop just before it).
-    (on?Promise.resolve(null):newestPrev(selId)).then(P=>{let kept=0;
-      edit(s=>{if(on)delete s.fill.off;else{kept=pinPlaced(s,P);s.fill.off=true}},()=>on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":`Fill Empty Cells is off. ${kept?`${plural(kept,"window")} ${kept===1?"is":"are"} pinned where ${kept===1?"it is":"they are"}. `:""}Only pinned windows move.`);
+    // The switch changes the scene it was pressed on, even when another scene is picked during the wait.
+    (on?Promise.resolve(null):newestPrev(id)).then(P=>{let kept=0;
+      edit(s=>{if(on)delete s.fill.off;else{kept=pinPlaced(s,P);s.fill.off=true}},()=>on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":`Fill Empty Cells is off. ${kept?`${plural(kept,"window")} ${kept===1?"is":"are"} pinned where ${kept===1?"it is":"they are"}. `:""}Only pinned windows move.`,id);
       requestAnimationFrame(()=>{const e=$("fillSw");if(e)e.focus()})})}
   else if(t.id==="lockSw"){toggleLock(selWin);requestAnimationFrame(()=>{const e=$("lockSw");if(e)e.focus()})}
   else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
