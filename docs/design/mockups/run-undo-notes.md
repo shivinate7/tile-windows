@@ -33,8 +33,12 @@ Undo restores two things:
 - **Window places.** Each window with `note = moved` goes back to its `from` rect. A window that
   was minimised before the run is skipped, since it has no rect to go back to. This is the same
   filter as `app.html` `applyScene` (`p.from.x > -20000`).
-- **The scene on screen.** `active` goes back to the scene before the run. Without this, Place
-  New Windows or Put This Scene Back When I Return would re-apply the undone scene.
+- **The scene on screen, where the run changed it.** `active` goes back to the scene before the
+  run (schedule, gap, offer, activity, call, monitors, external monitors gone). Otherwise Place New
+  Windows or Put This Scene Back When I Return would later re-apply the undone scene.
+  A desk run and a new-window run re-apply the scene already on screen (`New-Cand $active`), so
+  `active` does not change and stays as it is. For those, choice 13 is what keeps the run from
+  coming straight back.
 
 Undo reuses the board's restore path (decision `undo-moves-windows`, Undo moves the real windows
 back): `tile.ps1 -Place` with the `from` rects, as `placeBack` in `app.html` sends to `/apply`.
@@ -55,13 +59,16 @@ It is not a second copy of the restore.
    into a toast with an Arrange Windows button (not drawn).
 3. **Every trigger kind gets the same toast** (`#s=kinds`): schedule, gap, meeting offer
    clicked, back at the desk (lock or idle), new window, activity, call start and end, monitors
-   changed, external monitors gone. Pick: yes.
+   changed, external monitors gone. Gain: one shape to learn. Lose: a call toast can show while
+   you are on a call. Pick: yes.
 4. **Grid line** (option `grid`). When `Get-ClaudeMode` picked a grid, add a second body line:
    "Dense grid: 5 Claude windows." Gain: says why the layout looks denser. Lose: a longer toast.
    Pick: yes.
 5. **Tray menu runs** (option `menu`). Apply Scene from the tray menu ("from the tray") is a hand
    apply, so it is outside the brief. It has no Undo anywhere today. Gain: the same Undo for every
    tray apply. Lose: a toast after a hand act. Pick: yes. `Owner grant: yes`.
+   Departs from: tray.ps1 menu `add_Click` calls `Apply-Scene`, which shows a balloon through
+   `Note`. Not blocking.
 6. **Open button** (option `openbtn`). A second button, Open Tile Windows. Gain: easy to find.
    Lose: it repeats the body click, and a narrow toast splits Undo's width. Pick: no.
 7. **One toast at a time.** Every run toast has the same tag and group, so a new run replaces the
@@ -85,11 +92,15 @@ It is not a second copy of the restore.
 10. **A later run.** The tag in choice 7 replaces the old toast, so this shows only if you click an
     old toast in the short moment before it is replaced. The launch URI carries the run id
     (`tilewindows://undo?run=<id>`), and the agent compares it with the newest run. The toast says
-    so and offers Undo <newer scene>. Pick: yes.
+    so and offers Undo <newer scene>. Gain: an old click never undoes the wrong run. Lose: a
+    rare toast to build. Pick: yes.
 11. **The tray agent restarted or quit.** The agent keeps the undo record in memory only. At start
     and at Quit it removes its toasts from the centre, so no dead Undo is left. If a click still
     comes (a race), the toast says "Tile Windows restarted since, so it lost the old places." and
-    offers Open Tile Windows (house rule `ux-no-dead-end`). Pick: yes.
+    offers Open Tile Windows (house rule `ux-no-dead-end`). Gain: no Undo that cannot work. Lose:
+    a restart drops the last Undo. Pick: yes.
+    Departs from: tray.ps1 start and the `finally` block after `Application.Run` touch no
+    notifications today. Not blocking.
 12. **How long Undo is offered.** `Owner grant: yes`.
     - Until the Next Run (option `notimer`): until a later run replaces it, or the agent
       restarts or quits. No timer. Choice 9 protects windows you moved since. Pick: yes.
@@ -99,12 +110,15 @@ It is not a second copy of the restore.
 13. **Undo counts as your own move.** After Undo the agent sets the manual-move time
     (`[TileInput]::MoveEndTicks`), since a move made by code does not fire the move-end hook.
     Step-Tray then cancels waiting one-shots and holds runs for 10 s, so nothing redoes the run.
-    Writing the previous scene as `active` already starts the 15 minute activity grace, through
-    `manualApplyAt` in `Step-Tray`. Gain: Undo sticks. Lose: an Undo also cancels a run that was
-    waiting for an unrelated reason. Pick: yes. `Owner grant: yes`, because it changes a guard's
-    input.
+    It also sets `manualApplyAt` directly, so the 15 minute activity grace starts for every kind.
+    Writing `active` back starts it only when `active` changed, which a desk or new-window run does
+    not do. Gain: Undo sticks. Lose: an Undo also cancels a run that was waiting for an unrelated
+    reason. Pick: yes. `Owner grant: yes`, because it changes a guard's input.
+    Departs from: tray.ps1 `Step-Tray` takes the manual time only from the move-end hook
+    (`TileInput.Start`, event 0x000B). Not blocking.
 14. **Do Not Disturb.** Windows holds the pop-up and puts the toast straight into the centre. Undo
-    there works the same. Nothing to build.
+    there works the same. Gain: no interruption. Lose: none. Pick: leave it to Windows; nothing to
+    build.
 
 ## For the builder (outside the design folder)
 
