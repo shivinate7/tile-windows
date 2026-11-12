@@ -286,7 +286,7 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # Fill Empty Cells off (scene fill.held): each held window goes back in its held cells, after every pin has taken its own.
   # A held cell a pin (open or closed) or an earlier hold has taken is skipped. An entry holds one window, matched as a pin
   # matches: by its handle when it has one (a stale handle holds nothing), else by its app, and by its title only when the app
-  # has several windows (open, or held in the scene). A closed, minimized or already placed window is not held: the sweep after
+  # has several windows (open, or held in the scene): its exact title first, else a title that contains it. A closed, minimized or already placed window is not held: the sweep after
   # the phase loop lists the open ones as 'fill is off'.
   if ($phase -eq 'held') {
     foreach ($hd in $held) {
@@ -295,7 +295,9 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
       $it = if ($hd.Id) { @($pool | ? { [int64]$_.H -eq [int64]$hd.Id })[0] }
       else {
         $many = @($items | ? { $_.App -eq $hd.App }).Count -gt 1 -or @($sc.fill.held | ? { $_ -and [string]$_.app -eq $hd.App }).Count -gt 1
-        $cand = @(if ($many) { @($pool | ? { $_.Title -ceq $hd.Title }) + @($pool | ? { $hd.Title -and (Contains $_.Title $hd.Title) }) } else { $pool })
+        # An exact title wins over a containing one, so 'Projects' never takes 'Projects archive'; position orders only the chosen set.
+        $cand = $pool
+        if ($many) { $cand = @($pool | ? { $_.Title -ceq $hd.Title }); if (-not $cand.Count) { $cand = @($pool | ? { $hd.Title -and (Contains $_.Title $hd.Title) }) } }
         @($cand | Sort-Object { $_.X -le -20000 }, X, Y)[0]
       }
       if (-not $it) { continue }

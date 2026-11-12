@@ -933,11 +933,12 @@ $("toastMore").onclick=()=>{$("results").hidden=false;$("results").scrollIntoVie
 /* ---------- Editing scenes ---------- */
 // Fill Empty Cells off holds the layout: each window the fill or a zone placed is held in its current cells (a span keeps its block), in the scene's fill.held, apart from its pins. No pin is added.
 // P is the engine's newest answer, so the cells are the ones on the board now.
-// A locked pin for a closed window holds no cell in the engine, so the fill may have put a window there. The lock stays, and nothing is held over it: that window is not held, so fill off lists it in Windows That Stay Put, and it fills as usual once fill goes on.
+// A pin for a closed window (P.missing, with no window placed for it), locked or not, holds no cell in the engine while fill is on, so the fill may have put a window there. With fill off the engine keeps that cell for the pin, so nothing is held over it: that window is not held, fill off lists it in Windows That Stay Put, and it fills as usual once fill goes on. A locked pin's cells are never held over either.
 function holding(x,P){if(!P)return 0;const h=[];
+  const shut=new Set(P.missing.map(m=>m.pin).filter(i=>!P.placed.some(p=>p.pin===i&&!p.behind)));
   for(const p of P.placed){if(p.pin>=0||p.behind)continue;const g=x.grids[p.mon],w=winById(p.id);if(!g||!w)continue;
     const sl=p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r);if(!sl.length)continue;const b=bbox(sl,g);
-    if(lockedHit(x,p.mon,b.cells,null))continue;
+    if(lockedHit(x,p.mon,b.cells,null,shut))continue;
     h.push({id:w.id,app:w.app,title:w.title,mon:p.mon,slots:b.cells})}
   x.fill=x.fill||{};if(h.length)x.fill.held=h;else delete x.fill.held;
   return h.length}
@@ -1004,9 +1005,9 @@ const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r),g);
 const cellsOf=(c0,r0,cs,rs,g)=>{const a=[];for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)a.push(r*g.c+c);return a};
 const lockOfPlaced=p=>!!(LIVE&&p&&p.pin>=0&&!p.behind&&(scene().pins[p.pin]||{}).lock);
 const isLockedId=id=>{const pp=LIVE&&pinOf(id);return !!(pp&&pp.pin&&pp.pin.lock)};
-// Is a locked pin (other than `except`) on any of these cells of the role's grid?
-function lockedHit(s,role,cells,except){const g=s.grids[role];
-  return s.pins.some(q=>{if(!q.lock||q===except||q.mon!==role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>cells.includes(c))})}
+// Is a locked pin (other than `except`) on any of these cells of the role's grid? A pin whose index is in `shut` counts too, locked or not.
+function lockedHit(s,role,cells,except,shut){const g=s.grids[role];
+  return s.pins.some((q,i)=>{if(!(q.lock||shut&&shut.has(i))||q===except||q.mon!==role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>cells.includes(c))})}
 // The window in front on a drop target (the whole block of a span): a swap or a Put Behind, never a Place here over it.
 // A one-cell window's target is one cell. A spanned window's target is its block: the window on the block's first cell, else the first window it covers.
 function occupant(d,t){const P=LIVE&&prev();if(!P||!t)return null;const pa=P.placed.find(p=>p.id===d.id),one=d.cs===1&&d.rs===1;
