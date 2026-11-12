@@ -739,10 +739,13 @@ try {
   SlDropNoSettle (SlAt (SlBox 1006) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.85)
   $dNote = SlNoteText
   Check 'drop note: after a Put Behind drop the tile shows a note naming both apps' ("$dNote" -like '*Chrome is behind Claude*') "note: $dNote"
-  $dUndo = SlJs "(() => { const b = document.querySelector('.dnote button'); if (!b) return false; b.click(); return true; })()"
+  # A real press on the note's Undo, pressed and released as a mouse does. A JS click skips the pointer path, so it proves nothing here.
+  SlSettle
+  $dBtn = SlGet "(() => { const b = document.querySelector('.dnote button'); if (!b) return null; const r = b.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  if ($dBtn) { SlClick (SlAt $dBtn 0.5 0.5) }
   SlSettle
   $dBack = SlJs "($SceneNorm) === window.bfPre"
-  Check 'drop note: its Undo restores the scene from before the drop' ([bool]$dUndo -and [bool]$dBack) "note Undo pressed: $dUndo; scene restored: $dBack"
+  Check 'drop note: a real press on its Undo restores the scene from before the drop' ([bool]$dBtn -and [bool]$dBack) "note Undo button: $(SlFmt $dBtn); scene restored: $dBack"
 
   # Named Badge. Scope first: the front tile is stacked (and narrow at 1024). The badge text is read from the visible content.
   SlViewport 1440 900; SlCase (SlSceneJson $pinsNamed)
