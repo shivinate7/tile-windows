@@ -4,6 +4,7 @@
 #   GET  /<token>/config    config.json (scenes and settings); created from scenes.json on first run
 #   POST /<token>/config    body = whole config; validated, then written
 #   GET  /<token>/state     state.json (scene last applied, recent log)
+#   GET  /<token>/appnames  the display name of each app (appNames in scenes.json)
 #   POST /<token>/preview   body = scene; answers tile.ps1 -Scene -From <last snapshot> -Json (moves nothing)
 #   POST /<token>/scene     body = scene; answers tile.ps1 -Scene -Json results. ?dry=1 = -DryRun.
 #   POST /<token>/apply     body = -Place array; answers tile.ps1 -Place -Json results. ?dry=1 = -DryRun.
@@ -68,6 +69,7 @@ try {
           Send $ctx 200 'application/json' $snap
         }
         'GET config' { Send $ctx 200 'application/json' (Get-TileConfigText) }
+        'GET appnames' { Send $ctx 200 'application/json' (ConvertTo-Json -Compress (Get-TileAppNames)) }
         'GET state' { Send $ctx 200 'application/json' (Get-TileStateText) }
         'POST config' {
           if (-not ($body = Body $ctx $req '{')) { continue }

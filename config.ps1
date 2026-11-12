@@ -75,6 +75,18 @@ function Get-TileConfigText {
 # Validates, then writes the text as given: a round trip through objects would cut nesting (ConvertTo-Json depth).
 function Save-TileConfigText([string]$text) { Test-TileConfig $text; Use-TileLock { Write-TileFile $TileConfig $text } }
 
+# The display name of an app (its process name), from the starters' appNames map: the one home the tray and the page's /appnames read.
+# An app the map does not list shows with a capital letter.
+function Get-TileAppNames {
+  if (-not $script:TileAppNames) { $script:TileAppNames = (ConvertFrom-Json ([IO.File]::ReadAllText($TileStarters, $TileUtf8))).appNames }
+  $script:TileAppNames
+}
+function Get-TileAppName([string]$app) {
+  if (-not $app) { return 'A window' }
+  $p = (Get-TileAppNames).PSObject.Properties[$app.ToLowerInvariant()]
+  if ($p) { $p.Value } else { $app.Substring(0, 1).ToUpper() + $app.Substring(1) }
+}
+
 # A scene by id or name, with the config's app -> category map attached as .cats.
 function Get-TileScene([string]$key, $config) {
   if (-not $config) { $config = ConvertFrom-Json (Get-TileConfigText) }

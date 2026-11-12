@@ -16,6 +16,7 @@ The installer does three things:
 
 - It puts the app in `%USERPROFILE%\.tile-windows\app`.
 - It adds **Tile Windows** to the Start menu.
+- It registers the `tilewindows://` link that the Undo button on a run's toast opens (a per-user registry key, no admin rights).
 - It starts the tray agent at login.
 
 The app opens in your browser when the install finishes. To skip start-at-login, run this before the one-liner:
@@ -24,7 +25,7 @@ The app opens in your browser when the install finishes. To skip start-at-login,
 $env:TILE_NO_STARTUP = 1
 ```
 
-From a clone, run `install.ps1` directly. It takes `-NoStartup` and `-NoLaunch`.
+From a clone, run `install.ps1` directly. It takes `-NoStartup` and `-NoLaunch`. `TILE_NO_REGISTRY=1` skips the registry write (the tests set it).
 
 ## Use it
 
@@ -36,6 +37,7 @@ From a clone, run `install.ps1` directly. It takes `-NoStartup` and `-NoLaunch`.
 - **Fill Empty Cells and Clear Board.** The Fill Empty Cells switch in the Monitor section turns the fill off for a scene (`fill.off`). Off holds every window where it is, without pinning it: the scene keeps a held layout (`fill.held`, one entry per held window), apart from its pins, and no pin mark shows. Apply places the held windows in their cells and the pinned windows in theirs; zones pause. A window taken off the board leaves its cell empty, and a window opened later shows in Windows That Stay Put as "Fill is off". A window on a closed pin's cell (locked or not) is not held; it goes to Windows That Stay Put. Turning the switch back on clears the held layout and refills the free cells; your pins stay. Clear Board, beside Draw Zone, is one Undo-able edit that turns the switch off and holds nothing, so every unpinned window shows in Windows That Stay Put as "Fill is off" and turning the switch back on refills the board.
 - **The inspector** is on the right. Use it to set each monitor's grid and fill order, and a window's span and category. It also sets when a scene applies itself: by hand, on a schedule, when the monitors change, or when a Teams call starts (and, if you ask, back to the scene before when the call ends). It also lists the other triggers, below.
 - **The tray icon** opens the app, and its menu applies any scene. It also runs the scenes that apply themselves.
+- **The run toast.** When a scene run moves windows, a Windows notification says `<Scene> applied`, why, and how many windows moved, with one **Undo** button. Undo puts the moved windows back, and puts back the scene the run replaced. It leaves a window you moved since (more than 4 px from where the run put it) and says so. A run from the tray menu shows the same toast. Undo is offered for the newest run only, until the next run or a tray restart: there is no timer. Undo counts as your own move, so nothing re-applies the run for 10 s. A run that moved nothing, a failed run and the meeting offer stay tray balloons. If the toast does not name Tile Windows or Undo does nothing, run `install.ps1` again from a terminal: it registers the link and the shortcut name.
 
 A scene stores your intent, not pixels: app names, title matches, grids and a fill order. It keeps working as windows open and close. Scenes are saved in `%USERPROFILE%\.tile-windows\config.json`. The starters come from [scenes.json](scenes.json).
 

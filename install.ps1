@@ -5,6 +5,7 @@
 # -NoStartup, starts the tray agent at login. Your scenes stay in %USERPROFILE%\.tile-windows\config.json.
 # A piped install takes no parameters, so environment variables stand in for them:
 #   TILE_NO_STARTUP=1, TILE_NO_LAUNCH=1, TILE_SOURCE=<folder to copy from instead of GitHub>.
+# TILE_NO_REGISTRY=1 skips every registry write (the tilewindows:// link that the run toast's Undo button opens); tests set it.
 param([switch]$NoStartup, [switch]$NoLaunch)
 & {
   $ErrorActionPreference = 'Stop'
@@ -48,8 +49,18 @@ param([switch]$NoStartup, [switch]$NoLaunch)
     $l.IconLocation = "$env:SystemRoot\System32\imageres.dll,174"; $l.Description = 'Arrange your windows into grids and scenes.'; $l.Save()
   }
   Link (Join-Path $programs 'Tile Windows.lnk') '-Open'
+  # The toast header says "Tile Windows" only when the Start shortcut carries the AppUserModelID the tray sends toasts as (TileShortcut is tray.ps1's).
+  try { [TileShortcut]::SetAppId((Join-Path $programs 'Tile Windows.lnk'), $TileAppId) } catch { Write-Warning "The run toast will not say Tile Windows: $($_.Exception.Message)" }
   $startup = Join-Path $programs 'Startup\Tile Windows tray.lnk'
   if ($NoStartup -or $env:TILE_NO_STARTUP) { if (Test-Path -LiteralPath $startup) { Remove-Item -LiteralPath $startup } } else { Link $startup '' }
+
+  # The link the run toast's Undo button opens: tilewindows://undo?run=<id> runs tray.ps1, which tells the running agent.
+  if (-not $env:TILE_NO_REGISTRY) {
+    foreach ($k in (Get-UndoProtocolKeys $app)) {
+      if (-not (Test-Path -LiteralPath $k.path)) { New-Item -Path $k.path -Force | Out-Null }
+      Set-ItemProperty -LiteralPath $k.path -Name $k.name -Value $k.value
+    }
+  }
 
   "Installed Tile Windows to $app."
   "Open it from the Start menu: Tile Windows."
