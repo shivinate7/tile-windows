@@ -71,8 +71,8 @@
 #     button "Clear Board" on the board's action bar. It sets fill.off and holds nothing (fill.held stays empty); the status line
 #                        (#msg) reads "Cleared the board. N windows stay put, and Fill Empty Cells is off."; each window the fill
 #                        had placed is in prevs[selId].left, and Windows That Stay Put shows "Fill is off" for it.
-#                        With fill off, every open window that is not pinned has the reason "fill is off" (engine left[]) and reads
-#                        "Fill is off" in its list reason line, whatever its app: an app with a pinned window included.
+#                        With fill off, every open window that is not pinned has the reason "fill is off" (engine left[]) and is shown
+#                        as "Fill is off" in the list, on its own line or in its category heading, whatever its app: an app with a pinned window included.
 #                        A tab click on another scene while the switch waits for its scene's preview leaves that scene as it was:
 #                        the switch changes the scene it was pressed on.
 #     inspector          A narrow pinned tile (its pin mark hidden at 1024) selected: its "Pinned" line is in the inspector's visible area.
@@ -1357,7 +1357,7 @@ try {
   $dpAfter = SlPin (SlGet 'work[selId]') 'Pin parser'
   Check 'switch during a drop: Pin parser stays pinned where it was dropped, not in its old cell' ([bool]($dpAfter -and (SlCells $dpAfter) -eq '5')) "pin: $(SlShort $dpAfter)"
   # Fill Empty Cells off, on the board. The owner's pins (Refactor in claude, Quarterly in chrome) give their apps a pinned window. Each
-  # open window still unpinned in Windows That Stay Put must read "Fill is off" in its reason line, not "Not in this scene". The switch
+  # open window still unpinned in Windows That Stay Put must be shown as "Fill is off", not "Not in this scene". The switch
   # holds the windows the fill placed and adds no pin. The control is the same board before the switch: no window reads "Fill is off".
   SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ '["*"]')
   $n1Before = SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => b.getAttribute('aria-label'))"
@@ -1368,10 +1368,11 @@ try {
   Check 'fill off, board: the switch adds no pin' ((ConvertTo-Json -Depth 12 -Compress @($n1PinsNow)) -ceq (ConvertTo-Json -Depth 12 -Compress @($n1PinsWas))) "pins before: $(SlShort $n1PinsWas); after: $(SlShort $n1PinsNow)"
   $n1Scope = SlList "(() => { const pinned = new Set(work[selId].pins.map(p => p.app)); return [...document.querySelectorAll('#bgrps [data-bay]')].map(b => snap.windows.find(w => w.id === +b.dataset.bay)).filter(w => w && !w.min && pinned.has(w.app)).map(w => w.id); })()"
   Check 'fill off, board, scope: an unpinned window is in Windows That Stay Put, and its app has a pinned window' ($n1Scope.Count -ge 1) "windows: $($n1Scope -join ',')"
-  $n1Chips = SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => ({ id: +b.dataset.bay, min: !!(snap.windows.find(w => w.id === +b.dataset.bay) || {}).min, reason: (b.querySelector('small') || { textContent: null }).textContent }))"
+  # A chip's reason is its own line when it has one. A reason its category's windows share is in the heading instead (Reason Said Once).
+  $n1Chips = SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => { const cat = (b.className.match(/cat-([a-z]+)/) || [])[1]; const h = [...document.querySelectorAll('#bgrps h3')].find(e => e.classList.contains('cat-' + cat) && e.querySelector('.why')); const small = b.querySelector('small'); return { id: +b.dataset.bay, min: !!(snap.windows.find(w => w.id === +b.dataset.bay) || {}).min, reason: small ? small.textContent.trim() : (h ? h.querySelector('.why').textContent.trim() : null) }; })"
   $n1Open = @($n1Chips | ? { -not $_.min })
   $n1Bad = @($n1Open | ? { $_.reason -ne 'Fill is off' })
-  Check 'fill off, board: every unpinned window in Windows That Stay Put has the reason line "Fill is off"' ($n1Open.Count -gt 0 -and $n1Bad.Count -eq 0) "open: $($n1Open.Count); not 'Fill is off': $(@($n1Bad | % { "$($_.id) (reason line: $(if ($_.reason) { $_.reason } else { 'none' }))" }) -join ', ')"
+  Check 'fill off, board: every unpinned window in Windows That Stay Put is shown as "Fill is off" (its line, or its heading''s shared reason)' ($n1Open.Count -gt 0 -and $n1Bad.Count -eq 0) "open: $($n1Open.Count); not 'Fill is off': $(@($n1Bad | % { "$($_.id) (shown as: $(if ($_.reason) { $_.reason } else { 'none' }))" }) -join ', ')"
   # The inspector says the same for one of them: Draft release notes (1003, unpinned, its app Claude has pinned windows).
   SlJs 'document.querySelector("[data-bay=\"1003\"]").click(); true'
   $n1Insp = SlGet '(() => { const m = document.querySelector("#win .m"); return m ? m.textContent.replace(/\s+/g, " ").trim() : null; })()'

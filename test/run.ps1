@@ -319,6 +319,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Stack, lock, resize and the spanned drop: their own file, run in a child powershell (its FAIL lines count here).
   $slOut = @(Child (Join-Path $PSScriptRoot 'stack-lock.ps1')); $slOut | % { "$_" }
   $script:fail += [Math]::Max(@($slOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # The Windows That Stay Put list (decision bay-list): its own file, run in a child powershell like stack-lock.ps1.
+  $bayOut = @(Child (Join-Path $PSScriptRoot 'bay.ps1')); $bayOut | % { "$_" }
+  $script:fail += [Math]::Max(@($bayOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
   $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }

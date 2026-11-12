@@ -101,3 +101,8 @@ Low findings. Each becomes a debt only after a real incident.
 - sameWin compares by id alone when a Windows That Stay Put entry has one; if that window closes and a same-app, same-title window opens, pinning the new one no longer clears the stale entry (app.html sameWin).
 - Held entries with no id (a reloaded saved scene) that share a title all resolve to the first window with that title; pinning it drops every such hold (app.html heldWin, heldOff).
 - The longer fill-off hint wraps at 1440 and 1024, and "Windows That Stay Put" breaks across two lines.
+
+## From PR 15 reviews (2026-11-12)
+
+- At the two-chip cap the Windows That Stay Put list is 1px taller than main's real render (108.7px against 109.7px), because a heading row is 15px against main's 14px; test/bay.ps1's built-in main height is 109.7px, 1px above the real main.
+- A long shared heading reason ends in an ellipsis; its full text is in the chip's inspector line and aria-label, and on hover only in the heading.
