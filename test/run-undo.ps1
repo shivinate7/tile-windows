@@ -76,7 +76,8 @@ $tile = {
     $placeSpec = if ($PlaceFile) { [IO.File]::ReadAllText($PlaceFile) } else { $Place }
     [void]$script:rec.places.Add([pscustomobject]@{ json = $placeSpec; dryRun = [bool]$DryRun })
     # An app in placeFail gets -Place's own answer for no open window: ok false, the reason in note.
-    return (ConvertTo-Json -InputObject @(@(ConvertFrom-Json $placeSpec) | ForEach-Object { $bad = @($script:rec.placeFail) -contains $_.app; [pscustomobject]@{ app = $_.app; title = $_.title; ok = (-not $bad); note = $(if ($bad) { 'no open window' } else { 'moved' }) } }) -Compress)
+    # One entry per window, also for a batch: ConvertFrom-Json hands a JSON array back whole on Windows PowerShell 5.1, so the pipe flattens it.
+    return (ConvertTo-Json -InputObject @(@(ConvertFrom-Json $placeSpec | ForEach-Object { $_ }) | ForEach-Object { $bad = @($script:rec.placeFail) -contains $_.app; [pscustomobject]@{ app = $_.app; title = $_.title; ok = (-not $bad); note = $(if ($bad) { 'no open window' } else { 'moved' }) } }) -Compress)
   }
   if ($script:rec.tileFail) { throw 'tile failed' }
   ConvertTo-Json -Compress -Depth 6 ([pscustomobject]@{ placed = @($script:rec.placed) })
