@@ -101,3 +101,13 @@ Low findings. Each becomes a debt only after a real incident.
 - sameWin compares by id alone when a Windows That Stay Put entry has one; if that window closes and a same-app, same-title window opens, pinning the new one no longer clears the stale entry (app.html sameWin).
 - Held entries with no id (a reloaded saved scene) that share a title all resolve to the first window with that title; pinning it drops every such hold (app.html heldWin, heldOff).
 - The longer fill-off hint wraps at 1440 and 1024, and "Windows That Stay Put" breaks across two lines.
+
+## From PR 16 reviews (2026-11-12)
+
+- `config.ps1` (`Get-TileConfigText`) A first-run config.json gets a copy of appNames that nothing reads. Edit the map in `scenes.json`.
+- No test covers the `/appnames` route or the board's fetch of it. If it breaks, the board silently shows raw process names.
+- `tray.ps1` The TileShortcut `Add-Type` runs before the `-Lib` and mutex checks, so each Undo click's launcher compiles C# first. Cost unmeasured.
+- `Invoke-RunUndo` checks `endedBy` before `done`, so a record both undone and ended says "this Undo has ended" instead of "Already undone."
+- With no Start shortcut carrying the app ID, `Apply-Scene` returns before ending the older Undo record, so the older Undo stays clickable. The moved-since check keeps windows safe.
+- Undo moves windows one `-Place` call at a time, a stopgap for a test fake. Once the fake is fixed, go back to one batched call.
+- The board opened as a plain file (`file://`) cannot read `/appnames` and shows capitalised process names.
