@@ -309,22 +309,22 @@ dialog form{display:grid;gap:10px}
 /* Named badge: it names the window right behind. A narrow tile shows that app's initial in its category colour. */
 .tile .stk .ini{display:inline-grid;place-items:center;width:13px;height:13px;border-radius:2px;background:var(--cat);color:var(--panel);font:700 9.5px/1 var(--f)}
 .tile .stk.ring{outline:2px solid var(--select);outline-offset:1px}
-/* A narrow stacked tile (about 50x55) has a 20px grip at the bottom right. The badge gives up its icon and padding so its drawn box and its 3px hit extension end left of the grip: the two hit areas never meet, and a press on the +N reaches the badge. */
-.tile.stacked.narrow .stk{left:3px;padding:1px 2px}
+/* A narrow stacked tile (about 50x55) has a 20px grip at the bottom right. The badge gives up its icon and most of its padding: 16px wide (the 13px initial and 1.5px a side) from 3px in, it ends where a selected tile's Stay Put begins, 28px short of the right edge, and clear of the grip. Its cap keeps that 3px + 28px budget, so the hit areas never meet and a press on the badge reaches it. */
+.tile.stacked.narrow .stk{left:3px;padding:1px 1.5px;max-width:calc(100% - 31px)}
 .tile.stacked.narrow .stk svg{display:none}
 /* The layered look makes a narrow stacked tile 13px shorter, so its lock and badge hit extensions would reach the tile's centre, where a press selects it. On a narrow tile they grow away from the centre only. A selected narrow stacked tile has no room for the badge and Stay Put one above the other with a hit extension between them: the badge sits flush at the bottom and drops its upper and lower extensions (the south handle band starts at the tile's edge). */
 .tile.narrow .lk::after{inset:-3px -3px -3px 0}
-.tile.stacked.narrow .stk::after{inset:-3px 0 -3px -3px}
 .tile.sel.stacked.narrow .stk{bottom:0}
 .tile.sel.stacked.narrow .stk::after{inset:0 0 0 -3px}
-/* The named badge never grows under the grip: it stops 31px short of the tile's right edge (8px left, the 20px grip, and its own 3px hit extension) and cuts a long name with an ellipsis. */
-.tile .stk{max-width:calc(100% - 31px)}
+/* The badge's hit extension reaches up, down and left, never right: the badge is at least 18px wide plus 3px left, so it needs no right side for 24px, and a right side would spill 3px past the badge's own box (its scroll width) and take 3px from the name. The drawn box may then run to the grip's left edge, 28px short of the tile's right edge (8px left and the 20px grip), and the two hit areas only touch. A name too long for that box is cut with an ellipsis. */
+.tile .stk::after{right:0}
+.tile .stk{max-width:calc(100% - 28px)}
 .tile .stk span{display:block;max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}
 .tile .stk span.n{flex:none;overflow:visible}
-/* The space before "+N" keeps the text readable as "Claude +1" but takes no width: the badge's gap is the only gap. With 5px padding, "Claude +1" fits the 65px a first-column pinned tile leaves at 1440, so a name is cut only when its box is truly too short. */
+/* The space before "+N" keeps the text readable as "Claude +1" but takes no width: the badge's gap is the only gap. With 5px padding, "Claude +2" (about 67px) fits the 68px a first-column pinned tile leaves at 1440, so a name is cut only when its box is truly too short. */
 .sp{font-size:0}
 /* Forced colours drop the badge's fill, so a 1px ButtonText border makes it read as a button. The padding gives up 1px a side, so the box keeps its width and its hit box stays clear of the grip. */
-@media (forced-colors:active){.tile .stk{border:1px solid ButtonText;padding:1px 4px}.tile.stacked.narrow .stk{padding:1px}}
+@media (forced-colors:active){.tile .stk{border:1px solid ButtonText;padding:1px 4px}.tile.stacked.narrow .stk{padding:1px .5px}}
 .tile.stacked span{-webkit-line-clamp:2}
 .tile.stacked .stayput{bottom:24px;right:3px}
 /* Layered stack look: the back window is a layer under the front tile. The front tile gives up a strip at its top (15px, 13px on a narrow tile), and the strip names the back app. */
