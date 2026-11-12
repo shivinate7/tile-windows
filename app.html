@@ -523,10 +523,9 @@ const TRIGH={manual:"I apply it myself.",time:"On set days at a set time.",displ
 const TRIG=[["manual","Only When I Click Apply"],["time","On a Schedule"],["display","When the Monitors Change"],["call","When a Teams Call Starts"]];
 const DAYN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"],DAYORDER=[1,2,3,4,5,6,0];
 const CATS0=[["code","Code"],["browse","Browse"],["comms","Comms"],["other","Other"]];
-// Names people know for the process names the engine uses. Unknown processes show with a capital letter.
-const APPN={claude:"Claude",chrome:"Chrome",msedge:"Edge",firefox:"Firefox",brave:"Brave","ms-teams":"Teams",teams:"Teams",olk:"Outlook (new)",outlook:"Outlook",
-  windowsterminal:"Terminal",powershell:"PowerShell",pwsh:"PowerShell",explorer:"File Explorer",notepad:"Notepad",powerpnt:"PowerPoint",winword:"Word",excel:"Excel",
-  code:"VS Code",devenv:"Visual Studio",slack:"Slack",zoom:"Zoom",spotify:"Spotify",applicationframehost:"Windows app","*":"everything else"};
+// Names people know for the process names the engine uses: appNames in scenes.json, read from /appnames (the tray names apps from the same map).
+// Unknown processes, and every process on the offline page (file:// cannot read the map), show with a capital letter.
+let APPN={};
 const appName=a=>APPN[String(a).toLowerCase()]||String(a).charAt(0).toUpperCase()+String(a).slice(1);
 // The offline page cannot read scenes.json (file://), so it keeps a copy of its map. test/run.ps1 checks they match.
 const OFFLINE_CATS={"claude":"code","Code":"code","WindowsTerminal":"code","powershell":"code","pwsh":"code","devenv":"code","chrome":"browse","msedge":"browse","firefox":"browse","brave":"browse","ms-teams":"comms","olk":"comms","outlook":"comms","slack":"comms","Zoom":"comms"};
@@ -633,6 +632,7 @@ async function loadAll(){
     const s=await fetch("snapshot",{cache:"no-store"});if(!s.ok)throw new Error(await s.text());
     serverDry=s.headers.get("X-Dry-Run")==="1";const sj=await s.json();
     step="read your scenes";const c=await fetch("config",{cache:"no-store"});if(!c.ok)throw new Error(await c.text());noteFrom(c);cfg=await c.json();
+    step="read the app names";const an=await fetch("appnames",{cache:"no-store"});if(an.ok)APPN=await an.json();
     step="read the recent log";const t=await fetch("state",{cache:"no-store"});if(t.ok){noteFrom(t);st=await t.json()}
     for(const x of cfg.scenes)if(!work[x.id])work[x.id]=clone(x);
     if(!selId||!work[selId])selId=(cfg.scenes.find(x=>x.id===st.active)||cfg.scenes[0]).id;

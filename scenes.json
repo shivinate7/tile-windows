@@ -6,6 +6,12 @@
     "chrome": "browse", "msedge": "browse", "firefox": "browse", "brave": "browse",
     "ms-teams": "comms", "olk": "comms", "outlook": "comms", "slack": "comms", "Zoom": "comms"
   },
+  "appNames": {
+    "claude": "Claude", "chrome": "Chrome", "msedge": "Edge", "firefox": "Firefox", "brave": "Brave", "ms-teams": "Teams", "teams": "Teams",
+    "olk": "Outlook (new)", "outlook": "Outlook", "windowsterminal": "Terminal", "powershell": "PowerShell", "pwsh": "PowerShell",
+    "explorer": "File Explorer", "notepad": "Notepad", "powerpnt": "PowerPoint", "winword": "Word", "excel": "Excel", "code": "VS Code",
+    "devenv": "Visual Studio", "slack": "Slack", "zoom": "Zoom", "spotify": "Spotify", "applicationframehost": "Windows app", "*": "everything else"
+  },
   "scenes": [
     {
       "id": "default", "name": "Default", "builtIn": true, "screens": 3,

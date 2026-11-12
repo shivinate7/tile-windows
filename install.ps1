@@ -42,52 +42,6 @@ param([switch]$NoStartup, [switch]$NoLaunch)
   $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
   $sh = New-Object -ComObject WScript.Shell
-  # The toast header says "Tile Windows" only when the Start shortcut carries the AppUserModelID the tray sends toasts as.
-  function Set-ShortcutAppId([string]$path, [string]$id) {
-    if (-not ('TileShortcut' -as [type])) { Add-Type -TypeDefinition @'
-using System; using System.Runtime.InteropServices;
-public static class TileShortcut {
-  [ComImport, Guid("00021401-0000-0000-C000-000000000046")] class CShellLink {}
-  [StructLayout(LayoutKind.Sequential, Pack = 4)] struct PropKey { public Guid fmtid; public uint pid; }
-  [StructLayout(LayoutKind.Explicit, Size = 24)] struct PropVar { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr p; }
-  [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
-  interface IPropertyStore {
-    [PreserveSig] int GetCount(out uint c);
-    [PreserveSig] int GetAt(uint i, out PropKey k);
-    [PreserveSig] int GetValue(ref PropKey k, out PropVar v);
-    [PreserveSig] int SetValue(ref PropKey k, ref PropVar v);
-    [PreserveSig] int Commit();
-  }
-  [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("0000010b-0000-0000-C000-000000000046")]
-  interface IPersistFile {
-    void GetClassID(out Guid g);
-    [PreserveSig] int IsDirty();
-    void Load([MarshalAs(UnmanagedType.LPWStr)] string f, uint mode);
-    void Save([MarshalAs(UnmanagedType.LPWStr)] string f, [MarshalAs(UnmanagedType.Bool)] bool remember);
-    void SaveCompleted([MarshalAs(UnmanagedType.LPWStr)] string f);
-    void GetCurFile([MarshalAs(UnmanagedType.LPWStr)] out string f);
-  }
-  public static void SetAppId(string path, string id) {
-    object link = new CShellLink();
-    ((IPersistFile)link).Load(path, 2);
-    var store = (IPropertyStore)link;
-    var key = new PropKey { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
-    var v = new PropVar { vt = 31, p = Marshal.StringToCoTaskMemUni(id) };
-    try { Marshal.ThrowExceptionForHR(store.SetValue(ref key, ref v)); Marshal.ThrowExceptionForHR(store.Commit()); }
-    finally { Marshal.FreeCoTaskMem(v.p); }
-    ((IPersistFile)link).Save(path, true);
-  }
-  public static string GetAppId(string path) {
-    object link = new CShellLink();
-    ((IPersistFile)link).Load(path, 0);
-    var key = new PropKey { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
-    PropVar v; Marshal.ThrowExceptionForHR(((IPropertyStore)link).GetValue(ref key, out v));
-    return v.vt == 31 ? Marshal.PtrToStringUni(v.p) : "";
-  }
-}
-'@ }
-    [TileShortcut]::SetAppId($path, $id)
-  }
   function Link($path, $flags) {
     New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
     $l = $sh.CreateShortcut($path); $l.TargetPath = $ps; $l.WorkingDirectory = $app; $l.WindowStyle = 7
@@ -95,7 +49,8 @@ public static class TileShortcut {
     $l.IconLocation = "$env:SystemRoot\System32\imageres.dll,174"; $l.Description = 'Arrange your windows into grids and scenes.'; $l.Save()
   }
   Link (Join-Path $programs 'Tile Windows.lnk') '-Open'
-  try { Set-ShortcutAppId (Join-Path $programs 'Tile Windows.lnk') $TileAppId } catch { Write-Warning "The run toast will not say Tile Windows: $($_.Exception.Message)" }
+  # The toast header says "Tile Windows" only when the Start shortcut carries the AppUserModelID the tray sends toasts as (TileShortcut is tray.ps1's).
+  try { [TileShortcut]::SetAppId((Join-Path $programs 'Tile Windows.lnk'), $TileAppId) } catch { Write-Warning "The run toast will not say Tile Windows: $($_.Exception.Message)" }
   $startup = Join-Path $programs 'Startup\Tile Windows tray.lnk'
   if ($NoStartup -or $env:TILE_NO_STARTUP) { if (Test-Path -LiteralPath $startup) { Remove-Item -LiteralPath $startup } } else { Link $startup '' }
 
