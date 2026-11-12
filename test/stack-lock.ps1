@@ -63,6 +63,11 @@
 #     button "Clear Board" on the board's action bar. It sets fill.off; the status line (#msg) reads "Cleared the board. N windows
 #                        stay put, and Fill Empty Cells is off."; each window the fill had placed is in prevs[selId].left, and
 #                        Windows That Stay Put shows "Fill is off" for it.
+#                        With fill off, every open window that is not pinned has the reason "fill is off" (engine left[]) and reads
+#                        "Fill is off" in its list reason line, whatever its app: an app with a pinned window included.
+#                        A tab click on another scene while the switch waits for its scene's preview leaves that scene as it was:
+#                        the switch changes the scene it was pressed on.
+#     inspector          A narrow pinned tile (its pin mark hidden at 1024) selected: its "Pinned" line is in the inspector's visible area.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 $ErrorActionPreference = 'Stop'
@@ -464,6 +469,25 @@ $fOn = SlDry (SlSceneJson $offPins '["*"]' $offZone)
 Check 'control: fill on (no flag) still fills and zones, as today' (@($fOn.placed).Count -gt 3 -and @($fOn.placed | ? { $_.zone -ge 0 }).Count -ge 1) (SlPl $fOn)
 $fFull = SlDry (SlSceneJson $pinsFull '["*"]' '' $fillOff)
 Check 'guard: fill off on a full board places the ten pins, as today' (@($fFull.placed).Count -eq 10 -and @($fFull.placed | ? { $_.pin -lt 0 }).Count -eq 0) (SlPl $fFull)
+
+# Fill Empty Cells off gives every unpinned window the reason "Fill is off" (decisions/fill-controls.md; board-feedback notes, item 5),
+# not only the windows of the fill's apps. A window whose app has a pinned window is unpinned too, so it gets the reason as well.
+# Three states: empty, pins in two apps (the other windows of those apps stay unpinned), and a full board. Scope first: the pins are
+# placed and some open window is unpinned; then every open window that is not pinned has the reason.
+$fxOpen = @((Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json).windows | ? { $_.x -gt -20000 } | % { [int64]$_.id })
+$offStates = @(
+  @('no pins', '[]', 0),
+  @('pins in two apps', '[{"app":"WindowsTerminal","match":"docs watch","mon":"wide","slots":[9]},{"app":"explorer","match":"Downloads","mon":"wide","slots":[8]}]', 2),
+  @('full board', $pinsFull, 10)
+)
+foreach ($offState in $offStates) {
+  $fo = SlDry (SlSceneJson $offState[1] '["*"]' '' $fillOff)
+  $pinned = @($fo.placed | ? { $_.pin -ge 0 } | % { [int64]$_.id })
+  $unpinned = @($fxOpen | ? { $pinned -notcontains $_ })
+  $noReason = @($unpinned | ? { $id = $_; -not @($fo.left | ? { $_.id -eq $id -and $_.why -eq 'fill is off' }).Count })
+  Check "fill off, $($offState[0]), scope: the pins are placed, and some open window is unpinned" ($pinned.Count -eq $offState[2] -and $unpinned.Count -gt 0) "pinned: $($pinned -join ','); unpinned: $($unpinned -join ',')"
+  Check "fill off, $($offState[0]): every unpinned window has the reason 'fill is off'" ($noReason.Count -eq 0) "no 'fill is off' reason for: $($noReason -join ', ')"
+}
 
 try {
   $srvPair = SlStartServer; $srv = $srvPair[0]; $script:url = $srvPair[1]
@@ -1228,6 +1252,72 @@ try {
   [void](SlSwitch -Click); SlSettle
   $dpAfter = SlPin (SlGet 'work[selId]') 'Pin parser'
   Check 'switch during a drop: Pin parser stays pinned where it was dropped, not in its old cell' ([bool]($dpAfter -and (SlCells $dpAfter) -eq '5')) "pin: $(SlShort $dpAfter)"
+  # Fill Empty Cells off, on the board. The switch pins the windows the fill placed, so their apps now have pinned windows. Each open
+  # window still unpinned in Windows That Stay Put must read "Fill is off" in its reason line, not "Not in this scene". The control is
+  # the same board before the switch: no window reads "Fill is off" there.
+  SlViewport 1440 900; SlCase (SlSceneJson '[]' '["*"]')
+  $n1Before = SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => b.getAttribute('aria-label'))"
+  Check 'control, fill on, board: no window in Windows That Stay Put reads "Fill is off"' (@($n1Before | ? { "$_" -like '*Fill is off*' }).Count -eq 0) "labels: $(SlShort $n1Before)"
+  [void](SlSwitch -Click); SlSettle
+  $n1Scope = SlList "(() => { const pinned = new Set(work[selId].pins.map(p => p.app)); return [...document.querySelectorAll('#bgrps [data-bay]')].map(b => snap.windows.find(w => w.id === +b.dataset.bay)).filter(w => w && !w.min && pinned.has(w.app)).map(w => w.id); })()"
+  Check 'fill off, board, scope: an unpinned window is in Windows That Stay Put, and its app has a pinned window' ($n1Scope.Count -ge 1) "windows: $($n1Scope -join ',')"
+  $n1Chips = SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => ({ id: +b.dataset.bay, min: !!(snap.windows.find(w => w.id === +b.dataset.bay) || {}).min, reason: (b.querySelector('small') || { textContent: null }).textContent }))"
+  $n1Open = @($n1Chips | ? { -not $_.min })
+  $n1Bad = @($n1Open | ? { $_.reason -ne 'Fill is off' })
+  Check 'fill off, board: every unpinned window in Windows That Stay Put has the reason line "Fill is off"' ($n1Open.Count -gt 0 -and $n1Bad.Count -eq 0) "open: $($n1Open.Count); not 'Fill is off': $(@($n1Bad | % { "$($_.id) (reason line: $(if ($_.reason) { $_.reason } else { 'none' }))" }) -join ', ')"
+  # The inspector says the same for one of them: Draft release notes (1003, unpinned, its app Claude has pinned windows).
+  SlJs 'document.querySelector("[data-bay=\"1003\"]").click(); true'
+  $n1Insp = SlGet '(() => { const m = document.querySelector("#win .m"); return m ? m.textContent.replace(/\s+/g, " ").trim() : null; })()'
+  Check 'fill off, board: the inspector gives "fill is off" as the reason for Draft release notes' ([bool]("$n1Insp" -like '*fill is off*')) "inspector line: $n1Insp"
+
+  # A narrow pinned tile loses its pin mark, so the inspector's "Pinned" line is the only cue left. Selecting it scrolls the inspector
+  # so that line is in its visible area. At 1440 the mark stays: that is the control.
+  $pinnedLine = { SlGet '(() => { const t = els.get(1001), ins = document.querySelector(".insp"), m = [...document.querySelectorAll("#win .m")].find(e => e.textContent.trim().startsWith("Pinned")), pmk = t.querySelector(".pinmark"); const q = ins.getBoundingClientRect(), r = m ? m.getBoundingClientRect() : null; return { narrow: t.classList.contains("narrow"), pin: t.classList.contains("pin"), sel: t.classList.contains("sel"), pinmark: pmk ? getComputedStyle(pmk).display : "absent", line: !!m, lineTop: r ? r.top : null, lineBottom: r ? r.bottom : null, insTop: q.top, insBottom: q.bottom }; })()' }
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ '["*"]')
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $n3c = & $pinnedLine
+  Check 'control, 1440: the selected pinned tile keeps its pin mark' ([bool]($n3c.pin -and $n3c.sel -and $n3c.pinmark -eq 'block')) "pin: $($n3c.pin), selected: $($n3c.sel), pin mark: $($n3c.pinmark)"
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCQ '["*"]')
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $n3 = & $pinnedLine
+  Check 'narrow pinned tile, 1024, scope: the selected pinned tile is narrow and its pin mark is hidden' ([bool]($n3.narrow -and $n3.pin -and $n3.sel -and $n3.pinmark -eq 'none')) "narrow: $($n3.narrow), pin: $($n3.pin), selected: $($n3.sel), pin mark: $($n3.pinmark)"
+  Check 'narrow pinned tile, 1024: the inspector''s Pinned line is in the inspector''s visible area' ([bool]($n3.line -and $n3.lineTop -ge $n3.insTop -and $n3.lineBottom -le $n3.insBottom)) "line $($n3.lineTop) to $($n3.lineBottom); inspector $($n3.insTop) to $($n3.insBottom)"
+
+  # A scene tab click while the switch waits for a preview in flight. The switch reads the answer of the scene it was pressed on, so it
+  # changes that scene, and the scene clicked second stays as it was. The first preview is held in the page (a fetch wrapper), so the
+  # wait is real, and it ends only when the case releases it.
+  SlViewport 1440 900
+  $sceneA = SlSceneJson (SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}') '["*"]'
+  $sceneB = $sceneA.Replace('"id":"sl","name":"Stack and lock"', '"id":"sl2","name":"Second scene"').Replace('"match":"Refactor"', '"match":"Pin parser"')
+  $cfgTwo = (Invoke-WebRequest -UseBasicParsing "$($script:url)config").Content | ConvertFrom-Json
+  $cfgTwo.scenes = @((ConvertFrom-Json $sceneA), (ConvertFrom-Json $sceneB))
+  $bodyTwo = ConvertTo-Json -Depth 12 -Compress $cfgTwo
+  if ((Invoke-WebRequest -UseBasicParsing "$($script:url)config" -Method Post -ContentType 'application/json; charset=utf-8' -Body ($utf8.GetBytes($bodyTwo))).Content -ne 'Saved') { throw 'the two-scene config was not saved' }
+  SlLoad
+  SlJs 'previewAll().then(() => true)'
+  SlJs 'document.querySelector("[data-pick=sl]").click(); true'
+  SlJs 'window.__hold = false; if (!window.__origFetch) { window.__origFetch = window.fetch; window.fetch = (u, o) => (window.__hold && String(u).endsWith("preview")) ? new Promise(res => { window.__release = () => res(window.__origFetch(u, o)); }) : window.__origFetch(u, o); } true'
+  SlJs 'window.__bSecond = JSON.stringify(work["sl2"]); true'
+  # Control: no preview in flight. The switch writes fill.off to the scene it was pressed on, and the second scene does not change.
+  [void](SlSwitch -Click); SlSettle
+  $ctlOff = SlGet 'work["sl"].fill.off'
+  $ctlSecond = SlJs 'JSON.stringify(work["sl2"]) === window.__bSecond'
+  Check 'control, no preview in flight: the switch writes fill.off to the scene it was pressed on, and the other scene is unchanged' ([bool]($ctlOff -eq $true -and $ctlSecond -eq $true)) "fill.off on the first: $ctlOff; second unchanged: $ctlSecond"
+  [void](SlSwitch -Click); SlSettle
+  SlJs 'window.__bSecond = JSON.stringify(work["sl2"]); true'
+  # The wait: the switch is pressed while the first scene's preview is held, then the second scene is clicked, then the answer comes back.
+  SlJs 'window.__hold = true; preview("sl"); true'
+  [void](SlSwitch -Click)
+  $scopeA = SlGet '({ inflight: !!inflight["sl"], sel: selId })'
+  Check 'scene tab click during the wait, scope: the switch on Scene A waits for A''s preview, and Scene A is the selected scene' ([bool]($scopeA.inflight -and $scopeA.sel -eq 'sl')) "in flight: $($scopeA.inflight), selected: $($scopeA.sel)"
+  SlJs 'document.querySelector("[data-pick=sl2]").click(); true'
+  SlJs 'window.__hold = false; window.__release(); true'
+  SlJs 'newestPrev("sl").then(() => true)'
+  SlSettle
+  $secondNow = SlJs 'JSON.stringify(work["sl2"]) === window.__bSecond'
+  $firstNow = SlGet 'work["sl"].fill.off'
+  Check 'scene tab click during the wait: the scene clicked second is unchanged' ([bool]($secondNow -eq $true)) "second scene unchanged: $secondNow; its fill.off: $(SlGet 'work["sl2"].fill.off')"
+  Check 'scene tab click during the wait: the switch lands on the scene it was pressed on' ([bool]($firstNow -eq $true)) "first scene fill.off: $(if ($null -eq $firstNow) { 'none' } else { $firstNow })"
   SlViewport 1440 900
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
