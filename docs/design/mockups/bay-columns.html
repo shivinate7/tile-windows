@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bay Columns</title>
+<style>
+/* Tokens copied from app.html :root (lines 13-23). No web fonts: this page opens from disk with no network, so the stacks fall back to Segoe UI. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --tmix:26%; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D; --ok:#17754B; --bad:#B42318;
+  /* Mockup chrome only, never product UI: the dashed Today and New labels. */
+  --ann-new:#C0267A; --ann-today:#4F574F;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+
+/* ---------- Mockup shell (not product UI) ---------- */
+.mk{display:grid;gap:12px;padding:16px}
+.banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
+.banner b{color:var(--ann-new)}
+.mkhead{display:grid;gap:4px}
+.mkhead h1{margin:0;font:700 20px var(--f-disp);letter-spacing:-.01em}
+.mkhead p{margin:0;color:var(--muted);max-width:80ch}
+.mkbar{display:grid;gap:8px}
+.mkrow{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.mkgrp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkgrp>span{color:var(--muted);font-size:12px;min-width:52px}
+.mkseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.mkseg button{min-height:32px;border:0;background:transparent;padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.mkseg button+button{border-left:1px solid var(--line)}
+.mkseg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.mkseg button:disabled{color:var(--muted);text-decoration:line-through;cursor:not-allowed}
+.mkopts{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;font-size:12.5px}
+.mkopts label{display:inline-flex;gap:6px;align-items:center;min-height:32px;cursor:pointer}
+.mkopts input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.mkopts .sep{color:var(--muted);font-size:12px}
+.shots{display:grid;gap:22px}
+.shot{display:grid;gap:6px}
+.shot h2.cap{margin:6px 0 0;font:700 16px var(--f-disp);letter-spacing:-.01em}
+.shot .capn{margin:0;color:var(--muted);max-width:92ch}
+.shot .meas{margin:0;font:12px var(--f-mono);color:var(--muted)}
+.shot .meas b{color:var(--ink);font-weight:500}
+.kind{font:600 11px var(--f);padding:1px 6px;border-radius:3px;border:1px dashed var(--ann-new);color:var(--ann-new);margin-left:6px;vertical-align:2px}
+.kind.today{border-color:var(--ann-today);color:var(--ann-today)}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.ann-new,.ann-today{position:relative;outline:2px dashed var(--ann-new);outline-offset:3px}
+.ann-today{outline-color:var(--ann-today)}
+.ann-new::after,.ann-today::after{content:attr(data-ann);position:absolute;right:6px;top:-11px;padding:0 6px;font:600 11px var(--f);background:var(--panel);color:var(--ann-new);border:1px dashed var(--ann-new);border-radius:3px;white-space:nowrap}
+.ann-today::after{color:var(--ann-today);border-color:var(--ann-today)}
+.newtag{font:600 11px var(--f);padding:0 5px;border:1px dashed var(--ann-new);border-radius:3px;color:var(--ann-new);text-transform:none;letter-spacing:0}
+
+/* ---------- App frame, copied from app.html (the .app grid, top bar, rail and inspector, reduced) ---------- */
+.app{display:grid;grid-template-columns:232px minmax(0,1fr) 268px;grid-template-areas:"top top top" "rail canvas insp";background:var(--panel);text-align:left}
+.w1024 .app{grid-template-columns:minmax(0,1fr) 252px;grid-template-areas:"top top" "rail rail" "canvas insp"}
+.top{grid-area:top;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:9px 16px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font:700 15px var(--f-disp);letter-spacing:-.01em;margin:0}
+.brand svg{width:20px;height:20px;color:var(--select)}
+.crumb{color:var(--muted)}
+.crumb b{color:var(--ink);font-weight:600}
+.tools{margin-left:auto;display:flex;gap:6px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;border:1px solid var(--line);background:var(--panel);padding:5px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.btn.pri{background:var(--select);color:var(--select-ink);border-color:var(--select);font-weight:600}
+.btn.ghost{border-color:transparent;background:transparent}
+.rail,.insp{min-width:0;padding:12px;display:flex;flex-direction:column;gap:8px}
+.rail{grid-area:rail;border-right:1px solid var(--line)}
+.w1024 .rail{border-right:0;border-bottom:1px solid var(--line);flex-direction:row;flex-wrap:wrap;align-items:center}
+.insp{grid-area:insp;border-left:1px solid var(--line)}
+h3.sec{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0}
+.ph{display:block;border-radius:6px;background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.card{display:grid;gap:4px;padding:7px 8px;border:1px solid var(--line);border-radius:8px}
+.card strong{font:700 15px var(--f-disp)}
+.card small{color:var(--muted);font-size:12px}
+.card.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.w1024 .card{min-width:150px}
+.canvas{grid-area:canvas;min-width:0;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;gap:12px}
+.board{display:flex;gap:10px;align-items:flex-end;justify-content:center;height:150px}
+.mon{position:relative;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
+.mon i{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);background:color-mix(in srgb,var(--ink) 6%,transparent);border-radius:2px}
+.mon em{position:absolute;bottom:100%;left:0;font:600 11.5px var(--f);font-style:normal;padding-bottom:3px;white-space:nowrap}
+.mon .t{border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);background:color-mix(in srgb,var(--cat) var(--tmix),var(--panel));border-left:4px solid var(--cat);border-radius:3px}
+.bbar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.bbar .btn{margin-left:auto}
+.bbar .btn+.btn{margin-left:0}
+
+/* ---------- The list, copied from app.html .bay (lines 278-297) ---------- */
+.bay{display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel))}
+.bay h2{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:0;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
+.bfoot{display:flex;gap:8px 12px;align-items:stretch;flex-wrap:wrap}
+.dropslot{flex:1 1 220px;display:flex;align-items:center;justify-content:center;min-height:32px;padding:4px 8px;border:1px dashed var(--muted);border-radius:5px;color:var(--muted);font-size:12px;text-align:center}
+.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
+.bgrp h3,.bh{display:flex;gap:6px;align-items:center;margin:0 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.bgrp ul,.bcol{list-style:none;margin:0;padding:0;display:grid;gap:4px;align-content:start}
+.cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
+.chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;font-size:12px}
+.chip b{font-weight:600;white-space:nowrap}
+.chip span{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip small{grid-column:1/-1;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip:focus-visible span{white-space:normal;overflow-wrap:anywhere}
+
+/* ---------- New: shared by both column layouts ---------- */
+/* The count after a category name: a category can now span columns, so its size is not visible at a glance. */
+.bh .ct{margin-left:auto;font:12px var(--f-mono);letter-spacing:0;color:var(--muted)}
+/* Flowing Columns: one list, packed down then across into equal columns. */
+.flow{display:grid;gap:0 12px;align-items:start}
+.flow .bcol{gap:4px}
+/* A category that starts below another one in the same column gets more space above its header. */
+.flow .bh.mid{margin-top:8px}
+/* A column that opens partway through a category: a rule in the category colour, no second name (ux-label-once). */
+/* It takes a header's height, so chips line up across columns. */
+.flow .cont{position:relative;height:16px;margin:0 0 4px}
+.flow .cont::before{content:"";position:absolute;left:0;right:0;top:6px;height:3px;border-radius:2px;background:var(--cat)}
+/* Category Blocks: each category gets whole columns; its header and colour rule span them. */
+.blocks{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:start}
+.blk{display:grid;gap:4px;min-width:0}
+.blk .bh{margin:0;padding-bottom:4px;border-bottom:2px solid var(--cat)}
+.blk .bcols{display:grid;gap:0 12px;align-items:start}
+@media (forced-colors:active){.flow .cont::before{background:CanvasText}.blk .bh{border-bottom-color:CanvasText}}
+</style>
+</head>
+<body>
+<div class="mk">
+  <p class="banner" role="note"><b>Sample</b> No figure, window or title on this page is real. Every title is invented.</p>
+  <header class="mkhead">
+    <h1>Windows That Stay Put: More Columns</h1>
+    <p>Owner, 2026-11-12 11:14 CST: the list under the board uses three narrow category columns and leaves most of its width empty, so a long list runs far down the page. Two layouts let it use the width. Each draws the same windows at the same size, beside today for comparison.</p>
+  </header>
+  <div class="mkbar" role="group" aria-label="Mockup controls">
+    <div class="mkrow">
+      <div class="mkgrp"><span>Layout</span><div class="mkseg" id="segS"></div></div>
+      <div class="mkgrp"><span>Windows</span><div class="mkseg" id="segN"></div></div>
+      <div class="mkgrp"><span>List</span><div class="mkseg" id="segL"></div></div>
+    </div>
+    <div class="mkrow">
+      <div class="mkgrp"><span>Width</span><div class="mkseg" id="segW"></div></div>
+      <div class="mkgrp"><span>Theme</span><div class="mkseg" id="segT"></div></div>
+      <div class="mkopts" id="opts"><span class="sep">Show option:</span></div>
+    </div>
+  </div>
+  <main class="shots" id="out"></main>
+</div>
+<script>
+"use strict";
+/* ---------- Sample (invented). Category counts follow the owner's screenshot: Code 10, Browse 2, Other 11. ---------- */
+const FILL="Fill is off",MIN="Minimized: it stays minimized";
+const W23=[
+  ["Claude","code","Refactor the grid solver",FILL],["Claude","code","Batch runner notes",FILL],["Claude","code","Triage the open items",FILL],
+  ["Claude","code","Retrospective draft",FILL],["Claude","code","Settings cleanup",FILL],["Claude","code","Build the report sheet",FILL],
+  ["Claude","code","Hook timing review",FILL],["Claude","code","Board resize handles",FILL],["Terminal","code","pwsh - tiler",MIN],["Claude","code","Voice macros",FILL],
+  ["Chrome","browse","Tile Windows - Docs",FILL],["Chrome","browse","Quarterly roadmap",MIN],
+  ["File Explorer","other","Projects",MIN],["Excel","other","Budget FY27.xlsx",MIN],["Windows app","other","Sticky Notes",FILL],["Windows app","other","Settings",MIN],
+  ["Windows app","other","Sticky Notes",FILL],["Windows app","other","Sticky Notes",FILL],["Windows app","other","Sticky Notes",FILL],["Device Helper","other","Device Helper",MIN],
+  ["Windows app","other","Sticky Notes",FILL],["Windows app","other","Sticky Notes",FILL],["Calendar","other","Calendar",MIN]];
+const W6=[["Claude","code","Refactor the grid solver",FILL],["Claude","code","Voice macros",FILL],["Terminal","code","pwsh - tiler",MIN],
+  ["Chrome","browse","Quarterly roadmap",MIN],["Excel","other","Budget FY27.xlsx",MIN],["Windows app","other","Sticky Notes",FILL]];
+const CATS=[["code","Code"],["browse","Browse"],["comms","Comms"],["other","Other"]];
+
+/* [key, option, name, kind, caption] */
+const LAYOUTS=[
+  ["today","today","Today","Today","Main as it is: one column per category, 170px at least (app.html .bgrps, auto-fill). The empty tracks to the right stay empty, and the longest category sets the height."],
+  ["flow","flow","Flowing Columns","Pick","One list, packed down and then across into as many 170px columns as fit, balanced to the shortest height. A header keeps its first two windows with it, and a split never leaves one window alone. A column that opens partway through a category starts with a rule in its colour; every chip keeps its colour edge."],
+  ["blocks","blocks","Category Blocks","Alternative","Each category takes one or more whole columns, as few rows as fit. Its header, count and a colour rule span its columns, and a wider gap parts one category from the next."]];
+const OPTS=[["flow","Flowing Columns"],["blocks","Category Blocks"]];
+/* Width of the list's inner box: the canvas column minus its 18px padding, the list's 12px padding and its 1px border. 1440: 1440-232-268 = 940. 1024 (app.html max-width:1180 frame): 1024-252 = 772. */
+const INNER={"1440":940-36-26,"1024":772-36-26};
+const MINCOL=170,GAP=12;
+
+/* ---------- View state, from the URL hash ---------- */
+const V={s:"flow",n:"23",l:"all",w:"1440",t:"",once:false,off:new Set()};
+function readHash(){const h=new URLSearchParams(location.hash.slice(1));
+  V.s=["today","flow","blocks","all"].includes(h.get("s"))?h.get("s"):"flow";
+  V.n=["23","6"].includes(h.get("n"))?h.get("n"):"23";
+  V.l=h.get("list")==="fewer"?"fewer":"all";
+  V.w=["1440","1024"].includes(h.get("w"))?h.get("w"):"1440";
+  V.t=["light","dark"].includes(h.get("t"))?h.get("t"):"";
+  V.once=h.get("once")==="1";
+  V.off=new Set((h.get("hide")||"").split(",").filter(o=>OPTS.some(x=>x[0]===o)))}
+function writeHash(){const p=[`s=${V.s}`];if(V.n!=="23")p.push(`n=${V.n}`);if(V.l!=="all")p.push("list=fewer");if(V.w!=="1440")p.push(`w=${V.w}`);if(V.t)p.push(`t=${V.t}`);if(V.once)p.push("once=1");if(V.off.size)p.push(`hide=${[...V.off].join(",")}`);history.replaceState(null,"","#"+p.join("&"))}
+
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const catName=c=>CATS.find(x=>x[0]===c)[1];
+const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
+
+/* ---------- The list ---------- */
+// The reason most windows share; Reason Said Once names it in the note and drops it from those chips.
+function common(ws){const m=new Map();for(const w of ws)m.set(w[3],(m.get(w[3])||0)+1);let best=null,n=0;for(const [k,v] of m)if(v>n){best=k;n=v}return n>1?best:null}
+function chip(w,once,shared){const [app,c,title,why]=w,show=!(once&&why===shared);
+  return `<li><button type="button" class="chip cat-${c}" title="${esc(app)}: ${esc(title)}" aria-label="${esc(app)}: ${esc(title)}. ${esc(why)}. Stays put. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(app)}</b><span>${esc(title)}</span>${show?`<small>${esc(why)}</small>`:""}</button></li>`}
+function groups(ws){const by=new Map(CATS.map(([c])=>[c,[]]));for(const w of ws)by.get(w[1]).push(w);return [...by].filter(([,l])=>l.length)}
+// Today's cap (app.html renderBay): two rows per category with the window 820px tall or more. Both new layouts keep it.
+const CAP=2;
+function capped(ws){if(V.l==="all")return{vis:ws,more:0};const vis=[];let more=0;for(const [,l] of groups(ws))l.forEach((w,k)=>k<CAP?vis.push(w):more++);return{vis,more}}
+const head=(c,n,cls="")=>`<h3 class="bh cat-${c}${cls}"><i class="sw"></i>${esc(catName(c))}<span class="ct">${n}</span></h3>`;
+
+function bayShell(key,ws,more,once,shared){
+  const ann=key==="today"?`class="bay ann-today" data-ann="Today: three category columns"`:`class="bay ann-new" data-ann="New: ${key==="flow"?"Flowing Columns":"Category Blocks"}"`;
+  const note=`${plural(ws.length,"window")}. Apply leaves them where they are.`+(once&&shared?` Most are here because ${shared.toLowerCase()}; the others say why. <span class="newtag">New: Reason Said Once</span>`:"");
+  return `<section ${ann} id="bay-${key}" aria-labelledby="bh-${key}"><h2 id="bh-${key}">Windows That Stay Put <span class="note">${note}</span></h2><div class="body"></div>
+    <div class="bfoot"><button type="button" class="btn ghost">${V.l==="fewer"?`Show ${more} More`:"Show Fewer"}</button><div class="dropslot">Drag a window here to keep it where it is</div></div></section>`}
+
+function renderToday(body,ws){const total=ws;
+  body.innerHTML=`<div class="bgrps">${groups(total).map(([c,l])=>`<div class="bgrp cat-${c}"><h3><i class="sw"></i>${esc(catName(c))}</h3><ul>${l.map((w,k)=>V.l==="fewer"&&k>=CAP?"":chip(w,false)).join("")}</ul></div>`).join("")}</div>`}
+
+// Flowing Columns: measure each piece at the column width, then find the shortest column height that packs into K columns.
+function renderFlow(body,ws,once,shared,width){
+  const K=Math.max(1,Math.floor((width+GAP)/(MINCOL+GAP))),colW=(width-GAP*(K-1))/K;
+  const {vis}=capped(ws),gs=groups(vis);
+  const probe=document.createElement("div");probe.className="flow";probe.style.cssText=`width:${colW}px;position:absolute;visibility:hidden`;body.appendChild(probe);
+  const hgt=html=>{probe.innerHTML=`<div class="bcol">${html}</div>`;return probe.firstChild.firstElementChild.getBoundingClientRect().height};
+  const midH=hgt(`<span></span>`)*0+8; // the .mid margin
+  const items=gs.map(([c,l])=>({c,head:hgt(head(c,l.length).replace("<h3","<h3 style='margin:0'")),hm:4,chips:l.map(w=>({w,h:hgt(chip(w,once,shared))}))}));
+  const contH=hgt(`<li class="cont cat-code"></li>`)+4;probe.remove();
+  function pack(H){const cols=[[]];let h=0;
+    for(const g of items){
+      // A header keeps its first two windows with it (all three when it has three, since 2+1 would leave one alone).
+      const keep=g.chips.slice(0,g.chips.length<=3?g.chips.length:2),need=(h?midH:0)+g.head+g.hm+keep.reduce((s,c)=>s+c.h+4,-4);
+      if(h&&h+need>H){cols.push([]);h=0}
+      cols.at(-1).push({t:"h",g,mid:h>0});h+=(h?midH:0)+g.head+g.hm;
+      for(const [i,ch] of g.chips.entries()){const add=(cols.at(-1).length?4:0)+ch.h;
+        // No lone chip at either side of a break: a split category keeps two windows in each column, or it does not split here.
+        if(i>0&&h+add>H){if(i<2||g.chips.length-i<2)return null;cols.push([{t:"cont",g}]);h=contH}
+        cols.at(-1).push({t:"c",ch,g});h+=(cols.at(-1).length>1?4:0)+ch.h}}
+    return cols}
+  let lo=Math.max(...items.flatMap(g=>[g.head+g.hm+g.chips[0].h,...g.chips.map(c=>c.h+contH)])),cols=null;
+  for(let H=lo;H<20000;H+=2){cols=pack(H);if(cols&&cols.length<=K)break}
+  body.innerHTML=`<div class="flow" style="grid-template-columns:repeat(${K},minmax(0,1fr))">${cols.map(col=>`<ul class="bcol">${col.map(it=>it.t==="h"?`<li>${head(it.g.c,ws.filter(w=>w[1]===it.g.c).length,it.mid?" mid":"")}</li>`:it.t==="cont"?`<li class="cont cat-${it.g.c}" aria-hidden="true"></li>`:chip(it.ch.w,once,shared)).join("")}</ul>`).join("")}</div>`;
+  return {K,cols:cols.length}}
+
+// Category Blocks: the fewest rows R so that each category's ceil(n/R) columns fit in K.
+function renderBlocks(body,ws,once,shared,width){
+  const {vis}=capped(ws),gs=groups(vis),nb=gs.length;
+  const K=Math.max(1,Math.floor((width+GAP)/(MINCOL+GAP)));
+  let R=1;while(gs.reduce((s,[,l])=>s+Math.ceil(l.length/R),0)>K&&R<99)R++;
+  const used=gs.reduce((s,[,l])=>s+Math.ceil(l.length/R),0),fits=used<=K;
+  // Columns keep today's width share; the 20px gap between blocks comes out of the columns.
+  const colW=fits?(width-GAP*(K-1)-(20-GAP)*(nb-1))/K:MINCOL;
+  body.innerHTML=`<div class="blocks">${gs.map(([c,l])=>{const k=Math.ceil(l.length/R),per=Math.ceil(l.length/k),parts=[...Array(k)].map((_,i)=>l.slice(i*per,i*per+per)); // even split: 11 in 2 columns is 6 and 5, not 10 and 1
+    return `<div class="blk cat-${c}" style="width:${k*colW+(k-1)*GAP}px">${head(c,ws.filter(w=>w[1]===c).length)}<div class="bcols" style="grid-template-columns:repeat(${k},minmax(0,1fr))">${parts.map(p=>`<ul class="bcol">${p.map(w=>chip(w,once,shared)).join("")}</ul>`).join("")}</div></div>`}).join("")}</div>`;
+  return {K,R}}
+
+/* ---------- Frame ---------- */
+const LOGO='<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1"/><rect x="11" y="3" width="7" height="6" rx="1"/><rect x="2" y="11" width="16" height="6" rx="1"/></svg>';
+function mon(label,w,h,c,r,tiles){return `<div class="mon" style="width:${w}px;height:${h}px;grid-template-columns:repeat(${c},1fr);grid-template-rows:repeat(${r},1fr)"><em>${label}</em>${[...Array(c*r)].map((_,i)=>tiles[i]?`<i class="t cat-${tiles[i]}"></i>`:"<i></i>").join("")}</div>`}
+function frame(key){const w=+V.w,s=w===1440?1:.8;
+  return `<div class="w${w}" style="width:${w}px"><div class="app">
+  <div class="top"><p class="brand">${LOGO}Tile Windows</p><span class="crumb">Scene: <b>Default</b></span><div class="tools"><button class="btn">Refresh</button><button class="btn">Undo</button><button class="btn pri">Apply</button></div></div>
+  <aside class="rail"><h3 class="sec">Scenes</h3><div class="card sel"><strong>Default</strong><small>Only when I click Apply</small></div><div class="card"><strong>Focus</strong><small>Weekdays at 9:00</small></div><div class="card"><strong>Calls</strong><small>When a Teams call starts</small></div></aside>
+  <div class="canvas"><div class="board">${mon("Laptop 2×1",120*s,76*s,2,1,["comms"])}${mon("Ultrawide 7×2 · fill off",360*s,118*s,7,2,[])}${mon("Portrait 1×2",76*s,128*s,1,2,["comms","comms"])}</div>
+    <div class="bbar">Drag to a cell to pin, or to the list to keep put.<button class="btn">Draw Zone</button><button class="btn">Clear Board</button></div>
+    <div class="slot"></div></div>
+  <aside class="insp"><h3 class="sec">Scene</h3><span class="ph" style="height:32px"></span><h3 class="sec">Triggers</h3><span class="ph" style="height:96px"></span><h3 class="sec">Monitor</h3><span class="ph" style="height:120px"></span></aside>
+  </div></div>`}
+
+function shot(L){const [key,,name,kind,cap]=L,ws=V.n==="23"?W23:W6,once=key!=="today"&&V.once,shared=common(ws),{vis,more}=capped(ws);
+  const el=document.createElement("section");el.className="shot";
+  el.innerHTML=`<h2 class="cap">${esc(name)}<span class="kind${key==="today"?" today":""}">${esc(kind)}</span></h2><p class="capn">${esc(cap)}</p><p class="meas"></p><div class="scroll">${frame(key)}</div>`;
+  $out.appendChild(el);
+  el.querySelector(".slot").outerHTML=bayShell(key,ws,more,once,shared);
+  const bay=el.querySelector(".bay"),body=bay.querySelector(".body"),width=INNER[V.w];
+  let info="";
+  if(key==="today"){renderToday(body,ws);const K=Math.floor((width+GAP)/(MINCOL+GAP));info=`${K} tracks, ${groups(ws).length} used`}
+  else if(key==="flow"){const r=renderFlow(body,ws,once,shared,width);info=`${r.K} columns, ${r.cols} used`}
+  else{const r=renderBlocks(body,ws,once,shared,width);info=`${r.K} columns, ${r.R} rows at most`}
+  const h=Math.round(body.getBoundingClientRect().height);
+  el.querySelector(".meas").innerHTML=`List body height: <b>${h}px</b> · ${info} · list width ${width}px`;
+  return h}
+
+const $out=document.getElementById("out");
+function render(){
+  document.documentElement.dataset.theme=V.t||"";if(!V.t)delete document.documentElement.dataset.theme;
+  seg("segS",[["today","Today"],["flow","Flowing Columns"],["blocks","Category Blocks"],["all","All Three"]],"s",k=>V.off.has(k));
+  seg("segN",[["23","23 Windows"],["6","6 Windows"]],"n");
+  seg("segL",[["all","Show Fewer (all shown)"],["fewer","Show N More (capped)"]],"l");
+  seg("segW",[["1440","1440"],["1024","1024"]],"w");
+  seg("segT",[["","System"],["light","Light"],["dark","Dark"]],"t");
+  const o=document.getElementById("opts");o.innerHTML='<span class="sep">Show option:</span>'+OPTS.map(([k,n])=>`<label><input type="checkbox" data-opt="${k}" ${V.off.has(k)?"":"checked"}>${esc(n)}</label>`).join("")+`<span class="sep">Add-on:</span><label><input type="checkbox" id="onceBox" ${V.once?"checked":""}>Reason Said Once (off by default)</label>`;
+  $out.innerHTML="";
+  let s=V.s;if(s!=="all"&&s!=="today"&&V.off.has(s))s="all";
+  const list=LAYOUTS.filter(L=>s==="all"?!V.off.has(L[1]):L[0]===s);
+  // A single new layout is drawn under Today, so the two read side by side in height.
+  const draw=s==="all"||s==="today"?list:[LAYOUTS[0],...list];
+  for(const L of draw)shot(L);
+  writeHash()}
+function seg(id,items,k,dis=()=>false){const e=document.getElementById(id);
+  e.innerHTML=items.map(([v,n])=>`<button type="button" data-k="${k}" data-v="${v}" aria-pressed="${V[k]===v}" ${dis(v)?"disabled":""}>${esc(n)}</button>`).join("")}
+document.addEventListener("click",ev=>{const b=ev.target.closest(".mkseg button");if(!b)return;V[b.dataset.k]=b.dataset.v;render()});
+document.addEventListener("change",ev=>{if(ev.target.id==="onceBox"){V.once=ev.target.checked;render();return}const i=ev.target.closest("[data-opt]");if(!i)return;i.checked?V.off.delete(i.dataset.opt):V.off.add(i.dataset.opt);render()});
+addEventListener("hashchange",()=>{readHash();render()});
+readHash();render();
+</script>
+</body>
+</html>
