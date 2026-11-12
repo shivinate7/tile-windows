@@ -319,6 +319,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Stack, lock, resize and the spanned drop: their own file, run in a child powershell (its FAIL lines count here).
   $slOut = @(Child (Join-Path $PSScriptRoot 'stack-lock.ps1')); $slOut | % { "$_" }
   $script:fail += [Math]::Max(@($slOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Run Undo (the run toast, Undo's puts and guards, the protocol registration): its own file, in a child powershell (its FAIL lines count here).
+  $ruOut = @(Child (Join-Path $PSScriptRoot 'run-undo.ps1')); $ruOut | % { "$_" }
+  $script:fail += [Math]::Max(@($ruOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
   $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }
@@ -336,7 +339,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
 
   # 9. Installer, piped as the one-liner runs it, into a temp profile; then uninstall.
   $iprof = Profile 'inst'
-  $ins = Start-Child $iprof "-Command `"Get-Content -Raw -LiteralPath '$(Join-Path $root 'install.ps1')' | Invoke-Expression`"" @{ TILE_SOURCE = $root; TILE_NO_LAUNCH = '1' }
+  $ins = Start-Child $iprof "-Command `"Get-Content -Raw -LiteralPath '$(Join-Path $root 'install.ps1')' | Invoke-Expression`"" @{ TILE_SOURCE = $root; TILE_NO_LAUNCH = '1'; TILE_NO_REGISTRY = '1' }
   $iout = $ins.StandardOutput.ReadToEnd(); $ierr = $ins.StandardError.ReadToEnd(); $ins.WaitForExit()
   $iapp = Join-Path $iprof '.tile-windows\app'; $iprog = Join-Path $iprof 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs'
   $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $iprog 'Tile Windows.lnk'))
@@ -357,24 +360,24 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $itray = Start-Child $iprof "-File `"$(Join-Path $iapp 'tray.ps1')`" -NoIcon -NoApply"; $t0 = Get-Date; $m = $null
   while (-not [Threading.Mutex]::TryOpenExisting($iagent, [ref]$m) -and ((Get-Date) - $t0).TotalSeconds -lt 15 -and -not $itray.HasExited) { Start-Sleep -Milliseconds 200 }
   $iup = [bool]$m; if ($m) { $m.Dispose() }
-  $ins2 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoStartup -NoLaunch" @{ TILE_SOURCE = $root }; $i2 = $ins2.StandardOutput.ReadToEnd() + $ins2.StandardError.ReadToEnd(); $ins2.WaitForExit()
+  $ins2 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoStartup -NoLaunch" @{ TILE_SOURCE = $root; TILE_NO_REGISTRY = '1' }; $i2 = $ins2.StandardOutput.ReadToEnd() + $ins2.StandardError.ReadToEnd(); $ins2.WaitForExit()
   $iquit = $itray.HasExited; if (-not $iquit) { $itray.Kill() }
   Check 'installing again first stops the running tray agent' ($iup -and $iquit) "up=$iup quit=$iquit"
   Check 'installing again works in place; -NoStartup drops the login shortcut' ($ins2.ExitCode -eq 0 -and @(Get-ChildItem -LiteralPath $iapp).Count -eq 9 -and @(Get-ChildItem -LiteralPath (Join-Path $iprof '.tile-windows') -Filter 'app.new-*').Count -eq 0 -and (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Startup\Tile Windows tray.lnk'))) $i2
   # A failed copy (a missing source file) leaves the installed app as it was.
   $bsrc = Join-Path $tmp 'badsrc'; New-Item -ItemType Directory $bsrc | Out-Null; Get-ChildItem -LiteralPath $root -File | Copy-Item -Destination $bsrc; Remove-Item -LiteralPath (Join-Path $bsrc 'README.md')
   $stamp = (Get-Item -LiteralPath (Join-Path $iapp 'tile.ps1')).LastWriteTimeUtc
-  $ins3 = Start-Child $iprof "-File `"$(Join-Path $bsrc 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $bsrc }; [void]$ins3.StandardOutput.ReadToEnd(); [void]$ins3.StandardError.ReadToEnd(); $ins3.WaitForExit()
+  $ins3 = Start-Child $iprof "-File `"$(Join-Path $bsrc 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $bsrc; TILE_NO_REGISTRY = '1' }; [void]$ins3.StandardOutput.ReadToEnd(); [void]$ins3.StandardError.ReadToEnd(); $ins3.WaitForExit()
   Check 'a failed install leaves the old app in place' ($ins3.ExitCode -ne 0 -and @(Get-ChildItem -LiteralPath $iapp).Count -eq 9 -and (Get-Item -LiteralPath (Join-Path $iapp 'tile.ps1')).LastWriteTimeUtc -eq $stamp -and @(Get-ChildItem -LiteralPath (Join-Path $iprof '.tile-windows') -Filter 'app.new-*').Count -eq 0)
   # A failure between the two renames of the swap puts the old app back, and it still runs.
-  $ins5 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $root; TILE_TEST_SWAP_FAIL = '1' }; [void]$ins5.StandardOutput.ReadToEnd(); [void]$ins5.StandardError.ReadToEnd(); $ins5.WaitForExit()
+  $ins5 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $root; TILE_TEST_SWAP_FAIL = '1'; TILE_NO_REGISTRY = '1' }; [void]$ins5.StandardOutput.ReadToEnd(); [void]$ins5.StandardError.ReadToEnd(); $ins5.WaitForExit()
   $runs = ''; $runsOk = $false; if (Test-Path -LiteralPath (Join-Path $iapp 'tile.ps1')) { $runs = (Child (Join-Path $iapp 'tile.ps1') -From (Join-Path $root 'test\fixture.json') -Default 2>&1 | Out-String); $runsOk = $LASTEXITCODE -eq 0 }
   Check 'a failure mid-swap puts the old app back, and it runs' ($ins5.ExitCode -ne 0 -and (Test-Path -LiteralPath (Join-Path $iapp 'tile.ps1')) -and @(Get-ChildItem -LiteralPath $iapp).Count -eq 9 -and (Get-Item -LiteralPath (Join-Path $iapp 'tile.ps1')).LastWriteTimeUtc -eq $stamp -and @(Get-ChildItem -LiteralPath (Join-Path $iprof '.tile-windows') -Filter 'app.*-*').Count -eq 0 -and $runsOk) $runs
   New-Item -ItemType File (Join-Path $iprof '.tile-windows\config.json') -Force | Out-Null
-  $un = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`""; $uout = $un.StandardOutput.ReadToEnd() + $un.StandardError.ReadToEnd(); $un.WaitForExit()
+  $un = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`"" @{ TILE_NO_REGISTRY = '1' }; $uout = $un.StandardOutput.ReadToEnd() + $un.StandardError.ReadToEnd(); $un.WaitForExit()
   Check 'uninstall removes the app and shortcuts, keeps scenes' ($un.ExitCode -eq 0 -and -not (Test-Path -LiteralPath $iapp) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Startup\Tile Windows tray.lnk')) -and (Test-Path -LiteralPath (Join-Path $iprof '.tile-windows\config.json'))) $uout
-  $ins4 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $root }; [void]$ins4.StandardOutput.ReadToEnd(); [void]$ins4.StandardError.ReadToEnd(); $ins4.WaitForExit()
-  $un2 = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`" -Purge"; $u2 = $un2.StandardOutput.ReadToEnd() + $un2.StandardError.ReadToEnd(); $un2.WaitForExit()
+  $ins4 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $root; TILE_NO_REGISTRY = '1' }; [void]$ins4.StandardOutput.ReadToEnd(); [void]$ins4.StandardError.ReadToEnd(); $ins4.WaitForExit()
+  $un2 = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`" -Purge" @{ TILE_NO_REGISTRY = '1' }; $u2 = $un2.StandardOutput.ReadToEnd() + $un2.StandardError.ReadToEnd(); $un2.WaitForExit()
   Check 'uninstall -Purge removes the scenes too' ($un2.ExitCode -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $iprof '.tile-windows')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk'))) $u2
 
   # 10. -Default places windows as main's tile.ps1 does, on the fixture (a fixed snapshot, so windows cannot
