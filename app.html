@@ -290,13 +290,14 @@ dialog form{display:grid;gap:10px}
 .bay h2{margin:0;justify-content:flex-start;gap:10px}
 .bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
 .bgrps{display:grid;gap:0 12px;align-items:start}
-.bcol{list-style:none;margin:0;padding:0;display:grid;gap:4px;align-content:start}
-.bh{display:flex;flex-wrap:wrap;gap:0 6px;align-items:center;margin:0 0 4px;font:600 11px/16px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+/* The grid gap spaces the items of a column. A heading is one row (--bhrow) tall, with its reason on that row. A column that opens with a rule gives the rule an item as tall as a heading's, so chips line up across columns. */
+.bcol{--bhrow:16px;list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:4px;align-content:start}
+.bcol.open{grid-template-rows:var(--bhrow)}
+.bh{display:flex;gap:0 6px;align-items:center;margin:0;white-space:nowrap;font:600 11px/var(--bhrow) var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .bh.mid{margin-top:8px}
-.bh .ct{margin-left:auto;font:12px/16px var(--f-mono);letter-spacing:0}
-.bh .why{flex:0 0 100%;font:400 11px/16px var(--f);text-transform:none;letter-spacing:0}
-/* A column that opens partway through a category: a rule in its colour, no second name. 3px + 6px + 11px of margin = a heading's 16px line + 4px, so chips line up across columns. */
-.cont{height:3px;margin:6px 0 11px;border-radius:2px;background:var(--cat)}
+.bh .why{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font:400 11px/var(--bhrow) var(--f);text-transform:none;letter-spacing:0}
+.bh .ct{margin-left:auto;font:12px/var(--bhrow) var(--f-mono);letter-spacing:0}
+.cont{height:3px;align-self:center;border-radius:2px;background:var(--cat)}
 @media (forced-colors:active){.cont{background:CanvasText}}
 .chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;touch-action:none;font-size:12px}
 .chip b{font-weight:600;white-space:nowrap}
@@ -823,8 +824,10 @@ let bayAll=false;
 const BAYGAP=12,BAYMIN=170;
 const bayChip=(w,c,V,sh)=>{const why=bayWhy(V[w.id]);
   return `<button type="button" class="chip cat-${c}${w.id===selWin?" sel":""}" data-bay="${w.id}" title="${esc(appName(w.app))}: ${esc(w.title)}" aria-label="${esc(appName(w.app))}: ${esc(w.title)}. ${esc(why)}. Stays put. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(appName(w.app))}</b><span>${esc(w.title)}</span>${why!==BAYNOWHY&&why!==sh?`<small>${esc(why)}</small>`:""}</button>`};
-// Reason Said Once: the reason more than half a category's windows share shows once in its heading, and those windows drop their own line.
-const bayHead=(g,mid)=>`<h3 class="bh cat-${g.c}${mid?" mid":""}"><i class="sw"></i>${esc(catName(g.c))}<span class="ct">${g.n}</span>${g.sh?`<span class="why">${esc(g.sh)}</span>`:""}</h3>`;
+// Reason Said Once: the reason more than half of a category's shown windows share shows once in its heading, and those windows drop their own line.
+// A window with no reason line ("Not in this scene") counts as not sharing.
+// The reason sits on the heading's own row after the name, so a heading is one row tall; a long one is cut with an ellipsis and its full text is the title.
+const bayHead=(g,mid)=>`<h3 class="bh cat-${g.c}${mid?" mid":""}"><i class="sw"></i>${esc(catName(g.c))}${g.sh?`<span class="why" title="${esc(g.sh)}">${esc(g.sh)}</span>`:""}<span class="ct">${g.n}</span></h3>`;
 // Packs the groups into columns no taller than H, or returns null when H is too short. A heading keeps its first two windows with it (all
 // three of three). A split never leaves one window of a category alone in a column. A column that opens partway through a category starts with a rule.
 function bayPack(gs,mid,cont,H){
@@ -846,26 +849,29 @@ function renderBay(V){
   const by=new Map(cfg.categories.map(([c])=>[c,[]]));for(const w of ws){const c=catOf(w.app);if(!by.has(c))by.set(c,[]);by.get(c).push(w)}
   const cap=innerHeight<820?1:2;
   const gs=[...by].filter(([,l])=>l.length).map(([c,l])=>{
-    const tally=new Map();for(const w of l){const y=bayWhy(V[w.id]);if(y!==BAYNOWHY)tally.set(y,(tally.get(y)||0)+1)}
-    const hit=[...tally].find(([,n])=>n*2>l.length),sh=hit?hit[0]:null,shown=bayAll?l:l.slice(0,cap);more+=l.length-shown.length;
+    const shown=bayAll?l:l.slice(0,cap);more+=l.length-shown.length;
+    const tally=new Map();for(const w of shown){const y=bayWhy(V[w.id]);if(y!==BAYNOWHY)tally.set(y,(tally.get(y)||0)+1)}
+    const hit=[...tally].find(([,n])=>n*2>shown.length),sh=hit?hit[0]:null;
     return{c,n:l.length,sh,chips:shown.map(w=>({html:bayChip(w,c,V,sh)}))}});
   const list=$("bgrps");let cols=null;
   if(gs.length){
     const W=list.clientWidth||BAYMIN,K=Math.max(1,Math.floor((W+BAYGAP)/(BAYMIN+BAYGAP))),colW=(W-BAYGAP*(K-1))/K;
-    // Measure each piece at the column width, in a hidden column that uses the page's own CSS. The last three pieces measure a heading placed
-    // mid-column and a column's opening rule.
-    const probe=document.createElement("ul");probe.className="bcol";probe.style.cssText=`position:absolute;visibility:hidden;left:0;top:0;width:${colW}px`;
+    // Measure each piece at the column width, in hidden columns that use the page's own CSS. The last two pieces of the first column measure
+    // a heading placed mid-column; the second column holds only a rule, so its height is the rule's full box (its row).
+    const hide=cls=>{const u=document.createElement("ul");u.className=cls;u.style.cssText=`position:absolute;visibility:hidden;left:0;top:0;width:${colW}px`;return u};
+    const probe=hide("bcol"),rp=hide("bcol open");
     probe.innerHTML=gs.map(g=>`<li>${bayHead(g,false)}</li>${g.chips.map(k=>`<li>${k.html}</li>`).join("")}`).join("")
-      +`<li>${bayHead({...gs[0],sh:null},false)}</li><li>${bayHead({...gs[0],sh:null},true)}</li><li class="cont cat-${gs[0].c}"></li>`;
-    bay.appendChild(probe);const hs=[...probe.children].map(e=>e.getBoundingClientRect().height);probe.remove();
+      +`<li>${bayHead({...gs[0],sh:null},false)}</li><li>${bayHead({...gs[0],sh:null},true)}</li>`;
+    rp.innerHTML=`<li class="cont cat-${gs[0].c}"></li>`;
+    bay.append(probe,rp);const hs=[...probe.children].map(e=>e.getBoundingClientRect().height),cont=rp.getBoundingClientRect().height;probe.remove();rp.remove();
     let i=0;for(const g of gs){g.head=hs[i++];for(const k of g.chips)k.h=hs[i++]}
-    const mid=hs[i+1]-hs[i],cont=hs[i+2];
+    const mid=hs[i+1]-hs[i];
     const total=cont+gs.reduce((s,g)=>s+g.head+mid+4+g.chips.reduce((t,k)=>t+4+k.h,0),0);
     const lo=Math.max(...gs.flatMap(g=>[g.head+4+g.chips[0].h,...g.chips.map(k=>cont+4+k.h)]));
     for(let H=lo;H<=total&&!(cols&&cols.length<=K);H+=2)cols=bayPack(gs,mid,cont,H);
     if(!cols||cols.length>K)cols=bayPack(gs,mid,cont,Infinity);
     list.style.gridTemplateColumns=`repeat(${K},minmax(0,1fr))`}
-  list.innerHTML=(cols||[]).map(col=>`<ul class="bcol">${col.map(it=>it.k==="cont"?`<li class="cont cat-${it.g.c}" aria-hidden="true"></li>`:`<li>${it.k==="h"?bayHead(it.g,it.mid):it.ch.html}</li>`).join("")}</ul>`).join("");
+  list.innerHTML=(cols||[]).map(col=>`<ul class="bcol${col[0].k==="cont"?" open":""}">${col.map(it=>it.k==="cont"?`<li class="cont cat-${it.g.c}" aria-hidden="true"></li>`:`<li>${it.k==="h"?bayHead(it.g,it.mid):it.ch.html}</li>`).join("")}</ul>`).join("");
   bay.classList.toggle("all",bayAll);
   const m=$("baymore");m.hidden=!more&&!bayAll;m.textContent=bayAll?"Show Fewer":`Show ${more} More`;
   $("dropslot").textContent=dropText()}

@@ -15,7 +15,7 @@ Flowing Columns is the pick (notes option 1). Category Blocks (option 2) is not 
 Departs from: main's one column per category (`app.html` line 287) and the reason under each chip (`renderBay()`).
 
 Open, for the owner:
-- Group = a category; shared = more than half of its windows; on by default (coordinator pick, 2026-11-12 13:45 CST, pending owner confirm).
+- Group = a category; shared = the reason more than half of the windows the list shows share, so in the capped "Show N More" state only the visible windows count; on by default (coordinator picks, 2026-11-12 13:45 CST and 14:06 CST, pending owner confirm). A window with no reason line ("Not in this scene") counts as not sharing and shows as on main. The shared reason sits on the heading's own row after the category name, so a heading is one row tall.
 - The gains quoted in notes item 4 (271px at 1440, 390px at 1024) were for the "more than half" rule. The ruling's rule is unmeasured.
 
 **Why.** The list used three narrow columns and left most of its width empty, and the same reason repeated under almost every window.
