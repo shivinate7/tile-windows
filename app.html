@@ -313,7 +313,8 @@ dialog form{display:grid;gap:10px}
 .tile.sel.stacked.narrow .stk::after{inset:0 0 0 -3px}
 /* The named badge never grows under the grip: it stops 31px short of the tile's right edge (8px left, the 20px grip, and its own 3px hit extension) and cuts a long name with an ellipsis. */
 .tile .stk{max-width:calc(100% - 31px)}
-.tile .stk span{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tile .stk span{display:block;max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}
+.tile .stk span.n{flex:none;overflow:visible;margin-left:-3px}
 /* Forced colours drop the badge's fill, so a 1px ButtonText border makes it read as a button. The padding gives up 1px a side, so the box keeps its width and its hit box stays clear of the grip. */
 @media (forced-colors:active){.tile .stk{border:1px solid ButtonText}.tile.stacked.narrow .stk{padding:1px}}
 .tile.stacked span{-webkit-line-clamp:2}
@@ -722,7 +723,7 @@ function render(){
     const ico=parseFloat(pr.width)<84;e.classList.toggle("narrow",ico);
     // The badge names the window right behind ("Chrome", "Chrome +1"). A narrow tile has no room for a name, so it shows that app's initial; the label and tooltip keep the true count.
     if(sb&&back.length){const bn=appName(back[0].app);
-      sb.innerHTML=ico?`<i class="ini cat-${catOf(back[0].app)}">${esc(bn.charAt(0))}</i>`:`${parseFloat(pr.width)>=140?BEHIND:""}<span>${esc(bn)}${back.length>1?` +${back.length-1}`:""}</span>`;
+      sb.innerHTML=ico?`<i class="ini cat-${catOf(back[0].app)}">${esc(bn.charAt(0))}</i>`:`${parseFloat(pr.width)>=140?BEHIND:""}<span>${esc(bn)}</span>${back.length>1?`<span class="n"> +${back.length-1}</span>`:""}`;
       sb.classList.toggle("ring",flashId===w.id)}
     // The layered look: the back window is a layer under the front tile, whose top strip names the back app.
     const PK=ico?13:15,pk=back.length>0&&parseFloat(pr.height)>=PK+30;e.classList.toggle("peeked",pk);
@@ -992,7 +993,7 @@ function putBehind(aId,bId){
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
-    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay},`Put ${appName(A.app)} behind ${appName(B.app)}.`);
+    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay},`${appName(A.app)} is behind ${appName(B.app)}.`);
   if(ok)dropNote(px(cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)),A,B,hist[hist.length-1]);
   return ok}
 // Drop Note: it names the stack under the tile that took the drop, with Undo. It goes after about 6 seconds, at the next press, or at the next edit.
