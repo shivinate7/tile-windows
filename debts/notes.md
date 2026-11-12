@@ -98,3 +98,6 @@ Low findings. Each becomes a debt only after a real incident.
 - `app.html` At 1024, an old resize grip can cover a tile title's second line. (hold review, PR 14)
 - Test sweep: a stale test run folder in `%TEMP%` stops the sweep. Pointing TEMP at a fresh folder works around it. (hold review, PR 14)
 - Open owner question: a held window of an app with several open windows whose title changed finds no match, as a pin would not. (hold review, PR 14)
+- sameWin compares by id alone when a Windows That Stay Put entry has one; if that window closes and a same-app, same-title window opens, pinning the new one no longer clears the stale entry (app.html sameWin).
+- Held entries with no id (a reloaded saved scene) that share a title all resolve to the first window with that title; pinning it drops every such hold (app.html heldWin, heldOff).
+- The longer fill-off hint wraps at 1440 and 1024, and "Windows That Stay Put" breaks across two lines.
