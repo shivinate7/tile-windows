@@ -54,8 +54,8 @@
 #     input[role=switch] inside a label whose text is "Fill Empty Cells", in the Monitor section of the monitor that fills.
 #                        Checked is on. Turning it off holds each window the fill or a zone placed where it is, in the scene's
 #                        held layout (decisions/fill-controls.md, owner ruling 2026-11-12 12:05 CST). It adds no pin, and no pin
-#                        mark shows. A freed cell stays empty. A locked pin for a closed window (no open window) keeps its cell
-#                        and its lock; nothing is held over a locked cell, so the window the fill had on that cell goes to
+#                        mark shows. A freed cell stays empty. A pin for a closed window (no open window) keeps its cell, and its lock if it has one;
+#                        nothing is held over its cell, so the window the fill had on that cell goes to
 #                        Windows That Stay Put, unpinned. The status line (#msg) names how many it holds: "N windows are held
 #                        where they are". The holds come from the newest placement, even while a drop's answer is still pending.
 #     scene fill.held    The held layout: an array with one entry per window that fill-off holds where it is. It is apart from
@@ -63,8 +63,8 @@
 #                        the board leaves it, so its cell stays empty. Clear Board holds nothing. While fill is off, tile.ps1
 #                        -Scene (and -DryRun) places each held window in its cell. An entry is {app, title, mon, slots}, with the
 #                        page's handle as id while the page holds it. A held window matches as a pin does: by its app, and by its
-#                        title only when its app has several windows. A stale id holds no window, so no other window takes its
-#                        cell. A held cell is never a locked pin's. A pin of one of two windows with one title drops only its hold.
+#                        title only when its app has several windows: the exact title first, then one that contains it. A stale id holds no window, so no other window takes its
+#                        cell. A held cell is never a pin's, locked or not. A pin of one of two windows with one title drops only its hold.
 #     #bgrps [data-bay]  the chips of Windows That Stay Put. A chip dragged onto a tile's lower band puts that window behind it,
 #                        and the window leaves the list at once: the board, the Behind This Window list and the badge agree with
 #                        no other action (a passive wait for the engine's answer, never a settle).
@@ -112,8 +112,8 @@ function SlPlace($scene) { (& $tile -Scene $scene -From $fixture -Json 3>$null) 
 function SlSceneJson($pins, $fill = '[]', $extra = '', $off = '', $grid = '"c":5,"r":2') {
   '{"id":"sl","name":"Stack and lock","trigger":{"type":"manual","days":[],"time":"09:00"},"grids":{"wide":{' + $grid + '}},"pins":' + $pins + ',"fill":{"mon":"wide","apps":' + $fill + ',"skip":[],"sort":"app"' + $off + '}' + $extra + '}'
 }
-# A dry-run engine call (no window moves): the scene as tile.ps1 -Scene reads it, placed[] and left[] back.
-function SlDry($scene) { (& $tile -Scene $scene -From $fixture -DryRun -Json 3>$null) -join '' | ConvertFrom-Json }
+# A dry-run engine call (no window moves): the scene as tile.ps1 -Scene reads it, placed[] and left[] back. The fixture is the shared one unless a second argument names another.
+function SlDry($scene, $from = $fixture) { (& $tile -Scene $scene -From $from -DryRun -Json 3>$null) -join '' | ConvertFrom-Json }
 function SlPl($r) { (@($r.placed) | % { "$($_.id)p$($_.pin)z$($_.zone)" }) -join ' ' }
 function SlPins { '[' + (@($args) -join ',') + ']' }
 
@@ -529,6 +529,22 @@ $hFullJson = '[' + ((0..9 | % { $r = $hFullRows[$_]; '{"app":"' + $r[1] + '","ti
 $hFull = SlDry (SlSceneJson '[]' '["*"]' '' (SlHeldFill $hFullJson))
 $hFullBad = @(0..9 | ? { (SlSlotsOf $hFull $hFullRows[$_][0]) -ne [string]($_ + 1) })
 Check 'held, control, full board: ten held windows each keep their own cell' ($hFullBad.Count -eq 0 -and @($hFull.placed).Count -eq 10) "not in their cells: $(@($hFullBad | % { $hFullRows[$_][0] }) -join ',')"
+# Nested titles (the held match, decisions/fill-controls.md): "Projects" and "Projects archive" are two windows of one app, and the
+# archive window is further left, so a sort by position alone hands it to the entry "Projects". Each entry takes the window with its
+# exact title first, then one whose title contains it. The fixture is the shared one plus the archive window, in the run folder.
+$fxNestDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+$fxNestDoc.windows = @($fxNestDoc.windows) + [pscustomobject]@{ id = 1018; app = 'explorer'; title = 'Projects archive'; x = 300; y = 200; w = 1000; h = 700 }
+$fxNest = Join-Path $run 'fixture-nested.json'
+[IO.File]::WriteAllText($fxNest, (ConvertTo-Json -Depth 10 -Compress $fxNestDoc), $utf8)
+$nestPA = @($fxNestDoc.windows | ? { $_.title -eq 'Projects' })[0]; $nestPB = @($fxNestDoc.windows | ? { $_.title -eq 'Projects archive' })[0]
+Check 'held, nested titles, scope: Projects and Projects archive are open explorer windows, the archive one further left' ([bool]($nestPA -and $nestPB -and $nestPB.app -eq 'explorer' -and $nestPA.app -eq 'explorer' -and $nestPB.x -lt $nestPA.x -and $nestPB.x -gt -20000)) "windows: $(SlShort @($nestPA, $nestPB))"
+$hNest = SlDry (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"app":"explorer","title":"Projects","mon":"wide","slots":[0]},{"app":"explorer","title":"Projects archive","mon":"wide","slots":[1]}]')) $fxNest
+Check 'held, nested titles: the window titled Projects takes its own cell 1' ((SlSlotsOf $hNest 1010) -eq '1') "1010 cells: $(SlSlotsOf $hNest 1010); placed: $(SlPl $hNest)"
+Check 'held, nested titles: the window titled Projects archive takes its own cell 2' ((SlSlotsOf $hNest 1018) -eq '2') "1018 cells: $(SlSlotsOf $hNest 1018); placed: $(SlPl $hNest)"
+# An unlocked pin for a closed window keeps its cell as a locked one does. The scope is read first; then no held window takes the cell.
+$hOpenPin = SlDry (SlSceneJson (SlPins '{"app":"closedapp","match":"","mon":"wide","slots":[0]}') '["*"]' '' (SlHeldFill '[{"app":"notepad","title":"todo.txt - Notepad","mon":"wide","slots":[0]}]'))
+Check 'held, unlocked pin, scope: the pin for a closed window is in the scene and is not placed' ([bool]@($hOpenPin.missing | ? { $_.app -eq 'closedapp' }).Count) (SlPl $hOpenPin)
+Check 'held, control: no held window takes the cell of an unlocked pin whose window is closed' (-not @($hOpenPin.placed | ? { @($_.slots) -contains 1 }).Count) "placed on slot 1: $(SlShort @($hOpenPin.placed | ? { @($_.slots) -contains 1 }))"
 
 try {
   $srvPair = SlStartServer; $srv = $srvPair[0]; $script:url = $srvPair[1]
@@ -1295,6 +1311,26 @@ try {
   $lkBackPlaced = SlList "prevs[selId].placed.filter(p => p.id === $lkId).map(p => ({ id: p.id, pin: p.pin, slots: p.slots }))"
   $lkBackBay = SlBayIds
   Check 'closed locked pin, fill on again: the window is filled as usual and is not in Windows That Stay Put' ([bool]($lkId -gt 0 -and @($lkBackPlaced).Count -eq 1 -and $lkBackPlaced[0].pin -lt 0 -and -not ($lkBackBay -contains $lkId))) "placed: $(SlShort $lkBackPlaced); bay ids: $($lkBackBay -join ',')"
+  # An unlocked pin for a closed window holds its cell as a locked one does: nothing is held onto that cell (decisions/fill-controls.md).
+  # The fill puts an open window on the cell while the switch is on. Turning the switch off must not hold that window there: it goes to
+  # Windows That Stay Put, and the status line counts the windows held without it.
+  SlCase (SlSceneJson '[{"app":"closedapp","match":"","mon":"wide","slots":[0]}]' '["*"]')
+  $ucOn = SlList "prevs[selId].placed.filter(p => p.slots.includes(1)).map(p => ({ id: p.id, app: p.app, pin: p.pin }))"
+  $ucWin = @($ucOn)[0]
+  $ucId = if ($ucWin) { [int]$ucWin.id } else { 0 }
+  $ucPins = SlList 'work[selId].pins'
+  $ucPin = @($ucPins | ? { "$($_.app)" -eq 'closedapp' })[0]
+  $ucIds = SlList "prevs[selId].placed.filter(p => p.pin < 0 && !p.behind).map(p => p.id)"
+  $ucFill = @($ucIds).Count
+  Check 'unlocked closed pin, scope: the pin has no lock, and the fill has put an open window on its cell among three or more placed' ([bool]($ucPin -and -not $ucPin.lock -and $ucId -gt 0 -and $ucFill -ge 3)) "pin: $(SlShort $ucPin); on slot 1: $(SlShort $ucOn); fill-placed: $ucFill"
+  [void](SlSwitch -Click); SlSettle
+  $ucHeld = SlList 'work[selId].fill.held'
+  Check 'unlocked closed pin: the window the fill had on its cell is not held over it' (-not @($ucHeld | ? { [int]$_.id -eq $ucId }).Count) "fill.held: $(SlShort $ucHeld)"
+  $ucBay = SlBayIds
+  Check 'unlocked closed pin: that window goes to Windows That Stay Put' ([bool]($ucId -gt 0 -and ($ucBay -contains $ucId))) "bay ids: $($ucBay -join ',')"
+  $ucMsg = SlJs "document.getElementById('msg').textContent"
+  $ucWant = $ucFill - 1
+  Check "unlocked closed pin: the status line counts $ucWant windows held, one fewer than the fill placed" ([bool]("$ucMsg" -like "*$ucWant windows are held where they are.*")) "status: $ucMsg"
 
   # The status line names how many windows the switch holds. The count is the windows the fill or a zone had placed before
   # the switch (each is held in its cell), so the scope is read first and the line after the switch.
