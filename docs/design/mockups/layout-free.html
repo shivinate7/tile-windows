@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Split Cell and Free Layout</title>
+<style>
+/* Tokens copied from app.html :root on main (378d26a). No web fonts: this page opens from disk with no network, so the stacks fall back to Segoe UI. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --tmix:26%; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D; --ok:#17754B; --bad:#B42318;
+  /* Mockup chrome only, never product UI: the dashed Today and New labels. */
+  --ann-new:#C0267A; --ann-today:#4F574F;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- Mockup shell (not product UI) ---------- */
+.mk{display:grid;gap:12px;padding:16px}
+.banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
+.banner b{color:var(--ann-new)}
+.mkhead{display:grid;gap:2px}
+.mkhead h1{margin:0;font:700 20px var(--f-disp);letter-spacing:-.01em}
+.mkhead p{margin:0;color:var(--muted);max-width:76ch}
+.mkbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.mkgrp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkgrp>span{color:var(--muted);font-size:12px}
+.mkseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.mkseg button{min-height:32px;border:0;background:transparent;padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.mkseg button+button{border-left:1px solid var(--line)}
+.mkseg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.mkopts{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;font-size:12.5px}
+.mkopts label{display:inline-flex;gap:6px;align-items:center;min-height:32px;cursor:pointer}
+.mkopts input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.mkopts>span{color:var(--muted);font-size:12px}
+.shot{display:grid;gap:6px}
+.shot h2.cap{margin:12px 0 0;font:700 16px var(--f-disp);letter-spacing:-.01em;color:var(--ink);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.shot h2.cap .opt{font:600 12px var(--f);color:var(--panel);background:var(--ink);padding:1px 7px;border-radius:3px}
+.shot h2.cap .note{font:12px var(--f);color:var(--muted)}
+.shot .capn{margin:0;color:var(--muted);max-width:90ch}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.saves{display:grid;gap:4px;max-width:900px}
+.saves summary{cursor:pointer;font-weight:600;font-size:12.5px;width:max-content}
+.saves pre{margin:0;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;white-space:pre;overflow-x:auto;font:12px/1.45 var(--f-mono)}
+.art{position:relative}
+.art.w1440{width:1440px}.art.w1440 .app{height:900px}
+.art.w1024{width:1024px}.art.w1024 .app{height:768px}
+
+/* Today / New labels */
+.ann{position:absolute;border:1.5px dashed var(--ann-new);border-radius:4px;pointer-events:none;z-index:40}
+.ann.today{border-color:var(--ann-today)}
+.ann>em,.abox>em{position:absolute;left:-2px;font:600 10.5px/1 var(--f);font-style:normal;white-space:nowrap;padding:2px 5px;border-radius:3px;background:var(--panel);color:var(--ann-new);border:1px dashed var(--ann-new)}
+.ann>em{top:calc(100% + 3px)}.ann.up>em{top:auto;bottom:calc(100% + 3px)}.ann.end>em{left:auto;right:-2px}
+.ann.today>em,.abox.today>em{color:var(--ann-today);border-color:var(--ann-today)}
+.abox{position:relative;outline:1.5px dashed var(--ann-new);outline-offset:3px;border-radius:2px;margin-top:14px}
+.abox.today{outline-color:var(--ann-today)}
+.abox>em{top:-19px;left:-4px}
+.abox.inl{margin-top:0;outline-offset:1px}
+.nolabels .ann{display:none}.nolabels .abox{outline:0;margin-top:0}.nolabels .abox>em{display:none}
+
+/* ---------- Product UI: copied from app.html on main ---------- */
+.app{display:grid;grid-template-columns:232px minmax(0,1fr) 268px;grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"top top top" "rail canvas insp" "status status status";background:var(--panel)}
+.top{grid-area:top;position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:9px 16px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font:700 15px var(--f-disp);letter-spacing:-.01em;margin:0}
+.brand svg{width:20px;height:20px;color:var(--select)}
+.crumb{color:var(--muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--ink);font-weight:600}
+.edited{color:var(--ink);font-weight:600}
+.edited::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hi);margin:0 6px 1px 8px}
+.tools{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;border:1px solid var(--line);background:var(--panel);padding:5px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:color-mix(in srgb,var(--ink) 40%,var(--line))}
+.btn.pri{background:var(--select);color:var(--select-ink);border-color:var(--select);font-weight:600}
+.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 55%,var(--line))}
+.btn:disabled{cursor:not-allowed;color:var(--muted);background:transparent;border-style:dashed;border-color:var(--line)}
+.btn[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.switch{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 6px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.switch input{appearance:none;width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;margin:0;cursor:pointer;flex:none}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel)}
+.switch input:checked{background:var(--ink)} .switch input:checked::after{left:14px}
+@media (forced-colors:active){.switch input{border:1px solid ButtonText;background:Canvas;forced-color-adjust:none}.switch input::after{top:1px;left:1px;background:ButtonText}
+  .switch input:checked{background:Highlight}.switch input:checked::after{left:13px;background:HighlightText}}
+.rail,.insp{min-width:0;min-height:0;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:auto}
+.rail{grid-area:rail;border-right:1px solid var(--line)}
+.insp{grid-area:insp;border-left:1px solid var(--line);gap:0;padding-top:4px}
+.isec{display:grid;gap:8px;padding:12px 0 16px;border-bottom:1px solid var(--line)}
+.isec:last-child{border-bottom:0}
+.app h2{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:10px 0 0;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.app h2:first-child{margin-top:0}
+.insp h2{margin:0;color:var(--ink);font-size:12px;font-weight:700}
+.cards{display:grid;gap:6px}
+.card{position:relative;display:grid;gap:4px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.card.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.pick{display:grid;gap:5px;border:0;background:transparent;padding:0;text-align:left;min-width:0;border-radius:4px}
+.pick strong{font:700 15px var(--f-disp);letter-spacing:-.01em;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pick small{color:var(--muted);font-size:12px}
+.live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.tag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden;display:block}
+.mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
+.mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
+.cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
+.legend{display:grid;gap:2px}
+.lg{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;border:0;background:transparent;padding:4px 6px;border-radius:4px;text-align:left}
+.lg .ct{margin-left:auto;font:12px var(--f-mono);color:var(--muted)}
+.note{font-size:12px;color:var(--muted);margin:0}
+.why{font-size:12px;color:var(--muted);margin:0;display:grid;gap:2px}
+
+.canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.canvas>*{width:100%;flex:none}
+.canvas>.stage{width:auto}
+.stage{position:relative;user-select:none}
+.mon{position:absolute;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
+.mon .cell{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);background:color-mix(in srgb,var(--ink) 6%,transparent);border-radius:2px;position:relative;min-width:0;min-height:0}
+.mon .cell i{position:absolute;right:3px;bottom:1px;font:normal 11px var(--f-mono);color:var(--muted)}
+.mlab{position:absolute;display:flex;gap:6px;align-items:baseline;font-size:11px;color:var(--muted);white-space:nowrap;transform:translateY(-100%);padding-bottom:3px}
+.mlab button{border:0;background:transparent;padding:0;font-weight:600;color:var(--ink);font-size:11.5px}
+.mlab button[aria-pressed="true"]{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.tile{position:absolute;display:flex;flex-direction:column;align-items:flex-start;gap:2px;overflow:hidden;padding:3px 5px 3px 8px;border-radius:3px;
+  border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);background:color-mix(in srgb,var(--cat) var(--tmix),var(--panel));color:var(--ink);font-size:12px;line-height:1.2;cursor:grab;contain:layout paint}
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
+.tile b{font:600 11px var(--f);padding:1px 5px;border-radius:2px;background:var(--cat);color:var(--panel);max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:normal;overflow-wrap:normal;max-width:100%}
+.tile .pinmark{position:absolute;top:22px;right:5px;width:12px;height:12px;color:var(--cat)}
+.tile.pin span{max-width:calc(100% - 12px)}
+.tile.pin{border-width:2px;border-color:var(--cat);background:color-mix(in srgb,var(--cat) 34%,var(--panel))}
+.tile.pin,.tile.fill{z-index:2}
+.tile.sel{outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent);z-index:4}
+.tile.narrow .pinmark{display:none}
+.tile.narrow span{display:none}
+.tile .lk{position:absolute;top:2px;right:2px;width:18px;height:18px;display:grid;place-items:center;border:0;border-radius:3px;background:transparent;color:var(--muted);padding:0;cursor:pointer;z-index:1}
+.tile .lk svg{width:12px;height:12px}
+.tile .lk::after{content:"";position:absolute;inset:-3px}
+.tile.lock{cursor:default}
+.tile.lock .lk{background:var(--ink);color:var(--panel)}
+.tile.narrow .lk{display:none}
+.ghost{position:absolute;z-index:50;pointer-events:none;max-width:240px;padding:3px 8px;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);color:var(--ink);font:600 12px var(--f);white-space:nowrap}
+.cursor{position:absolute;z-index:51;pointer-events:none}
+.dest{position:absolute;border:2px dashed var(--select);border-radius:3px;pointer-events:none;z-index:8}
+.dest span{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);display:inline-block;width:max-content;max-width:calc(100% - 8px);text-align:center;padding:2px 8px;border-radius:999px;background:var(--select);color:var(--select-ink);font:600 12px var(--f);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dest.sm span{font-size:10.5px;padding:1px 4px;bottom:3px}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
+.boardbar .hint{margin:0;flex:1 1 300px}
+.keys{font-size:12px;color:var(--muted)}
+.keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
+.keys ul{margin:4px 0 0;padding-left:18px}
+.status{grid-area:status;display:flex;flex-wrap:wrap;gap:4px 18px;padding:7px 16px;border-top:1px solid var(--line);font:12px var(--f-mono);color:var(--muted);align-items:center}
+.status .msg{color:var(--ink)}
+select,input[type=text]{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-height:32px;min-width:0;max-width:100%}
+input[type=text]{width:100%}
+.field{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px}
+.field>label,.field>span:first-child{color:var(--muted)}
+.field.stack{flex-direction:column;align-items:stretch;gap:4px}
+.field .ro{font:500 12.5px var(--f-mono)}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.step button{border:0;background:transparent;width:30px;height:30px;font-size:15px}
+.step button:disabled{color:var(--muted);cursor:not-allowed}
+.step span{min-width:26px;text-align:center;font:500 12.5px var(--f-mono)}
+.step.off{border-style:dashed}
+.win{display:grid;gap:7px;padding:9px;border:1px solid var(--line);border-radius:8px}
+.win .t{font-weight:600;font-size:13px;word-break:break-word}
+.win .m{color:var(--muted);font-size:12px}
+.xt{display:grid;flex:1;min-width:0;white-space:normal}
+.xt small{display:block;color:var(--muted);font-size:12px}
+.lockrow{align-items:flex-start;white-space:normal;padding:4px 0;gap:10px;width:100%}
+.lockrow input{margin-top:2px;box-shadow:inset 0 0 0 1px var(--muted)}
+.lockrow input:checked{box-shadow:none}
+.callout{font-size:12px;color:var(--ink);margin:0;padding:8px 10px;border-left:3px solid var(--select);border-radius:4px;background:color-mix(in srgb,var(--select) 8%,var(--panel))}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;min-height:30px;border:0;background:transparent;padding:5px 2px;font-size:12px;min-width:0;white-space:nowrap}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.bay{display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel))}
+.bay h2{margin:0;justify-content:flex-start;gap:10px}
+.bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
+.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
+.bh{display:flex;gap:6px;align-items:center;margin:0 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.bh .why{display:inline;text-transform:none;letter-spacing:0;font-weight:400}
+.bgrp ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;font-size:12px}
+.chip b{font-weight:600;white-space:nowrap}
+.chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Drop Note: copied from app.html .dnote. */
+.dnote{position:absolute;z-index:30;display:flex;align-items:center;gap:8px;width:max-content;max-width:240px;padding:5px 5px 5px 10px;border-radius:6px;background:var(--ink);color:var(--panel);font:500 12px/1.3 var(--f);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent)}
+.dnote::before{content:"";position:absolute;left:var(--ax,14px);top:-5px;width:10px;height:10px;background:var(--ink);transform:rotate(45deg);border-radius:1px}
+.dnote b{font-weight:700}
+.dnote .btn{min-height:26px;padding:2px 8px;font-size:12px;background:transparent;color:inherit;border-color:color-mix(in srgb,currentColor 40%,transparent)}
+@media (forced-colors:active){.dnote{border:1px solid CanvasText}}
+/* Resize handles: copied from app.html .hdl. */
+.hdl{position:absolute;pointer-events:none;z-index:9;--arm:10px;--bar:16px;--off:7px}
+.hdl i{position:absolute;pointer-events:auto}
+.hdl i::before{content:"";position:absolute;pointer-events:none;border:0 solid var(--select)}
+.hdl i.c{width:11px;height:11px}
+.hdl i.c::before{width:var(--arm);height:var(--arm)}
+.hdl i.tl{left:-10px;top:-10px;cursor:nwse-resize}.hdl i.tl::before{left:calc(10px - var(--off));top:calc(10px - var(--off));border-width:3px 0 0 3px;border-top-left-radius:3px}
+.hdl i.tr{left:calc(100% - 1px);top:-10px;cursor:nesw-resize}.hdl i.tr::before{left:calc(var(--off) - var(--arm) + 1px);top:calc(10px - var(--off));border-width:3px 3px 0 0;border-top-right-radius:3px}
+.hdl i.bl{left:-10px;top:calc(100% - 1px);cursor:nesw-resize}.hdl i.bl::before{left:calc(10px - var(--off));top:calc(var(--off) - var(--arm) + 1px);border-width:0 0 3px 3px;border-bottom-left-radius:3px}
+.hdl i.br{left:calc(100% - 1px);top:calc(100% - 1px);cursor:nwse-resize}.hdl i.br::before{left:calc(var(--off) - var(--arm) + 1px);top:calc(var(--off) - var(--arm) + 1px);border-width:0 3px 3px 0;border-bottom-right-radius:3px}
+.hdl i.e::before{background:var(--select);border-radius:2px}
+.hdl i.n,.hdl i.s{left:1px;right:1px;height:7px;cursor:ns-resize}
+.hdl i.n{top:-7px}.hdl i.s{top:100%}
+.hdl i.n::before,.hdl i.s::before{left:50%;width:var(--bar);height:3px;transform:translateX(-50%)}
+.hdl i.n::before{top:calc(7px - var(--off))}.hdl i.s::before{top:calc(var(--off) - 3px)}
+.hdl i.w,.hdl i.ea{top:1px;bottom:1px;width:7px;cursor:ew-resize}
+.hdl i.w{left:-7px}.hdl i.ea{left:100%}
+.hdl i.w::before,.hdl i.ea::before{top:50%;height:var(--bar);width:3px;transform:translateY(-50%)}
+.hdl i.w::before{left:calc(7px - var(--off))}.hdl i.ea::before{left:calc(var(--off) - 3px)}
+@media (forced-colors:active){.hdl i::before{border-color:Highlight}.hdl i.e::before{background:Highlight}}
+
+/* 1024: app.html's @media (max-width:1180px) rules, keyed on the artboard instead of the viewport. */
+.w1024 .app{grid-template-columns:minmax(0,1fr) 252px;grid-template-rows:auto auto minmax(0,1fr) auto;grid-template-areas:"top top" "rail rail" "canvas insp" "status status"}
+.w1024 .rail{flex-direction:row;align-items:stretch;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;padding:8px 12px;gap:12px}
+.w1024 .rail>section{display:flex;flex-direction:column;gap:6px;flex:none}
+.w1024 .cards{grid-auto-flow:column;grid-auto-columns:176px}
+.w1024 .card .pick small,.w1024 .legend+.note{display:none}
+.w1024 .legend{grid-template-columns:repeat(2,auto);column-gap:6px}
+.w1024 .canvas{padding:18px 14px}
+
+/* ---------- New: Split Cell ---------- */
+/* An open half, or an empty area in Free Layout: a dashed box that says it is empty. It takes the cell's look, so it reads as space, not a window. */
+.area{position:absolute;z-index:1;display:grid;place-items:center;border:1.5px dashed color-mix(in srgb,var(--muted) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--ink) 4%,var(--screen));color:var(--muted);font:600 11px var(--f);overflow:hidden;text-align:center}
+.area.sel{outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent);z-index:4;color:var(--ink)}
+.area.prevw{z-index:5;border-color:var(--select);color:var(--select);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--select) 14%,transparent) 0 4px,transparent 4px 8px)}
+.area small{display:block;font:400 10.5px var(--f-mono);color:var(--muted)}
+.area.tiny small,.area.tiny .lab{display:none}
+/* The split line in a split cell: a bar on the gap between the halves. Dragging it changes the share; it snaps to quarters and thirds. */
+.divider{position:absolute;z-index:6;display:flex;align-items:center;justify-content:center;cursor:ew-resize;width:12px;transform:translateX(-50%)}
+.divider i{width:4px;height:20px;border-radius:2px;background:var(--ink);box-shadow:0 0 0 2px var(--screen)}
+.divider.dash{cursor:default}.divider.dash i{display:none}
+.divider.dash::before{content:"";position:absolute;top:0;bottom:0;left:5px;border-left:2px dashed var(--select)}
+/* Popover: anchored at the press, with the toast's weight but the panel's colours, so its controls read as controls. */
+.pop{position:absolute;z-index:32;display:grid;gap:8px;width:252px;padding:10px 12px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);box-shadow:0 16px 36px -14px color-mix(in srgb,#000 55%,transparent)}
+.pop::before{content:"";position:absolute;left:var(--ax,20px);top:-6px;width:10px;height:10px;background:var(--panel);border:solid var(--line);border-width:1px 0 0 1px;transform:rotate(45deg)}
+.pop .anntag{position:absolute;left:-2px;top:calc(100% + 6px);font:600 10.5px/1 var(--f);font-style:normal;white-space:nowrap;padding:2px 5px;border-radius:3px;background:var(--panel);color:var(--ann-new);border:1px dashed var(--ann-new)}
+.pop.annd{outline:1.5px dashed var(--ann-new);outline-offset:4px}
+.nolabels .pop.annd{outline:0}.nolabels .anntag{display:none}
+.pop.flow{position:relative;width:auto;box-shadow:0 10px 24px -14px color-mix(in srgb,#000 50%,transparent)}
+.pop h3{margin:0;font:700 13px var(--f)}
+.prow{display:grid;gap:3px}
+.prow>span{font-size:12px;color:var(--muted)}
+.pacts{display:flex;gap:6px}
+.pacts .btn{flex:1}
+.pop .note{font-size:11.5px}
+.ropt{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer}
+.ropt input{appearance:none;width:16px;height:16px;margin:2px 0 0;flex:none;border:1.5px solid var(--muted);border-radius:50%;background:var(--panel)}
+.ropt input:checked{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 3px var(--panel)}
+.ropt small{display:block;color:var(--muted);font-size:12px}
+@media (forced-colors:active){.pop{border:1px solid CanvasText}.ropt input:checked{background:Highlight}}
+
+/* ---------- New: Free Layout ---------- */
+.mon.free{display:block}
+/* A seam: the line where two windows meet. Its grip sits on the 2px gap between them; the hit strip is 12px wide. */
+.seam{position:absolute;z-index:6;display:grid;place-items:center}
+.seam.v{width:12px;transform:translateX(-50%);cursor:ew-resize}
+.seam.h{height:12px;transform:translateY(-50%);cursor:ns-resize}
+.seam i{display:block;border-radius:2px;background:var(--select);box-shadow:0 0 0 2px var(--screen)}
+.seam.v i{width:4px;height:22px}
+.seam.h i{height:4px;width:22px}
+.seam.root.v i{width:6px;height:32px}
+.seam.root.h i{height:6px;width:32px}
+.seam.on::before{content:"";position:absolute;background:var(--select)}
+.seam.v.on::before{left:5px;width:2px;top:0;bottom:0}
+.seam.h.on::before{top:5px;height:2px;left:0;right:0}
+.seam.on i{background:var(--select);box-shadow:0 0 0 2px var(--screen),0 0 0 4px var(--select)}
+/* A line that touches a locked window does not move: a dotted line, no grip, and its tooltip says why. */
+.seam.stuck{cursor:not-allowed}
+.seam.stuck i{display:none}
+.seam.v.stuck::before{content:"";position:absolute;left:5px;top:0;bottom:0;border-left:2px dotted var(--muted)}
+.seam.h.stuck::before{content:"";position:absolute;top:5px;left:0;right:0;border-top:2px dotted var(--muted)}
+.guide{position:absolute;z-index:5;border-left:1.5px dashed var(--muted);pointer-events:none}
+.sz{position:absolute;z-index:31;padding:1px 6px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px/1.4 var(--f-mono);white-space:nowrap;pointer-events:none}
+.sz.l{transform:translateX(-100%)}
+.tip{position:absolute;z-index:31;max-width:220px;padding:5px 8px;border-radius:6px;background:var(--ink);color:var(--panel);font:500 11.5px/1.35 var(--f);pointer-events:none;white-space:nowrap}
+.tip kbd{font:600 11px var(--f-mono);padding:0 4px;border:1px solid color-mix(in srgb,currentColor 45%,transparent);border-radius:3px}
+/* A drag outline in Free Rects, and the overlap or gap it would leave: hatched, with a border so forced colours keep it. */
+.rzout{position:absolute;z-index:8;border:2px dashed var(--select);border-radius:3px;background:color-mix(in srgb,var(--select) 10%,transparent);pointer-events:none}
+.hatch{position:absolute;z-index:9;border:2px solid var(--select);border-radius:2px;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--select) 34%,transparent) 0 4px,transparent 4px 8px);pointer-events:none}
+.hatch.gap{border-color:var(--hi);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--hi) 45%,transparent) 0 4px,transparent 4px 8px)}
+.prev{position:absolute;z-index:8;border:2px dashed var(--select);border-radius:3px;pointer-events:none}
+.prev span{position:absolute;left:4px;top:4px;padding:1px 5px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px var(--f);white-space:nowrap}
+.prev.sm span{font-size:10px;padding:0 3px}
+/* The tree outline in the inspector: one line per branch, indented by depth. */
+.tree{list-style:none;margin:0;padding:0;display:grid;gap:2px;font-size:12px}
+.tree ul{list-style:none;margin:2px 0 0;padding:0 0 0 14px;display:grid;gap:2px;border-left:1px solid var(--line)}
+.tree b{font-weight:600}
+.tree .lf{display:inline-flex;gap:5px;align-items:center}
+.tree .muted{color:var(--muted)}
+@media (pointer:coarse){.btn,.switch,.mkseg button,select,input[type=text],.seg button{min-height:44px}.seam.v{width:24px}.seam.h{height:24px}}
+</style>
+</head>
+<body>
+<div class="mk">
+  <p class="banner" role="note"><b>Sample.</b><span>Every window, title, pixel size and count on this page is invented. No figure here is real.</span></p>
+  <header class="mkhead">
+    <h1>Split Cell and Free Layout</h1>
+    <p>Two owner asks of 2026-11-13. Split Cell cuts one cell in two, so a window keeps one half and the other half is empty. Free Layout lets the owner resize windows off the grid, with no gap left between them. Each option has its own drawings; the switches under "Show" hide one option. Dashed pink labels mark what is new; dashed grey labels mark what exists today.</p>
+  </header>
+  <nav class="mkbar" aria-label="Mockup controls">
+    <div class="mkgrp"><span id="lblState">State</span><div class="mkseg" id="segState" role="group" aria-labelledby="lblState"></div></div>
+    <div class="mkgrp"><span id="lblW">Width</span><div class="mkseg" id="segW" role="group" aria-labelledby="lblW"></div></div>
+    <div class="mkgrp"><span id="lblT">Theme</span><div class="mkseg" id="segT" role="group" aria-labelledby="lblT"></div></div>
+    <div class="mkopts" role="group" aria-label="Show options"><span>Show</span>
+      <label><input type="checkbox" data-opt="cell" checked>Subdivide the Cell</label>
+      <label><input type="checkbox" data-opt="finer" checked>Finer Grid</label>
+      <label><input type="checkbox" data-opt="edges" checked>Shared Edges</label>
+      <label><input type="checkbox" data-opt="tree" checked>Splitter Tree</label>
+      <label><input type="checkbox" data-opt="rects" checked>Free Rects</label>
+      <label><input type="checkbox" id="oLabels" checked>Today and New Labels</label>
+    </div>
+  </nav>
+  <div id="frames"></div>
+</div>
+<script>
+"use strict";
+/* ---------- Sample (invented). The owner's board: a 5x2 ultrawide with 2x1 spans. Rects are fractions of the monitor: [x, y, w, h]. ---------- */
+const MON={laptop:{x:-1536,y:769,w:1536,h:912,g:[1,1]},wide:{x:0,y:0,w:4096,h:1680,g:[5,2]},tall:{x:4096,y:-1354,w:1200,h:1872,g:[1,2]}};
+const ROLE={wide:"Ultrawide",tall:"Portrait",laptop:"Laptop"};
+const X0=-1536,Y0=-1354,BW=6832,BH=3035,TOP=22,PXW=4096,PXH=1680;
+const BASE=[
+  {id:"ca",app:"Claude",cat:"code",title:"Refactor the grid solver",f:[0,0,.2,.5]},
+  {id:"cb",app:"Claude",cat:"code",title:"Pin parser edge cases",f:[.2,0,.2,.5]},
+  {id:"ch",app:"Chrome",cat:"browse",title:"Quarterly roadmap",f:[.4,0,.4,.5],pin:true},
+  {id:"te",app:"Terminal",cat:"code",title:"pwsh - tiler",f:[.8,0,.2,.5],pin:true,lock:true},
+  {id:"c2",app:"Chrome",cat:"browse",title:"Release notes draft",f:[0,.5,.4,.5],pin:true},
+  {id:"cc",app:"Claude",cat:"code",title:"Fill order tests",f:[.4,.5,.2,.5]},
+  {id:"ex",app:"File Explorer",cat:"other",title:"Projects",f:[.6,.5,.2,.5]},
+  {id:"xl",app:"Excel",cat:"other",title:"Q3 budget",f:[.8,.5,.2,.5]},
+  {id:"ou",app:"Outlook",cat:"comms",title:"Inbox - Outlook",mon:"tall",f:[0,0,1,.5],pin:true},
+  {id:"tm",app:"Teams",cat:"comms",title:"Team chat",mon:"tall",f:[0,.5,1,.5],pin:true},
+  {id:"ol",app:"Outlook (new)",cat:"comms",title:"Calendar",mon:"laptop",f:[0,0,1,1],pin:true}];
+const BAY0=[{app:"Notepad",cat:"other",title:"todo.txt - Notepad"}];
+
+// [key, title, option key (or "" for a shared state), option name, caption, focus id]
+const STATES=[
+  ["split-pick","Split: Choose How","","Both split options","Claude's cell is selected and S was pressed (or Split Cell in the inspector). The popover sits under the tile. The dashed line and the hatched half preview the split before anything changes.","split-pick-popover"],
+  ["split-cell","Split: Subdivide the Cell","cell","Subdivide the Cell","The grid stays 5×2. Cell 2 becomes 2a and 2b. Claude is pinned to 2a; 2b is empty and the fill uses it only after every whole cell is taken. The bar between the halves drags to change the share.","split-cell-result"],
+  ["split-finer","Split: Finer Grid","finer","Finer Grid","The grid doubles to 10×2. Every span doubles, so nothing on the board changes size except Claude, which takes one fine cell. The board now has 20 small drop targets, and the fill needs a fill unit of 2×1, or each filled window becomes half as wide.","split-finer-result"],
+  ["edges-on","Shared Edges: Switched On","edges","Shared Edges","Free Layout was switched on for the ultrawide. Nothing moved: every window keeps its rect, and the grid lines go. A grip sits on each line where two windows meet. Lines that touch the locked Terminal are dotted and do not move.","edges-on-seams"],
+  ["edges-drag","Shared Edges: Drag a Line","edges","Shared Edges","The line between Claude and Chrome is dragged right. Claude grows and Chrome shrinks in the same move, so no gap opens at any point. Only the two windows that touch this line change. Shift moves the whole line, the lower half too.","edges-drag-seam"],
+  ["edges-gap","Shared Edges: A Window Leaves","edges","Shared Edges","File Explorer went to Windows That Stay Put. Its rect stays as empty space, selected here. A new window fills it while Fill Empty Cells is on. Close Gap in the inspector grows the neighbour that shares its whole edge.","edges-gap-empty"],
+  ["edges-back","Shared Edges: Back to the Grid","edges","Shared Edges","Free Layout was switched off. The popover at the switch offers Snap to Cells (drawn) or Restore the grid layout, with a preview on the board. Nothing moves until Back to Grid. Undo covers it. The same flow serves every Free Layout option.","edges-back-popover"],
+  ["tree-on","Splitter Tree: Switched On","tree","Splitter Tree","Free Layout as a tree, as a tiling window manager has. The board is cut into three columns at the full-height lines, then each column into rows. Thick grips are the top level. Nothing moved at switch-on.","tree-on-splitters"],
+  ["tree-drag","Splitter Tree: Drag a Splitter","tree","Splitter Tree","The top-level splitter at the left column is dragged right. Everything on each side scales with it: five windows change at once, both Claude windows in the top row included. One window alone cannot change without changing its branch.","tree-drag-splitter"],
+  ["tree-gap","Splitter Tree: A Window Leaves","tree","Splitter Tree","File Explorer went to Windows That Stay Put. Its sibling, Claude, took its space at once, so the tree never holds empty space unless a Split adds it.","tree-gap-result"],
+  ["rects-on","Free Rects: Switched On","rects","Free Rects","Free Layout as free rects. Nothing moved. The selected window shows today's eight handles, and each handle now moves by the pixel, not by the cell.","rects-on-handles"],
+  ["rects-drag","Free Rects: Drag Over a Neighbour","rects","Free Rects","Claude's right edge is dragged over Chrome. During the drag the two overlap; the hatched band is what Chrome gives up when the mouse is let go.","rects-drag-overlap"],
+  ["rects-gap","Free Rects: Drag Away From a Neighbour","rects","Free Rects","Claude's right edge is dragged left. A gap opens during the drag; it closes only on release, when Chrome grows into it. The gap is visible while the owner drags.","rects-gap-band"]];
+
+/* ---------- Icons ---------- */
+const I={
+  lockC:'<svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3.5 5V3.6a2.5 2.5 0 0 1 5 0V5H9.5v6h-7V5h1zm1.3 0h2.4V3.6a1.2 1.2 0 0 0-2.4 0V5z"/></svg>',
+  lockO:'<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2.6" y="5.6" width="6.8" height="5" rx=".8"/><path d="M4.4 5.6V3.6a1.9 1.9 0 0 1 3.7-.6"/></svg>',
+  pin:'<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M4 1h4l-.6 3.2L9.5 6v1H6.6L6 11.5 5.4 7H2.5V6l2.1-1.8z"/></svg>',
+  ew:'<svg class="cursor" viewBox="0 0 22 12" width="22" height="12" aria-hidden="true"><path d="M1 6l4.5-4.5v3h11v-3L21 6l-4.5 4.5v-3h-11v3z" fill="var(--ink)" stroke="var(--panel)" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+  arrow:'<svg class="cursor" viewBox="0 0 16 20" width="16" height="20" aria-hidden="true"><path d="M1 1v15l4-4 3 7 2.5-1-3-7h6z" fill="var(--panel)" stroke="var(--ink)" stroke-width="1.3" stroke-linejoin="round"/></svg>',
+  logo:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1"/><rect x="11" y="3" width="7" height="6" rx="1"/><rect x="2" y="11" width="16" height="6" rx="1"/></svg>'};
+
+/* ---------- View state, from the URL hash ---------- */
+const OPTS=["cell","finer","edges","tree","rects"];
+const V={s:"split-pick",w:"1440",t:"",labels:true,hide:new Set()};
+function readHash(){const h=new URLSearchParams(location.hash.slice(1));
+  V.s=[...STATES.map(s=>s[0]),"all"].includes(h.get("s"))?h.get("s"):"split-pick";
+  V.w=["1440","1024"].includes(h.get("w"))?h.get("w"):"1440";
+  V.t=["light","dark"].includes(h.get("t"))?h.get("t"):"";
+  V.hide=new Set((h.get("hide")||"").split(",").filter(x=>OPTS.includes(x)))}
+function writeHash(){const p=[`s=${V.s}`];if(V.w!=="1440")p.push(`w=${V.w}`);if(V.t)p.push(`t=${V.t}`);if(V.hide.size)p.push(`hide=${[...V.hide].join(",")}`);history.replaceState(null,"","#"+p.join("&"))}
+
+/* ---------- Geometry: app.html layout() and the .mon grid. One function draws cells and free rects, so a rect at switch-on is the cell it was. ---------- */
+const SCALE={"1440":.1323,"1024":.0755};
+function monBox(m,S){return{l:(m.x-X0)*S+3,t:(m.y-Y0)*S+TOP,w:m.w*S-6,h:m.h*S}}
+function R(mon,S,fx,fy,fw,fh){const b=monBox(MON[mon],S),iw=b.w-10,ih=b.h-10;return{l:b.l+5+fx*(iw+2),t:b.t+5+fy*(ih+2),w:fw*(iw+2)-2,h:fh*(ih+2)-2}}
+const inset=(b,n=1)=>({l:b.l+n,t:b.t+n,w:b.w-2*n,h:b.h-2*n});
+const css=b=>`left:${b.l.toFixed(1)}px;top:${b.t.toFixed(1)}px;width:${b.w.toFixed(1)}px;height:${b.h.toFixed(1)}px`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const px=f=>Math.round(f*PXW);
+const ann=(b,text,o={})=>`<div class="ann${o.today?" today":""}${o.up?" up":""}${o.end?" end":""}" style="${css({l:b.l-3,t:b.t-3,w:b.w+6,h:b.h+6})}"><em>${o.today?"Today":"New"}: ${esc(text)}</em></div>`;
+const at=(svg,x,y)=>svg.replace('class="cursor"',`class="cursor" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px"`);
+// A seam on the gap between two rects that meet at fraction pos, from s0 to s1 along it.
+function seam(S,dir,pos,s0,s1,o={}){const b=monBox(MON.wide,S),iw=b.w-10,ih=b.h-10;const cls=`seam ${dir}${o.root?" root":""}${o.on?" on":""}${o.stuck?" stuck":""}`;
+  const t=o.stuck?`title="${esc(o.stuck)}"`:`title="${dir==="v"?"Drag to resize the windows on both sides":"Drag to resize the windows above and below"}"`;const id=o.id?` id="${o.id}"`:"";
+  if(dir==="v"){const x=b.l+5+pos*(iw+2)-1,y=b.t+5+s0*(ih+2),h=(s1-s0)*(ih+2)-2;return{html:`<div class="${cls}"${id} ${t} style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;height:${h.toFixed(1)}px"><i></i></div>`,x,y,h}}
+  const y=b.t+5+pos*(ih+2)-1,x=b.l+5+s0*(iw+2),w=(s1-s0)*(iw+2)-2;return{html:`<div class="${cls}"${id} ${t} style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${w.toFixed(1)}px"><i></i></div>`,x,y,w}}
+const LOCKWHY="Terminal is locked, so this line does not move.";
+
+/* ---------- Each state: windows, empty areas, extras, inspector, list ---------- */
+function scenario(st,S,F){
+  const W=BASE.map(w=>({mon:"wide",...w,f:[...w.f]}));const by=Object.fromEntries(W.map(w=>[w.id,w]));
+  const sc={wins:W,grid:[5,2],free:false,areas:[],extra:"",anns:"",sel:null,selArea:null,edited:false,bay:BAY0.map(b=>({...b,why:"Kept put"})),cellLab:null,
+    msg:"Read 12 windows.",hint:"Drag a window to a cell to pin it, or to the list to keep it put.",keysOpen:false,mode:"grid"};
+  const wideR=(f)=>inset(R("wide",S,...f));
+  const nar=S<.1;
+  if(st.startsWith("split")){
+    sc.sel="cb";sc.keysOpen=st==="split-pick";
+    if(st==="split-pick"){const t=wideR(by.cb.f),half={l:t.l+t.w/2+1,t:t.t,w:t.w/2-1,h:t.h};
+      sc.extra+=`<div class="area prevw" style="${css(half)}"><span class="lab">${nar?"":"Empty"}</span></div><div class="divider dash" style="left:${(t.l+t.w/2).toFixed(1)}px;top:${t.t}px;height:${t.h}px"></div>`;
+      const pl=Math.max(t.l-24,4),ptop=t.t+t.h+10;
+      sc.extra+=`<div class="pop annd" id="${F}-popover" role="dialog" aria-labelledby="${F}-ph" style="left:${pl.toFixed(1)}px;top:${ptop.toFixed(1)}px;--ax:${(t.l-pl+t.w/2-5).toFixed(1)}px">
+        <h3 id="${F}-ph">Split Cell 2</h3>
+        <div class="prow"><span>Direction</span><div class="seg" role="group" aria-label="Direction"><button type="button" aria-pressed="true">Side by Side</button><button type="button" aria-pressed="false">Stacked</button></div></div>
+        <div class="prow"><span>Claude keeps</span><div class="seg" role="group" aria-label="Claude keeps"><button type="button" aria-pressed="true">Left</button><button type="button" aria-pressed="false">Right</button></div></div>
+        <div class="prow"><span>Claude's share</span><div class="seg num" role="group" aria-label="Claude's share"><button type="button" aria-pressed="false">1/4</button><button type="button" aria-pressed="false">1/3</button><button type="button" aria-pressed="true">1/2</button><button type="button" aria-pressed="false">2/3</button><button type="button" aria-pressed="false">3/4</button></div></div>
+        <div class="pacts"><button type="button" class="btn pri">Split</button><button type="button" class="btn">Cancel</button></div>
+        <p class="note">Enter splits. Esc cancels. The empty half is filled last.</p><em class="anntag">New: Split Popover</em></div>`;
+      sc.anns+=ann(t,"Preview",{up:true});
+      sc.msg="Read 12 windows.";}
+    if(st==="split-cell"){by.cb.f=[.2,0,.1,.5];by.cb.pin=true;sc.edited=true;
+      sc.cellLab={1:"2a | 2b"};
+      const a=wideR([.3,0,.1,.5]);sc.areas.push({b:a,lab:"Empty",sub:"2b",tiny:a.w<40});
+      const t=wideR([.2,0,.2,.5]);
+      sc.extra+=`<div class="divider" title="Drag to change the share. It snaps to quarters and thirds." style="left:${(t.l+t.w/2).toFixed(1)}px;top:${t.t}px;height:${t.h}px"></div>`;
+      sc.extra+=`<div id="${F}-result" style="position:absolute;${css(t)};pointer-events:none;z-index:7"></div>`;
+      const nl=t.l+2,nt=t.t+t.h+9;sc.extra+=`<div class="dnote" role="status" style="left:${nl}px;top:${nt}px;--ax:${(t.w/4-5).toFixed(1)}px"><span>Split cell 2. <b>Claude</b> keeps the left half.</span><button type="button" class="btn">Undo</button></div>`;
+      sc.anns+=ann(t,"Split Cell: 2a Pinned, 2b Empty",{up:true});
+      sc.msg="Split cell 2. Claude keeps the left half.";}
+    if(st==="split-finer"){sc.grid=[10,2];by.cb.f=[.2,0,.1,.5];by.cb.pin=true;sc.edited=true;
+      const a=wideR([.3,0,.1,.5]);sc.areas.push({b:a,lab:"Empty",sub:"4",tiny:a.w<40});
+      const t=wideR([.2,0,.2,.5]);sc.extra+=`<div id="${F}-result" style="position:absolute;${css(t)};pointer-events:none;z-index:7"></div>`;
+      const mb=monBox(MON.wide,S);sc.anns+=ann({l:mb.l,t:mb.t,w:mb.w,h:mb.h},"10×2 Grid, Every Span Doubled",{});
+      sc.msg="Ultrawide grid is 10×2. Claude takes cell 3.";}
+  }
+  if(st.startsWith("edges")||st.startsWith("tree")||st.startsWith("rects")){sc.free=true;sc.mode=st.split("-")[0];sc.hint="Free Layout: drag the line between two windows to resize both.";}
+  if(st==="edges-on"||st==="edges-gap"){
+    const S2=[["v",.2,0,.5],["v",.4,0,.5],["v",.8,0,.5,LOCKWHY],["v",.4,.5,1],["v",.6,.5,1],["v",.8,.5,1],["h",.5,0,.4],["h",.5,.4,.8],["h",.5,.8,1,LOCKWHY]];
+    for(const [d,p,a,b,stk] of S2)sc.extra+=seam(S,d,p,a,b,{stuck:stk}).html;
+    const mb=monBox(MON.wide,S);sc.extra+=`<div id="${F}-seams" style="position:absolute;${css(mb)};pointer-events:none"></div>`;
+    if(st==="edges-on"){sc.msg="Free Layout is on for the ultrawide. Nothing moved.";sc.keysOpen=true;
+      const s1=seam(S,"v",.4,0,.5);sc.anns+=ann({l:s1.x-6,t:s1.y,w:12,h:s1.h},"Grip on Each Shared Line",{up:true});
+      const s2=seam(S,"v",.8,0,.5);sc.anns+=ann({l:s2.x-6,t:s2.y,w:12,h:s2.h},"Locked Line",{up:true,end:true});}
+    if(st==="edges-gap"){by.ex.hide=true;sc.edited=true;sc.bay=[{app:"File Explorer",cat:"other",title:"Projects",why:"Kept put"},...sc.bay];
+      const a=wideR([.6,.5,.2,.5]);sc.areas.push({b:a,lab:"Empty",sub:"819 × 840",sel:true,id:`${F}-empty`,tiny:a.w<70});sc.selArea=true;
+      sc.anns+=ann(a,"Empty Space",{});
+      sc.msg="File Explorer stays put. Its space is empty.";}
+  }
+  if(st==="edges-drag"||st==="edges-back"){const x=2100/PXW;by.cb.f=[.2,0,x-.2,.5];by.ch.f=[x,0,.8-x,.5];sc.edited=true;
+    const S2=[["v",.2,0,.5],["v",x,0,.5,null,st==="edges-drag"],["v",.8,0,.5,LOCKWHY],["v",.4,.5,1],["v",.6,.5,1],["v",.8,.5,1],["h",.5,0,.8],["h",.5,.8,1,LOCKWHY]];
+    let on=null;for(const [d,p,a,b,stk,o] of S2){const s=seam(S,d,p,a,b,{stuck:stk,on:o,id:o?`${F}-seam`:""});if(o)on=s;if(st==="edges-drag")sc.extra+=s.html}
+    if(st==="edges-drag"){sc.sel="cb";
+      const yM=on.y+on.h*.5;sc.extra+=`<span class="sz l" style="left:${(on.x-6).toFixed(1)}px;top:${(yM-9).toFixed(1)}px">${px(x-.2)} px</span><span class="sz" style="left:${(on.x+6).toFixed(1)}px;top:${(yM-9).toFixed(1)}px">${px(.8-x)} px</span>`;
+      const g=seam(S,"v",.4,.5,1);sc.extra+=`<div class="guide" style="left:${g.x.toFixed(1)}px;top:${(on.y).toFixed(1)}px;height:${(on.h).toFixed(1)}px"></div>`;
+      sc.extra+=at(I.ew,on.x-11,on.y+on.h*.78);
+      sc.extra+=`<div class="tip" style="left:${(on.x+14).toFixed(1)}px;top:${(on.y+on.h*.78+12).toFixed(1)}px"><kbd>Shift</kbd> moves the whole line</div>`;
+      sc.anns+=ann({l:on.x-6,t:on.y,w:12,h:on.h},"Both Sides Move Together",{up:true});
+      sc.msg="Claude 1281 px wide, Chrome 1177 px.";}
+    if(st==="edges-back"){sc.free=false;sc.grid=[5,2];sc.mode="back";
+      const p1=wideR([.2,0,.4,.5]),p2=wideR([.6,0,.2,.5]);
+      sc.extra+=`<div class="prev${nar?" sm":""}" style="${css(p1)}"><span>Claude 2×1</span></div><div class="prev${nar?" sm":""}" style="${css(p2)}"><span>Chrome 1×1</span></div>`;
+      sc.anns+=ann({l:p1.l,t:p1.t,w:p1.w+p2.w+2,h:p1.h},"Snap Preview",{up:true});
+      sc.msg="Back to the grid? Nothing moves until you choose.";sc.hint="Drag a window to a cell to pin it, or to the list to keep it put.";}
+  }
+  if(st.startsWith("tree")){
+    let L=.4;if(st==="tree-drag"){L=2100/PXW;const k=L/.4,m=(.8-L)/.4;
+      by.ca.f=[0,0,.2*k,.5];by.cb.f=[.2*k,0,.2*k,.5];by.c2.f=[0,.5,L,.5];by.ch.f=[L,0,.8-L,.5];by.cc.f=[L,.5,.2*m,.5];by.ex.f=[L+.2*m,.5,.2*m,.5];sc.edited=true;sc.sel="ca"}
+    if(st==="tree-gap"){by.ex.hide=true;by.cc.f=[.4,.5,.4,.5];sc.edited=true;sc.bay=[{app:"File Explorer",cat:"other",title:"Projects",why:"Kept put"},...sc.bay]}
+    const mx=st==="tree-drag"?L+.2*((.8-L)/.4):.6;const ix=st==="tree-drag"?.2*(L/.4):.2;
+    const T=[["v",L,0,1,{root:true,on:st==="tree-drag",id:st==="tree-drag"?`${F}-splitter`:""}],["v",.8,0,1,{root:true,stuck:LOCKWHY}],
+      ["h",.5,0,L,{}],["v",ix,0,.5,{}],["h",.5,L,.8,{}],["h",.5,.8,1,{stuck:LOCKWHY}]];
+    if(st!=="tree-gap")T.push(["v",mx,.5,1,{}]);
+    let on=null;for(const [d,p,a,b,o] of T){const s=seam(S,d,p,a,b,o);if(o.on)on=s;sc.extra+=s.html}
+    const mb=monBox(MON.wide,S);
+    if(st==="tree-on"){sc.extra+=`<div id="${F}-splitters" style="position:absolute;${css(mb)};pointer-events:none"></div>`;sc.msg="Free Layout is on for the ultrawide. Nothing moved.";
+      const s=seam(S,"v",.4,0,1);sc.anns+=ann({l:s.x-7,t:s.y,w:14,h:s.h},"Top-Level Splitter",{up:true});}
+    if(st==="tree-drag"){const yM=on.y+on.h*.25;
+      sc.extra+=`<span class="sz l" style="left:${(on.x-6).toFixed(1)}px;top:${(yM-9).toFixed(1)}px">${px(L)} px</span><span class="sz" style="left:${(on.x+6).toFixed(1)}px;top:${(yM-9).toFixed(1)}px">${px(.8-L)} px</span>`;
+      sc.extra+=at(I.ew,on.x-11,on.y+on.h*.62);
+      sc.extra+=`<div class="tip" style="left:${(on.x+14).toFixed(1)}px;top:${(on.y+on.h*.62+12).toFixed(1)}px">5 windows change</div>`;
+      sc.anns+=ann({l:on.x-7,t:on.y,w:14,h:on.h},"Whole Branch Scales",{up:true});sc.msg="Left column 2100 px wide.";}
+    if(st==="tree-gap"){const t=wideR(by.cc.f);sc.extra+=`<div id="${F}-result" style="position:absolute;${css(t)};pointer-events:none;z-index:7"></div>`;
+      sc.extra+=`<div class="dnote" role="status" style="left:${t.l+2}px;top:${t.t+t.h+9}px"><span><b>Claude</b> took File Explorer's space.</span><button type="button" class="btn">Undo</button></div>`;
+      sc.anns+=ann(t,"Sibling Takes the Space",{up:true});sc.msg="File Explorer stays put. Claude took its space.";}
+  }
+  if(st.startsWith("rects")){sc.sel="cb";sc.hint="Free Layout: drag any edge. Gaps and overlaps settle when you let go.";
+    if(st==="rects-on"){const t=wideR(by.cb.f);sc.extra+=`<div class="hdl" id="${F}-handles" style="${css(t)}"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><i class="e n"></i><i class="e s"></i><i class="e w"></i><i class="e ea"></i></div>`;
+      sc.anns+=ann({l:t.l-10,t:t.t-10,w:t.w+20,h:t.h+20},"Handles Move by the Pixel",{});sc.msg="Free Layout is on for the ultrawide. Nothing moved.";}
+    if(st==="rects-drag"){const x=2100/PXW,o=wideR([.2,0,x-.2,.5]),h=wideR([.4,0,x-.4,.5]),nc=wideR([x,0,.8-x,.5]);
+      sc.extra+=`<div class="rzout" style="${css(o)}"></div><div class="hatch" id="${F}-overlap" style="${css(h)}"></div><div class="prev" style="${css(nc)}"></div>`;
+      sc.extra+=at(I.ew,o.l+o.w-11,o.t+o.h*.55)+`<div class="tip" style="left:${(o.l+o.w+12).toFixed(1)}px;top:${(o.t+o.h*.55+12).toFixed(1)}px">Chrome gives up ${px(x-.4)} px when you let go</div>`;
+      sc.anns+=ann(h,"Overlap During the Drag",{up:true});sc.msg="Claude 1281 px wide.";}
+    if(st==="rects-gap"){const x=1300/PXW,o=wideR([.2,0,x-.2,.5]),g=wideR([x,0,.4-x,.5]);
+      sc.extra+=`<div class="rzout" style="${css(o)}"></div><div class="hatch gap" id="${F}-band" style="${css(g)}"></div>`;
+      sc.extra+=at(I.ew,o.l+o.w-11,o.t+o.h*.55)+`<div class="tip" style="left:${(g.l+g.w+6).toFixed(1)}px;top:${(o.t+o.h*.55+12).toFixed(1)}px">Gap of ${px(.4-x)} px. Chrome grows when you let go</div>`;
+      sc.anns+=ann(g,"Gap Open During the Drag",{up:true});sc.msg="Claude 481 px wide.";}
+  }
+  return sc}
+
+/* ---------- Board ---------- */
+function board(sc,S,F){
+  let mons="";
+  for(const [k,m] of Object.entries(MON)){const b=monBox(m,S),g=k==="wide"?sc.grid:m.g,free=k==="wide"&&sc.free;let cells="";
+    if(!free)for(let i=0;i<g[0]*g[1];i++)cells+=`<div class="cell"><i>${k==="wide"&&sc.cellLab&&sc.cellLab[i]?sc.cellLab[i]:i+1}</i></div>`;
+    const lab=free?"Free Layout":`${g[0]}×${g[1]}`;
+    mons+=`<div class="mon${free?" free":""}" style="${css(b)};grid-template-columns:repeat(${g[0]},minmax(0,1fr));grid-template-rows:repeat(${g[1]},minmax(0,1fr))">${cells}</div><div class="mlab" style="left:${b.l}px;top:${b.t}px"><button type="button" aria-pressed="${k==="wide"}">${ROLE[k]}</button><span class="num">${lab}${k==="wide"?" · fills":""}</span></div>`;
+    if(free){const lb={l:b.l+76,t:b.t-17,w:70,h:14};sc.anns+=ann(lb,"Monitor Label",{up:true})}}
+  let tiles="";
+  for(const w of sc.wins){if(w.hide)continue;const b=inset(R(w.mon,S,...w.f));const n=b.w<64;
+    const cls=["tile",`cat-${w.cat}`,w.pin?"pin":"fill",w.lock?"lock":"",w.id===sc.sel?"sel":"",n?"narrow":""].filter(Boolean).join(" ");
+    const lk=`<button type="button" class="lk" aria-pressed="${!!w.lock}" title="${w.lock?"Unlock: it can move again":"Lock: it never moves"}" aria-label="${w.lock?"Unlock":"Lock"} ${esc(w.app)}: ${esc(w.title)}">${w.lock?I.lockC:I.lockO}</button>`;
+    tiles+=`<div class="${cls}" style="${css(b)}" tabindex="0" aria-label="${esc(w.title)}, ${esc(w.app)}${w.pin?", pinned":""}${w.lock?", locked":""}"><b>${esc(w.app)}</b><span>${esc(w.title)}</span>${w.pin?I.pin:""}${lk}</div>`}
+  for(const a of sc.areas)tiles+=`<div class="area${a.sel?" sel":""}${a.tiny?" tiny":""}"${a.id?` id="${a.id}"`:""} tabindex="0" style="${css(a.b)}" aria-label="Empty space"><span><span class="lab">${a.lab}</span><small class="num">${a.sub}</small></span></div>`;
+  return `<div class="stage" style="width:${Math.round(BW*S)}px;height:${Math.round(BH*S+TOP+4)}px" aria-label="Monitors and windows">${mons}${tiles}${sc.extra}${sc.anns}</div>`}
+
+/* ---------- Inspector ---------- */
+const stepper=(lbl,val,off)=>`<span class="step${off?" off":""}"${off?` title="${esc(off)}"`:""}><button type="button" aria-label="Fewer ${lbl}"${off?" disabled":""}>−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" aria-label="More ${lbl}"${off?" disabled":""}>+</button></span>`;
+function sceneSec(sc){
+  const save=sc.edited?"Built-in scenes keep their layout. Use Save As New to change it.":"No changes to save.";
+  return `<section class="isec" aria-label="Scene"><h2>Scene</h2><div class="abox today"><em>Today: Scene Editor</em>
+    <p class="note">Name, Triggers and Extra Triggers sit here as today.</p>
+    <div class="acts"><button type="button" class="btn pri" disabled title="${save}">Save</button><button type="button" class="btn">Save As New</button><button type="button" class="btn"${sc.edited?"":" disabled"}>Revert</button><button type="button" class="btn danger" disabled title="Built-in scenes cannot be deleted.">Delete</button></div>
+    ${sc.edited?`<p class="why"><span>${save}</span></p>`:""}</div></section>`}
+function monSec(sc,F){
+  const free=sc.free,mode=sc.mode,why="Free Layout is on. Turn it off to change the grid.";
+  let h=`<section class="isec"><h2>Monitor</h2><div class="seg" role="group" aria-label="Monitor"><button type="button" aria-pressed="false">Laptop</button><button type="button" aria-pressed="true">Ultrawide</button><button type="button" aria-pressed="false">Portrait</button></div><p class="note num">4096×1680 pixels.</p>`;
+  if(mode==="grid"&&sc.grid[0]===10)h+=`<div class="abox"><em>New: Columns Up to 16</em><div class="field"><span>Columns</span>${stepper("columns",10)}</div></div><div class="field"><span>Rows</span>${stepper("rows",2)}</div>
+    <div class="abox"><em>New: Fill Unit</em><div class="field"><span>Fill unit</span><select aria-label="Fill unit"><option>2×1 Cells</option><option>1×1 Cell</option></select></div><p class="note">Each filled window takes 2×1 fine cells, so it keeps today's size.</p></div>`;
+  else h+=`<div class="field"><span>Columns</span>${stepper("columns",5,free?why:"")}</div><div class="field"><span>Rows</span>${stepper("rows",2,free?why:"")}</div>`;
+  if(sc.cellLab)h+=`<div class="abox"><em>New: Split Count</em><p class="note">1 split cell: 2. Select a half and press J to join it.</p></div>`;
+  const on=free;
+  const sub=on?(mode==="tree"?"Drag a splitter to resize everything on both sides.":mode==="rects"?"Drag any edge by the pixel. Gaps close when you let go.":"Drag the line between two windows to resize both. No gap opens."):"Windows keep their cells. Turn it on to resize off the grid.";
+  h+=`<div class="abox" id="${mode==="back"?F+"-popover":""}"><em>New: Free Layout Switch</em><label class="switch lockrow"><input type="checkbox" role="switch"${on?" checked":""}><span class="xt"><b>Free Layout</b><small>${sub}</small></span></label>`;
+  if(F==="edges-on"||F==="tree-on"||F==="rects-on")h+=`<p class="callout" role="status">Free Layout is on. Nothing moved.</p>`;
+  if(mode==="back")h+=`<div class="pop flow" role="dialog" aria-labelledby="${F}-bh" style="--ax:14px"><h3 id="${F}-bh">Back to the Grid</h3>
+      <label class="ropt"><input type="radio" name="${F}-back" checked><span>Snap to Cells<small>Each edge moves to the nearest 5×2 cell line.</small></span></label>
+      <label class="ropt"><input type="radio" name="${F}-back"><span>Restore the Grid Layout<small>Each window goes back to the cells it had before Free Layout.</small></span></label>
+      <p class="note">2 windows change size: Claude and Chrome. The board shows where.</p>
+      <div class="pacts"><button type="button" class="btn pri">Back to Grid</button><button type="button" class="btn">Keep Free Layout</button></div></div>`;
+  h+=`</div>`;
+  if(mode==="tree"){const L=F==="tree-drag"?"2100":"1638";h+=`<div class="abox"><em>New: Tree Outline</em><h3 class="note" style="margin:0;font-weight:600;color:var(--ink)">Columns</h3><ul class="tree">
+      <li><span class="muted num">${L} px</span> Rows<ul><li>Columns: <b>Claude</b>, <b>Claude</b></li><li class="lf"><i class="sw cat-browse"></i><b>Chrome</b></li></ul></li>
+      <li>Rows<ul><li class="lf"><i class="sw cat-browse"></i><b>Chrome</b></li><li>${F==="tree-gap"?`<span class="lf"><i class="sw cat-code"></i><b>Claude</b></span>`:"Columns: <b>Claude</b>, <b>File Explorer</b>"}</li></ul></li>
+      <li>Rows <span class="muted">(locked)</span><ul><li class="lf"><i class="sw cat-code"></i><b>Terminal</b></li><li class="lf"><i class="sw cat-other"></i><b>Excel</b></li></ul></li></ul></div>`}
+  h+=`<div class="abox today"><em>Today: Fill Empty Cells</em><label class="switch lockrow"><input type="checkbox" role="switch" checked><span class="xt"><b>Fill Empty Cells</b><small>${free?"A new window fills empty space, else it waits in Windows That Stay Put.":"Windows that are not pinned fill the free cells."}</small></span></label></div></section>`;
+  return h}
+function winSec(sc,F,st){
+  const w=sc.sel&&sc.wins.find(x=>x.id===sc.sel);
+  if(sc.selArea)return `<section class="isec"><h2>Empty Space</h2><div class="abox"><em>New: Empty Space</em><div class="win"><div class="t num">819 × 840 px</div><div class="m">Fill Empty Cells is on, so the next new window fills it.</div>
+    <button type="button" class="btn" title="Claude, on its left, grows to fill it.">Close Gap</button><p class="note">Close Gap grows Claude, which shares its whole left edge.</p></div></div></section>`;
+  if(!w)return `<section class="isec"><h2>Window</h2><p class="note">Click a window on the board to change it here.</p></section>`;
+  const head=`<div class="field" style="min-height:0"><span style="display:flex;gap:6px;align-items:center;color:var(--ink)"><i class="sw"></i>${esc(w.app)}</span><select aria-label="Category of ${esc(w.app)}"><option>Code</option></select></div><div class="t">${esc(w.title)}</div>`;
+  const lock=`<label class="switch lockrow"><input type="checkbox" role="switch"><span class="xt"><b>Lock</b><small>It never moves. Swaps, zones and fill go around it.</small></span></label>`;
+  const tail=`<div class="field stack"><label>Move to</label><select><option>Choose a Cell</option></select></div><button type="button" class="btn">Keep Where It Is</button>`;
+  let m="",mid="";
+  if(st==="split-pick"){m="Fills Ultrawide cell 2.";mid=`<div class="abox"><em>New: Split Cell (S)</em><button type="button" class="btn" aria-pressed="true" aria-expanded="true">Split Cell</button></div>`}
+  else if(st==="split-cell"){m="Pinned · Ultrawide cell 2, left half.";mid=`<div class="abox"><em>New: Split and Join (S, J)</em><div class="acts"><button type="button" class="btn" disabled title="This cell is split once already. Join the halves first.">Split Cell</button><button type="button" class="btn">Join Halves</button></div><p class="why"><span>This cell is split once already. Join the halves first.</span></p></div>`}
+  else if(st==="split-finer"){m="Pinned · Ultrawide cell 3 of 10×2.";mid=`<div class="abox"><em>New: Split Cell (S)</em><button type="button" class="btn">Split Cell</button></div>`}
+  else {const f=w.f;m="Pinned · free rect on the Ultrawide.";mid=`<div class="abox"><em>New: Size in Pixels</em><div class="field"><span>Width</span><span class="ro num">${px(f[2])} px</span></div><div class="field"><span>Height</span><span class="ro num">${Math.round(f[3]*PXH)} px</span></div></div>`}
+  return `<section class="isec"><h2>Window</h2><div class="win cat-${w.cat}">${head}<div class="m">${m}</div>${lock}${mid}${tail}</div></section>`}
+
+/* ---------- Whole app frame ---------- */
+function frame(st,w){const S=SCALE[w],F=st,sc=scenario(st,S,F);
+  const mini=bs=>`<span class="mini" aria-hidden="true"><i style="left:2%;top:40%;width:22%;height:56%"></i><i style="left:26%;top:6%;width:52%;height:58%"></i><i style="left:80%;top:4%;width:18%;height:92%"></i>${bs.map(([cat,l,t,ww,h])=>`<b class="cat-${cat}" style="left:${l}%;top:${t}%;width:${ww}%;height:${h}%"></b>`).join("")}</span>`;
+  const card=(name,blurb,sel,bs)=>`<article class="card${sel?" sel":""}"><button type="button" class="pick" aria-pressed="${sel}">${mini(bs)}<strong>${name}${sel?'<span class="live">On screen</span>':""}</strong><small>${blurb}</small></button><div class="crow"><span class="tag">Built-in${sel&&sc.edited?" · edited":""}</span><button type="button" class="btn">Apply</button></div></article>`;
+  const rail=`<aside class="rail" aria-label="Scenes and categories"><section><h2>Scenes</h2><div class="cards">
+    ${card("Default","Claude and Chrome fill the ultrawide.",true,[["code",27,8,10,26],["code",38,8,10,26],["browse",49,8,20,26],["browse",27,36,20,26],["comms",81,6,16,44],["comms",81,52,16,44]])}
+    ${card("Focus","Claude only, three wide.",false,[["code",27,8,16,54],["code",44,8,16,54],["browse",61,8,16,54]])}
+    ${card("Meetings","Teams big on the ultrawide.",false,[["comms",27,8,25,56],["code",53,8,12,27],["comms",81,6,16,44]])}</div></section>
+    <section><h2>Categories</h2><div class="legend">${[["code","Code",5],["browse","Browse",2],["comms","Comms",3],["other","Other",3]].map(([c,l,n])=>`<button type="button" class="lg cat-${c}" aria-pressed="true"><i class="sw"></i>${l}<span class="ct">${n}</span></button>`).join("")}</div><p class="note">Click a category to fade it on the board.</p></section></aside>`;
+  const keys=`<details class="keys"${sc.keysOpen?" open":""}><summary>Keyboard</summary><ul><li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
+    <li><span class="abox inl">S splits its cell. J joins a split cell.</span></li>
+    <li><span class="abox inl">F turns Free Layout on or off. In Free Layout, Shift+arrows move its right or bottom line, and Ctrl+Shift+arrows its left or top line.</span></li>
+    <li>Delete unpins it. K keeps it where it is (off the board). L locks it.</li><li>Esc cancels a drag, a resize or a split.</li></ul></details>`;
+  const bayH=`<section class="bay" aria-label="Windows That Stay Put"><h2>Windows That Stay Put <span class="note">${sc.bay.length===1?"1 window":sc.bay.length+" windows"}</span></h2><div class="bgrps"><div class="bgrp"><h3 class="bh"><i class="sw cat-other"></i>Other <span class="why">Kept put</span></h3><ul>${sc.bay.map(b=>`<li><button type="button" class="chip cat-${b.cat}"><b>${esc(b.app)}</b><span>${esc(b.title)}</span></button></li>`).join("")}</ul></div></div></section>`;
+  return `<div class="art w${w}${V.labels?"":" nolabels"}" data-state="${st}"><div class="app">
+    <header class="top"><p class="brand">${I.logo}Tile Windows</p><span class="crumb">Scene: <b>Default</b>${sc.edited?'<span class="edited">Edited</span>':""}</span>
+      <div class="tools"><label class="switch"><input type="checkbox" checked>Grid Lines</label><label class="switch">Theme <select class="themesel" aria-label="Theme"><option value="">Match Windows</option><option value="light"${V.t==="light"?" selected":""}>Light</option><option value="dark"${V.t==="dark"?" selected":""}>Dark</option></select></label><button class="btn" type="button"${sc.edited?"":' disabled title="Nothing to undo yet."'}>Undo</button><button class="btn pri" type="button">Apply</button></div></header>
+    ${rail}
+    <main class="canvas">${board(sc,S,F)}<div class="boardbar"><p class="hint">${sc.hint}</p><button type="button" class="btn"${sc.free?' disabled title="Zones pause in Free Layout. Turn it off to draw a zone."':""}>Draw Zone</button>${keys}</div>${bayH}</main>
+    <aside class="insp" aria-label="Inspector">${sceneSec(sc)}${monSec(sc,F)}${winSec(sc,F,st)}</aside>
+    <footer class="status"><span class="msg" role="status">${sc.msg}</span></footer></div></div>`}
+
+/* ---------- How each option saves in a scene (scenes.json, version 3 today) ---------- */
+const SAVES={
+"split-cell":`"version": 4,
+"grids": { "wide": { "c": 5, "r": 2,
+  "splits": [ { "slot": 1, "dir": "side", "at": 0.5 } ] } },
+"pins": [
+  { "app": "claude", "match": "Pin parser edge cases", "mon": "wide", "slots": [1], "part": 0 }
+]
+// part 0 = left (or top) half, part 1 = right (or bottom). Slot 1, part 1 is open: the fill uses it after every whole cell.`,
+"split-finer":`"version": 4,
+"grids": { "wide": { "c": 10, "r": 2 } },
+"fill": { "mon": "wide", "apps": ["claude", "chrome", "*"], "unit": [2, 1] },
+"pins": [
+  { "app": "chrome", "match": "Quarterly roadmap", "mon": "wide", "slots": [4, 5, 6, 7] },
+  { "app": "claude", "match": "Pin parser edge cases", "mon": "wide", "slots": [2] }
+]
+// Every pin, zone and held entry of the scene is rewritten with doubled slots.`,
+"edges-on":`"version": 4,
+"grids": { "wide": { "c": 5, "r": 2, "free": { "areas": [
+  { "rect": [0, 0, 0.2, 0.5], "app": "claude", "title": "Refactor the grid solver" },
+  { "rect": [0.2, 0, 0.3127, 0.5], "app": "claude", "title": "Pin parser edge cases" },
+  { "rect": [0.5127, 0, 0.2873, 0.5], "pin": 3 },
+  { "rect": [0.6, 0.5, 0.2, 0.5] }
+] } } }
+// rect = [x, y, w, h] as fractions of the work area. "pin" points at the scene's pin (lock and back windows stay there).
+// An area with no window is empty space. c and r stay: Back to Grid snaps to them.`,
+"tree-on":`"version": 4,
+"grids": { "wide": { "c": 5, "r": 2, "free": { "tree":
+  { "cols": [0.4, 0.8], "kids": [
+    { "rows": [0.5], "kids": [ { "cols": [0.5], "kids": [ { "app": "claude", "title": "Refactor…" }, { "app": "claude", "title": "Pin parser…" } ] }, { "pin": 4 } ] },
+    { "rows": [0.5], "kids": [ { "pin": 2 }, { "cols": [0.5], "kids": [ { "app": "claude", "title": "Fill order tests" }, { "app": "explorer", "title": "Projects" } ] } ] },
+    { "rows": [0.5], "kids": [ { "pin": 3 }, { "app": "excel", "title": "Q3 budget" } ] }
+  ] } } } }`,
+"rects-on":`// The same shape as Shared Edges: a list of areas with fractional rects.
+// Only the way a drag edits them differs.
+"grids": { "wide": { "c": 5, "r": 2, "free": { "areas": [ … ] } } }`};
+
+/* ---------- Render ---------- */
+function visible(){return STATES.filter(s=>!s[2]?!(V.hide.has("cell")&&V.hide.has("finer")):!V.hide.has(s[2]))}
+function render(){
+  if(V.t)document.documentElement.dataset.theme=V.t;else delete document.documentElement.dataset.theme;
+  const vis=visible();if(V.s!=="all"&&!vis.some(s=>s[0]===V.s))V.s=vis.length?vis[0][0]:"all";
+  const segs=[["segState",[...vis.map(s=>[s[0],s[1]]),["all","All"]],"s"],["segW",[["1440","1440"],["1024","1024"]],"w"],["segT",[["","Match Windows"],["light","Light"],["dark","Dark"]],"t"]];
+  for(const [id,opts,k] of segs)document.getElementById(id).innerHTML=opts.map(([v,l])=>`<button type="button" data-k="${k}" data-v="${v}" aria-pressed="${V[k]===v}">${l}</button>`).join("");
+  document.querySelectorAll("[data-opt]").forEach(c=>c.checked=!V.hide.has(c.dataset.opt));
+  const list=V.s==="all"?vis:vis.filter(s=>s[0]===V.s);
+  document.getElementById("frames").innerHTML=list.map(([k,name,opt,optName,cap])=>`<section class="shot" id="f-${k}" aria-labelledby="h-${k}"><h2 class="cap" id="h-${k}">${name} <span class="opt">${optName}</span><span class="note">at ${V.w}</span></h2><p class="capn">${cap}</p><div class="scroll">${frame(k,V.w)}</div>${SAVES[k]?`<details class="saves" open><summary>Saves in the scene as</summary><pre>${esc(SAVES[k])}</pre></details>`:""}</section>`).join("");
+  writeHash()}
+document.addEventListener("click",e=>{const b=e.target.closest(".mkseg button");if(!b)return;V[b.dataset.k]=b.dataset.v;render()});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.classList.contains("themesel")){V.t=t.value;render();return}
+  if(t.dataset.opt){if(t.checked)V.hide.delete(t.dataset.opt);else V.hide.add(t.dataset.opt);render();return}
+  if(t.id==="oLabels"){V.labels=t.checked;render()}});
+addEventListener("hashchange",()=>{readHash();render()});
+readHash();render();
+</script>
+</body>
+</html>
