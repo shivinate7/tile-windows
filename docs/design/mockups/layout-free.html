@@ -417,7 +417,7 @@ function scenario(st,S,F){
         <h3 id="${F}-ph">Split Cell 2</h3>
         <div class="prow"><span>Direction</span><div class="seg" role="group" aria-label="Direction"><button type="button" aria-pressed="true">Side by Side</button><button type="button" aria-pressed="false">Stacked</button></div></div>
         <div class="prow"><span>Claude keeps</span><div class="seg" role="group" aria-label="Claude keeps"><button type="button" aria-pressed="true">Left</button><button type="button" aria-pressed="false">Right</button></div></div>
-        <div class="prow"><span>Claude's share</span><div class="seg num" role="group" aria-label="Claude's share"><button type="button" aria-pressed="false">1/4</button><button type="button" aria-pressed="false">1/3</button><button type="button" aria-pressed="true">1/2</button><button type="button" aria-pressed="false">2/3</button><button type="button" aria-pressed="false">3/4</button></div></div>
+        <div class="prow"><span>Claude's share</span><div class="seg num" role="group" aria-label="Claude's share"><button type="button" aria-pressed="false">1/3</button><button type="button" aria-pressed="true">1/2</button><button type="button" aria-pressed="false">2/3</button></div></div>
         <div class="pacts"><button type="button" class="btn pri">Split</button><button type="button" class="btn">Cancel</button></div>
         <p class="note">Enter splits. Esc cancels. The empty half is filled last.</p><em class="anntag">New: Split Popover</em></div>`;
       sc.anns+=ann(t,"Preview",{up:true});
@@ -437,7 +437,7 @@ function scenario(st,S,F){
       const mb=monBox(MON.wide,S);sc.anns+=ann({l:mb.l,t:mb.t,w:mb.w,h:mb.h},"10×2 Grid, Every Span Doubled",{});
       sc.msg="Ultrawide grid is 10×2. Claude takes cell 3.";}
   }
-  if(st.startsWith("edges")||st.startsWith("tree")||st.startsWith("rects")){sc.free=true;sc.mode=st.split("-")[0];sc.hint="Free Layout: drag the line between two windows to resize both.";}
+  if(st.startsWith("edges")||st.startsWith("tree")||st.startsWith("rects")){sc.free=true;sc.mode=st.split("-")[0];sc.hint="Drag the line between two windows to resize both.";}
   if(st==="edges-on"||st==="edges-gap"){
     const S2=[["v",.2,0,.5],["v",.4,0,.5],["v",.8,0,.5,LOCKWHY],["v",.4,.5,1],["v",.6,.5,1],["v",.8,.5,1],["h",.5,0,.4],["h",.5,.4,.8],["h",.5,.8,1,LOCKWHY]];
     for(const [d,p,a,b,stk] of S2)sc.extra+=seam(S,d,p,a,b,{stuck:stk}).html;
@@ -487,7 +487,7 @@ function scenario(st,S,F){
       sc.extra+=`<div class="dnote" role="status" style="left:${t.l+2}px;top:${t.t+t.h+9}px"><span><b>Claude</b> took File Explorer's space.</span><button type="button" class="btn">Undo</button></div>`;
       sc.anns+=ann(t,"Sibling Takes the Space",{up:true});sc.msg="File Explorer stays put. Claude took its space.";}
   }
-  if(st.startsWith("rects")){sc.sel="cb";sc.hint="Free Layout: drag any edge. Gaps and overlaps settle when you let go.";
+  if(st.startsWith("rects")){sc.sel="cb";sc.hint="Drag any edge. Gaps and overlaps settle when you let go.";
     if(st==="rects-on"){const t=wideR(by.cb.f);sc.extra+=`<div class="hdl" id="${F}-handles" style="${css(t)}"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i><i class="e n"></i><i class="e s"></i><i class="e w"></i><i class="e ea"></i></div>`;
       sc.anns+=ann({l:t.l-10,t:t.t-10,w:t.w+20,h:t.h+20},"Handles Move by the Pixel",{});sc.msg="Free Layout is on for the ultrawide. Nothing moved.";}
     if(st==="rects-drag"){const x=2100/PXW,o=wideR([.2,0,x-.2,.5]),h=wideR([.4,0,x-.4,.5]),nc=wideR([x,0,.8-x,.5]);

@@ -46,7 +46,7 @@ Each frame with a new scene shape shows "Saves in the scene as" under it.
 1. **Trigger.** Select a tile and press S, or press Split Cell in the inspector's Window
    section. A popover opens under the tile (`ux-answer-at-press`): Direction (Side by Side,
    Stacked), "Claude keeps" (Left or Right; Top or Bottom when stacked), and "Claude's share"
-   (1/4, 1/3, 1/2, 2/3, 3/4). The tile previews the split with a dashed line and a hatched empty
+   (1/3, 1/2, 2/3; the bar between the halves reaches quarters, item 10). Three choices, not five: the critique counted five as too many for one popover row. The tile previews the split with a dashed line and a hatched empty
    half. Enter splits, Esc cancels. Gain: one key, one choice, seen before it acts. Loss: a
    popover over the board at 1024 covers the row under it. Pick: as drawn.
 2. **Empty cell.** Selecting an empty cell is new. Today only windows select, and Draw Zone picks
@@ -76,7 +76,7 @@ Each frame with a new scene shape shows "Saves in the scene as" under it.
    cell under it at the same share.
 8. **One level.** A half cannot be split again. Split Cell on a half is off with "This cell is
    split once already. Join the halves first." Gain: the slot address stays two parts. Loss: no
-   quarter-cell in two steps (use the 1/4 share instead). Pick: one level.
+   quarter-cell in two steps (drag the bar to 1/4 instead). Pick: one level.
 9. **Join.** J on a selected half, or Join Halves in the inspector, makes the cell whole. If both
    halves hold a window, the selected one keeps the cell and the other goes to a free cell in fill
    order, else to Windows That Stay Put, as resize does (decision `stack-and-lock`).
@@ -187,6 +187,9 @@ and the key F.
     is an area. One act, two homes in the save (slot `part` in the grid, `areas` in Free Layout).
     Considered and not drawn: Split always turns on Free Layout for the monitor, for one home.
     Not picked, because one split would pause zones and drop the grid for the whole monitor.
+29. **Hatching.** The overlap, the gap and the split preview are hatched, each with a solid or
+    dashed border so forced colours keep them. The critique's detector flags repeating-gradient
+    stripes as decoration; here they carry meaning (space that will change), so they stay.
 
 ## Departs from today
 
