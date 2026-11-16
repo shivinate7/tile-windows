@@ -108,6 +108,8 @@
 #     a 1x1 cell at 1024 and 1440, its box does not meet the circle's box and it is not clipped (the Sora cases at the end).
 #     Forced colours (forced-colors: active): a missing cell (.miss) keeps a visible border, and the disabled Merge button reads as
 #     disabled (forced-color-adjust: none, or the computed colour is GrayText).
+#     Ruling 2026-11-16 13:29 CST: a block with no room clear of the Swap circle, even for the icon at 8 px or more, shows no Put
+#     Behind label. Its solid border and the circle carry the cue. Forced colours drops box-shadow, so the icon-alone chip has a border.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 $ErrorActionPreference = 'Stop'
@@ -249,10 +251,11 @@ function SlBtnPress($scope, $text) {
 # One press on a taken block: the window $fromId is pressed at its centre and held over the point ($ox, $oy) from the block's
 # centre, as fractions of the block's width and height, then released there. Reads the Swap circle and the drop label while held.
 # -Sora also reads whether Sora is in use (SlSoraState) while the label is held.
-function SlCircleDrop($fromId, $slot, $cs, $rs, $ox, $oy, [switch]$Sora) {
+# -Chip also reads the drop's state and its chip (SlDropState) while held. -fx and -fy move the press point on the source window.
+function SlCircleDrop($fromId, $slot, $cs, $rs, $ox, $oy, [switch]$Sora, [double]$fx = 0.5, [double]$fy = 0.5, [switch]$Chip) {
   $bk = SlBlock $slot $cs $rs
   $to = @([double]($bk.l + $bk.w * (0.5 + $ox)), [double]($bk.t + $bk.h * (0.5 + $oy)))
-  SlDrag (SlAt (SlBox $fromId) 0.5 0.5) $to -Hold
+  SlDrag (SlAt (SlBox $fromId) $fx $fy) $to -Hold
   $ci = SlGet "(() => { const c = document.querySelector('#drop .swc'); if (!c) return null; const r = c.getBoundingClientRect(); return { w: r.width, h: r.height, x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()"
   $shown = SlLabelShown
   # The label's text box (its span's contents), read while held: the Put Behind or Swap label the drop shows.
@@ -260,8 +263,14 @@ function SlCircleDrop($fromId, $slot, $cs, $rs, $ox, $oy, [switch]$Sora) {
   # The label's chip, read while held: its content width against the width it is drawn in. A chip narrower than its words clips them.
   $clip = SlGet "(() => { const s = document.querySelector('#drop > span'); if (!s) return null; const b = s.getBoundingClientRect(); return { sw: s.scrollWidth, cw: s.clientWidth, title: s.getAttribute('title') || '', text: s.textContent.trim(), icon: !!s.querySelector('svg'), box: { l: b.left, t: b.top, r: b.right, b: b.bottom } }; })()"
   $soraNow = $null; if ($Sora) { $soraNow = SlSoraState }
+  $dropNow = $null; if ($Chip) { $dropNow = SlDropState }
   SlRelease $to
-  [pscustomobject]@{ block = $bk; circle = $ci; shown = $shown; to = $to; label = $lb; clip = $clip; sora = $soraNow } }
+  [pscustomobject]@{ block = $bk; circle = $ci; shown = $shown; to = $to; label = $lb; clip = $clip; sora = $soraNow; drop = $dropNow } }
+# The drop, read while held: #drop's class and border (the Put Behind zone is class "on", with a 3px border), forced colours, and
+# the chip inside it when one is drawn: its box, its border, its text and whether it holds an icon. A chip is shown only when #drop is.
+function SlDropState {
+  SlGet "(() => { const d = document.getElementById('drop'), dc = getComputedStyle(d), s = d.querySelector(':scope > span'); const out = { shown: dc.display !== 'none', cls: d.className, bw: parseFloat(dc.borderTopWidth), fc: matchMedia('(forced-colors: active)').matches, chip: null }; if (s) { const cs = getComputedStyle(s), r = s.getBoundingClientRect(); out.chip = { shown: out.shown && cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity) > 0 && r.width > 0 && r.height > 0, bs: cs.borderTopStyle, bw: parseFloat(cs.borderTopWidth), box: { l: r.left, t: r.top, r: r.right, b: r.bottom }, text: s.textContent.trim(), icon: !!s.querySelector('svg') }; } return out; })()"
+}
 # Whether Sora is in use for the drop label, read while it is held. The label's font stack starts with Sora, a Sora face has
 # loaded (read after document.fonts.ready, so a face still downloading is not read as missing), and the 600 weight the label sets
 # is available. A page on its fallback font reads on = false, so the case that asks fails its scope.
@@ -286,6 +295,20 @@ function SlSoraCase($w, $h, $shape, $fromId, $cs, $pins) {
   Check "$tag, scope: Sora is in use, and the Put Behind label and the Swap circle are drawn, as a form with Behind or the icon alone" ([bool]($d.sora -and $d.sora.on -and $d.shown -and $cb -and $lb -and $form)) "sora: $(SlShort $d.sora); shown: $($d.shown); label: $(SlShort $d.label); text: '$text'"
   Check "$tag, red: the label's box does not meet the Swap circle's box" ([bool]($cb -and $lb -and -not (SlMeets $lb $cb))) "label box: $(SlHit $lb); circle box: $(SlHit $cb)"
   Check "$tag, red: the label is not clipped (scrollWidth within clientWidth)" ([bool]($d.clip -and $d.clip.sw -le $d.clip.cw)) "scrollWidth: $($d.clip.sw); clientWidth: $($d.clip.cw); text: '$text'"
+}
+# One Put Behind drop with forced colours on, under Sora. Ruling 2026-11-16 12:45 CST accepts the icon alone, and in forced colours
+# the browser drops box-shadow, so the icon-alone chip needs a real border to read as a chip. Scope first: forced colours is on, Sora
+# is in use, and the label is drawn as the icon alone. Then the chip has a border: a style other than none, at least 1 px wide.
+function SlForcedCase($w, $h, $shape, $fromId, $cs, $pins) {
+  SlSend 'Emulation.setEmulatedMedia' @{ features = @(@{ name = 'forced-colors'; value = 'active' }) }
+  SlViewport $w $h; SlCase (SlSceneJson $pins)
+  $d = SlCircleDrop $fromId 0 $cs 1 0 (-0.35) -Sora -Chip
+  $ch = $d.drop.chip
+  $tag = "label, forced colours, Sora, $w $shape"
+  $icon = [bool]($ch -and $ch.icon -and $ch.text -eq '')
+  Check "$tag, scope: forced colours is on, Sora is in use, and the Put Behind label is drawn as the icon alone" ([bool]($d.drop.fc -eq $true -and $d.sora -and $d.sora.on -and $ch -and $ch.shown -and $icon)) "forced: $($d.drop.fc); sora: $(SlShort $d.sora); chip: $(SlShort $ch)"
+  Check "$tag, red: the icon-alone chip has a visible edge (a border not none, at least 1 px), since box-shadow is dropped in forced colours" ([bool]($ch -and $ch.bs -ne 'none' -and $ch.bw -ge 1)) "chip border: $($ch.bs) $($ch.bw)px"
+  SlSend 'Emulation.setEmulatedMedia' @{ features = @() }
 }
 # The Swap circle is half the block's short side, rounded down, from 28 to 64 px, and centred on the block (tolerance 2 px).
 function SlCircleFits($c, $bk) {
@@ -1992,7 +2015,8 @@ try {
   # F6. A 2x1 span at 1024: the Put Behind label's text box must not meet the Swap circle. Control: the same at 1440.
   SlViewport 1024 768; SlCase (SlSceneJson $pinsCircleSpan)
   $sl1 = SlCircleDrop 1001 0 2 1 0 (-0.35)
-  # The scope takes a form with the word Behind, or the icon alone (the last fallback, clear of the circle). The overlap and clip asserts stay.
+  # The scope takes a form with the word Behind, or the icon alone (the last fallback, clear of the circle; ruling 2026-11-16 12:45 CST).
+  # The overlap and clip asserts stay.
   Check 'circle and label, 2x1 span at 1024, scope: the Swap circle is drawn, and the Put Behind label is drawn with Behind or as the icon alone' ([bool]($sl1.circle -and $sl1.shown -and $sl1.label -and ("$($sl1.label.text)" -match 'Behind' -or ("$($sl1.label.text)" -eq '' -and $sl1.clip -and $sl1.clip.icon)))) "circle: $(SlShort $sl1.circle); label: $(SlShort $sl1.label); icon: $($sl1.clip.icon)"
   Check 'circle and label, 2x1 span at 1024, red: the label''s text box does not meet the Swap circle' ([bool]($sl1.label -and -not (SlCircleMeets $sl1.circle $sl1.label))) "circle: $(SlShort $sl1.circle); label: $(SlShort $sl1.label)"
   SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
@@ -2026,6 +2050,25 @@ try {
     Check "warning over a taken cell, $wz, red: only one title reads in the taken cell" ([bool]($tw -and $tw.n -eq 1)) "readable: $($tw.n); pending '$($tw.pendText)' reads $($tw.pendReadable); taken '$($tw.takenText)' reads $($tw.takenReadable)"
   }
 
+  # Tiny block, ruling 2026-11-16 13:29 CST (label fallback). A block with no room clear of the Swap circle, even for the icon at 8 px
+  #      or more, shows no Put Behind label: its solid border and the circle carry the cue. An interior cell of a 13 by 6 grid at 1440
+  #      is about 40 by 35 px, with a 28 px circle. The old code draws a 6 px icon chip in the block's corner, over the circle.
+  $pinsTiny = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[32]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[33]}'
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTiny '[]' '' '' '"c":13,"r":6')
+  $tn = SlCircleDrop 1006 32 1 1 (-0.4) (-0.4) -Chip -fx 0.3 -fy 0.5
+  $tnB = $tn.block; $tnC = $tn.circle; $tnD = $tn.drop; $tnChip = $tnD.chip
+  $tnCb = if ($tnC) { @{ l = $tnC.x - $tnC.w / 2; t = $tnC.y - $tnC.h / 2; r = $tnC.x + $tnC.w / 2; b = $tnC.y + $tnC.h / 2 } } else { $null }
+  $tnSize = [bool]($tnB -and $tnB.w -ge 36 -and $tnB.w -le 44 -and $tnB.h -ge 30 -and $tnB.h -le 38)
+  Check 'tiny block, 1440, scope: the block is about 40 by 34 px, its Swap circle is drawn at the 28 px floor, and the Put Behind zone is under the pointer (3 px border)' ([bool]($tnSize -and (SlCircleFits $tnC $tnB) -and $tnD.shown -and "$($tnD.cls)" -match '\bon\b' -and $tnD.bw -eq 3)) "block: $(SlShort $tnB); circle: $(SlShort $tnC); drop: $(SlShort $tnD)"
+  $tnClear = [bool]($tnC -and (-not $tnChip -or -not $tnChip.shown -or (-not (SlMeets $tnChip.box $tnCb) -and -not (SlCircleMeets $tnC $tnChip.box))))
+  Check "tiny block, 1440, red: the Put Behind chip is not drawn, or it meets neither the Swap circle's box nor its disc" $tnClear "chip: $(SlShort $tnChip); circle box: $(SlHit $tnCb)"
+  # Control: the same corner drop on a roomy 1x1 cell at 1440, where the chip is drawn clear of the circle. Green on d9834c7.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  $tc = SlCircleDrop 1006 0 1 1 (-0.4) (-0.4) -Chip
+  $tcCb = if ($tc.circle) { @{ l = $tc.circle.x - $tc.circle.w / 2; t = $tc.circle.y - $tc.circle.h / 2; r = $tc.circle.x + $tc.circle.w / 2; b = $tc.circle.y + $tc.circle.h / 2 } } else { $null }
+  Check 'tiny block control, 1x1 cell at 1440, scope: the Swap circle is drawn, and the Put Behind zone is under the pointer with its chip drawn' ([bool]($tc.circle -and $tc.drop.shown -and "$($tc.drop.cls)" -match '\bon\b' -and $tc.drop.bw -eq 3 -and $tc.drop.chip -and $tc.drop.chip.shown)) "circle: $(SlShort $tc.circle); drop: $(SlShort $tc.drop)"
+  Check "tiny block control, 1x1 cell at 1440: the Put Behind chip meets neither the Swap circle's box nor its disc" ([bool]($tcCb -and $tc.drop.chip -and -not (SlMeets $tc.drop.chip.box $tcCb) -and -not (SlCircleMeets $tc.circle $tc.drop.chip.box))) "chip: $(SlShort $tc.drop.chip); circle box: $(SlHit $tcCb)"
+
   # F7. Forced colours (review finding on 1ff9835). A guard, green on head: in headless Edge's forced-colors emulation a missing
   #     cell keeps its dashed border on top, and a disabled Merge computes to GrayText. The claim did not reproduce on b9643c3,
   #     so no red is claimed here (see the report's Input Needed). It is the last case: it sets the emulation, and resets it.
@@ -2055,6 +2098,9 @@ try {
   SlSoraCase 1440 900 '2x1 span' 1001 2 $pinsCircleSpan
   SlSoraCase 1024 768 '1x1 cell' 1006 1 $pinsCQ
   SlSoraCase 1440 900 '1x1 cell' 1006 1 $pinsCQ
+  # Forced colours on the icon-alone chip, under Sora: the 1024 2x1 span and the 1024 1x1 cell (ruling 2026-11-16 12:45 CST).
+  SlForcedCase 1024 768 '2x1 span' 1001 2 $pinsCircleSpan
+  SlForcedCase 1024 768 '1x1 cell' 1006 1 $pinsCQ
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
 } finally {
