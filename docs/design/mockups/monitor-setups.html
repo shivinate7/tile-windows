@@ -205,7 +205,7 @@ input[type=text]{width:100%}
 .setbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
 .setbar.warn{background:var(--hi-bg);border-color:color-mix(in srgb,var(--hi) 60%,var(--line));border-left:3px solid var(--hi)}
 .smap{position:relative;flex:none;width:58px;height:30px;border-radius:4px;background:var(--canvas)}
-.smap i{position:absolute;background:var(--screen);border:1.5px solid var(--bezel);border-radius:2px}
+.smap i{position:absolute;background:var(--screen);border:1.5px solid color-mix(in srgb,var(--ink) 70%,var(--canvas));border-radius:2px}
 .smap i.gone{background:transparent;border:1.5px dashed var(--muted)}
 .sid{display:grid;gap:0;min-width:0;flex:1 1 260px}
 .sid b{font:700 14px var(--f-disp);letter-spacing:-.01em}
@@ -217,6 +217,9 @@ input[type=text]{width:100%}
 .sbtns .btn svg{width:14px;height:14px}
 .w1024 .setbar{gap:6px 10px;padding:6px 8px}
 .w1024 .sid{flex-basis:200px}
+/* At 1024 Monitors and Setups keeps its icon and gives up its words (title and label keep them), so the strip stays two rows. */
+.w1024 .sbtns .btn.mg{padding:5px 8px}
+.w1024 .sbtns .btn.mg .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* A marker on each scene card: does this scene follow the source setup here, or has its own layout? Icon only; the word is in its title and label, and the setup strip says it once for the selected scene. */
 .lay{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:3px;flex:none;color:var(--muted)}
 .lay svg{width:13px;height:13px}
@@ -345,7 +348,7 @@ const STATES=[
   ["mg-rail",3,"rail","Setups in the Rail","Other option: a Setups section under Scenes in the left rail. A click opens that setup's layouts on the board, so the owner can edit a setup that is not plugged in. Renaming a monitor stays in the inspector."],
   ["cd-follow",4,"icon","Scene Cards: Following Desk","On Laptop + Portrait, Default and Meetings follow Desk: their cards show a link mark and their mini maps draw windows as outlines. Focus has its own layout here: a filled screen mark and filled windows. The strip says the word once, for the selected scene."],
   ["cd-own",4,"icon","Scene Cards: Own Layout","Focus is selected. It was changed and saved on this setup, so it no longer follows Desk. The strip says so and offers Follow Desk Again."],
-  ["cd-word",4,"word","Other Option: the Marker as a Word","Each card's tag says it in words. At 1024 the card is 176px, so the longer tag pushes Apply off the card."]];
+  ["cd-word",4,"word","Other Option: the Marker as a Word","Each card's tag says it in words. The tag wraps to two or three lines beside Apply, at 1440 and at 1024, so each card grows, and the word repeats on every card."]];
 const ITEMS={1:["1. The Board When a Screen Is Unplugged","Laptop and portrait only. Which setup is on, and where its layout came from."],
   2:["2. Where the Missing Screen's Windows Go","The ultrawide held seven of Default's windows. Three options; the owner can change it per setup in the strip."],
   3:["3. See, Rename and Forget Monitors and Setups","Where the owner sees what Tile Windows remembers."],
@@ -424,7 +427,7 @@ function board(st,F,L,w){
 /* ---------- The setup strip ---------- */
 function setbar(st,F){
   const fold=sel=>`<label class="sfold">Ultrawide's windows go to <select aria-label="Where the Ultrawide's windows go on this setup"><option${sel==="lap"?" selected":""}>Laptop</option><option${sel==="por"?" selected":""}>Portrait</option><option${sel==="stay"?" selected":""}>Windows That Stay Put</option></select></label>`;
-  const mgBtn=`<button type="button" class="btn">${I.screens}Monitors and Setups</button>`;
+  const mgBtn=`<button type="button" class="btn mg" title="Monitors and Setups">${I.screens}<span class="t">Monitors and Setups</span></button>`;
   let id,sub,extra="",cls="setbar",map;
   const sceneName=st==="cd-own"?"Focus":"Default";
   if(st==="bd-back"){map=smap("desk");id="Desk";sub=`<strong>${sceneName}</strong> has its own layout here. Setups that follow Desk get your changes.`}

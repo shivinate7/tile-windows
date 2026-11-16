@@ -109,8 +109,11 @@ Columns and Rows, Windows That Stay Put, Save and Revert.
     select, and Monitors and Setups. Options: in the top bar's crumb (Scene: Default · Setup: …).
     Loss of the crumb: no room for the sentence or the select at 1024. Pick: the strip.
 12. **A toast on change** (`bd-new`, `bd-back`): "Screens changed: Laptop + Portrait, a new
-    setup." It names the change once; the strip holds it after the toast closes. The toast covers
-    the right end of the strip while it shows.
+    setup." It names the change once; the strip holds it after the toast closes. Loss: at 1440 the
+    toast covers the strip's fold select and Monitors and Setups while it shows (critique finding,
+    kept: the toast closes, and today's toast sits in the same place, `app.html` `.toast`).
+    At 1024, Monitors and Setups shows its icon only, with its name as the title and label, so
+    the strip stays two rows.
 13. **Windows move only by Apply or a trigger.** A setup change redraws the board. Windows move
     when the owner presses Apply, or when the "When the Monitors Change" trigger applies a scene,
     as today (`decisions/triggers.md`).
@@ -144,8 +147,8 @@ Columns and Rows, Windows That Stay Put, Save and Revert.
       layout", beside Built-in; a following scene's mini map draws its windows as dashed outlines.
       The word is in the mark's title and label, and the strip says it once for the selected scene
       (rule ux-label-once).
-    - Word (`cd-word`): "Built-in · follows Desk" in the tag. Loss: at 1024 the card is 176px, so
-      the tag pushes Apply off the card; and the word repeats on every card.
+    - Word (`cd-word`): "Built-in · follows Desk" in the tag. Loss: the tag wraps to two or three
+      lines beside Apply at both widths, so each card grows; and the word repeats on every card.
 18. **Edited and unsaved** keeps today's Edited dot in the top bar and "· edited" in the tag.
 
 ## 7. Triggers
