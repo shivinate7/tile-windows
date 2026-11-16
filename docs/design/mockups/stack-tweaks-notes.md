@@ -15,7 +15,7 @@ Tokens and tile CSS are copied from `board-feedback.html`, which copies `app.htm
 so the page opens with no network.
 
 Focus ids for the waiting page, each prefixed by its state key: `-swap-circle`,
-`-put-behind-area`, `-behind-circle`, `-chip-above`, `-sizes`, `-padlock`, `-locked-chip`,
+`-put-behind-area`, `-behind-circle`, `-swap-area`, `-chip-above`, `-sizes`, `-padlock`, `-locked-chip`,
 `-locked-confirm`, `-resize-label`, `-to-the-list`, `-resize-note`, `-list-chip`, `-merge-bar`.
 
 Everything not named below stays as it is on main: the Drop Note, the layered stack look, the
@@ -27,7 +27,9 @@ named badge, the handles on every edge, Fill Empty Cells and Clear Board.
    it becomes Put Behind rather than Swap. The brief reads it as: inside the circle swaps, the rest
    of the cell puts behind. The mockup draws that (`sw-in`, `sw-out`). The words can also read the
    other way: the circle puts behind and the rest swaps. `sw-rev` draws that, with the same
-   geometry and the labels swapped. Pick: the brief's reading. Owner grant: yes (which reading).
+   geometry and the labels swapped. `decisions/stack-and-lock.md` now records the brief's reading.
+   Pick: the recorded reading; `sw-rev` stays only so the owner can confirm it. Owner grant: yes
+   (confirm the recorded reading).
 2. **Circle size.** Diameter is half the block's short side, rounded down, from 28 to 64px. The hit
    test is the distance from the block's centre, not the circle's bounding square.
    | Block | Size | Circle | Share of block | Narrowest Put Behind band |
