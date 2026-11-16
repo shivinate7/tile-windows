@@ -11,20 +11,38 @@
 #     pins[i].behind  [{app, match}]: windows stacked behind pins[i]. match reads as on a pin: text in the window title.
 #                     They share pins[i]'s rect and are never in the fill.
 #     pins[i].slots   a span is the whole block of cells, as today.
-#     bay             [{app, title}], as today. Take Out and a resize with no free cell write here (Windows That Stay Put).
+#     bay             [{app, title}], as today. Take Out writes here, and so does a resize: every window its span covers goes
+#                     here with its stack, whether or not a cell is free (ruling 2026-11-16, decisions/stack-and-lock.md).
 #   tile.ps1 -Scene -From <fixture> -Json, placed[]: a stacked window has behind = true, pin = its front pin's index,
 #     and slots, x, y, w, h equal to the front's. A minimized stacked window is placed too (Apply restores it).
 #   app.html, names read by the harness (keep them): work, selId, prevs, preview(id), els (window id -> its tile element,
-#     dataset.id), snap, and the Save button with id save.
+#     dataset.id), snap, stage, cellRect(mon, grid, c, r, cs, rs) with px(rect) (a cell's rect, as the drop label uses it),
+#     and the Save button with id save.
 #   app.html DOM the harness drives:
 #     Every window is a .tile. A locked tile's lock button is .tile .lk. The resize grip is .tile .rsz, bottom-right.
-#     #drop holds the drop label. On a taken cell, the lower 36% reads Put Behind and the upper 64% reads Swap. On a
-#     locked tile it reads Behind and "Locked, so no Swap" (Locked on narrow cells), with no Swap action. On a spanned block the same split covers the whole block, and it
-#     never reads Place here. A drop on the lower band stacks the dragged window behind; a drop on the upper zone swaps.
+#     #drop holds the drop label. On a taken block (a cell or a span) it draws one Swap circle, #drop .swc, centred on the
+#     block, with diameter half the block's short side, rounded down, from 28 to 64 px. A drop inside the circle (distance
+#     from the block's centre) swaps; anywhere else on the block it puts behind. Nothing else is a zone (ruling 2026-11-16).
+#     A span is one block: its circle sits at the centre of the whole span and it never reads Place here.
+#     On a locked tile the whole cell is Put Behind: it reads Behind and "Locked, so no Swap" (Locked on narrow cells),
+#     with no circle and no Swap action.
 #     The inspector, for the selected front tile, has a Bring to Front and a Take Out button for each window behind it.
 #     A grip drag of 1.4 cells to the right, on a 1x1 tile, makes a 2-column span (whole cells, rounded).
-#     Shift+arrow and the Width and Height steppers grow a span the same way as the grip: a covered pin moves with its stack to
-#     the first free cell, else to Windows That Stay Put, and growth stops at a locked tile.
+#     Shift+arrow and the Width and Height steppers grow a span the same way as the grip: every covered pin goes to Windows
+#     That Stay Put with its stack, its chip's aria-label reads "Covered by a resize" (ruling 2026-11-16), and growth stops at
+#     a locked tile. A resize that covers windows also writes a Drop Note: .dnote, role=status, text "<A> and <B> went to
+#     Windows That Stay Put", with a button Undo inside it.
+#     .tile .lk (the padlock). Shown only on hover, on focus inside the tile (:focus-within) and on a selected tile, and
+#     always on a locked tile. Hidden, it is visibility:hidden, so elementFromPoint at its centre is not the padlock.
+#     [role=alertdialog] (a locked tile dragged and released: an in-page confirm). Its buttons: "Cancel" (the tile stays put,
+#     still locked) and "Move It" (the tile moves to the cell it was released on, still locked). Nothing moves before Move It.
+#     While that warning is open over a taken cell, the pending tile (.pendtile, pointer-events none) waits in that cell, and
+#     only one title in the cell reads: the taken tile's title is hidden, or the pending tile is opaque. The warning sits outside the cell.
+#     Ctrl+click (ctrlKey) picks a tile or an empty cell. Two or more picks draw .mbar (role=group, aria-label "Picked
+#     cells"), with buttons "Merge", "Cancel" and "Fill to Rectangle". A rectangle's Merge makes a span kept by the first
+#     picked window; the other picked windows go to Windows That Stay Put. A non-rectangle disables Merge (disabled
+#     attribute), with its reason in the bar's text, and Fill to Rectangle adds the missing cells to the pick. Picks made
+#     only of empty cells disable Merge too, with its reason in the bar's text.
 #     A stacked tile's badge (.stk) has a hit extension (its ::after inset). At 1024 and 1440 its hit box clears the
 #     .rsz grip, the .lk lock and the .stayput Stay Put (the badge-grip overlap debt).
 #     With ten or more windows behind, a narrow (1024) badge shows the back app's initial and its aria-label names the true
@@ -49,7 +67,7 @@
 #                        corners 10 by 10 and edge bands 7 px, outside the tile border. They never cover the lock, the tag
 #                        (the tile's b), the badge, the grip or Stay Put.
 #     keys               Ctrl+Shift+ArrowLeft and ArrowUp grow the left or top edge (the origin moves) with Shift+arrow's rules:
-#                        covered pins move to free cells with their stacks, else to Windows That Stay Put; a locked tile stops
+#                        covered pins go to Windows That Stay Put with their stacks (ruling 2026-11-16); a locked tile stops
 #                        it ("A locked tile is in the way"). Ctrl+Shift+ArrowRight and ArrowDown shrink that edge.
 #     input[role=switch] inside a label whose text is "Fill Empty Cells", in the Monitor section of the monitor that fills.
 #                        Checked is on. Turning it off holds each window the fill or a zone placed where it is, in the scene's
@@ -76,6 +94,17 @@
 #                        A tab click on another scene while the switch waits for its scene's preview leaves that scene as it was:
 #                        the switch changes the scene it was pressed on.
 #     inspector          A narrow pinned tile (its pin mark hidden at 1024) selected: its "Pinned" line is in the inspector's visible area.
+#   Ruling 2026-11-16 (lock correction 10:20; coordinator picks 10:53), review findings on 1ff9835:
+#     a locked window dragged to Windows That Stay Put, or put behind, loses its lock; the window that takes its pin is not locked.
+#     A covered pin whose window is closed (no open window) is removed by a resize or a Merge, a Drop Note names its app, and
+#     Undo restores the pin. Merge refuses a pick that holds a closed locked pin, as a resize stops at a lock; the pin keeps its lock.
+#     A Merge's bay entries carry why "Moved by a merge" (a resize's carry "Covered by a resize").
+#     Two windows of one app are named apart in the Drop Note, the status line (#msg), the locked-drag warning (#lcp) and the
+#     Merge bar: by title ("Refactor", "Pin parser") or as "2 Claude windows", never "Claude moves to Claude".
+#     On a 2x1 span at 1024 the Put Behind label's text box (#drop > span) does not meet the Swap circle, and its chip is not
+#     clipped: scrollWidth is within clientWidth (the chip's words fit it).
+#     Forced colours (forced-colors: active): a missing cell (.miss) keeps a visible border, and the disabled Merge button reads as
+#     disabled (forced-color-adjust: none, or the computed colour is GrayText).
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 $ErrorActionPreference = 'Stop'
@@ -192,6 +221,123 @@ function SlFmt($b) { if (-not $b) { 'none' } else { '{0},{1} {2}x{3}' -f [int]$b
 function SlShort($x) { $j = ($x | ConvertTo-Json -Depth 6 -Compress); if ($j.Length -gt 400) { $j.Substring(0, 400) } else { $j } }
 function SlLabel { SlJs "document.getElementById('drop').textContent" }
 function SlLabelShown { SlJs "getComputedStyle(document.getElementById('drop')).display !== 'none'" }
+# Ruling 2026-11-16 helpers (stack tweaks). Ctrl+click: CDP modifier Ctrl is 2, so the pointer events carry ctrlKey.
+function SlCtrlClick($at) {
+  [void](SlSend 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = [double]$at[0]; y = [double]$at[1]; button = 'left'; buttons = 1; clickCount = 1; modifiers = 2 })
+  [void](SlSend 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = [double]$at[0]; y = [double]$at[1]; button = 'left'; buttons = 0; clickCount = 1; modifiers = 2 })
+  SlSettle }
+# A block of wide-monitor cells, cs by rs from cell $slot (0-based), in the viewport: the rect the drop label is drawn on.
+function SlBlock($slot, $cs = 1, $rs = 1) { SlGet "(() => { const m = snap.monitors.find(q => q.role === 'wide'), g = work[selId].grids.wide, p = px(cellRect(m, g, $slot % g.c, Math.floor($slot / g.c), $cs, $rs)), sr = stage.getBoundingClientRect(); return { l: sr.left + parseFloat(p.left), t: sr.top + parseFloat(p.top), w: parseFloat(p.width), h: parseFloat(p.height) }; })()" }
+# Moves the pointer to the page's top-left corner, where no tile is, so no hover is left on a window.
+function SlPark { SlMouse 'mouseMoved' 1 1 0; SlFrame }
+# Whether window $id's padlock is drawn and visible: not display none, not visibility hidden, opacity above 0. Null when no padlock.
+function SlLkShown($id) { SlGet "(() => { const t = els.get($id), k = t && t.querySelector('.lk'); if (!k) return null; const cs = getComputedStyle(k), r = k.getBoundingClientRect(); return cs.display !== 'none' && cs.visibility === 'visible' && parseFloat(cs.opacity) > 0 && r.width > 0; })()" }
+# Whether the element the page hits at window $id's padlock centre is that padlock. A hidden padlock is not hit.
+function SlLkHit($id) { SlGet "(() => { const t = els.get($id), k = t && t.querySelector('.lk'); if (!k) return null; const r = k.getBoundingClientRect(), e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!(e && e.closest('.lk') === k); })()" }
+# The centre of window $id's padlock, as [x, y] in the viewport (null when none).
+function SlLkCentre($id) { SlGet "(() => { const t = els.get($id), k = t && t.querySelector('.lk'); if (!k) return null; const r = k.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()" }
+# A button's state inside $scope, found by its text: 'no such button', 'disabled' or 'enabled'.
+function SlBtnState($scope, $text) { SlJs "(() => { const b = [...document.querySelectorAll('$scope button')].find(x => x.textContent.trim() === '$text'); if (!b) return 'no such button'; return b.disabled ? 'disabled' : 'enabled'; })()" }
+# A real press on a button inside $scope, found by its text. False when it is missing or disabled (nothing is pressed).
+function SlBtnPress($scope, $text) {
+  $c = SlGet "(() => { const b = [...document.querySelectorAll('$scope button')].find(x => x.textContent.trim() === '$text'); if (!b || b.disabled) return null; const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"
+  if (-not $c) { return $false }
+  SlClick @([double]$c[0], [double]$c[1]); $true }
+# One press on a taken block: the window $fromId is pressed at its centre and held over the point ($ox, $oy) from the block's
+# centre, as fractions of the block's width and height, then released there. Reads the Swap circle and the drop label while held.
+function SlCircleDrop($fromId, $slot, $cs, $rs, $ox, $oy) {
+  $bk = SlBlock $slot $cs $rs
+  $to = @([double]($bk.l + $bk.w * (0.5 + $ox)), [double]($bk.t + $bk.h * (0.5 + $oy)))
+  SlDrag (SlAt (SlBox $fromId) 0.5 0.5) $to -Hold
+  $ci = SlGet "(() => { const c = document.querySelector('#drop .swc'); if (!c) return null; const r = c.getBoundingClientRect(); return { w: r.width, h: r.height, x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()"
+  $shown = SlLabelShown
+  # The label's text box (its span's contents), read while held: the Put Behind or Swap label the drop shows.
+  $lb = SlGet "(() => { const s = document.querySelector('#drop > span'); if (!s) return null; const r = document.createRange(); r.selectNodeContents(s); const b = r.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom, text: s.textContent.trim() }; })()"
+  # The label's chip, read while held: its content width against the width it is drawn in. A chip narrower than its words clips them.
+  $clip = SlGet "(() => { const s = document.querySelector('#drop > span'); if (!s) return null; return { sw: s.scrollWidth, cw: s.clientWidth, title: s.getAttribute('title') || '', text: s.textContent.trim() }; })()"
+  SlRelease $to
+  [pscustomobject]@{ block = $bk; circle = $ci; shown = $shown; to = $to; label = $lb; clip = $clip } }
+# The Swap circle is half the block's short side, rounded down, from 28 to 64 px, and centred on the block (tolerance 2 px).
+function SlCircleFits($c, $bk) {
+  if (-not $c -or -not $bk) { return $false }
+  $want = [Math]::Max(28, [Math]::Min(64, [Math]::Floor([Math]::Min($bk.w, $bk.h) / 2)))
+  [bool]([Math]::Abs($c.w - $want) -le 2 -and [Math]::Abs($c.h - $want) -le 2 -and [Math]::Abs($c.x - ($bk.l + $bk.w / 2)) -le 2 -and [Math]::Abs($c.y - ($bk.t + $bk.h / 2)) -le 2) }
+# Whether the Swap circle (centre x, y, diameter w) and a label's text box (l, t, r, b) share a point: the distance from the
+# circle's centre to the nearest point of the box is under its radius. The bounding square is not the test.
+function SlCircleMeets($c, $r) {
+  if (-not $c -or -not $r) { return $false }
+  $nx = [Math]::Max($r.l, [Math]::Min($c.x, $r.r)); $ny = [Math]::Max($r.t, [Math]::Min($c.y, $r.b))
+  [bool]([Math]::Sqrt(($c.x - $nx) * ($c.x - $nx) + ($c.y - $ny) * ($c.y - $ny)) -lt ($c.w / 2)) }
+# The titles in one cell, as a reader sees them: the pending tile's title and the taken tile's title ($takenId's element). A title
+# reads when it is drawn (not display:none, not visibility:hidden, not opacity 0) and some point of its box has no opaque layer
+# above it. A translucent layer over a title does not hide it: the title shows through. The pending tile is pointer-events:none, so
+# it is switched on for each hit test, then put back. Returns the readable count and both boxes (l, t, r, b), or null for a missing one.
+function SlTitles($takenId) {
+  $js = @'
+(() => {
+  const num = (s) => { const v = parseFloat(s); return isNaN(v) ? 0 : v; };
+  const parseA = (p) => (p.endsWith('%') ? parseFloat(p) / 100 : parseFloat(p));
+  const alphaOf = (s) => {
+    if (!s || s === 'transparent') return 0;
+    const m = /^(rgba?|color)\((.*)\)$/.exec(s);
+    if (!m) return 1;
+    const parts = m[2].replace(/^srgb\s+/, '').replace(/,/g, ' ').split(/\s*\/\s*|\s+/).filter(Boolean);
+    return parts.length > 3 ? parseA(parts[3]) : 1;
+  };
+  const effOpacity = (e) => { let o = 1; for (let n = e; n && n.nodeType === 1; n = n.parentElement) o *= num(getComputedStyle(n).opacity); return o; };
+  const opaque = (e) => effOpacity(e) >= 0.999 && alphaOf(getComputedStyle(e).backgroundColor) >= 0.999;
+  const pends = [...document.querySelectorAll('.pendtile')];
+  const coveredAt = (e, x, y) => {
+    pends.forEach((p) => { p.style.pointerEvents = 'auto'; });
+    const list = document.elementsFromPoint(x, y);
+    pends.forEach((p) => { p.style.pointerEvents = ''; });
+    const i = list.indexOf(e);
+    if (i < 0) return false;
+    for (let k = 0; k < i; k++) {
+      const o = list[k];
+      if (o.contains(e) || e.contains(o)) continue;
+      if (opaque(o)) return true;
+    }
+    return false;
+  };
+  const readable = (e) => {
+    if (!e || getComputedStyle(e).visibility !== 'visible' || effOpacity(e) <= 0) return false;
+    const r = e.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    const pts = [[r.left + r.width / 2, r.top + r.height / 2], [r.left + 1, r.top + 1], [r.right - 1, r.top + 1], [r.left + 1, r.bottom - 1], [r.right - 1, r.bottom - 1]];
+    return pts.some(([x, y]) => !coveredAt(e, x, y));
+  };
+  const box = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
+  const taken = els.get(__ID__), tt = taken ? taken.querySelector(':scope > span') : null;
+  const pend = document.querySelector('.pendtile'), pt = pend ? pend.querySelector(':scope > span') : null;
+  const dlg = document.querySelector('[role=alertdialog]');
+  const pr = readable(pt), tr = readable(tt);
+  return { pendText: pt ? pt.textContent : null, takenText: tt ? tt.textContent : null, pendReadable: pr, takenReadable: tr, n: (pr ? 1 : 0) + (tr ? 1 : 0), pendOpacity: pend ? effOpacity(pend) : null, pendBox: box(pend), takenBox: box(taken), dlgBox: box(dlg), dlgOpen: !!dlg };
+})()
+'@
+  SlGet ($js.Replace('__ID__', "$takenId"))
+}
+# Two windows of one app are named apart: both titles' words (Refactor, Pin parser), or "2 Claude windows". Either form passes.
+function SlDistinct($text) { $t = "$text"; [bool](($t -match 'Refactor' -and $t -match 'Pin parser') -or $t -match '2 Claude windows') }
+# What a drop of window $dragText on window $occText did, read from the scene: 'behind' when the dropped window is stacked
+# behind it, 'swap:<dropped cells>/<occupant cells>' when they traded cells, else 'other'.
+function SlZoneOutcome($dragText, $occText) {
+  $s = SlGet 'work[selId]'; $d = SlPin $s $dragText; $o = SlPin $s $occText
+  if ($o -and (SlHasBehind $o $dragText)) { return 'behind' }
+  if ($d -and $o) { return "swap:$(SlCells $d)/$(SlCells $o)" }
+  'other' }
+# A press on handle $dir of the selected tile, released with no settle, so the Drop Note is read before it fades. $dx, $dy and $cells as SlHandleDrag.
+function SlHandleDropNoSettle($dir, $dx, $dy, $cells = 1.4) {
+  $hp = SlHandle $dir; $tb = SlBox 1001
+  if (-not $hp -or -not $tb) { return $false }
+  SlDropNoSettle @([double]$hp.x, [double]$hp.y) @([double]($hp.x + $dx * $cells * $tb.w), [double]($hp.y + $dy * $cells * $tb.h))
+  $true }
+# The bay chips of Windows That Stay Put as {id, label}: label is the chip's aria-label, which carries the reason.
+function SlBayChips { SlList "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => ({ id: +b.dataset.bay, label: b.getAttribute('aria-label') }))" }
+# The number of tiles on the board (not hidden) whose padlock is drawn and visible.
+function SlShownLocks { SlGet "[...document.querySelectorAll('.tile:not([hidden])')].filter(t => { const k = t.querySelector('.lk'); if (!k) return false; const cs = getComputedStyle(k); return cs.display !== 'none' && cs.visibility === 'visible' && parseFloat(cs.opacity) > 0; }).length" }
+# The number of tiles on the board (not hidden).
+function SlBoardTiles { SlGet "document.querySelectorAll('.tile:not([hidden])').length" }
 # Focuses a tile and presses one arrow key on it: the keydown the board reads. $mods is the CDP modifier bits (Shift is 8).
 function SlKey($id, $key, $vk, $mods = 0) {
   [void](SlJs "(() => { els.get($id).focus({ preventScroll: true }); return true; })()")
@@ -565,9 +711,9 @@ try {
 
   SlCase (SlSceneJson $pinsCQ)
   $a0 = SlBox 1001; $c0 = SlBox 1006
-  SlDrag (SlAt (SlBox 1006) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.35)
+  SlDrag (SlAt (SlBox 1006) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.5)
   $a2 = SlBox 1001; $c2 = SlBox 1006
-  Check 'control: a drop on the upper zone of a taken cell still swaps' ((SlSame $a2 $c0) -and (SlSame $c2 $a0)) "claude $(SlFmt $a2), chrome $(SlFmt $c2)"
+  Check 'control: a drop on the centre of a taken cell, inside the Swap circle, still swaps' ((SlSame $a2 $c0) -and (SlSame $c2 $a0)) "claude $(SlFmt $a2), chrome $(SlFmt $c2)"
 
   # Stack: Bring to Front swaps the front with the window behind; Take Out sends the window to the bay.
   $pinsStack = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"behind":[{"app":"claude","match":"Draft release"}]}'
@@ -614,9 +760,11 @@ try {
   SlRelease (SlAt (SlBox 1001) 0.5 0.5)
   SlViewport 1440 900
 
-  # Lock: the lock control locks the tile, and Save keeps the lock in the scene.
+  # Lock: the lock control locks the tile, and Save keeps the lock in the scene. The padlock shows on a selected tile
+  # (ruling 2026-11-16), so the tile is selected first; a press on a hidden padlock would land on the tile instead.
   SlCase (SlSceneJson $pinsCQ)
-  $lockAt = SlGet "(() => { const e = els.get(1001); const k = e.querySelector('.lk'); const r = (k || e).getBoundingClientRect(); return k ? [r.left + r.width / 2, r.top + r.height / 2] : [r.right - 8, r.top + 8]; })()"
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $lockAt =SlGet "(() => { const e = els.get(1001); const k = e.querySelector('.lk'); const r = (k || e).getBoundingClientRect(); return k ? [r.left + r.width / 2, r.top + r.height / 2] : [r.right - 8, r.top + 8]; })()"
   SlClick @([double]$lockAt[0], [double]$lockAt[1])
   [void](SlJs "(() => { const b = document.getElementById('save'); if (b && !b.disabled) { b.click(); return true; } return false; })()")
   SlSettle
@@ -650,8 +798,8 @@ try {
   $s13 = SlGet 'work[selId]'; $g13 = SlPin $s13 'Quarterly'
   Check 'lock: Fewer Columns never cuts off a locked tile (it keeps its cell)' ([bool]$g13 -and $g13.lock -eq $true -and (SlCells $g13) -eq '4') "locked pin: $(SlShort $g13); columns: $($s13.grids.wide.c)"
 
-  # Resize: a span drag by the corner grip snaps to whole cells; a covered window moves to a free cell; no free cell
-  # sends it to the bay; a resize stops at a locked tile.
+  # Resize: a span drag by the corner grip snaps to whole cells; a covered window goes to the bay, whether or not a cell is
+  # free (ruling 2026-11-16); a resize stops at a locked tile.
   SlCase (SlSceneJson $pinsCQ)
   $b5 = SlBox 1001; SlDrag (SlAt $b5 (($b5.w - 6) / $b5.w) (($b5.h - 6) / $b5.h)) (SlAt $b5 ((($b5.w - 6) + 1.4 * $b5.w) / $b5.w) (($b5.h - 6) / $b5.h))
   $s5 = SlGet 'work[selId]'; $p5 = SlPin $s5 'Refactor'
@@ -660,7 +808,7 @@ try {
   SlCase (SlSceneJson $pinsCQ)
   $b6 = SlBox 1001; SlDrag (SlAt $b6 (($b6.w - 6) / $b6.w) (($b6.h - 6) / $b6.h)) (SlAt $b6 ((($b6.w - 6) + 1.4 * $b6.w) / $b6.w) (($b6.h - 6) / $b6.h))
   $s6 = SlGet 'work[selId]'; $q6 = SlPin $s6 'Quarterly'; $p6 = SlPin $s6 'Refactor'
-  Check 'resize: a covered window moves to the first free cell' ([bool]$q6 -and (SlCells $q6) -eq '2' -and (SlCells $p6) -eq '0,1') "chrome pin: $(SlShort $q6); claude pin: $(SlShort $p6)"
+  Check 'resize: a covered window goes to Windows That Stay Put, not to a free cell (ruling 2026-11-16)' ([bool](-not $q6 -and (SlHasBay $s6 'Quarterly') -and (SlCells $p6) -eq '0,1')) "chrome pin: $(SlShort $q6); bay: $(SlShort $s6.bay); claude pin: $(SlShort $p6)"
 
   SlCase (SlSceneJson $pinsFull)
   $b7 = SlBox 1001; SlDrag (SlAt $b7 (($b7.w - 6) / $b7.w) (($b7.h - 6) / $b7.h)) (SlAt $b7 ((($b7.w - 6) + 1.4 * $b7.w) / $b7.w) (($b7.h - 6) / $b7.h))
@@ -674,32 +822,32 @@ try {
   $s8 = SlGet 'work[selId]'; $l8 = SlPin $s8 'Quarterly'; $c8 = SlPin $s8 'Refactor'
   Check 'resize: a resize stops at a locked tile, which keeps its cell' ([bool]$l8 -and $l8.lock -eq $true -and (SlCells $l8) -eq '1') "locked pin: $(SlShort $l8)"
 
-  # Growth by Shift+arrow and by the Width and Height steppers: a covered pinned window moves to the first free cell (rows
-  # top to bottom), with the windows stacked behind it. With no free cell it goes to Windows That Stay Put, with its stack.
+  # Growth by Shift+arrow and by the Width and Height steppers: a covered pinned window goes to Windows That Stay Put, with
+  # the windows stacked behind it, whether or not a cell is free (ruling 2026-11-16).
   # Each case's first check is the growth itself, so a key or stepper that never reaches the page cannot pass.
   SlCase (SlSceneJson $pinsGrowFree)
   SlClick (SlAt (SlBox 1001) 0.5 0.5)
   SlKey 1001 'ArrowRight' 39 8
   $g1 = SlGet 'work[selId]'; $g1r = SlPin $g1 'Refactor'; $g1q = SlPin $g1 'Quarterly'
   Check 'control: Shift+arrow grows a pinned window to a 2-column span' ([bool]$g1r -and (SlCells $g1r) -eq '0,1') "claude pin: $(SlShort $g1r)"
-  Check 'resize: Shift+arrow growth moves the covered pinned window to the first free cell' ([bool]$g1q -and (SlCells $g1q) -eq '2') "chrome pin: $(SlShort $g1q)"
-  Check 'resize: Shift+arrow growth moves the covered window''s stack with it' ([bool]$g1q -and (SlHasBehind $g1q 'Draft release')) "chrome pin: $(SlShort $g1q)"
+  Check 'resize: Shift+arrow growth sends the covered pinned window to Windows That Stay Put' ([bool](-not $g1q -and (SlHasBay $g1 'Quarterly'))) "chrome pin: $(SlShort $g1q); bay: $(SlShort $g1.bay)"
+  Check 'resize: Shift+arrow growth sends the covered window''s stack to Windows That Stay Put' ([bool](SlHasBay $g1 'Draft release')) "bay: $(SlShort $g1.bay)"
 
   SlCase (SlSceneJson $pinsGrowFree)
   SlClick (SlAt (SlBox 1001) 0.5 0.5)
   $w2 = SlStep 'span' 'cs' '1'
   $w2s = SlGet 'work[selId]'; $w2r = SlPin $w2s 'Refactor'; $w2q = SlPin $w2s 'Quarterly'
   Check 'control: the Width stepper grows a pinned window to a 2-column span' ($w2 -eq 'pressed' -and [bool]$w2r -and (SlCells $w2r) -eq '0,1') "stepper: $w2; claude pin: $(SlShort $w2r)"
-  Check 'resize: the Width stepper moves the covered pinned window to the first free cell' ([bool]$w2q -and (SlCells $w2q) -eq '2') "stepper: $w2; chrome pin: $(SlShort $w2q)"
-  Check 'resize: the Width stepper moves the covered window''s stack with it' ([bool]$w2q -and (SlHasBehind $w2q 'Draft release')) "chrome pin: $(SlShort $w2q)"
+  Check 'resize: the Width stepper sends the covered pinned window to Windows That Stay Put' ([bool](-not $w2q -and (SlHasBay $w2s 'Quarterly'))) "stepper: $w2; bay: $(SlShort $w2s.bay)"
+  Check 'resize: the Width stepper sends the covered window''s stack to Windows That Stay Put' ([bool](SlHasBay $w2s 'Draft release')) "bay: $(SlShort $w2s.bay)"
 
   SlCase (SlSceneJson $pinsGrowFreeDown)
   SlClick (SlAt (SlBox 1001) 0.5 0.5)
   $h2 = SlStep 'span' 'rs' '1'
   $h2s = SlGet 'work[selId]'; $h2r = SlPin $h2s 'Refactor'; $h2q = SlPin $h2s 'Quarterly'
   Check 'control: the Height stepper grows a pinned window to a 2-row span' ($h2 -eq 'pressed' -and [bool]$h2r -and (SlCells $h2r) -eq '0,5') "stepper: $h2; claude pin: $(SlShort $h2r)"
-  Check 'resize: the Height stepper moves the covered pinned window to the first free cell' ([bool]$h2q -and (SlCells $h2q) -eq '1') "stepper: $h2; chrome pin: $(SlShort $h2q)"
-  Check 'resize: the Height stepper moves the covered window''s stack with it' ([bool]$h2q -and (SlHasBehind $h2q 'Draft release')) "chrome pin: $(SlShort $h2q)"
+  Check 'resize: the Height stepper sends the covered pinned window to Windows That Stay Put' ([bool](-not $h2q -and (SlHasBay $h2s 'Quarterly'))) "stepper: $h2; bay: $(SlShort $h2s.bay)"
+  Check 'resize: the Height stepper sends the covered window''s stack to Windows That Stay Put' ([bool](SlHasBay $h2s 'Draft release')) "bay: $(SlShort $h2s.bay)"
 
   SlCase (SlSceneJson $pinsFullStack)
   SlClick (SlAt (SlBox 1001) 0.5 0.5)
@@ -777,7 +925,7 @@ try {
 
   SlCase (SlSceneJson $pinsSpan)
   $blk4 = SlBox 1006; $term4 = SlBox 1008
-  SlDrag (SlAt $term4 0.5 0.5) (SlAt $blk4 0.5 0.35)
+  SlDrag (SlAt $term4 0.5 0.5) (SlAt $blk4 0.5 0.5)
   $s10 = SlGet 'work[selId]'; $tm10 = SlPin $s10 'tiler'; $ch10 = SlPin $s10 'Quarterly'
   Check 'span: a swap on a spanned block gives the dropped window the whole 2x2 block' ([bool]$tm10 -and (SlCells $tm10) -eq '0,1,5,6') "terminal pin: $(SlShort $tm10)"
   Check 'span: a swap on a spanned block moves the spanned window to the dropped window''s old 1x1 cell' ([bool]$ch10 -and (SlCells $ch10) -eq '3') "chrome pin: $(SlShort $ch10)"
@@ -810,7 +958,7 @@ try {
   Check 'split: a Put Behind drop puts the spanned window behind the occupant' ([bool]$t14 -and (SlHasBehind $t14 'Quarterly')) "occupant pin: $(SlShort $t14)"
 
   SlCase (SlSceneJson $pinsSpanOver)
-  SlDrag (SlAt (SlBox 1006) 0.25 0.25) (SlAt (SlBox 1008) 0.5 0.35)
+  SlDrag (SlAt (SlBox 1006) 0.25 0.25) (SlAt (SlBox 1008) 0.5 0.5)
   $s15 = SlGet 'work[selId]'; $t15 = SlPin $s15 'tiler'
   Check 'nothing dropped: a swap onto a taken cell keeps the occupant''s pin' ([bool]$t15) "pins: $(SlShort $s15.pins)"
   Check 'nothing dropped: a swap onto a taken cell keeps the occupant''s stack' ([bool]$t15 -and (SlHasBehind $t15 'Draft release')) "occupant pin: $(SlShort $t15)"
@@ -998,7 +1146,7 @@ try {
   SlClick (SlAt (SlBox 1001) 0.5 0.5)
   [void](SlHandleDrag 'ea' 1 0)
   $ew = SlGet 'work[selId]'; $ewr = SlPin $ew 'Refactor'; $ewq = SlPin $ew 'Quarterly'
-  Check 'edge: the east handle moves a covered pinned window to the first free cell' ([bool]$ewr -and (SlCells $ewr) -eq '0,1' -and [bool]$ewq -and (SlCells $ewq) -eq '2') "claude: $(SlShort $ewr); chrome: $(SlShort $ewq)"
+  Check 'edge: the east handle sends a covered pinned window to Windows That Stay Put' ([bool]$ewr -and (SlCells $ewr) -eq '0,1' -and -not $ewq -and (SlHasBay $ew 'Quarterly')) "claude: $(SlShort $ewr); chrome: $(SlShort $ewq); bay: $(SlShort $ew.bay)"
   # A lock stops the east handle, as it stops the corner grip. The first check is the handle; the two after it are guards.
   SlCase (SlSceneJson $pinsResizeLock)
   SlClick (SlAt (SlBox 1001) 0.5 0.5)
@@ -1125,7 +1273,7 @@ try {
   SlKey 1006 'ArrowLeft' 37 10
   $kl = SlGet 'work[selId]'; $klq = SlPin $kl 'Quarterly'; $klr = SlPin $kl 'Refactor'
   Check 'keys: Ctrl+Shift+ArrowLeft grows the left edge of a pinned tile to 2 columns' ([bool]$klq -and (SlCells $klq) -eq '0,1') "chrome pin: $(SlShort $klq)"
-  Check 'keys: the covered pinned window moves to the first free cell, with its stack' ([bool]$klr -and (SlCells $klr) -eq '2' -and (SlHasBehind $klr 'Draft release')) "claude pin: $(SlShort $klr)"
+  Check 'keys: the covered pinned window goes to Windows That Stay Put, with its stack' ([bool](-not $klr -and (SlHasBay $kl 'Refactor') -and (SlHasBay $kl 'Draft release'))) "claude pin: $(SlShort $klr); bay: $(SlShort $kl.bay)"
   SlCase (SlSceneJson $pinsKeyUp)
   SlClick (SlAt (SlBox 1001) 0.5 0.5)
   SlKey 1001 'ArrowUp' 38 10
@@ -1458,6 +1606,8 @@ try {
   $fxDupDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
   $fxDupDoc.windows = @($fxDupDoc.windows) + [pscustomobject]@{ id = 1017; app = 'chrome'; title = 'Quarterly roadmap - Example'; x = 300; y = 200; w = 1400; h = 1000 }
   [IO.File]::WriteAllText($fxDup, (ConvertTo-Json -Depth 10 -Compress $fxDupDoc), $utf8)
+  # The duplicate-title server writes its config into this folder. Make it first, so its first save does not depend on the server.
+  New-Item -ItemType Directory -Force (Join-Path $run 'home-dup') | Out-Null
   $dupPair = SlStartServer $fxDup (Join-Path $run 'home-dup'); $srvDup = $dupPair[0]; $urlMain = $script:url; $script:url = $dupPair[1]
   SlCase (SlSceneJson '[]' '["*"]' '' (SlHeldFill '[{"id":1006,"app":"chrome","title":"Quarterly roadmap - Example","mon":"wide","slots":[2]},{"id":1017,"app":"chrome","title":"Quarterly roadmap - Example","mon":"wide","slots":[3]}]'))
   $dScope = SlList 'work[selId].fill.held'
@@ -1470,6 +1620,394 @@ try {
   [void](Invoke-WebRequest -UseBasicParsing "$($script:url)quit" -Method Post -Body 'quit'); [void]$srvDup.WaitForExit(5000)
   $script:url = $urlMain
   SlViewport 1440 900
+
+  # ---------- Ruling 2026-11-16 (decisions/stack-and-lock.md, stack tweaks): circle, padlock, locked drag, covered windows, Merge ----------
+  # Each claim is red on the head where it is new; a control or guard is green on the head beside it, and says so in its name.
+  # Scenes. Refactor (claude, 1001) and Quarterly (chrome, 1006) are the pair; Pull request (chrome, 1005) is the locked window.
+  $pinsCircleSpan = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[0,1]}' '{"app":"claude","match":"Refactor","mon":"wide","slots":[3]}'
+  $pinsTwoCovered = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0,5]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}' '{"app":"claude","match":"Pin parser","mon":"wide","slots":[6]}' '{"app":"chrome","match":"Pull request","mon":"wide","slots":[2],"lock":true}'
+
+  # 1. Swap circle (item 1). A drop on a taken block swaps inside the circle (half its short side, 28 to 64 px, centred on the
+  #    block) and puts behind anywhere else on the block. Probes sit well clear of the circle's edge.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  $c1 = SlCircleDrop 1006 0 1 1 0 0
+  Check 'circle, 1x1 at 1440: the Swap circle is drawn at the cell''s centre, half its short side' (SlCircleFits $c1.circle $c1.block) "circle: $(SlShort $c1.circle); cell: $(SlShort $c1.block)"
+  Check 'circle, 1x1 at 1440, scope: the drop label is drawn over the taken cell while the pointer is held' ($c1.shown -eq $true) "label shown: $($c1.shown)"
+  $o1 = SlZoneOutcome 'Quarterly' 'Refactor'
+  Check 'circle, 1x1 at 1440: a drop at the circle''s centre swaps (control)' ($o1 -eq 'swap:0/1') "outcome: $o1"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  $c2 = SlCircleDrop 1006 0 1 1 0 (-0.35)
+  $o2 = SlZoneOutcome 'Quarterly' 'Refactor'
+  Check 'circle, 1x1 at 1440: a drop above the circle, still on the cell, puts behind' ($o2 -eq 'behind') "outcome: $o2"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  $c3 = SlCircleDrop 1006 0 1 1 (-0.22) (-0.22)
+  $o3 = SlZoneOutcome 'Quarterly' 'Refactor'
+  Check 'circle, 1x1 at 1440: a drop in the bounding square''s corner, outside the circle, puts behind (the hit test is the distance)' ($o3 -eq 'behind') "outcome: $o3"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  $c4 = SlCircleDrop 1006 0 1 1 0 0.35
+  $o4 = SlZoneOutcome 'Quarterly' 'Refactor'
+  Check 'circle, 1x1 at 1440: a drop on the lower part of the cell puts behind (control)' ($o4 -eq 'behind') "outcome: $o4"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
+  $cs1 = SlCircleDrop 1001 0 2 1 0 0
+  Check 'circle, 2x1 span at 1440: the Swap circle is centred on the whole span, not on one cell' (SlCircleFits $cs1.circle $cs1.block) "circle: $(SlShort $cs1.circle); span: $(SlShort $cs1.block)"
+  $os1 = SlZoneOutcome 'Refactor' 'Quarterly'
+  Check 'circle, 2x1 span at 1440: a drop at the circle''s centre swaps, and the span keeps its place (control)' ($os1 -eq 'swap:0,1/3') "outcome: $os1"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
+  $cs2 = SlCircleDrop 1001 0 2 1 (-0.25) 0
+  $os2 = SlZoneOutcome 'Refactor' 'Quarterly'
+  Check 'circle, 2x1 span at 1440: a drop left of the circle, inside the span, puts behind' ($os2 -eq 'behind') "outcome: $os2"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
+  $cs3 = SlCircleDrop 1001 0 2 1 0 (-0.35)
+  $os3 = SlZoneOutcome 'Refactor' 'Quarterly'
+  Check 'circle, 2x1 span at 1440: a drop above the circle, inside the span, puts behind' ($os3 -eq 'behind') "outcome: $os3"
+
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCQ)
+  $c5 = SlCircleDrop 1006 0 1 1 0 0
+  Check 'circle, 1x1 at 1024: the Swap circle is drawn at the cell''s centre, 28 px at least (the 28 px floor)' (SlCircleFits $c5.circle $c5.block) "circle: $(SlShort $c5.circle); cell: $(SlShort $c5.block)"
+  $o5 = SlZoneOutcome 'Quarterly' 'Refactor'
+  Check 'circle, 1x1 at 1024: a drop at the circle''s centre swaps (control)' ($o5 -eq 'swap:0/1') "outcome: $o5"
+
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCQ)
+  $c6 = SlCircleDrop 1006 0 1 1 0 (-0.35)
+  $o6 = SlZoneOutcome 'Quarterly' 'Refactor'
+  Check 'circle, 1x1 at 1024: a drop above the circle, still on the cell, puts behind' ($o6 -eq 'behind') "outcome: $o6"
+
+  # 2. Padlock (item 2). Hidden at rest on an unlocked tile; shown on hover, focus and selection; always shown on a locked tile.
+  #    A hidden padlock takes no click: the page hits the tile, not the padlock, at its centre.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ); SlPark
+  $pkScope = SlGet "({ hov: els.get(1001).matches(':hover'), sel: els.get(1001).classList.contains('sel'), foc: els.get(1001).matches(':focus-within') })"
+  Check 'padlock, scope: at rest Refactor is not hovered, selected or focused' ([bool]($pkScope -and -not $pkScope.hov -and -not $pkScope.sel -and -not $pkScope.foc)) "scope: $(SlShort $pkScope)"
+  $pkRest = SlLkShown 1001
+  Check 'padlock: an unlocked tile at rest hides its padlock' ($pkRest -eq $false) "padlock shown at rest: $pkRest"
+  $pkHit = SlLkHit 1001
+  Check 'padlock: a hidden padlock takes no hit, so the page does not hit it at its centre' ($pkHit -eq $false) "padlock is hit at its centre: $pkHit"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ); SlPark
+  $pkC = SlLkCentre 1001
+  if ($pkC) { SlClick @([double]$pkC[0], [double]$pkC[1]) }
+  $pkPin = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'padlock: a press where a hidden padlock sits does not lock the tile' ([bool]($pkPin -and $pkPin.lock -ne $true)) "pin after the press: $(SlShort $pkPin)"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ); SlPark
+  SlMouse 'mouseMoved' ([double](SlAt (SlBox 1001) 0.5 0.5)[0]) ([double](SlAt (SlBox 1001) 0.5 0.5)[1]) 0; SlFrame
+  $pkHov = SlLkShown 1001
+  Check 'padlock, control: hovering an unlocked tile shows its padlock' ($pkHov -eq $true) "shown on hover: $pkHov"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ); SlPark
+  [void](SlJs "(() => { els.get(1001).focus({ preventScroll: true }); return true; })()"); SlFrame
+  $pkFoc = SlLkShown 1001
+  Check 'padlock, control: keyboard focus inside an unlocked tile shows its padlock' ($pkFoc -eq $true) "shown on focus: $pkFoc"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5); SlPark
+  $pkSelScope = SlGet "els.get(1001).classList.contains('sel')"
+  $pkSel = SlLkShown 1001
+  Check 'padlock, control: a selected unlocked tile, away from the pointer, shows its padlock' ([bool]$pkSelScope -and $pkSel -eq $true) "selected: $pkSelScope; shown: $pkSel"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQLock); SlPark
+  $pkLk = SlLkShown 1001
+  Check 'padlock, control: a locked tile at rest always shows its padlock' ($pkLk -eq $true) "shown at rest: $pkLk"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsFull); SlPark
+  $pkTiles = SlBoardTiles
+  Check 'padlock, full board, scope: ten windows are on the board' ($pkTiles -eq 10) "tiles: $pkTiles"
+  $pkCount = SlShownLocks
+  Check 'padlock, full board: no unlocked tile shows a padlock at rest' ($pkCount -eq 0) "padlocks shown at rest: $pkCount"
+
+  # 3. A locked tile moves after an in-page confirm (item 3). Releasing it opens the confirm; nothing moves before "Move It".
+  #    Cancel leaves it where it was, still locked. Move It moves it to the cell it was released on, and it stays locked.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQLock)
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlSlotAt 3)
+  $ldOpen = SlJs "!!document.querySelector('[role=alertdialog]')"
+  Check 'locked drag: releasing a locked tile on an empty cell opens an in-page confirm (role alertdialog)' ([bool]$ldOpen) "status: $(SlJs "document.getElementById('msg').textContent")"
+  $ldPin = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'locked drag, guard: releasing a locked tile does not move it, and it stays locked, before the confirm is answered' ([bool]($ldPin -and (SlCells $ldPin) -eq '0' -and $ldPin.lock -eq $true)) "pin: $(SlShort $ldPin)"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQLock)
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlSlotAt 3)
+  $ldCancel = SlBtnPress '[role=alertdialog]' 'Cancel'
+  $ldGone = SlJs "!document.querySelector('[role=alertdialog]')"
+  $ldCP = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'locked drag, Cancel: the confirm closes, and the tile stays in its cell, still locked' ([bool]($ldCancel -and $ldGone -and $ldCP -and (SlCells $ldCP) -eq '0' -and $ldCP.lock -eq $true)) "Cancel pressed: $ldCancel; confirm closed: $ldGone; pin: $(SlShort $ldCP)"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQLock)
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlSlotAt 3)
+  $mvPress = SlBtnPress '[role=alertdialog]' 'Move It'
+  $mvPin = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'locked drag, Move It: the locked tile moves to the cell it was released on, and stays locked' ([bool]($mvPress -and $mvPin -and (SlCells $mvPin) -eq '3' -and $mvPin.lock -eq $true)) "Move It pressed: $mvPress; pin: $(SlShort $mvPin)"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQLock '["*"]')
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlSlotAt 9)
+  [void](SlBtnPress '[role=alertdialog]' 'Move It')
+  $fzPin = SlPin (SlGet 'work[selId]') 'Refactor'
+  $fzFill = SlList "prevs[selId].placed.filter(p => p.pin < 0 && !p.behind).map(p => p.id)"
+  $fzOn = SlList "prevs[selId].placed.filter(p => p.pin < 0 && p.slots.includes(10)).map(p => p.id)"
+  Check 'locked drag, Move It with a fill: the fill places windows, and none takes the locked tile''s new cell' ([bool]($fzPin -and (SlCells $fzPin) -eq '9' -and @($fzFill).Count -ge 1 -and @($fzOn).Count -eq 0)) "pin: $(SlShort $fzPin); fill-placed: $(SlShort $fzFill); on cell 9: $(SlShort $fzOn)"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlSlotAt 3)
+  $ctlDlg = SlJs "!!document.querySelector('[role=alertdialog]')"
+  $ctlPin = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'locked drag, control: an unlocked tile dragged to an empty cell moves, with no confirm' ([bool]($ctlPin -and (SlCells $ctlPin) -eq '3' -and -not $ctlDlg)) "pin: $(SlShort $ctlPin); confirm open: $ctlDlg"
+
+  # 4. A resize that covers two windows sends both to Windows That Stay Put, reason "Covered by a resize", with a Drop Note
+  #    and Undo. It still stops at a locked tile: Pull request, in column 2, is not covered and keeps its cell and lock.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTwoCovered)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  Check 'covered, scope: the east handle is drawn on Refactor''s 1x2 tile' ([bool](SlHandle 'ea')) 'no ea handle'
+  [void](SlJs "(window.bfPre = $SceneNorm, true)")
+  [void](SlHandleDropNoSettle 'ea' 1 0 3)
+  $cvNote = SlNoteText
+  $cv = SlGet 'work[selId]'; $cvR = SlPin $cv 'Refactor'; $cvL = SlPin $cv 'Pull request'
+  Check 'covered, control: the span stops at the locked tile, so Refactor takes cells 0, 1, 5 and 6' ([bool]($cvR -and (SlCells $cvR) -eq '0,1,5,6')) "claude pin: $(SlShort $cvR)"
+  Check 'covered, guard: the locked tile keeps its cell and its lock' ([bool]($cvL -and $cvL.lock -eq $true -and (SlCells $cvL) -eq '2')) "locked pin: $(SlShort $cvL)"
+  $cvBay = SlBayIds
+  Check 'covered: Quarterly, which the span covers, goes to Windows That Stay Put' ($cvBay -contains 1006) "bay ids: $($cvBay -join ',')"
+  Check 'covered: Pin parser, which the span covers, goes to Windows That Stay Put' ($cvBay -contains 1002) "bay ids: $($cvBay -join ',')"
+  $cvPlaced = SlList "prevs[selId].placed.map(p => p.id)"
+  Check 'covered: neither covered window is placed on a free cell' ((@($cvPlaced) -notcontains 1006) -and (@($cvPlaced) -notcontains 1002)) "placed ids: $(@($cvPlaced) -join ',')"
+  $cvChips = SlBayChips
+  $cvQ = @($cvChips | ? { $_.id -eq 1006 })[0]; $cvP = @($cvChips | ? { $_.id -eq 1002 })[0]
+  Check 'covered: both chips read "Covered by a resize"' ([bool]($cvQ -and $cvP -and "$($cvQ.label)" -like '*Covered by a resize*' -and "$($cvP.label)" -like '*Covered by a resize*')) "chips: $(SlShort $cvChips)"
+  Check 'covered: a Drop Note says the windows went to Windows That Stay Put' ("$cvNote" -like '*went to Windows That Stay Put*') "note: $cvNote"
+  Check 'covered: the Drop Note names both covered windows (Chrome and Claude)' ("$cvNote" -like '*Chrome*' -and "$cvNote" -like '*Claude*') "note: $cvNote"
+  SlSettle
+  $cvUndo = SlBtnPress '.dnote' 'Undo'
+  SlSettle
+  $cvBack = SlJs "($SceneNorm) === window.bfPre"
+  Check 'covered: a real press on the Drop Note''s Undo restores the scene from before the resize' ([bool]($cvUndo -and $cvBack)) "Undo pressed: $cvUndo; scene restored: $cvBack"
+
+  # The same covering on a full board (P8): no cell is free, so the reason must still be the covering, not "No room".
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsFull)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  [void](SlHandleDrag 'ea' 1 0)
+  $fbBay = SlBayIds
+  Check 'covered, full board, scope: Pin parser, which the east handle covers, is in Windows That Stay Put' ($fbBay -contains 1002) "bay ids: $($fbBay -join ',')"
+  $fbChips = SlBayChips
+  $fbP = @($fbChips | ? { $_.id -eq 1002 })[0]
+  Check 'covered, full board: the Pin parser chip reads "Covered by a resize", not "No room"' ([bool]($fbP -and "$($fbP.label)" -like '*Covered by a resize*')) "chip: $(SlShort $fbP)"
+
+  # 5. Ctrl+click picks cells, then Merge (item 5). The bar is .mbar, with Merge, Cancel and Fill to Rectangle.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  SlCtrlClick (SlAt (SlBox 1006) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 2)
+  $m1State = SlBtnState '.mbar' 'Merge'
+  Check 'merge, a window and an empty cell: Ctrl+click draws the Merge bar, with Merge enabled' ($m1State -eq 'enabled') "Merge: $m1State"
+  $m1Press = SlBtnPress '.mbar' 'Merge'
+  $m1Pin = SlPin (SlGet 'work[selId]') 'Quarterly'
+  Check 'merge, a window and an empty cell: Merge makes the window and the empty cell one 2x1 span' ([bool]($m1Press -and $m1Pin -and (SlCells $m1Pin) -eq '1,2')) "Merge pressed: $m1Press; pin: $(SlShort $m1Pin)"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  SlCtrlClick (SlAt (SlBox 1006) 0.5 0.5)
+  SlCtrlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $m2State = SlBtnState '.mbar' 'Merge'
+  Check 'merge, two windows: the bar shows Merge enabled for a rectangle of two picks' ($m2State -eq 'enabled') "Merge: $m2State"
+  $m2Press = SlBtnPress '.mbar' 'Merge'
+  $m2s = SlGet 'work[selId]'; $m2Q = SlPin $m2s 'Quarterly'
+  Check 'merge, two windows: the first window picked (Quarterly) keeps the span, on cells 0 and 1' ([bool]($m2Press -and $m2Q -and (SlCells $m2Q) -eq '0,1')) "Merge pressed: $m2Press; pin: $(SlShort $m2Q)"
+  Check 'merge, two windows: the other picked window (Refactor) goes to Windows That Stay Put' ([bool]($m2Press -and (SlHasBay $m2s 'Refactor'))) "Merge pressed: $m2Press; bay: $(SlShort $m2s.bay)"
+  # Ruling 2026-11-16: a window a Merge sends to the list reads "Moved by a merge", not the resize's "Covered by a resize".
+  $m2Chips = SlBayChips; $m2Chip = @($m2Chips | ? { $_.id -eq 1001 })[0]
+  Check 'merge, two windows: the window Merge sends to Windows That Stay Put reads "Moved by a merge", not "Covered by a resize"' ([bool]($m2Press -and $m2Chip -and "$($m2Chip.label)" -like '*Moved by a merge*' -and "$($m2Chip.label)" -notlike '*Covered by a resize*')) "chip: $(SlShort $m2Chip)"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  SlCtrlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 2)
+  $m3State = SlBtnState '.mbar' 'Merge'
+  Check 'merge, not a rectangle: Merge is disabled' ($m3State -eq 'disabled') "Merge: $m3State"
+  $m3Bar = SlJs "(() => { const b = document.querySelector('.mbar'); return b ? b.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'merge, not a rectangle: the bar says the picks are not a rectangle' ("$m3Bar" -match '(?i)rectangle') "bar: $m3Bar"
+  $m3Fill = SlBtnState '.mbar' 'Fill to Rectangle'
+  Check 'merge, not a rectangle: Fill to Rectangle is offered' ($m3Fill -eq 'enabled') "Fill to Rectangle: $m3Fill"
+  [void](SlBtnPress '.mbar' 'Fill to Rectangle')
+  $m3After = SlBtnState '.mbar' 'Merge'
+  Check 'merge, not a rectangle: Fill to Rectangle adds the missing cell, and Merge is enabled' ($m3After -eq 'enabled') "Merge after Fill to Rectangle: $m3After"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  SlCtrlClick (SlSlotAt 3)
+  SlCtrlClick (SlSlotAt 4)
+  $m4State = SlBtnState '.mbar' 'Merge'
+  Check 'merge, empty cells only: Merge is disabled' ($m4State -eq 'disabled') "Merge: $m4State"
+  $m4Bar = SlJs "(() => { const b = document.querySelector('.mbar'); return b ? b.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'merge, empty cells only: the bar says a span belongs to a window' ("$m4Bar" -match '(?i)belongs to a window') "bar: $m4Bar"
+  $m4Before = SlJs "JSON.stringify([work[selId].pins, work[selId].zones || []])"
+  $m4Press = SlBtnPress '.mbar' 'Merge'
+  $m4After = SlJs "JSON.stringify([work[selId].pins, work[selId].zones || []])"
+  Check 'merge, empty cells only, guard: a press on Merge makes no span and no pin' ((-not $m4Press) -and $m4Before -eq $m4After) "Merge pressed: $m4Press; scene changed: $($m4Before -ne $m4After)"
+  # ---------- Review findings on 1ff9835 (ruling 2026-11-16: lock correction 10:20, coordinator picks 10:53). Each claim is red on
+  # the head it names; a control or guard beside it is green there and says so in its name. ----------
+  $pinsLockedFront = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"lock":true,"behind":[{"app":"claude","match":"Pin parser"}]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}'
+  $pinsLockedRef = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"lock":true}'
+  $pinsClosedLock = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[0]}' '{"app":"closedapp","match":"","mon":"wide","slots":[1],"lock":true}'
+  $pinsClosedFree = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"closedapp","match":"","mon":"wide","slots":[1]}'
+  $pinsClosedMerge = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[0]}' '{"app":"closedapp","match":"","mon":"wide","slots":[1]}'
+  $pinsTwoClaude = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"claude","match":"Pin parser","mon":"wide","slots":[1]}'
+  $pinsTwoClaudeLock = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"lock":true}' '{"app":"claude","match":"Pin parser","mon":"wide","slots":[1]}'
+
+  # F1. A locked front dragged to Windows That Stay Put loses its lock (ruling: "dragged to Windows That Stay Put, loses its lock").
+  #     The window behind it becomes the front, and takes Refactor's pin: that pin must not be locked.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsLockedFront); SlPark
+  $lfPre = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'locked front, scope: Refactor is locked, with Pin parser stacked behind it' ([bool]($lfPre -and $lfPre.lock -eq $true -and (SlHasBehind $lfPre 'Pin parser'))) "pin: $(SlShort $lfPre)"
+  $lfBayPt = SlJs "(() => { const r = document.getElementById('bay').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) $lfBayPt
+  $lfAsk = SlJs "(() => { const d = document.querySelector('[role=alertdialog]'); return d ? d.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'locked front, scope: dropping the locked tile on Windows That Stay Put opens its warning' ([bool]("$lfAsk" -like '*Windows That Stay Put*')) "warning: $lfAsk"
+  $lfMove = SlBtnPress '[role=alertdialog]' 'Move It'
+  $lfScene = SlGet 'work[selId]'
+  Check 'locked front, control: Refactor is in Windows That Stay Put once Move It is pressed' ([bool]($lfMove -and (SlHasBay $lfScene 'Refactor'))) "Move It pressed: $lfMove; bay: $(SlShort $lfScene.bay)"
+  $lfNext = SlPin $lfScene 'Pin parser'
+  Check 'locked front, red: the window that takes the locked pin (Pin parser) is not locked' ([bool]($lfNext -and $lfNext.lock -ne $true)) "Pin parser pin: $(SlShort $lfNext)"
+
+  # F2. Merge over a closed locked pin is refused, as a resize stops at a lock. The pin and its lock survive.
+  #     Control: a locked window in the pick disables Merge (already so on head).
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsLockedRef)
+  SlCtrlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 1)
+  $mcCtl = SlBtnState '.mbar' 'Merge'
+  Check 'merge, locked window in the pick, control: Merge is disabled' ($mcCtl -eq 'disabled') "Merge: $mcCtl"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsClosedLock)
+  SlCtrlClick (SlAt (SlBox 1006) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 1)
+  $mcMiss = SlGet "(prevs[selId].missing || []).some(m => m.app === 'closedapp')"
+  $mcPin0 = SlGet "work[selId].pins.find(p => p.app === 'closedapp' && p.lock === true) || null"
+  Check 'merge, closed locked pin, scope: its window is not open, and the locked pin is in the scene on cell 1' ($mcMiss -eq $true -and [bool]$mcPin0 -and (SlCells $mcPin0) -eq '1') "missing: $mcMiss; pin: $(SlShort $mcPin0)"
+  $mcPress = SlBtnPress '.mbar' 'Merge'
+  $mcScene = SlGet 'work[selId]'
+  $mcPin = @($mcScene.pins | ? { $_.app -eq 'closedapp' })[0]
+  $mcQ = SlPin $mcScene 'Quarterly'
+  Check 'merge, closed locked pin, red: the pin keeps its lock and its cell after a Merge over it' ([bool]($mcPin -and $mcPin.lock -eq $true -and (SlCells $mcPin) -eq '1')) "Merge pressed: $mcPress; pin: $(SlShort $mcPin)"
+  Check 'merge, closed locked pin, red: Merge is refused, so Quarterly keeps cell 0' ([bool]($mcQ -and (SlCells $mcQ) -eq '0')) "Merge pressed: $mcPress; Quarterly: $(SlShort $mcQ)"
+
+  # F3. A closed window's pin covered by a resize, then by a Merge: the pin is removed (guard), a Drop Note names the app (red),
+  #     and Undo in the note restores the pin (red). A resize or Merge that covers no closed pin keeps its note as today.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsClosedFree); SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $crPin0 = SlGet "work[selId].pins.find(p => p.app === 'closedapp') || null"
+  Check 'closed pin, resize, scope: Refactor is selected with its east handle drawn, and the closed window''s pin is in the scene' ([bool]((SlHandle 'ea') -and $crPin0)) "handle: $(SlShort (SlHandle 'ea')); pin: $(SlShort $crPin0)"
+  $crDrop = SlHandleDropNoSettle 'ea' 1 0
+  $crNote = SlNoteText
+  SlSettle
+  $crScene = SlGet 'work[selId]'
+  $crRef = SlPin $crScene 'Refactor'
+  $crPin1 = @($crScene.pins | ? { $_.app -eq 'closedapp' })[0]
+  Check 'closed pin, resize, guard: Refactor spans cells 0 and 1, and the closed window''s pin is removed' ([bool]($crDrop -and $crRef -and (SlCells $crRef) -eq '0,1' -and -not $crPin1)) "drop: $crDrop; Refactor: $(SlShort $crRef); pin left: $(SlShort $crPin1)"
+  Check 'closed pin, resize, red: a Drop Note names the closed window''s app' ("$crNote" -like '*closedapp*') "note: $crNote"
+  $crUndo = SlBtnPress '.dnote' 'Undo'
+  $crBack = SlGet "work[selId].pins.find(p => p.app === 'closedapp') || null"
+  Check 'closed pin, resize, red: Undo in the Drop Note restores the closed window''s pin on cell 1' ([bool]($crUndo -and $crBack -and (SlCells $crBack) -eq '1')) $(if (-not $crNote) { 'no Drop Note, so no Undo to press' } else { "Undo pressed: $crUndo; pin: $(SlShort $crBack)" })
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsClosedMerge)
+  SlCtrlClick (SlAt (SlBox 1006) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 1)
+  $cmState = SlBtnState '.mbar' 'Merge'
+  $cmPin0 = SlGet "work[selId].pins.find(p => p.app === 'closedapp') || null"
+  Check 'closed pin, Merge, scope: Merge is enabled over the closed window''s cell, and its pin is in the scene' ([bool]($cmState -eq 'enabled' -and $cmPin0)) "Merge: $cmState; pin: $(SlShort $cmPin0)"
+  # The press is raw, with no settle: the note fades about 6 s after it is drawn, and a settle can outlast that.
+  $cmBtn = SlGet "(() => { const b = [...document.querySelectorAll('.mbar button')].find(x => x.textContent.trim() === 'Merge' && !x.disabled); if (!b) return null; const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"
+  if ($cmBtn) { SlMouse 'mousePressed' $cmBtn[0] $cmBtn[1] 1; SlMouse 'mouseReleased' $cmBtn[0] $cmBtn[1] 0 }
+  $cmNote = SlNoteText
+  SlSettle
+  $cmScene = SlGet 'work[selId]'
+  $cmQ = SlPin $cmScene 'Quarterly'
+  $cmPin1 = @($cmScene.pins | ? { $_.app -eq 'closedapp' })[0]
+  Check 'closed pin, Merge, guard: Quarterly spans cells 0 and 1, and the closed window''s pin is removed' ([bool]($cmBtn -and $cmQ -and (SlCells $cmQ) -eq '0,1' -and -not $cmPin1)) "Merge pressed: $([bool]$cmBtn); Quarterly: $(SlShort $cmQ); pin left: $(SlShort $cmPin1)"
+  Check 'closed pin, Merge, red: a Drop Note names the closed window''s app' ("$cmNote" -like '*closedapp*') "note: $cmNote"
+  $cmUndo = SlBtnPress '.dnote' 'Undo'
+  $cmBack = SlGet "work[selId].pins.find(p => p.app === 'closedapp') || null"
+  Check 'closed pin, Merge, red: Undo in the Drop Note restores the closed window''s pin on cell 1' ([bool]($cmUndo -and $cmBack -and (SlCells $cmBack) -eq '1')) $(if (-not $cmNote) { 'no Drop Note, so no Undo to press' } else { "Undo pressed: $cmUndo; pin: $(SlShort $cmBack)" })
+
+  # F4. Two windows of one app (Refactor on cell 0, Pin parser on cell 1) are named apart in every surface. Each surface is its own
+  #     check: the Drop Note, the status line, the locked-drag warning, and the Merge bar. "Chrome is behind Claude" (above) is the control.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTwoClaude)
+  SlDropNoSettle (SlAt (SlBox 1002) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.85)
+  $tnNote = SlNoteText
+  SlSettle
+  $tnPin = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'two Claude windows, scope: a Put Behind drop stacks Pin parser behind Refactor' ([bool](SlHasBehind $tnPin 'Pin parser')) "pin: $(SlShort $tnPin)"
+  Check 'two Claude windows, red: the Drop Note names each window, by title or as "2 Claude windows"' (SlDistinct $tnNote) "note: $tnNote"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTwoClaude)
+  $tsCircle = SlCircleDrop 1002 0 1 1 0 0
+  $tsOut = SlZoneOutcome 'Pin parser' 'Refactor'
+  $tsMsg = SlJs "document.getElementById('msg').textContent"
+  Check 'two Claude windows, scope: a drop inside the Swap circle swaps the two windows' ($tsOut -eq 'swap:0/1') "outcome: $tsOut; circle drawn: $(SlShort $tsCircle.circle)"
+  Check 'two Claude windows, red: the status line names each window, by title or as "2 Claude windows"' (SlDistinct $tsMsg) "status: $tsMsg"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTwoClaudeLock)
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlSlotAt 1)
+  $tlDlg = SlJs "!!document.querySelector('[role=alertdialog]')"
+  $tlWarn = SlJs "(() => { const p = document.getElementById('lcp'); return p ? p.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'two Claude windows, locked drag, scope: dragging the locked Refactor onto Pin parser opens the swap warning' ([bool]($tlDlg -and "$tlWarn" -match '(?i)swap')) "warning: $tlWarn"
+  Check 'two Claude windows, red: the warning names each window, by title or as "2 Claude windows", and never reads "Claude moves to Claude"' ((SlDistinct $tlWarn) -and "$tlWarn" -notlike '*Claude moves to Claude*') "warning: $tlWarn"
+  [void](SlBtnPress '[role=alertdialog]' 'Cancel')
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTwoClaude)
+  SlCtrlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlCtrlClick (SlAt (SlBox 1002) 0.5 0.5)
+  $tmState = SlBtnState '.mbar' 'Merge'
+  $tmBar = SlJs "(() => { const b = document.querySelector('.mbar'); return b ? b.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'two Claude windows, Merge bar, scope: Merge is enabled for the two picked windows' ($tmState -eq 'enabled') "Merge: $tmState; bar: $tmBar"
+  Check 'two Claude windows, red: the Merge bar names each window, by title or as "2 Claude windows"' (SlDistinct $tmBar) "bar: $tmBar"
+
+  # F6. A 2x1 span at 1024: the Put Behind label's text box must not meet the Swap circle. Control: the same at 1440.
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCircleSpan)
+  $sl1 = SlCircleDrop 1001 0 2 1 0 (-0.35)
+  Check 'circle and label, 2x1 span at 1024, scope: the Swap circle is drawn, and the Put Behind label is drawn beside it' ([bool]($sl1.circle -and $sl1.shown -and $sl1.label -and "$($sl1.label.text)" -match 'Behind')) "circle: $(SlShort $sl1.circle); label: $(SlShort $sl1.label)"
+  Check 'circle and label, 2x1 span at 1024, red: the label''s text box does not meet the Swap circle' ([bool]($sl1.label -and -not (SlCircleMeets $sl1.circle $sl1.label))) "circle: $(SlShort $sl1.circle); label: $(SlShort $sl1.label)"
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
+  $sl2 = SlCircleDrop 1001 0 2 1 0 (-0.35)
+  Check 'circle and label, 2x1 span at 1440, control: the label''s text box does not meet the Swap circle' ([bool]($sl2.label -and $sl2.circle -and -not (SlCircleMeets $sl2.circle $sl2.label))) "circle: $(SlShort $sl2.circle); label: $(SlShort $sl2.label)"
+
+  # F6b. The Put Behind label on a 2x1 span at 1024 is not clipped (review finding on 22253d0: the chip reads "Behi"). F6 measures
+  #      the words, not the chip, so it passes with the clip. Scope first: the label is drawn on the span, with its Put Behind title.
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCircleSpan)
+  $cl1 = SlCircleDrop 1001 0 2 1 0 (-0.35)
+  Check 'label clip, 2x1 span at 1024, scope: the Put Behind label is drawn on the span' ([bool]($cl1.shown -and $cl1.clip -and "$($cl1.clip.title)" -match 'Behind')) "label: $(SlShort $cl1.clip)"
+  Check 'label clip, 2x1 span at 1024, red: the Put Behind label is not clipped (its content fits its width)' ([bool]($cl1.clip -and $cl1.clip.sw -le ($cl1.clip.cw + 1))) "label: $(SlShort $cl1.clip)"
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
+  $cl2 = SlCircleDrop 1001 0 2 1 0 (-0.35)
+  Check 'label clip, 2x1 span at 1440, control: the Put Behind label is not clipped' ([bool]($cl2.clip -and $cl2.clip.sw -le ($cl2.clip.cw + 1))) "label: $(SlShort $cl2.clip)"
+
+  # F6c. A locked tile released on a taken cell opens the warning, and its pending tile waits in that cell over the taken tile
+  #      (review finding on 22253d0: at 1440 and 1024 both titles read). Only one title may read in the cell: the taken title is
+  #      hidden, or the pending tile is opaque. Control: with no warning open, the taken title is the one that reads.
+  foreach ($vw in @(@(1440, 900), @(1024, 768))) {
+    $wz = "$($vw[0])"
+    SlViewport $vw[0] $vw[1]; SlCase (SlSceneJson $pinsTwoClaudeLock)
+    $tw0 = SlTitles 1002
+    Check "warning over a taken cell, $wz, control: with no warning, the taken title is the one title that reads" ([bool]($tw0 -and $tw0.n -eq 1 -and $tw0.takenReadable -and -not $tw0.pendText)) "titles: $(SlShort $tw0)"
+    SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlSlotAt 1)
+    $tw = SlTitles 1002; $pb = $tw.pendBox; $tb = $tw.takenBox
+    $inCell = [bool]($tw -and $pb -and $tb -and (($pb.l + $pb.r) / 2) -gt $tb.l -and (($pb.l + $pb.r) / 2) -lt $tb.r -and (($pb.t + $pb.b) / 2) -gt $tb.t -and (($pb.t + $pb.b) / 2) -lt $tb.b)
+    $inView = [bool]($tb -and $tb.l -ge 0 -and $tb.t -ge 0 -and $tb.r -le $vw[0] -and $tb.b -le $vw[1])
+    $apart = [bool]($tw -and $tw.dlgBox -and $tb -and -not (SlMeets $tw.dlgBox $tb))
+    Check "warning over a taken cell, $wz, scope: the warning is open, its pending tile waits over the taken cell in view, and the warning sits outside that cell" ([bool]($tw -and $tw.dlgOpen -and $inCell -and $inView -and $apart)) "warning: $(SlShort $tw.dlgBox); pending: $(SlShort $pb); taken: $(SlShort $tb)"
+    Check "warning over a taken cell, $wz, red: only one title reads in the taken cell" ([bool]($tw -and $tw.n -eq 1)) "readable: $($tw.n); pending '$($tw.pendText)' reads $($tw.pendReadable); taken '$($tw.takenText)' reads $($tw.takenReadable)"
+  }
+
+  # F7. Forced colours (review finding on 1ff9835). A guard, green on head: in headless Edge's forced-colors emulation a missing
+  #     cell keeps its dashed border on top, and a disabled Merge computes to GrayText. The claim did not reproduce on b9643c3,
+  #     so no red is claimed here (see the report's Input Needed). It is the last case: it sets the emulation, and resets it.
+  SlSend 'Emulation.setEmulatedMedia' @{ features = @(@{ name = 'forced-colors'; value = 'active' }) }
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  SlCtrlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 2)
+  $fcOn = SlGet "matchMedia('(forced-colors: active)').matches"
+  # The pointer-events switch is put back at once; .miss has pointer-events none, so the hit test needs it on for the one read.
+  $fcMiss = SlGet "(() => { const m = document.querySelector('.miss'); if (!m) return null; m.style.pointerEvents = 'auto'; const r = m.getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); m.style.pointerEvents = ''; const cs = getComputedStyle(m); return { onTop: e === m, bs: cs.borderTopStyle, bw: parseFloat(cs.borderTopWidth), bc: cs.borderTopColor }; })()"
+  Check 'forced colours, scope: the emulation is on, and a non-rectangle pick draws a missing cell' ([bool]($fcOn -eq $true -and $fcMiss)) "forced-colors: $fcOn; miss: $(SlShort $fcMiss)"
+  Check 'forced colours, guard: a missing cell on an occupied cell is drawn on top, with a visible dashed border' ([bool]($fcMiss.onTop -eq $true -and $fcMiss.bs -eq 'dashed' -and $fcMiss.bw -gt 0 -and "$($fcMiss.bc)" -notmatch 'rgba\(0, 0, 0, 0\)')) "miss: $(SlShort $fcMiss)"
+  $fcMergeState = SlBtnState '.mbar' 'Merge'
+  $fcMerge = SlGet "(() => { const b = [...document.querySelectorAll('.mbar button')].find(x => x.textContent.trim() === 'Merge'); if (!b) return null; const p = document.createElement('span'); p.style.cssText = 'forced-color-adjust:none;color:GrayText;position:absolute'; document.body.appendChild(p); const gray = getComputedStyle(p).color; p.remove(); const cs = getComputedStyle(b); return { disabled: b.disabled, color: cs.color, gray: gray, fca: cs.forcedColorAdjust, bs: cs.borderTopStyle }; })()"
+  Check 'forced colours, guard: a disabled Merge reads as disabled (its text is GrayText, or it opts out of forced colours)' ([bool]($fcMergeState -eq 'disabled' -and $fcMerge -and ($fcMerge.color -eq $fcMerge.gray -or $fcMerge.fca -eq 'none'))) "Merge: $(SlShort $fcMerge)"
+  SlSend 'Emulation.setEmulatedMedia' @{ features = @() }
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
 } finally {
