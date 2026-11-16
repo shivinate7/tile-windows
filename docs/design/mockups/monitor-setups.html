@@ -188,6 +188,8 @@ input[type=text]{width:100%}
 .dlg{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:16px;width:min(600px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;display:grid;gap:10px}
 .dlg>h2{font:700 18px var(--f-disp);text-transform:none;letter-spacing:0;color:var(--ink);margin:0}
 .dlg .row{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.abox.dlgbox{position:absolute;inset:0;z-index:60;outline-offset:-3px}
+.abox.dlgbox>em{top:8px;left:8px;z-index:61}
 
 /* 1024: app.html's @media (max-width:1180px) rules, keyed on the artboard instead of the viewport. */
 .w1024 .app{grid-template-columns:minmax(0,1fr) 252px;grid-template-rows:auto auto minmax(0,1fr) auto;grid-template-areas:"top top" "rail rail" "canvas insp" "status status"}
@@ -518,7 +520,7 @@ function frame(st,w){const F=st,L=layout(st),opt=STATES.find(s=>s[0]===st)[2],to
     :st==="bd-noid"?"Read 10 windows on Laptop + Monitor 2."
     :"Read 10 windows on Laptop + Portrait.";
   const msgBox=today?`<span class="abox inl today msg" role="status">${esc(msg)}</span>`:`<span class="msg" role="status">${esc(msg)}</span>`;
-  const dlg=st==="mg-dialog"||st==="mg-first"?abox(dialog(st,F),st==="mg-first"?"First Run":"Monitors and Setups Dialog",{inl:true}).replace('class="abox inl"','class="abox inl" style="position:absolute;inset:0;z-index:60;outline-offset:-3px"'):"";
+  const dlg=st==="mg-dialog"||st==="mg-first"?abox(dialog(st,F),st==="mg-first"?"First Run":"Monitors and Setups Dialog",{inl:true}).replace('class="abox inl"','class="abox inl dlgbox"'):"";
   return `<div class="art w${w}${V.labels?"":" nolabels"}" data-state="${st}"><div class="app">
     <header class="top"><p class="brand">${I.logo}Tile Windows</p><span class="crumb">Scene: <b>${st==="cd-own"?"Focus":"Default"}</b></span>
       <div class="tools"><label class="switch"><input type="checkbox" checked>Grid Lines</label><label class="switch">Theme <select class="themesel"><option value="">Match Windows</option><option value="light"${V.t==="light"?" selected":""}>Light</option><option value="dark"${V.t==="dark"?" selected":""}>Dark</option></select></label><button class="btn" type="button" disabled title="Nothing to undo yet.">Undo</button><button class="btn pri" type="button">Apply</button></div>${toastBox}</header>
