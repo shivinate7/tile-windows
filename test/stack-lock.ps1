@@ -92,6 +92,16 @@
 #                        A tab click on another scene while the switch waits for its scene's preview leaves that scene as it was:
 #                        the switch changes the scene it was pressed on.
 #     inspector          A narrow pinned tile (its pin mark hidden at 1024) selected: its "Pinned" line is in the inspector's visible area.
+#   Ruling 2026-11-16 (lock correction 10:20; coordinator picks 10:53), review findings on 1ff9835:
+#     a locked window dragged to Windows That Stay Put, or put behind, loses its lock; the window that takes its pin is not locked.
+#     A covered pin whose window is closed (no open window) is removed by a resize or a Merge, a Drop Note names its app, and
+#     Undo restores the pin. Merge refuses a pick that holds a closed locked pin, as a resize stops at a lock; the pin keeps its lock.
+#     A Merge's bay entries carry why "Moved by a merge" (a resize's carry "Covered by a resize").
+#     Two windows of one app are named apart in the Drop Note, the status line (#msg), the locked-drag warning (#lcp) and the
+#     Merge bar: by title ("Refactor", "Pin parser") or as "2 Claude windows", never "Claude moves to Claude".
+#     On a 2x1 span at 1024 the Put Behind label's text box (#drop > span) does not meet the Swap circle.
+#     Forced colours (forced-colors: active): a missing cell (.miss) keeps a visible border, and the disabled Merge button reads as
+#     disabled (forced-color-adjust: none, or the computed colour is GrayText).
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 $ErrorActionPreference = 'Stop'
@@ -238,13 +248,23 @@ function SlCircleDrop($fromId, $slot, $cs, $rs, $ox, $oy) {
   SlDrag (SlAt (SlBox $fromId) 0.5 0.5) $to -Hold
   $ci = SlGet "(() => { const c = document.querySelector('#drop .swc'); if (!c) return null; const r = c.getBoundingClientRect(); return { w: r.width, h: r.height, x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()"
   $shown = SlLabelShown
+  # The label's text box (its span's contents), read while held: the Put Behind or Swap label the drop shows.
+  $lb = SlGet "(() => { const s = document.querySelector('#drop > span'); if (!s) return null; const r = document.createRange(); r.selectNodeContents(s); const b = r.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom, text: s.textContent.trim() }; })()"
   SlRelease $to
-  [pscustomobject]@{ block = $bk; circle = $ci; shown = $shown; to = $to } }
+  [pscustomobject]@{ block = $bk; circle = $ci; shown = $shown; to = $to; label = $lb } }
 # The Swap circle is half the block's short side, rounded down, from 28 to 64 px, and centred on the block (tolerance 2 px).
 function SlCircleFits($c, $bk) {
   if (-not $c -or -not $bk) { return $false }
   $want = [Math]::Max(28, [Math]::Min(64, [Math]::Floor([Math]::Min($bk.w, $bk.h) / 2)))
   [bool]([Math]::Abs($c.w - $want) -le 2 -and [Math]::Abs($c.h - $want) -le 2 -and [Math]::Abs($c.x - ($bk.l + $bk.w / 2)) -le 2 -and [Math]::Abs($c.y - ($bk.t + $bk.h / 2)) -le 2) }
+# Whether the Swap circle (centre x, y, diameter w) and a label's text box (l, t, r, b) share a point: the distance from the
+# circle's centre to the nearest point of the box is under its radius. The bounding square is not the test.
+function SlCircleMeets($c, $r) {
+  if (-not $c -or -not $r) { return $false }
+  $nx = [Math]::Max($r.l, [Math]::Min($c.x, $r.r)); $ny = [Math]::Max($r.t, [Math]::Min($c.y, $r.b))
+  [bool]([Math]::Sqrt(($c.x - $nx) * ($c.x - $nx) + ($c.y - $ny) * ($c.y - $ny)) -lt ($c.w / 2)) }
+# Two windows of one app are named apart: both titles' words (Refactor, Pin parser), or "2 Claude windows". Either form passes.
+function SlDistinct($text) { $t = "$text"; [bool](($t -match 'Refactor' -and $t -match 'Pin parser') -or $t -match '2 Claude windows') }
 # What a drop of window $dragText on window $occText did, read from the scene: 'behind' when the dropped window is stacked
 # behind it, 'swap:<dropped cells>/<occupant cells>' when they traded cells, else 'other'.
 function SlZoneOutcome($dragText, $occText) {
@@ -1738,6 +1758,9 @@ try {
   $m2s = SlGet 'work[selId]'; $m2Q = SlPin $m2s 'Quarterly'
   Check 'merge, two windows: the first window picked (Quarterly) keeps the span, on cells 0 and 1' ([bool]($m2Press -and $m2Q -and (SlCells $m2Q) -eq '0,1')) "Merge pressed: $m2Press; pin: $(SlShort $m2Q)"
   Check 'merge, two windows: the other picked window (Refactor) goes to Windows That Stay Put' ([bool]($m2Press -and (SlHasBay $m2s 'Refactor'))) "Merge pressed: $m2Press; bay: $(SlShort $m2s.bay)"
+  # Ruling 2026-11-16: a window a Merge sends to the list reads "Moved by a merge", not the resize's "Covered by a resize".
+  $m2Chips = SlBayChips; $m2Chip = @($m2Chips | ? { $_.id -eq 1001 })[0]
+  Check 'merge, two windows: the window Merge sends to Windows That Stay Put reads "Moved by a merge", not "Covered by a resize"' ([bool]($m2Press -and $m2Chip -and "$($m2Chip.label)" -like '*Moved by a merge*' -and "$($m2Chip.label)" -notlike '*Covered by a resize*')) "chip: $(SlShort $m2Chip)"
 
   SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
   SlCtrlClick (SlAt (SlBox 1001) 0.5 0.5)
@@ -1763,6 +1786,147 @@ try {
   $m4Press = SlBtnPress '.mbar' 'Merge'
   $m4After = SlJs "JSON.stringify([work[selId].pins, work[selId].zones || []])"
   Check 'merge, empty cells only, guard: a press on Merge makes no span and no pin' ((-not $m4Press) -and $m4Before -eq $m4After) "Merge pressed: $m4Press; scene changed: $($m4Before -ne $m4After)"
+  # ---------- Review findings on 1ff9835 (ruling 2026-11-16: lock correction 10:20, coordinator picks 10:53). Each claim is red on
+  # the head it names; a control or guard beside it is green there and says so in its name. ----------
+  $pinsLockedFront = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"lock":true,"behind":[{"app":"claude","match":"Pin parser"}]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}'
+  $pinsLockedRef = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"lock":true}'
+  $pinsClosedLock = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[0]}' '{"app":"closedapp","match":"","mon":"wide","slots":[1],"lock":true}'
+  $pinsClosedFree = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"closedapp","match":"","mon":"wide","slots":[1]}'
+  $pinsClosedMerge = SlPins '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[0]}' '{"app":"closedapp","match":"","mon":"wide","slots":[1]}'
+  $pinsTwoClaude = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"claude","match":"Pin parser","mon":"wide","slots":[1]}'
+  $pinsTwoClaudeLock = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0],"lock":true}' '{"app":"claude","match":"Pin parser","mon":"wide","slots":[1]}'
+
+  # F1. A locked front dragged to Windows That Stay Put loses its lock (ruling: "dragged to Windows That Stay Put, loses its lock").
+  #     The window behind it becomes the front, and takes Refactor's pin: that pin must not be locked.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsLockedFront); SlPark
+  $lfPre = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'locked front, scope: Refactor is locked, with Pin parser stacked behind it' ([bool]($lfPre -and $lfPre.lock -eq $true -and (SlHasBehind $lfPre 'Pin parser'))) "pin: $(SlShort $lfPre)"
+  $lfBayPt = SlJs "(() => { const r = document.getElementById('bay').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) $lfBayPt
+  $lfAsk = SlJs "(() => { const d = document.querySelector('[role=alertdialog]'); return d ? d.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'locked front, scope: dropping the locked tile on Windows That Stay Put opens its warning' ([bool]("$lfAsk" -like '*Windows That Stay Put*')) "warning: $lfAsk"
+  $lfMove = SlBtnPress '[role=alertdialog]' 'Move It'
+  $lfScene = SlGet 'work[selId]'
+  Check 'locked front, control: Refactor is in Windows That Stay Put once Move It is pressed' ([bool]($lfMove -and (SlHasBay $lfScene 'Refactor'))) "Move It pressed: $lfMove; bay: $(SlShort $lfScene.bay)"
+  $lfNext = SlPin $lfScene 'Pin parser'
+  Check 'locked front, red: the window that takes the locked pin (Pin parser) is not locked' ([bool]($lfNext -and $lfNext.lock -ne $true)) "Pin parser pin: $(SlShort $lfNext)"
+
+  # F2. Merge over a closed locked pin is refused, as a resize stops at a lock. The pin and its lock survive.
+  #     Control: a locked window in the pick disables Merge (already so on head).
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsLockedRef)
+  SlCtrlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 1)
+  $mcCtl = SlBtnState '.mbar' 'Merge'
+  Check 'merge, locked window in the pick, control: Merge is disabled' ($mcCtl -eq 'disabled') "Merge: $mcCtl"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsClosedLock)
+  SlCtrlClick (SlAt (SlBox 1006) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 1)
+  $mcMiss = SlGet "(prevs[selId].missing || []).some(m => m.app === 'closedapp')"
+  $mcPin0 = SlGet "work[selId].pins.find(p => p.app === 'closedapp' && p.lock === true) || null"
+  Check 'merge, closed locked pin, scope: its window is not open, and the locked pin is in the scene on cell 1' ($mcMiss -eq $true -and [bool]$mcPin0 -and (SlCells $mcPin0) -eq '1') "missing: $mcMiss; pin: $(SlShort $mcPin0)"
+  $mcPress = SlBtnPress '.mbar' 'Merge'
+  $mcScene = SlGet 'work[selId]'
+  $mcPin = @($mcScene.pins | ? { $_.app -eq 'closedapp' })[0]
+  $mcQ = SlPin $mcScene 'Quarterly'
+  Check 'merge, closed locked pin, red: the pin keeps its lock and its cell after a Merge over it' ([bool]($mcPin -and $mcPin.lock -eq $true -and (SlCells $mcPin) -eq '1')) "Merge pressed: $mcPress; pin: $(SlShort $mcPin)"
+  Check 'merge, closed locked pin, red: Merge is refused, so Quarterly keeps cell 0' ([bool]($mcQ -and (SlCells $mcQ) -eq '0')) "Merge pressed: $mcPress; Quarterly: $(SlShort $mcQ)"
+
+  # F3. A closed window's pin covered by a resize, then by a Merge: the pin is removed (guard), a Drop Note names the app (red),
+  #     and Undo in the note restores the pin (red). A resize or Merge that covers no closed pin keeps its note as today.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsClosedFree); SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $crPin0 = SlGet "work[selId].pins.find(p => p.app === 'closedapp') || null"
+  Check 'closed pin, resize, scope: Refactor is selected with its east handle drawn, and the closed window''s pin is in the scene' ([bool]((SlHandle 'ea') -and $crPin0)) "handle: $(SlShort (SlHandle 'ea')); pin: $(SlShort $crPin0)"
+  $crDrop = SlHandleDropNoSettle 'ea' 1 0
+  $crNote = SlNoteText
+  SlSettle
+  $crScene = SlGet 'work[selId]'
+  $crRef = SlPin $crScene 'Refactor'
+  $crPin1 = @($crScene.pins | ? { $_.app -eq 'closedapp' })[0]
+  Check 'closed pin, resize, guard: Refactor spans cells 0 and 1, and the closed window''s pin is removed' ([bool]($crDrop -and $crRef -and (SlCells $crRef) -eq '0,1' -and -not $crPin1)) "drop: $crDrop; Refactor: $(SlShort $crRef); pin left: $(SlShort $crPin1)"
+  Check 'closed pin, resize, red: a Drop Note names the closed window''s app' ("$crNote" -like '*closedapp*') "note: $crNote"
+  $crUndo = SlBtnPress '.dnote' 'Undo'
+  $crBack = SlGet "work[selId].pins.find(p => p.app === 'closedapp') || null"
+  Check 'closed pin, resize, red: Undo in the Drop Note restores the closed window''s pin on cell 1' ([bool]($crUndo -and $crBack -and (SlCells $crBack) -eq '1')) $(if (-not $crNote) { 'no Drop Note, so no Undo to press' } else { "Undo pressed: $crUndo; pin: $(SlShort $crBack)" })
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsClosedMerge)
+  SlCtrlClick (SlAt (SlBox 1006) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 1)
+  $cmState = SlBtnState '.mbar' 'Merge'
+  $cmPin0 = SlGet "work[selId].pins.find(p => p.app === 'closedapp') || null"
+  Check 'closed pin, Merge, scope: Merge is enabled over the closed window''s cell, and its pin is in the scene' ([bool]($cmState -eq 'enabled' -and $cmPin0)) "Merge: $cmState; pin: $(SlShort $cmPin0)"
+  # The press is raw, with no settle: the note fades about 6 s after it is drawn, and a settle can outlast that.
+  $cmBtn = SlGet "(() => { const b = [...document.querySelectorAll('.mbar button')].find(x => x.textContent.trim() === 'Merge' && !x.disabled); if (!b) return null; const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()"
+  if ($cmBtn) { SlMouse 'mousePressed' $cmBtn[0] $cmBtn[1] 1; SlMouse 'mouseReleased' $cmBtn[0] $cmBtn[1] 0 }
+  $cmNote = SlNoteText
+  SlSettle
+  $cmScene = SlGet 'work[selId]'
+  $cmQ = SlPin $cmScene 'Quarterly'
+  $cmPin1 = @($cmScene.pins | ? { $_.app -eq 'closedapp' })[0]
+  Check 'closed pin, Merge, guard: Quarterly spans cells 0 and 1, and the closed window''s pin is removed' ([bool]($cmBtn -and $cmQ -and (SlCells $cmQ) -eq '0,1' -and -not $cmPin1)) "Merge pressed: $([bool]$cmBtn); Quarterly: $(SlShort $cmQ); pin left: $(SlShort $cmPin1)"
+  Check 'closed pin, Merge, red: a Drop Note names the closed window''s app' ("$cmNote" -like '*closedapp*') "note: $cmNote"
+  $cmUndo = SlBtnPress '.dnote' 'Undo'
+  $cmBack = SlGet "work[selId].pins.find(p => p.app === 'closedapp') || null"
+  Check 'closed pin, Merge, red: Undo in the Drop Note restores the closed window''s pin on cell 1' ([bool]($cmUndo -and $cmBack -and (SlCells $cmBack) -eq '1')) $(if (-not $cmNote) { 'no Drop Note, so no Undo to press' } else { "Undo pressed: $cmUndo; pin: $(SlShort $cmBack)" })
+
+  # F4. Two windows of one app (Refactor on cell 0, Pin parser on cell 1) are named apart in every surface. Each surface is its own
+  #     check: the Drop Note, the status line, the locked-drag warning, and the Merge bar. "Chrome is behind Claude" (above) is the control.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTwoClaude)
+  SlDropNoSettle (SlAt (SlBox 1002) 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.85)
+  $tnNote = SlNoteText
+  SlSettle
+  $tnPin = SlPin (SlGet 'work[selId]') 'Refactor'
+  Check 'two Claude windows, scope: a Put Behind drop stacks Pin parser behind Refactor' ([bool](SlHasBehind $tnPin 'Pin parser')) "pin: $(SlShort $tnPin)"
+  Check 'two Claude windows, red: the Drop Note names each window, by title or as "2 Claude windows"' (SlDistinct $tnNote) "note: $tnNote"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTwoClaude)
+  $tsCircle = SlCircleDrop 1002 0 1 1 0 0
+  $tsOut = SlZoneOutcome 'Pin parser' 'Refactor'
+  $tsMsg = SlJs "document.getElementById('msg').textContent"
+  Check 'two Claude windows, scope: a drop inside the Swap circle swaps the two windows' ($tsOut -eq 'swap:0/1') "outcome: $tsOut; circle drawn: $(SlShort $tsCircle.circle)"
+  Check 'two Claude windows, red: the status line names each window, by title or as "2 Claude windows"' (SlDistinct $tsMsg) "status: $tsMsg"
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTwoClaudeLock)
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlSlotAt 1)
+  $tlDlg = SlJs "!!document.querySelector('[role=alertdialog]')"
+  $tlWarn = SlJs "(() => { const p = document.getElementById('lcp'); return p ? p.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'two Claude windows, locked drag, scope: dragging the locked Refactor onto Pin parser opens the swap warning' ([bool]($tlDlg -and "$tlWarn" -match '(?i)swap')) "warning: $tlWarn"
+  Check 'two Claude windows, red: the warning names each window, by title or as "2 Claude windows", and never reads "Claude moves to Claude"' ((SlDistinct $tlWarn) -and "$tlWarn" -notlike '*Claude moves to Claude*') "warning: $tlWarn"
+  [void](SlBtnPress '[role=alertdialog]' 'Cancel')
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsTwoClaude)
+  SlCtrlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlCtrlClick (SlAt (SlBox 1002) 0.5 0.5)
+  $tmState = SlBtnState '.mbar' 'Merge'
+  $tmBar = SlJs "(() => { const b = document.querySelector('.mbar'); return b ? b.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'two Claude windows, Merge bar, scope: Merge is enabled for the two picked windows' ($tmState -eq 'enabled') "Merge: $tmState; bar: $tmBar"
+  Check 'two Claude windows, red: the Merge bar names each window, by title or as "2 Claude windows"' (SlDistinct $tmBar) "bar: $tmBar"
+
+  # F6. A 2x1 span at 1024: the Put Behind label's text box must not meet the Swap circle. Control: the same at 1440.
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCircleSpan)
+  $sl1 = SlCircleDrop 1001 0 2 1 0 (-0.35)
+  Check 'circle and label, 2x1 span at 1024, scope: the Swap circle is drawn, and the Put Behind label is drawn beside it' ([bool]($sl1.circle -and $sl1.shown -and $sl1.label -and "$($sl1.label.text)" -match 'Behind')) "circle: $(SlShort $sl1.circle); label: $(SlShort $sl1.label)"
+  Check 'circle and label, 2x1 span at 1024, red: the label''s text box does not meet the Swap circle' ([bool]($sl1.label -and -not (SlCircleMeets $sl1.circle $sl1.label))) "circle: $(SlShort $sl1.circle); label: $(SlShort $sl1.label)"
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
+  $sl2 = SlCircleDrop 1001 0 2 1 0 (-0.35)
+  Check 'circle and label, 2x1 span at 1440, control: the label''s text box does not meet the Swap circle' ([bool]($sl2.label -and $sl2.circle -and -not (SlCircleMeets $sl2.circle $sl2.label))) "circle: $(SlShort $sl2.circle); label: $(SlShort $sl2.label)"
+
+  # F7. Forced colours (review finding on 1ff9835). A guard, green on head: in headless Edge's forced-colors emulation a missing
+  #     cell keeps its dashed border on top, and a disabled Merge computes to GrayText. The claim did not reproduce on b9643c3,
+  #     so no red is claimed here (see the report's Input Needed). It is the last case: it sets the emulation, and resets it.
+  SlSend 'Emulation.setEmulatedMedia' @{ features = @(@{ name = 'forced-colors'; value = 'active' }) }
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
+  SlCtrlClick (SlAt (SlBox 1001) 0.5 0.5)
+  SlCtrlClick (SlSlotAt 2)
+  $fcOn = SlGet "matchMedia('(forced-colors: active)').matches"
+  # The pointer-events switch is put back at once; .miss has pointer-events none, so the hit test needs it on for the one read.
+  $fcMiss = SlGet "(() => { const m = document.querySelector('.miss'); if (!m) return null; m.style.pointerEvents = 'auto'; const r = m.getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); m.style.pointerEvents = ''; const cs = getComputedStyle(m); return { onTop: e === m, bs: cs.borderTopStyle, bw: parseFloat(cs.borderTopWidth), bc: cs.borderTopColor }; })()"
+  Check 'forced colours, scope: the emulation is on, and a non-rectangle pick draws a missing cell' ([bool]($fcOn -eq $true -and $fcMiss)) "forced-colors: $fcOn; miss: $(SlShort $fcMiss)"
+  Check 'forced colours, guard: a missing cell on an occupied cell is drawn on top, with a visible dashed border' ([bool]($fcMiss.onTop -eq $true -and $fcMiss.bs -eq 'dashed' -and $fcMiss.bw -gt 0 -and "$($fcMiss.bc)" -notmatch 'rgba\(0, 0, 0, 0\)')) "miss: $(SlShort $fcMiss)"
+  $fcMergeState = SlBtnState '.mbar' 'Merge'
+  $fcMerge = SlGet "(() => { const b = [...document.querySelectorAll('.mbar button')].find(x => x.textContent.trim() === 'Merge'); if (!b) return null; const p = document.createElement('span'); p.style.cssText = 'forced-color-adjust:none;color:GrayText;position:absolute'; document.body.appendChild(p); const gray = getComputedStyle(p).color; p.remove(); const cs = getComputedStyle(b); return { disabled: b.disabled, color: cs.color, gray: gray, fca: cs.forcedColorAdjust, bs: cs.borderTopStyle }; })()"
+  Check 'forced colours, guard: a disabled Merge reads as disabled (its text is GrayText, or it opts out of forced colours)' ([bool]($fcMergeState -eq 'disabled' -and $fcMerge -and ($fcMerge.color -eq $fcMerge.gray -or $fcMerge.fca -eq 'none'))) "Merge: $(SlShort $fcMerge)"
+  SlSend 'Emulation.setEmulatedMedia' @{ features = @() }
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
 } finally {
