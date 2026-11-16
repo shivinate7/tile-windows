@@ -420,6 +420,8 @@ dialog form{display:grid;gap:10px}
 #drop.circ.on>span{background:var(--select);color:var(--select-ink);box-shadow:none}
 #drop.circ>span.t{bottom:1px;font-size:10px;padding:1px 3px;gap:2px;line-height:1.15}
 #drop.circ>span svg{width:12px;height:12px;flex:none}
+/* A block too short to hold the circle and the label one above the other (a 2x1 span at 1024): the label sits beside the circle. */
+#drop.circ.side>span,#drop.circ.side>span.t{top:50%;bottom:auto;left:calc(50% + var(--d)/2 + 8px);transform:translateY(-50%);max-width:calc(50% - var(--d)/2 - 12px)}
 #drop .swc{position:absolute;left:50%;top:50%;width:var(--d);height:var(--d);transform:translate(-50%,-50%);border-radius:50%;display:grid;place-items:center;align-content:center;border:2px dashed var(--select);background:var(--panel);color:var(--select);font:600 11px/1.1 var(--f)}
 #drop .swc.on{border:3px solid var(--select);background:var(--select);color:var(--select-ink)}
 #drop .swc svg{width:14px;height:14px}
@@ -462,7 +464,10 @@ dialog form{display:grid;gap:10px}
 .mbar .btn.go{background:var(--select);border-color:var(--select);color:var(--select-ink);font-weight:600}
 .mbar .btn:disabled{color:color-mix(in srgb,currentColor 60%,transparent);border-style:dashed;background:transparent}
 .mbar .why{flex-basis:100%;font-size:11.5px;color:color-mix(in srgb,var(--panel) 78%,var(--ink))}
-@media (forced-colors:active){.mbar{border:1px solid CanvasText}.pk{border-color:Highlight}}
+/* Forced colours drop the amber tint, so a missing cell keeps a dashed border and stripes in system colours, and a disabled Merge keeps GrayText and a dashed border. */
+@media (forced-colors:active){.mbar{border:1px solid CanvasText}.pk{border-color:Highlight}
+  .miss{forced-color-adjust:none;border:2px dashed LinkText;background:repeating-linear-gradient(135deg,LinkText 0 2px,transparent 2px 8px)}
+  .mbar .btn:disabled{forced-color-adjust:none;color:GrayText;border:1px dashed GrayText;background:ButtonFace}}
 .dnote{position:absolute;z-index:30;display:flex;align-items:center;gap:8px;width:max-content;max-width:240px;padding:5px 5px 5px 10px;border-radius:6px;background:var(--ink);color:var(--panel);font:500 12px/1.3 var(--f);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent);pointer-events:none}
 .dnote::before{content:"";position:absolute;left:var(--ax,14px);top:-5px;width:10px;height:10px;background:var(--ink);transform:rotate(45deg);border-radius:1px}
 .dnote.up::before{top:auto;bottom:-5px}
@@ -775,9 +780,9 @@ function view(){
   return v}
 // In the bay: every window the scene gives no cell. Live only, once the engine has answered.
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
-// A bay entry carries `why: COVERED` when a resize or a Merge covered its window; tile.ps1 hands it back in left[].why, and BAYWHY words it.
-const COVERED="covered by a resize";
-const BAYWHY={"in the bay":"You kept it here",[COVERED]:"Covered by a resize","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","fill is off":"Fill is off"};
+// A bay entry carries `why: COVERED` when a resize covered its window, or `why: MERGED` when a Merge moved it; tile.ps1 hands it back in left[].why, and BAYWHY words it.
+const COVERED="covered by a resize",MERGED="moved by a merge";
+const BAYWHY={"in the bay":"You kept it here",[COVERED]:"Covered by a resize",[MERGED]:"Moved by a merge","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","fill is off":"Fill is off"};
 const BAYNOWHY="Not in this scene";
 const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized: it stays minimized":BAYNOWHY;
 // Cells as columns and rows, not numbers: "3 columns × 2 rows from column 1, row 1".
@@ -1097,9 +1102,9 @@ function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id),opt={}){
   x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));if(!x.bay.length)delete x.bay;
   heldOff(x,w,mon.role,cells);
   return slots}
-// A front window leaves its pin: the window right behind it, if any, takes the cell.
+// A front window leaves its pin: the window right behind it, if any, takes the cell. The lock goes with the window that left (ruling stack-and-lock), so the one behind is not locked.
 function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return;const b=pin.behind||[];
-  if(b.length){const n={...pin,app:b[0].app,match:b[0].match||""};if(b.length>1)n.behind=b.slice(1);else delete n.behind;x.pins[i]=n}else x.pins.splice(i,1)}
+  if(b.length){const n={...pin,app:b[0].app,match:b[0].match||""};delete n.lock;if(b.length>1)n.behind=b.slice(1);else delete n.behind;x.pins[i]=n}else x.pins.splice(i,1)}
 // Into the bay: its pin goes, and the scene keeps it where it is. why: the entry's reason, when it is not "you kept it here".
 function bayEdit(x,id,grab=pinNow(x,id),promote=true,why){const w=winById(id);
   if(grab){if(promote)leavePin(x,grab);else x.pins=x.pins.filter(q=>q!==grab)}
@@ -1111,7 +1116,7 @@ function swapInto(aId,bId,mon,slot,fromBay){
     g=s.grids[mon.role],bb=pbox(pb,g),ga=pa&&s.grids[pa.mon],ba=pa&&pbox(pa,ga);
   curMon=mon;selWin=aId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)};
   return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>q.role===pa.mon),ba.r*ga.c+ba.c,ba.cs,ba.rs,gB);
-    pinEdit(x,aId,mon,bb.r*g.c+bb.c,bb.cs,bb.rs,gA,fromBay&&gB?{behind:gB.behind}:{})},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${appName(A.app)} and ${appName(B.app)}.`)}
+    pinEdit(x,aId,mon,bb.r*g.c+bb.c,bb.cs,bb.rs,gA,fromBay&&gB?{behind:gB.behind}:{})},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${pairNames(A,B).join(" and ")}.`)}
 // The cells of a placed window's block (a span is its whole block), on its monitor's grid g.
 const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r),g);
 const cellsOf=(c0,r0,cs,rs,g)=>{const a=[];for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)a.push(r*g.c+c);return a};
@@ -1158,8 +1163,8 @@ function putBehind(aId,bId){
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
-    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay;heldOff(x,A)},`${appName(A.app)} is behind ${appName(B.app)}.`);
-  if(ok)dropNote(px(cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)),`<b>${esc(appName(A.app))}</b> is behind <b>${esc(appName(B.app))}</b>`,hist[hist.length-1]);
+    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay;heldOff(x,A)},`${pairNames(A,B)[0]} is behind ${pairNames(A,B)[1]}.`);
+  if(ok)dropNote(px(cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)),`<b>${esc(pairNames(A,B)[0])}</b> is behind <b>${esc(pairNames(A,B)[1])}</b>`,hist[hist.length-1]);
   return ok}
 // Drop Note: it names the stack under the tile that took the drop, with Undo. It goes after about 6 seconds, at the next press, or at the next edit.
 function removeNote(){clearTimeout(noteT);if(noteEl)noteEl.remove();noteEl=null}
@@ -1201,17 +1206,31 @@ function coverOf(role,g,cells,selfId,self){const s=scene(),P=prev(),covered=[];
     const all=P?P.placed.filter(p=>p.pin===i):[];covered.push({q,i,wins:[...all.filter(p=>!p.behind),...all.filter(p=>p.behind)].map(p=>p.id)})});
   covered.sort((a,b)=>Math.min(...a.q.slots)-Math.min(...b.q.slots));
   const fills=P?P.placed.filter(p=>!p.behind&&p.pin<0&&p.id!==selfId&&p.mon===role&&pbox(p,g).cells.some(c=>cells.has(c))).map(p=>p.id):[];
-  return{covered,fills,list:[...covered.flatMap(o=>o.wins),...fills]}}
-// The apps of windows, in order and each once, as words: "Chrome", "Chrome and Claude", "Chrome, Claude and Notepad", "Chrome, Claude and 2 more".
-function coverApps(ids){const a=[...new Set(ids.map(i=>{const w=winById(i);return w&&appName(w.app)}).filter(Boolean))];return a}
+  // closed: a covered pin with no open window. Its pin goes with the span, and the note says so (decision stack-and-lock).
+  return{covered,fills,list:[...covered.flatMap(o=>o.wins),...fills],closed:covered.filter(o=>!o.wins.length).map(o=>o.q.app)}}
+// Names in a message. One app with two windows in it is told apart: a pair reads "Claude (Refactor the grid…)", a list reads "2 Claude windows".
+function shortTitle(t){t=String(t||"").trim();if(t.length<=20)return t;const c=t.slice(0,20).replace(/\s+\S*$/,"");return(c||t.slice(0,20))+"…"}
+function pairNames(A,B){const same=A.app===B.app,n=w=>same?`${appName(w.app)} (${shortTitle(w.title)})`:appName(w.app);return[n(A),n(B)]}
+// The windows of `ids`, one name per app: "Chrome", "2 Claude windows"; a single window of the actor's own app wears its short title.
+function coverNames(ids,actor){const ws=[...new Set(ids)].map(winById).filter(Boolean),out=[],seen=new Set();
+  for(const w of ws){if(seen.has(w.app))continue;seen.add(w.app);const same=ws.filter(o=>o.app===w.app);
+    out.push(same.length>1?`${same.length} ${appName(w.app)} windows`:actor&&actor.app===w.app?`${appName(w.app)} (${shortTitle(w.title)})`:appName(w.app))}
+  return out}
+// The actor's own name against the windows it moves: "Claude (Refactor the grid…)" only when one of them is its own app.
+const actorName=(A,ids)=>ids.some(i=>{const w=winById(i);return w&&w.id!==A.id&&w.app===A.app})?`${appName(A.app)} (${shortTitle(A.title)})`:appName(A.app);
+// What a resize or a Merge did, as words (b wraps a name; now: the Merge bar's present tense): the windows sent to the list, and the pins removed for windows that are not open.
+function coverSay(ids,closed,actor,b=n=>n,now=false){const out=[];
+  if(ids.length){const n=coverNames(ids,actor);out.push(`${nameList(n.map(b))} ${now?(n.length===1&&!/^\d/.test(n[0])?"goes":"go"):"went"} to Windows That Stay Put`)}
+  if(closed.length)out.push(`The pin${closed.length>1?"s":""} for ${nameList(closed.map(a=>b(appName(a))))} (not open) ${closed.length>1?(now?"are":"were"):(now?"is":"was")} removed`);
+  return out}
 const nameList=a=>a.length<3?a.join(" and "):a.length===3?`${a[0]}, ${a[1]} and ${a[2]}`:`${a[0]}, ${a[1]} and ${a.length-2} more`;
 // Until the engine answers, the page shows its last answer with the covered windows already in the list (the same entry the engine will give back).
-function optimCover(ids){const P=prev();if(!P)return;const set=new Set(ids);
-  P.placed=P.placed.filter(p=>!set.has(p.id));P.left=[...P.left.filter(l=>!set.has(l.id)),...ids.map(id=>{const w=winById(id);return{id,app:w.app,title:w.title,why:COVERED}})]}
+function optimCover(ids,why=COVERED){const P=prev();if(!P)return;const set=new Set(ids);
+  P.placed=P.placed.filter(p=>!set.has(p.id));P.left=[...P.left.filter(l=>!set.has(l.id)),...ids.map(id=>{const w=winById(id);return{id,app:w.app,title:w.title,why}})]}
 // After a resize or a Merge sent windows to the list: their chips wear a blue ring for about 1.5 seconds, and a Drop Note under the new block says where they went.
-function coverNote(r,ids,entry){bayFlash=new Set(ids);clearTimeout(bayFlashT);
+function coverNote(r,ids,entry,actor,closed=[]){bayFlash=new Set(ids);clearTimeout(bayFlashT);
   bayFlashT=setTimeout(()=>{bayFlash.clear();for(const c of document.querySelectorAll("#bgrps .chip.ring"))c.classList.remove("ring")},1500);
-  dropNote(r,`${nameList(coverApps(ids).map(n=>`<b>${esc(n)}</b>`))} went to Windows That Stay Put`,entry)}
+  dropNote(r,coverSay(ids,closed,actor,n=>`<b>${esc(n)}</b>`).join(". "),entry)}
 // The span the pointer is over, in whole cells, stopped by a locked tile. Every window it covers goes to Windows That Stay Put, not to a free cell.
 // dir: the edges that move, as in HDIR. With dir.l or dir.t the left or top edge moves, so the right or bottom edge stays put when a lock cuts the span short.
 function planResize(id,mon,c0,r0,cs,rs,dir=HDIR.br){
@@ -1260,8 +1279,8 @@ function commitResize(r,pl){
     for(const o of pl.covered)x.pins=x.pins.filter(q=>q!==o.q);
     for(const wid of pl.list)bayEdit(x,wid,null,true,COVERED);
     optimCover(pl.list);pinEdit(x,r.id,mon,pl.r0*g.c+pl.c0,pl.cs,pl.rs,self)},
-    `${appName(w.app)} now spans ${pl.cs}×${pl.rs}.${n?` ${nameList(coverApps(pl.list))} went to Windows That Stay Put.`:""}${pl.stopped?" It stopped at a locked tile.":""}`);
-  if(ok&&n)coverNote(px(cellRect(mon,g,pl.c0,pl.r0,pl.cs,pl.rs)),pl.list,hist[hist.length-1])}
+    `${actorName(w,pl.list)} now spans ${pl.cs}×${pl.rs}.${n||pl.closed.length?` ${coverSay(pl.list,pl.closed,w).join(". ")}.`:""}${pl.stopped?" It stopped at a locked tile.":""}`);
+  if(ok&&(n||pl.closed.length))coverNote(px(cellRect(mon,g,pl.c0,pl.r0,pl.cs,pl.rs)),pl.list,hist[hist.length-1],w,pl.closed)}
 // Zones: a rectangle of cells, filled with one app's or category's windows.
 function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort((a,b)=>appName(a).localeCompare(appName(b)));
   return `<optgroup label="Category">${cfg.categories.map(([c,l])=>`<option value="cat:${c}"${cur==="cat:"+c?" selected":""}>${esc(l)}</option>`).join("")}</optgroup><optgroup label="App">${apps.map(a=>`<option value="app:${esc(a)}"${cur==="app:"+a?" selected":""}>${esc(appName(a))}</option>`).join("")}</optgroup>`}
@@ -1346,14 +1365,15 @@ function frame(){raf=0;
     if(occ){const g=t.g,bb=pbox(occ,g),pr=px(cellRect(t.m,g,bb.c,bb.r,bb.cs,bb.rs)),pw=parseFloat(pr.width),ph=parseFloat(pr.height),lk=lockOfPlaced(occ),zone=dropZone(d,occ,t),o=appName(winById(occ.id).app),big=pw>=110;
       // The Put Behind label tries its forms in order and takes the first that fits the block by measured text width. The last form is the icon alone; the tooltip keeps the full name.
       const swapT=d.fromBay?`Swap: ${o} goes to the list`:`Swap with ${o}`;
-      const pill=(forms)=>{const [t,ic,tg]=pickForm(forms,pw);return `<span${tg?' class="t"':""} title="Put Behind ${esc(o)}">${ic||""}${esc(t)}</span>`};
+      const pill=(forms,w=pw)=>{const [t,ic,tg]=pickForm(forms,w);return `<span${tg?' class="t"':""} title="Put Behind ${esc(o)}">${ic||""}${esc(t)}</span>`};
       const behF=[[`Put Behind ${o}`,BEHIND],["Put Behind"],["Behind"],["Behind",0,1],["",BEHIND]];
       Object.assign(dropEl.style,pr);
       if(lk){dropEl.className="split one";dropEl.style.display="grid";
         const [wt,wi,wg]=pickForm([["Locked, so no Swap",LOCKC],["Locked",LOCKC],["Locked"],["Locked",0,1],["",LOCKC]],pw);
         dropEl.innerHTML=`<div class="dz on">${pill(behF)}<span class="why${wg?" t":""}" title="Locked, so no Swap">${wi||""}${esc(wt)}</span></div>`}
-      else{const dm=circD(pw,ph);dropEl.className=zone==="swap"?"circ":"circ on";dropEl.style.display="block";
-        dropEl.innerHTML=`${pill(behF)}<div class="swc${zone==="swap"?" on":""}${dm<48?" sm":""}" style="--d:${dm}px" title="${esc(swapT)}">${SWAPI}${dm<48?"":"Swap"}</div>`}
+      else{const dm=circD(pw,ph),avail=pw/2-dm/2-12,side=ph<dm+40&&avail>=28;
+        dropEl.className=(zone==="swap"?"circ":"circ on")+(side?" side":"");dropEl.style.display="block";dropEl.style.setProperty("--d",dm+"px");
+        dropEl.innerHTML=`${side?pill(behF,avail+22):pill(behF)}<div class="swc${zone==="swap"?" on":""}${dm<48?" sm":""}" style="--d:${dm}px" title="${esc(swapT)}">${SWAPI}${dm<48?"":"Swap"}</div>`}
       // The chip sits just above the block, so the circle and both targets stay in view.
       if(gh.style.display==="block"){const sr=stage.getBoundingClientRect();gh.style.left=Math.max(0,sr.left+parseFloat(pr.left))+"px";gh.style.top=Math.max(0,sr.top+parseFloat(pr.top)-gh.offsetHeight-4)+"px"}
       if(zone==="swap"){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=big?`${o} moves here`:o}}}
@@ -1484,11 +1504,12 @@ function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.
 // The warning opens at the drop, in the page. Until Move It nothing is saved: the tile waits dashed in its target, and its old cell stays dimmed.
 // m.kind: pin (a cell or a span), swap or behind (with m.occ, the window in front there), or list. Put Behind and the list take the lock away: a back window has no pin of its own.
 function askMove(d,m){const w=winById(d.id),A=appName(w.app),sr=stage.getBoundingClientRect();let msg,go,to=null,at;
-  const blk=(o,t)=>{const bb=pbox(o,t.g);return px(cellRect(t.m,t.g,bb.c,bb.r,bb.cs,bb.rs))};
+  const blk=(o,t)=>{const bb=pbox(o,t.g);return px(cellRect(t.m,t.g,bb.c,bb.r,bb.cs,bb.rs))},
+    pn=m.occ&&pairNames(w,winById(m.occ.id));
   if(m.kind==="list"){msg="Move it to Windows That Stay Put? Its lock goes.";go=()=>unplace(d.id,true);at={left:d.px-sr.left+"px",top:stage.offsetHeight+"px",width:"0px",height:"0px"}}
-  else if(m.kind==="behind"){const B=appName(winById(m.occ.id).app);to=at=blk(m.occ,m.t);msg=`Put it behind ${B}? A window behind another has no lock, so its lock goes.`;go=()=>putBehind(d.id,m.occ.id)}
-  else if(m.kind==="swap"){const B=appName(winById(m.occ.id).app);to=at=blk(m.occ,m.t);msg=`Swap it with ${B}? ${B} moves to ${A}'s cell, and ${A} stays locked.`;go=()=>swapInto(d.id,m.occ.id,m.t.m,m.t.slot,false)}
-  else{to=at=px(m.t.r);msg=`Move it to ${monName(m.t.m)} cell ${m.t.slot+1}? It stays locked there.`;
+  else if(m.kind==="behind"){const B=pn[1];to=at=blk(m.occ,m.t);msg=`Put it behind ${B}? A window behind another has no lock, so its lock goes.`;go=()=>putBehind(d.id,m.occ.id)}
+  else if(m.kind==="swap"){const B=pn[1],A=pn[0];to=at=blk(m.occ,m.t);msg=`Swap it with ${B}? ${B} moves to ${A}'s cell, and ${A} stays locked.`;go=()=>swapInto(d.id,m.occ.id,m.t.m,m.t.slot,false)}
+  else{to=at=px(m.t.r);msg=`Move it to ${m.t.m.role?"the ":""}${monName(m.t.m)}? It stays locked there.`;
     go=()=>{curMon=m.t.m;pinWin(d.id,m.t.m,m.t.slot,m.keep?m.t.cs:1,m.keep?m.t.rs:1,true)}}
   closeAsk(false);removeNote();
   const el=document.createElement("div");el.className="lconf";el.setAttribute("role","alertdialog");el.setAttribute("aria-labelledby","lch");el.setAttribute("aria-describedby","lcp");
@@ -1526,16 +1547,19 @@ function pickInfo(){const k=picks,P=prev(),s=LIVE&&scene();if(!k||!P||!s)return 
   const set=new Set(k.order),wins=[];
   for(const c of k.order){const p=blockAt(P,k.role,g,c).p;if(p&&!wins.includes(p))wins.push(p)}
   const b=bbox(k.order,g),missing=b.cells.filter(x=>!set.has(x));
-  return{k,g,b,set,wins,missing,rect:!missing.length,lockedW:wins.find(lockOfPlaced),keeper:wins[0]||null,m:snap.monitors.find(q=>q.role===k.role),
+  // A locked pin on any picked cell stops a Merge, a closed window's pin too (a resize stops at it the same way).
+  const keeper=wins[0]||null,self=keeper&&pinNow(s,keeper.id),
+    lockedPin=s.pins.find(q=>{if(!q.lock||q===self||q.mon!==k.role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>set.has(c))})||null;
+  return{k,g,b,set,wins,missing,rect:!missing.length,lockedW:wins.find(lockOfPlaced),lockedPin,keeper,m:snap.monitors.find(q=>q.role===k.role),
     one:wins.length===1&&pbox(wins[0],g).cells.length===set.size}}
 // The bar's words and whether Merge and Fill to Rectangle are on. The reason for a disabled Merge is text in the bar (aria-describedby on the button).
-function mergeWords(i){const nm=w=>`<b>${esc(appName(winById(w.id).app))}</b>`,P=prev(),A=i.keeper&&nm(i.keeper);
+function mergeWords(i){const P=prev();
   if(!i.rect){const names=[...new Set(i.missing.map(c=>blockAt(P,i.k.role,i.g,c).p).filter(Boolean).map(p=>appName(winById(p.id).app)))];
     return{body:"These cells are not a rectangle.",why:`Merge needs a rectangle. Fill to Rectangle adds ${i.missing.length===1?"the missing cell":`${i.missing.length} missing cells`}${names.length?`, with ${nameList(names)}`:""}.`,go:false,fill:true}}
-  if(i.lockedW)return{body:"A locked tile is in the pick.",why:`${appName(winById(i.lockedW.id).app)} is locked. Leave its cell out.`,go:false};
+  if(i.lockedW||i.lockedPin)return{body:"A locked tile is in the pick.",why:`${i.lockedW?appName(winById(i.lockedW.id).app):appName(i.lockedPin.app)} is locked. Leave its cell out.`,go:false};
   if(!i.keeper)return{body:"No window is in these cells.",why:"A span belongs to a window. Ctrl+click a window next to them, or drag one in.",go:false};
-  const cv=coverOf(i.k.role,i.g,i.set,i.keeper.id,pinNow(scene(),i.keeper.id)),gone=cv.list;
-  return{body:`${A} spans ${i.b.cs===1||i.b.rs===1?`the ${i.set.size} cells`:`${i.b.cs}×${i.b.rs}`}.${gone.length?` ${nameList(coverApps(gone).map(n=>`<b>${esc(n)}</b>`))} go${coverApps(gone).length===1?"es":""} to Windows That Stay Put.`:""}`,go:true}}
+  const cv=coverOf(i.k.role,i.g,i.set,i.keeper.id,pinNow(scene(),i.keeper.id)),K=winById(i.keeper.id),b=n=>`<b>${esc(n)}</b>`,say=coverSay(cv.list,cv.closed,K,b,true);
+  return{body:`${b(actorName(K,cv.list))} spans ${i.b.cs===1||i.b.rs===1?`the ${i.set.size} cells`:`${i.b.cs}×${i.b.rs}`}.${say.length?` ${say.join(". ")}.`:""}`,go:true}}
 // The picks, the block they make and the Merge bar, drawn on the stage after every render.
 function renderPicks(){for(const e of stage.querySelectorAll(".pk,.miss,.mbox,.mbar"))e.remove();
   const i=pickInfo();if(!i)return;const m=i.m,g=i.g;
@@ -1559,12 +1583,12 @@ function fillRect(){const i=pickInfo();if(!i||i.rect)return;const P=prev(),o=[..
     for(const x of add)for(const y of blockAt(P,i.k.role,i.g,x).cells)if(!o.includes(y))o.push(y)}
   picks.order=o;render()}
 // Merge: the first window picked takes the whole block; every other window in it, with its stack, goes to Windows That Stay Put, as a resize sends them.
-function mergePicks(){const i=pickInfo();if(!i||!i.rect||i.lockedW||!i.keeper)return;
+function mergePicks(){const i=pickInfo();if(!i||!i.rect||i.lockedW||i.lockedPin||!i.keeper)return;
   const {g,b,m,keeper:k}=i,s=scene(),self=pinNow(s,k.id),cv=coverOf(i.k.role,g,i.set,k.id,self),A=winById(k.id),r=cellRect(m,g,b.c,b.r,b.cs,b.rs);
   optim={id:k.id,r};selWin=k.id;curMon=m;
-  const ok=edit(x=>{for(const o of cv.covered)x.pins=x.pins.filter(q=>q!==o.q);for(const id of cv.list)bayEdit(x,id,null,true,COVERED);optimCover(cv.list);pinEdit(x,k.id,m,b.r*g.c+b.c,b.cs,b.rs,self)},
-    `${appName(A.app)} now spans ${b.cs}×${b.rs}.${cv.list.length?` ${nameList(coverApps(cv.list))} went to Windows That Stay Put.`:""}`);
-  if(ok&&cv.list.length)coverNote(px(r),cv.list,hist[hist.length-1])}
+  const ok=edit(x=>{for(const o of cv.covered)x.pins=x.pins.filter(q=>q!==o.q);for(const id of cv.list)bayEdit(x,id,null,true,MERGED);optimCover(cv.list,MERGED);pinEdit(x,k.id,m,b.r*g.c+b.c,b.cs,b.rs,self)},
+    `${actorName(A,cv.list)} now spans ${b.cs}×${b.rs}.${cv.list.length||cv.closed.length?` ${coverSay(cv.list,cv.closed,A).join(". ")}.`:""}`);
+  if(ok&&(cv.list.length||cv.closed.length))coverNote(px(r),cv.list,hist[hist.length-1],A,cv.closed)}
 
 /* ---------- Apply, Undo, results ---------- */
 function busy(b){isBusy=b;render()}
