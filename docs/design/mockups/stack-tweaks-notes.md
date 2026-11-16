@@ -38,8 +38,9 @@ named badge, the handles on every edge, Fill Empty Cells and Clear Board.
    Gain: the circle is at least 28px (over the 24px of WCAG 2.5.8), and the band keeps at least
    14px on every side plus the corners. Loss: Swap shrinks from 64% of the cell to 10 to 19%.
    Other option: 60% of the short side (62px and 34px; band 21px and 11px). Pick: 50%.
-   Departs from: `decisions/stack-and-lock.md`, "Swap (top 64%, the default)". After this change
-   Put Behind is the larger target, so a careless drop stacks. Owner grant: yes.
+   Departs from: main, where the top 64% swaps and is the default (`app.html` `dropZone()`). After
+   this change Put Behind is the larger target, so a careless drop stacks; the Drop Note's Undo is
+   one press away. The circle is ruled; its size is the open choice. Owner grant: yes.
 3. **Labels.** The circle holds the swap icon, and the word "Swap" when it is 48px or wider. The
    Put Behind pill sits at the bottom of the block, with today's forms by width: "Put Behind
    Chrome" from 150px, "Put Behind" from 84px, a 10px "Behind" below that (`app.html` `frame()`,
@@ -66,8 +67,8 @@ named badge, the handles on every edge, Fill Empty Cells and Clear Board.
     selected tile. A locked tile always shows its filled chip (`lk-rest`). A hidden padlock is
     `visibility:hidden`, so it takes no click and no Tab stop. Unlike the grip, which stays
     hit-testable when faint, an invisible lock that clicks would be a trap.
-    Departs from: `decisions/stack-and-lock.md`, "a padlock on every tile" (`app.html` `.tile .lk`).
-    The ruling covers it.
+    Departs from: main, where the padlock shows on every tile (`app.html` `.tile .lk`). The
+    2026-11-16 ruling in `decisions/stack-and-lock.md` covers it.
 11. **Touch.** A touch screen has no hover, so the padlock shows on selection only. L and the
     inspector's Lock switch stay as the other ways in.
 12. **App tag width.** At rest the tag takes the full tile width; while the padlock shows, it stops
@@ -108,9 +109,8 @@ named badge, the handles on every edge, Fill Empty Cells and Clear Board.
 18. **Covered windows.** Every window the new span covers goes to Windows That Stay Put, pinned or
     filled, with any windows behind it. No window moves to another cell. A locked tile still stops
     the resize. Departs from: `app.html` `planResize()`, which sends covered pins to free cells
-    through `fit()` and does not count filled windows (`rz-today`); and from
-    `decisions/stack-and-lock.md`, "Covered windows move to free cells in fill order". The ruling
-    covers it.
+    through `fit()` and does not count filled windows (`rz-today`). The 2026-11-16 ruling in
+    `decisions/stack-and-lock.md` covers it.
 19. **During the drag.** Each covered tile gets a "To the list" tag (the stay icon alone under 84px),
     and the label reads "3×1 · 2 windows go to the list". The `#rzdest` outlines go.
 20. **After the drop.** A Drop Note under the resized tile: "VS Code and Notepad went to Windows
