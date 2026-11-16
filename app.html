@@ -420,8 +420,10 @@ dialog form{display:grid;gap:10px}
 #drop.circ.on>span{background:var(--select);color:var(--select-ink);box-shadow:none}
 #drop.circ>span.t{bottom:1px;font-size:10px;padding:1px 3px;gap:2px;line-height:1.15}
 #drop.circ>span svg{width:12px;height:12px;flex:none}
-/* A block too short to hold the circle and the label one above the other (a 2x1 span at 1024): the label sits beside the circle. */
-#drop.circ.side>span,#drop.circ.side>span.t{top:50%;bottom:auto;left:calc(50% + var(--d)/2 + 8px);transform:translateY(-50%);max-width:calc(50% - var(--d)/2 - 12px)}
+/* A block too short to hold the circle and the label one above the other: the label sits beside the circle, or in the bottom
+   right corner when its words do not fit beside it (a 2x1 span at 1024). frame() sets --lw, the width it chose the words for. */
+#drop.circ.side>span,#drop.circ.side>span.t{top:50%;bottom:auto;left:calc(50% + var(--d)/2 + 8px);transform:translateY(-50%);max-width:var(--lw)}
+#drop.circ.corner>span,#drop.circ.corner>span.t{left:auto;right:1px;bottom:1px;transform:none;max-width:var(--lw)}
 #drop .swc{position:absolute;left:50%;top:50%;width:var(--d);height:var(--d);transform:translate(-50%,-50%);border-radius:50%;display:grid;place-items:center;align-content:center;border:2px dashed var(--select);background:var(--panel);color:var(--select);font:600 11px/1.1 var(--f)}
 #drop .swc.on{border:3px solid var(--select);background:var(--select);color:var(--select-ink)}
 #drop .swc svg{width:14px;height:14px}
@@ -444,6 +446,8 @@ dialog form{display:grid;gap:10px}
 .lconf .acts2{display:flex;gap:6px;justify-content:flex-end}
 .pendtile{position:absolute;z-index:7;display:flex;flex-direction:column;gap:2px;padding:4px 5px;overflow:hidden;border:2px dashed var(--hi);border-radius:3px;background:color-mix(in srgb,var(--cat) 34%,var(--panel));font-size:11px;line-height:1.25;opacity:.75;pointer-events:none}
 .pendtile b{align-self:flex-start;font:600 11px var(--f);padding:1px 5px;border-radius:2px;background:var(--cat);color:var(--panel);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Over a taken cell the waiting tile is opaque, so only its title reads there until Move It or Cancel removes it. */
+.pendtile.over{opacity:1}
 .tile.pendfrom{opacity:.45;border-style:dashed}
 /* Ctrl+click picks, then Merge: a ring, tint and check on each pick, a dashed block, amber cells that are missing, and a bar in the Drop Note's look. */
 .tile.picking .stayput,.tile.picking .rsz{display:none!important}
@@ -1337,10 +1341,12 @@ function cellAt(x,y){const sr=stage.getBoundingClientRect(),sx=(x-sr.left)/G.S+G
 let measureCtx=null;
 function textW(t,sz=12){if(!measureCtx){measureCtx=document.createElement("canvas").getContext("2d")}
   measureCtx.font=`600 ${sz}px ${getComputedStyle(document.documentElement).getPropertyValue("--f")||"sans-serif"}`;return measureCtx.measureText(t).width}
-// The first [text, icon, tight] form whose chip (padding, icon, text) fits inside a cell pw px wide; the last form always stands.
-// The chip sits in a zone with a 3px border and 2px padding on each side, and has 6px padding of its own.
+// Whether a [text, icon, tight] chip fits a box cw px wide: its words, a 12px icon with a 4px gap, and 6px padding a side.
 // A tight form sets the words at 10px with 3px padding, so "Behind" and "Locked" keep their words in the narrowest cells.
-function pickForm(forms,pw){const fits=([t,ic,tight])=>tight?textW(t,10)+6<=pw-10:textW(t)+(ic?16:0)<=pw-10-12;return forms.find((f,i)=>i===forms.length-1||fits(f))||forms[forms.length-1]}
+const chipFits=([t,ic,tight],cw)=>tight?textW(t,10)+6<=cw:textW(t)+(ic?16:0)+12<=cw;
+// The first form whose chip fits a box cw px wide; the last form always stands. A zone's chip box is the zone's width less
+// its 3px border and 2px padding on each side (pw-10).
+function pickForm(forms,cw){return forms.find((f,i)=>i===forms.length-1||chipFits(f,cw))||forms[forms.length-1]}
 function frame(){raf=0;
   if(zdraw){const z=zdraw,a=Math.min(z.c0,z.c1),b=Math.min(z.r0,z.r1),cs=Math.abs(z.c1-z.c0)+1,rs=Math.abs(z.r1-z.r0)+1,e=$("zdraw");
     const r=cellRect(z.m,z.g,a,b,cs,rs);Object.assign(e.style,px(r));e.style.display="block";let n=0;
@@ -1365,15 +1371,22 @@ function frame(){raf=0;
     if(occ){const g=t.g,bb=pbox(occ,g),pr=px(cellRect(t.m,g,bb.c,bb.r,bb.cs,bb.rs)),pw=parseFloat(pr.width),ph=parseFloat(pr.height),lk=lockOfPlaced(occ),zone=dropZone(d,occ,t),o=appName(winById(occ.id).app),big=pw>=110;
       // The Put Behind label tries its forms in order and takes the first that fits the block by measured text width. The last form is the icon alone; the tooltip keeps the full name.
       const swapT=d.fromBay?`Swap: ${o} goes to the list`:`Swap with ${o}`;
-      const pill=(forms,w=pw)=>{const [t,ic,tg]=pickForm(forms,w);return `<span${tg?' class="t"':""} title="Put Behind ${esc(o)}">${ic||""}${esc(t)}</span>`};
+      const pill=(forms,cw=pw-10)=>{const [t,ic,tg]=pickForm(forms,cw);return `<span${tg?' class="t"':""} title="Put Behind ${esc(o)}">${ic||""}${esc(t)}</span>`};
       const behF=[[`Put Behind ${o}`,BEHIND],["Put Behind"],["Behind"],["Behind",0,1],["",BEHIND]];
       Object.assign(dropEl.style,pr);
       if(lk){dropEl.className="split one";dropEl.style.display="grid";
-        const [wt,wi,wg]=pickForm([["Locked, so no Swap",LOCKC],["Locked",LOCKC],["Locked"],["Locked",0,1],["",LOCKC]],pw);
+        const [wt,wi,wg]=pickForm([["Locked, so no Swap",LOCKC],["Locked",LOCKC],["Locked"],["Locked",0,1],["",LOCKC]],pw-10);
         dropEl.innerHTML=`<div class="dz on">${pill(behF)}<span class="why${wg?" t":""}" title="Locked, so no Swap">${wi||""}${esc(wt)}</span></div>`}
-      else{const dm=circD(pw,ph),avail=pw/2-dm/2-12,side=ph<dm+40&&avail>=28;
-        dropEl.className=(zone==="swap"?"circ":"circ on")+(side?" side":"");dropEl.style.display="block";dropEl.style.setProperty("--d",dm+"px");
-        dropEl.innerHTML=`${side?pill(behF,avail+22):pill(behF)}<div class="swc${zone==="swap"?" on":""}${dm<48?" sm":""}" style="--d:${dm}px" title="${esc(swapT)}">${SWAPI}${dm<48?"":"Swap"}</div>`}
+      else{const dm=circD(pw,ph),r=dm/2,bw=zone==="swap"?2:3,iw=pw-2*bw,ih=ph-2*bw,words=behF.slice(0,-1),tight=[["Behind",0,1]];
+        // A block too short for the label under the circle: the label goes beside the circle (8px from it, 4px from the edge),
+        // or, when no form with its words fits there, in the bottom right corner (1px in), clear of the circle's curve at the
+        // tight chip's top (14px tall). lw is the label's width: the CSS box (--lw) and the form chosen both use it.
+        let place="",lw=0,forms=behF;
+        if(ph<dm+40){const sw=iw/2-r-12,top=ih-1-14,dy=Math.max(0,top-ih/2),cw=iw-1-(iw/2+(dy<r?Math.sqrt(r*r-dy*dy):0)+2);
+          if(words.some(f=>chipFits(f,sw))){place="side";lw=sw}
+          else if(chipFits(tight[0],cw)){place="corner";lw=cw;forms=tight}}
+        dropEl.className=(zone==="swap"?"circ":"circ on")+(place?" "+place:"");dropEl.style.display="block";dropEl.style.setProperty("--d",dm+"px");dropEl.style.setProperty("--lw",lw+"px");
+        dropEl.innerHTML=`${place?pill(forms,lw):pill(behF)}<div class="swc${zone==="swap"?" on":""}${dm<48?" sm":""}" style="--d:${dm}px" title="${esc(swapT)}">${SWAPI}${dm<48?"":"Swap"}</div>`}
       // The chip sits just above the block, so the circle and both targets stay in view.
       if(gh.style.display==="block"){const sr=stage.getBoundingClientRect();gh.style.left=Math.max(0,sr.left+parseFloat(pr.left))+"px";gh.style.top=Math.max(0,sr.top+parseFloat(pr.top)-gh.offsetHeight-4)+"px"}
       if(zone==="swap"){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=big?`${o} moves here`:o}}}
@@ -1516,7 +1529,7 @@ function askMove(d,m){const w=winById(d.id),A=appName(w.app),sr=stage.getBoundin
   el.innerHTML=`<h4 id="lch">${LOCKC}${esc(A)} is locked</h4><p id="lcp">${esc(msg)}</p><div class="acts2"><button type="button" class="btn">Cancel</button><button type="button" class="btn pri">Move It</button></div>`;
   stage.appendChild(el);hang(el,at);
   let pend=null;
-  if(to){pend=document.createElement("div");pend.className=`pendtile cat-${catOf(w.app)}`;pend.setAttribute("aria-hidden","true");
+  if(to){pend=document.createElement("div");pend.className=`pendtile cat-${catOf(w.app)}${m.occ?" over":""}`;pend.setAttribute("aria-hidden","true");
     pend.innerHTML=`<b>${esc(A)}</b><span>${esc(w.title)}</span>`;Object.assign(pend.style,to);stage.appendChild(pend)}
   lockAsk={el,pend,id:d.id,go};
   const [no,yes]=el.querySelectorAll("button");
