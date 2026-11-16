@@ -54,6 +54,20 @@ public static class W {
   [DllImport("user32.dll")] static extern bool IsWindowArranged(IntPtr h);
   // Snapped or vertically maximized (Windows 11). Older Windows has no such call: never arranged.
   public static bool Arranged(IntPtr h) { try { return IsWindowArranged(h); } catch (EntryPointNotFoundException) { return false; } }
+  // The live monitor list, read from Windows on every call (Screen.AllScreens is cached for the life of the process).
+  public delegate bool MonitorEnumProc(IntPtr m, IntPtr hdc, IntPtr r, IntPtr d);
+  [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc f, IntPtr d);
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct MONITORINFOEX { public int cbSize; public RECT rcMonitor, rcWork; public int dwFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szDevice; }
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFOEX i);
+  public static MONITORINFOEX[] Monitors() {
+    var list = new System.Collections.Generic.List<MONITORINFOEX>();
+    EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (m, h, r, d) => {
+      var i = new MONITORINFOEX(); i.cbSize = Marshal.SizeOf(typeof(MONITORINFOEX));
+      if (GetMonitorInfo(m, ref i)) list.Add(i);
+      return true;
+    }, IntPtr.Zero);
+    return list.ToArray();
+  }
 }
 '@
 . (Join-Path $PSScriptRoot 'config.ps1')
@@ -117,13 +131,21 @@ if (($Json -or $Place -or $PlaceFile) -and -not $PSBoundParameters.ContainsKey('
 $Proc = @($Proc -split ',' | ? { $_ })  # -File passes 'a,b' as one string
 $Skip = @($Skip -split ',' | ? { $_ })
 
+# Monitors: TILE_SCREENS_FILE (a JSON array of {name,x,y,w,h,bw,bh}, read on every call) stands in for the live list, which is
+# read from Windows on every call too. The extra `% { $_ }` unrolls the array Windows PowerShell 5.1 emits as one object. Both give the work area in X,Y,W,H and the bounds' size in BW,BH.
+function Get-Screens {
+  if ($env:TILE_SCREENS_FILE) {
+    return @(ConvertFrom-Json ([IO.File]::ReadAllText($env:TILE_SCREENS_FILE, [Text.Encoding]::UTF8)) | % { $_ } | % { [pscustomobject]@{ Name = [string]$_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h } })
+  }
+  @([W]::Monitors() | % { [pscustomobject]@{ Name = $_.szDevice; BW = $_.rcMonitor.R - $_.rcMonitor.L; BH = $_.rcMonitor.B - $_.rcMonitor.T; X = $_.rcWork.L; Y = $_.rcWork.T; W = $_.rcWork.R - $_.rcWork.L; H = $_.rcWork.B - $_.rcWork.T } })
+}
 # Monitors: bounds pick the role, the working area is where windows go.
 if ($From) {
   $DryRun = [switch]$true
   $snapIn = ConvertFrom-Json (JsonText $From)
   $screens = @($snapIn.monitors | % { [pscustomobject]@{ Name = $_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h } })
 } else {
-  $screens = @([System.Windows.Forms.Screen]::AllScreens | % { $a = $_.WorkingArea; [pscustomobject]@{ Name = $_.DeviceName; BW = $_.Bounds.Width; BH = $_.Bounds.Height; X = $a.X; Y = $a.Y; W = $a.Width; H = $a.Height } })
+  $screens = @(Get-Screens)
 }
 function Pick($role, $taken = @()) {
   $s = @($screens | ? { $taken -notcontains $_.Name })
