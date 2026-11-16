@@ -8,8 +8,9 @@
 # -Scene <name|path|json>: run a scene (one grid per monitor role, pins, fill) from config.json or a file. See scenes.json.
 #   With -Json, print {placed,missing,left} as JSON, each placed window with its from and to rect.
 #   A scene's zones ({mon, slots, app | cat}) fill their cells with that app's or category's windows in
-#   fill order, after pins (a pin wins its cell). Its bay ([{app, title}]) holds windows that stay put.
-#   left[].why says where a window without a cell came from: 'no free cell', 'zone full' or 'in the bay'.
+#   fill order, after pins (a pin wins its cell). Its bay ([{app, title, why?}]) holds windows that stay put.
+#   left[].why says where a window without a cell came from: 'no free cell', 'zone full' or 'in the bay'. A bay entry's own why
+#   (the page sets it, such as when a resize covered the window) is passed through in place of 'in the bay'; the page words it.
 #   A pin's behind ([{app, match}]) stacks windows on its rect: each is placed with behind=true and the pin's index, never filled.
 #   A pin's lock (true) is read by the page, not here: a pin already beats zones and the fill for its cells.
 # -From <path|json>: use a -Json snapshot instead of the live desktop. Always a dry run.
@@ -354,7 +355,7 @@ $zFill = @($sc.fill.apps); $zSkip = @($Skip + @($sc.fill.skip) | ? { $_ })
 foreach ($b in @($sc.bay | ? { $_ })) {
   $it = if ($b.id) { @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and [int64]$_.H -eq [int64]$b.id -and $_.App -eq [string]$b.app })[0] }
   if (-not $it -and $b.title) { $it = @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and $_.App -eq [string]$b.app -and $_.Title -ceq [string]$b.title })[0] }
-  if ($it) { $claimed["$($it.H)"] = 1; $left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = 'in the bay' } }
+  if ($it) { $claimed["$($it.H)"] = 1; $left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = $(if ($b.why) { [string]$b.why } else { 'in the bay' }) } }
 }
 foreach ($role in 'tall', 'laptop', 'wide') {
   $g = $sc.grids.$role; if (-not $g) { continue }
