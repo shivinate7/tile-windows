@@ -240,8 +240,9 @@ input[type=text]{width:100%}
 .lrow .nm small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 .lrow .rt{display:flex;align-items:center;gap:8px;justify-self:end}
 .lrow .st{font-size:12px;color:var(--muted);white-space:nowrap}
-.lrow .st.now{color:var(--ink);font-weight:600;display:inline-flex;align-items:center;gap:5px}
-.lrow .st.now::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.lrow .st.now{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.dlg .why{font-size:12px;color:var(--muted);margin:0}
+@media (forced-colors:active){.lrow .st.now{background:CanvasText}}
 .lrow details{grid-column:2/-1;font-size:12px;color:var(--muted)}
 .lrow details summary{font-weight:500;color:var(--muted);width:max-content}
 .lrow details code{font:11.5px var(--f-mono);overflow-wrap:anywhere}
@@ -337,8 +338,8 @@ const OPTS=["setups","laptop","portrait","stay","dialog","rail","icon","word"];
 /* [key, item, option, name, caption] */
 const STATES=[
   ["bd-today",1,"today","Today: the Laptop Is Called Ultrawide","The ultrawide is unplugged. Today the widest screen left takes the Ultrawide role, so the laptop gets the 5×2 grid and seven windows. The Laptop role has no screen, so Outlook (new) is skipped."],
-  ["bd-new",1,"setups","Unplugged: a New Setup, Built From Desk","Each screen keeps its own name. A strip above the board names the setup and says the scene follows Desk. The toast says once that the screens changed. The board shows Default's layout for this setup; Apply moves the windows, unless a trigger does it."],
-  ["bd-back",1,"setups","Plugged Back In: Desk Returns As It Was","Desk is a setup it has seen, so its layout comes back untouched. Nothing done on Laptop + Portrait wrote to Desk."],
+  ["bd-new",1,"setups","Unplugged: a New Setup, Built From Desk","Each screen keeps its own name. A strip above the board names the setup and says the scene follows Desk; no toast, so nothing covers the strip. The board shows Default's layout for this setup; Apply moves the windows, unless a trigger does it."],
+  ["bd-back",1,"setups","Plugged Back In: Desk Returns As It Was","Desk is a setup it has seen, so its layout comes back untouched. Nothing done on Laptop + Portrait wrote to Desk. The strip names Desk and says other setups follow it."],
   ["bd-noid",1,"setups","A Monitor With No ID","A hotel monitor reports no maker or serial, so it cannot be told apart next time. The strip says so and offers to remember it by its size. Until then the layout follows Desk and edits last only while it is plugged in."],
   ["fd-laptop",2,"laptop","Fold Onto the Laptop","The ultrawide's seven windows go to the remaining screen closest in shape: the laptop, landscape like the ultrawide. Its grid grows to 2×2, its own window keeps cell 1, and each category of folded window takes one cell, stacked in fill order."],
   ["fd-portrait",2,"portrait","Fold Onto the Portrait","The seven windows go to the portrait, the larger screen by area. Its grid grows from 1×2 to 1×5: one row per category under Outlook and Teams. The rows are short."],
@@ -484,19 +485,21 @@ function insp(st,F,L){
 /* ---------- Monitors and Setups dialog ---------- */
 function dialog(st,F){
   const first=st==="mg-first";
+  // Each row's state shows by shape: a green dot for plugged in or in use; a date for the rest. The words are in the section header and the dot's label, once.
+  const why=`${F}-whyforget`;
   const mrow=(k,plugged,when)=>`<div class="lrow">${smapOne(k)}<div class="nm"><input type="text" value="${esc(HW[k].name)}" aria-label="Name of ${esc(HW[k].det)}" maxlength="24"><small>${esc(HW[k].det)}</small></div>
-    <div class="rt">${plugged?`<span class="st now">Plugged in</span>`:`<span class="st">${esc(when)}</span>`}<button type="button" class="btn"${plugged?' disabled title="Plugged in now. Unplug it to forget it."':""}>Forget</button></div>
+    <div class="rt">${plugged?`<span class="st now" role="img" aria-label="Plugged in" title="Plugged in"></span>`:`<span class="st" title="Last seen">${esc(when)}</span>`}<button type="button" class="btn"${plugged?` disabled aria-describedby="${why}" title="Plugged in now. Unplug it to forget it."`:""}>Forget</button></div>
     ${k==="uw"?`<details><summary>What Windows calls it</summary><code>${esc(HW[k].id)}</code></details>`:""}</div>`;
-  const srow=(k,now)=>`<div class="lrow">${smap(k,[],62,30)}<div class="nm"><input type="text" value="${esc(SETUP[k].name)}" aria-label="Name of the setup" maxlength="32"><small>${SETUP[k].mons.map(m=>HW[m].name).join(", ")}. Own layouts: ${SETUP[k].own}.</small></div>
-    <div class="rt">${now?`<span class="st now">In use</span>`:`<span class="st">${esc(SETUP[k].when)}</span>`}<button type="button" class="btn"${now?' disabled title="In use now. Plug in other monitors to forget it."':""}>Forget</button></div></div>`;
+  const srow=(k,now)=>`<div class="lrow">${smap(k,[],62,30)}<div class="nm"><input type="text" value="${esc(SETUP[k].name)}" aria-label="Name of the setup" maxlength="32"><small>${SETUP[k].mons.map(m=>HW[m].name).join(", ")}</small></div>
+    <div class="rt">${now?`<span class="st now" role="img" aria-label="In use" title="In use"></span>`:`<span class="st" title="Last used">${esc(SETUP[k].when.replace(/^Last used /,""))}</span>`}<button type="button" class="btn"${now?` disabled aria-describedby="${why}" title="In use now. Plug in other monitors to forget it."`:""}>Forget</button></div></div>`;
   let body;
   if(first){
-    body=`<section class="dsec"><h3>Monitors <span>3 plugged in</span></h3>${mrow("lap",true)}${mrow("uw",true)}${mrow("por",true)}</section>
-      <section class="dsec" id="${F}-setups"><h3>Setups <span>1 so far</span></h3>${srow("desk",true)}<p class="dempty">Plug in a different set of monitors and it is added here, with a layout built from Desk.</p></section>`}
+    body=`<section class="dsec"><h3>Monitors <span>All 3 plugged in</span></h3>${mrow("lap",true)}${mrow("uw",true)}${mrow("por",true)}</section>
+      <section class="dsec" id="${F}-setups"><h3>Setups <span>1 so far, in use</span></h3>${srow("desk",true)}<p class="dempty">Plug in a different set of monitors and it is added here, with a layout built from Desk.</p></section>`}
   else{
-    body=`<section class="dsec"><h3>Monitors <span>2 plugged in, 4 known</span></h3>${mrow("lap",true)}${mrow("por",true)}${mrow("uw",false,"Last seen today 14:30")}${mrow("h27",false,"Last seen Nov 9")}</section>
-      <section class="dsec"><h3>Setups <span>4 known</span></h3>${srow("lp",true)}${srow("desk",false)}${srow("solo",false)}${srow("home",false)}</section>`}
-  const dlg=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="${F}-dh" id="${F}-dlg"><h2 id="${F}-dh">Monitors and Setups</h2><p class="note">Tile Windows knows each monitor by its hardware, and keeps a layout per scene for each set of monitors it has seen. Forget removes that setup's layouts from every scene.</p>${body}<div class="row"><button type="button" class="btn pri">Done</button></div></div>`;
+    body=`<section class="dsec"><h3>Monitors <span>4 known. A dot marks the 2 plugged in; the rest show when last seen.</span></h3>${mrow("lap",true)}${mrow("por",true)}${mrow("uw",false,"Today 14:30")}${mrow("h27",false,"Nov 9")}</section>
+      <section class="dsec"><h3>Setups <span>4 known. A dot marks the one in use; the rest show when last used.</span></h3>${srow("lp",true)}${srow("desk",false)}${srow("solo",false)}${srow("home",false)}</section>`}
+  const dlg=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="${F}-dh" id="${F}-dlg"><h2 id="${F}-dh">Monitors and Setups</h2><p class="note">Tile Windows knows each monitor by its hardware, and keeps a layout per scene for each set of monitors it has seen. Forget removes that setup's layouts from every scene.</p>${body}<p class="why" id="${why}">Forget is off for a monitor that is plugged in and for the setup in use.</p><div class="row"><button type="button" class="btn pri">Done</button></div></div>`;
   return `<div class="backdrop">${dlg}</div>`}
 // One monitor drawn alone, its shape to scale.
 function smapOne(k){const r=Object.values(GEO).find(g=>g[k])[k],S=Math.min(56/r[2],24/r[3]),w=r[2]*S,h=r[3]*S;
@@ -504,9 +507,7 @@ function smapOne(k){const r=Object.values(GEO).find(g=>g[k])[k],S=Math.min(56/r[
 
 /* ---------- Whole app frame ---------- */
 function frame(st,w){const F=st,L=layout(st),opt=STATES.find(s=>s[0]===st)[2],today=opt==="today";
-  const toast=st==="bd-new"?`<div class="toast" role="status" id="${F}-toast"><span>Screens changed: Laptop + Portrait, a new setup. Each scene follows Desk here.</span><button type="button" class="btn">Close</button></div>`
-    :st==="bd-back"?`<div class="toast" role="status" id="${F}-toast"><span>Screens changed: Desk is back, with its own layouts.</span><button type="button" class="btn">Close</button></div>`:"";
-  const toastBox=toast?`<div style="position:absolute;right:0;top:100%;width:100%">${toast.replace('class="toast"','class="toast" style="outline:1.5px dashed var(--ann-new);outline-offset:3px"')}</div>`:"";
+  const toastBox="";
   const strip=today?"":setbar(st,F);
   const hint=`<p class="hint">Drag to a cell to pin, or to the list to keep put.</p>`;
   const stayList=st==="fd-stay";

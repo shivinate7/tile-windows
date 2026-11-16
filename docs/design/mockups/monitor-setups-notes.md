@@ -15,157 +15,161 @@ for this repo. Tokens and app CSS are copied from `stack-tweaks.html`, which cop
 web fonts, so the page opens with no network.
 
 Focus ids for the waiting page, each prefixed by its state key: `-setbar` (bd-new, bd-back,
-bd-noid, fd-stay, cd-own), `-toast` (bd-new, bd-back), `-target` (fd-laptop, fd-portrait),
-`-list` (fd-stay), `-dlg` (mg-dialog), `-setups` (mg-first, mg-rail), `-cards` (cd-follow,
-cd-word), `-card` (cd-own).
+bd-noid, fd-stay, cd-own), `-target` (fd-laptop, fd-portrait), `-list` (fd-stay), `-dlg`
+(mg-dialog), `-setups` (mg-first, mg-rail), `-cards` (cd-follow, cd-word), `-card` (cd-own).
 
 Terms. A **setup** is the set of monitors plugged in at once. A scene's layout on a setup either
 **follows** another setup (built from it, and kept in step with it) or is its **own layout**
 (changed and saved on that setup). "Follows Desk" is the one phrase the screen uses for the first.
 
-Everything not named below stays as it is on main: the board, tiles, stacks, the inspector's
-Columns and Rows, Windows That Stay Put, Save and Revert.
+Unchanged from main: the board, tiles, stacks, the inspector's Columns and Rows, Windows That Stay
+Put, Save and Revert, the Edited dot and "· edited" tag, and the "When the Monitors Change" trigger,
+which applies its scene on a setup change as today (`decisions/triggers.md`). A setup change
+redraws the board; windows move on Apply or by that trigger, as today.
 
 ## 1. Know each monitor by its hardware
 
-1. **Identity.** A monitor is known by the maker, product code and serial that Windows reports
-   (`WmiMonitorID`), and the built-in screen by its internal connection
-   (`WmiMonitorConnectionParams`). Not by size rank.
-   Gain: the laptop stays "Laptop" when the ultrawide is gone (`bd-new` against `bd-today`), and a
-   different 27-inch at home is its own monitor, not "Ultrawide".
-   Loss: a new data home for monitors and a WMI read on each monitor change.
+1. **Identity.** Options: hardware ID (pick), the maker, product code and serial Windows reports
+   (`WmiMonitorID`), with the built-in screen found by its connection
+   (`WmiMonitorConnectionParams`); or today's size rank.
+   Gain: the laptop stays "Laptop" with the ultrawide gone (`bd-new` against `bd-today`), and a
+   different 27-inch at home is its own monitor. Loss: a new data home, and a WMI read on each
+   monitor change.
    Unmeasured; the builder verifies: that a WMI monitor maps to a `Screen.DeviceName`, and how two
-   identical monitors with no serial tell apart. Fallback: maker + product + the port it is on.
-   Pick: hardware identity.
+   identical monitors with no serial differ. Fallback: maker + product + the port.
    Departs from: main, `tile.ps1` `Pick` and `Roles` (about lines 127-138), which give the widest
-   screen the `wide` role, the tallest `tall`, and the smallest `laptop`; and `app.html` `ROLE` and
+   screen the `wide` role, the tallest `tall` and the smallest `laptop`; and `app.html` `ROLE` and
    `monName()`, which name a screen by that role. Owner grant: yes.
-2. **Names.** A monitor seen for the first time is named by shape: Laptop (built-in), Ultrawide
-   (wider than 2:1), Portrait (taller than wide), else "Monitor N". The owner renames it in the
-   inspector's Monitor section (`Name` field, all states but `bd-today`) or in Monitors and Setups.
-   Each name shows once per place on the board.
-   Gain: today's three names stay for the owner's own desk, so nothing reads new on day one.
-   Loss: none found.
-3. **A monitor with no ID** (`bd-noid`). Windows gives no maker or serial for some monitors (an
-   adapter, a TV). The strip turns amber and says the setup is not remembered; the scene follows
-   the closest setup, and changes last until it is unplugged. One control leads on: Remember It
-   by Its Size, which keys it by size and port. Pick: as drawn. Other option: remember it by size
-   with no question. Loss of that: two hotel monitors of one size become one.
+2. **Names.** Options: named by shape at first sight (pick): Laptop (built-in), Ultrawide (wider
+   than 2:1), Portrait (taller than wide), else "Monitor N"; or Windows' model name.
+   Gain: the owner's three names stay, so nothing reads new on day one. Loss: a second same-shape
+   monitor reads "Monitor N" until renamed. The owner renames in the inspector's Monitor section
+   (`Name`, every state but `bd-today`) or in Monitors and Setups.
+3. **A monitor with no ID** (`bd-noid`). Options: say so and offer Remember It by Its Size
+   (pick); or remember it by size with no question. The strip turns amber; the scene follows the
+   closest setup, and changes last until it is unplugged.
+   Gain: the owner knows why it will not be remembered, and one control leads on. Loss of the other
+   option: two hotel monitors of one size become one monitor.
 
 ## 2. Setups and their layouts
 
-4. **A setup is the set of monitors.** Its key is the sorted list of monitor IDs. Moving the same
-   monitors around, or changing their scale, is the same setup; the board redraws at the new
-   positions.
-   Departs from: main, `tray.ps1` `Get-MonitorKey` (line 25), which keys on `DeviceName`, size and
-   position, so a rearrange or a scale change counts as a change today.
-   Open question: should "When the Monitors Change" still fire on a rearrange of the same monitors?
-   Pick: no, it fires only when the setup changes. Owner grant: yes.
-5. **Each scene keeps a layout per setup.** Grids, pins, zones, held cells and the fill screen
-   are stored per setup, keyed by monitor ID.
+4. **What makes a new setup.** Options: the sorted list of monitor IDs (pick); or today's key of
+   device name, size and position. Under the pick, moving the same monitors or changing their
+   scale is the same setup, and the board redraws at the new positions.
+   Gain: a rearrange or a scale change keeps every layout. Loss: "When the Monitors Change" no
+   longer fires on a rearrange of the same monitors.
+   Departs from: main, `tray.ps1` `Get-MonitorKey` (line 25). Owner grant: yes.
+5. **Where a layout lives.** Each scene keeps grids, pins, zones, held cells and the fill screen
+   per setup, keyed by monitor ID. Gain: a setup's layout never changes another's. Loss: a bigger
+   `scenes.json` and a migration. Pick: per setup.
    Departs from: main, `scenes.json`, where each scene's `grids`, `pins[].mon`, `zones[].mon`,
    `fill.mon` and `fill.held[].mon` name a role (`wide`, `tall`, `laptop`). Owner grant: yes.
-6. **A new setup starts from the closest one seen.** Closest = most monitors shared; a tie goes to
-   the one used last. Monitors still plugged in keep their grids and pins. The missing monitors'
-   windows go where item 9 says.
+6. **Which setup a new one starts from.** Options: most monitors shared, a tie to the one used
+   last (pick); or always Desk. Gain: a setup with Home 27 starts from Home, which knows that
+   monitor, not from Desk, which does not. Loss: the source can change as setups are added; the strip names it each time.
 7. **Follow, or a frozen copy.** Options:
-   - Follow (pick): the new setup's layout stays linked to Desk. A later change to Desk reaches it,
-     until the owner changes and saves the scene on the new setup; then it has its own layout.
-     Follow Desk Again (`cd-own`) links it back.
-     Gain: change Desk once and every setup that follows it keeps up. Loss: a change on Desk can
-     move windows on another setup that the owner was not looking at.
-   - Frozen copy: built once at first sight, never changed by Desk again. Gain: what you saw is
-     what you get. Loss: a Desk change must be made again on each setup.
+   - Follow (pick): the layout stays linked to Desk; a later change to Desk reaches it until the
+     owner changes and saves it on the new setup. Follow Desk Again (`cd-own`) links it back.
+     Gain: change Desk once and the setups that follow keep up. Loss: a Desk change can move
+     windows on a setup the owner was not looking at.
+   - Frozen copy: built once at first sight. Gain: what you saw stays. Loss: a Desk change must be
+     made again on each setup.
    Not drawn: the two differ only in the strip's words.
-8. **Save stays.** An edit on a setup shows Edited, as today, and is kept for that setup only on
-   Save (`app.html` Save and Revert). Edits on Laptop + Portrait never write to Desk; plugging the
-   ultrawide back brings Desk as it was (`bd-back`).
-   Open question, not blocking: the ask says "remember"; did the owner mean an edit is kept with no
-   Save? Pick: keep Save.
+8. **Save stays.** Options: keep Save (pick); or keep each edit for the setup with no Save.
+   Gain: one edit flow, as today (`app.html` Save and Revert); a test move is not kept by mistake.
+   Loss: an edit not saved is lost when the monitors change. Edits on Laptop + Portrait never write
+   to Desk; replugging the ultrawide brings Desk back as it was (`bd-back`).
+   Departs from: the coordinator's reading ("any edit the owner makes is remembered for that
+   setup"). Not blocking.
 
 ## 3. Where the missing monitor's windows go
 
 9. **Options, one per state** (Default has seven windows on the ultrawide):
-   - Fold onto the laptop (`fd-laptop`, pick). They go to the remaining monitor closest in shape
-     (landscape to landscape). Its grid grows to 2×2: its own window keeps cell 1, and each
-     category of folded window takes one cell, stacked in the scene's fill order (Claude +2 behind
-     Claude; File Explorer behind Excel).
-     Gain: every window has a place, and like windows stay together. Loss: four windows wait
-     behind others; the stack badge names them.
+   - Fold onto the laptop (`fd-laptop`, pick). The remaining monitor closest in shape (landscape
+     to landscape). Its grid grows to 2×2: its own window keeps cell 1, and each category of folded
+     window takes one cell, stacked in the scene's fill order (Claude +2; File Explorer behind
+     Excel). Gain: every window has a place, and like windows stay together. Loss: four windows
+     wait behind others; the stack badge names them.
    - Fold onto the portrait (`fd-portrait`). The larger monitor by area: 1×2 grows to 1×5. Gain:
      more pixels. Loss: wide apps in short rows, and mail and chat lose half their height.
-   - Send to Windows That Stay Put (`fd-stay`). The ultrawide's part of the scene waits; its windows
-     stay where Windows left them, listed as "Its screen is unplugged". Gain: nothing moves that the
-     owner did not place. Loss: seven windows piled on the laptop by Windows itself.
+   - Send to Windows That Stay Put (`fd-stay`). The windows stay where Windows left them, listed as
+     "Its screen is unplugged". Gain: nothing moves that the owner did not place. Loss: seven
+     windows piled on the laptop by Windows itself.
    The fill follows the windows: in `fd-laptop` the laptop now "fills".
-10. **The owner can change it per setup.** The strip has a select, "Ultrawide's windows go to",
-    with Laptop, Portrait and Windows That Stay Put. It shows only while a monitor of the source
-    setup is missing. A change rebuilds the scenes that follow, not those with their own layout.
+   Departs from: main, `tile.ps1`'s per-role loop, which skips a role with no screen ("No $role
+   monitor. That part of the scene is skipped.") and lists its pins as missing. `fd-stay` is
+   closest to that. Owner grant: yes.
+10. **Change it per setup.** Options: a select in the strip, "Ultrawide's windows go to" (pick);
+    or one rule for every setup. Gain: the owner fixes a bad fold in one press. Loss: one more
+    control; it shows only while a monitor of the source setup is missing. A change rebuilds the
+    scenes that follow, not those with their own layout.
 
 ## 4. Showing the active setup
 
-11. **The setup strip** sits above the board it describes: a small map of the setup, its name, one
-    sentence on the selected scene ("Default follows Desk until you change it and Save"), the fold
-    select, and Monitors and Setups. Options: in the top bar's crumb (Scene: Default · Setup: …).
-    Loss of the crumb: no room for the sentence or the select at 1024. Pick: the strip.
-12. **A toast on change** (`bd-new`, `bd-back`): "Screens changed: Laptop + Portrait, a new
-    setup." It names the change once; the strip holds it after the toast closes. Loss: at 1440 the
-    toast covers the strip's fold select and Monitors and Setups while it shows (critique finding,
-    kept: the toast closes, and today's toast sits in the same place, `app.html` `.toast`).
-    At 1024, Monitors and Setups shows its icon only, with its name as the title and label, so
-    the strip stays two rows.
-13. **Windows move only by Apply or a trigger.** A setup change redraws the board. Windows move
-    when the owner presses Apply, or when the "When the Monitors Change" trigger applies a scene,
-    as today (`decisions/triggers.md`).
+11. **The setup strip.** Options: a strip above the board (pick); or the top bar's crumb. The
+    strip holds a small map, the setup's name, one sentence on the selected scene ("Default follows
+    Desk until you change it and Save"), the fold select and Monitors and Setups.
+    Gain: it sits beside the board it describes (ux-control-beside-area) and has room for the
+    sentence and the select. Loss: about 56px of board height at 1440, two rows at 1024. At 1024,
+    Monitors and Setups shows its icon only, with its name as title and label.
+12. **No toast on a setup change.** Options: the strip alone (pick); or a toast as well. Gain:
+    nothing covers the strip's select and button (at 1440 the toast did), and the change is said
+    once. Loss: a change made while the app is open shows only as the strip and board changing.
 
 ## 5. Seeing, renaming and forgetting
 
-14. **Monitors and Setups** (`mg-dialog`, pick). One dialog from the strip: Monitors (map, name
-    field, what Windows reports, Plugged in or Last seen, Forget) and Setups (map, name field,
-    its monitors, how many scenes have their own layout, In use or Last used, Forget). Windows'
-    raw ID sits in a closed "What Windows calls it". A plugged-in monitor and the setup in use
-    cannot be forgotten, and say why on hover and focus. Forget a setup removes its layouts from
-    every scene; Forget a monitor also forgets each setup it is in, after a warning that counts them.
-    Other option: a Setups section in the left rail (`mg-rail`); a click shows that setup's layouts
-    on the board, so the owner can edit a setup that is not plugged in. Loss: a fourth rail section,
-    and at 1024 it pushes Categories off the strip. Pick: the dialog.
-15. **First run** (`mg-first`). The setup plugged in at the first launch after the update becomes
-    the only setup, and the list says what will fill it.
-    Migration: today's role grids go to monitors by shape, not rank: the `wide` grid to a monitor
-    wider than 2:1, `tall` to one taller than wide, `laptop` to the built-in screen. So a first
-    launch with the ultrawide unplugged gives the laptop its own grid, and the `wide` part waits
-    for an ultrawide, folded as item 9 says. It does not repeat today's mix-up.
-    Open question: is shape enough to seed, or should the app wait to seed until it sees all three
-    of the desk's monitors? Owner grant: yes.
-16. **Naming setups.** A new setup is named by its monitors ("Laptop + Portrait"); the owner
-    renames it in the dialog. The seeded one is named Desk.
+13. **Monitors and Setups.** Options:
+    - A dialog from the strip (`mg-dialog`, pick): Monitors (map, name, what Windows reports, a dot
+      when plugged in or the date last seen, Forget) and Setups (map, name, its monitors, a dot when
+      in use or the date last used, Forget). Windows' raw ID sits in a closed "What Windows calls
+      it". Forget is off for a plugged-in monitor and the setup in use; a line under the lists says
+      why, tied to each off button. Forget a setup removes its layouts from every scene, after a
+      warning that names how many scenes had their own layout there; Forget a monitor also forgets
+      each setup it is in. Gain: one place, out of the way of daily use. Loss: a setup not plugged
+      in cannot be edited.
+    - A Setups section in the left rail (`mg-rail`). A click shows that setup's layouts on the
+      board, so a setup can be edited while unplugged. Loss: a fourth rail section, and at 1024 it
+      pushes Categories off the strip.
+14. **First run** (`mg-first`). The setup plugged in at the first launch after the update is the
+    only one, and the list says what will fill it.
+    Migration options: seed by shape (pick): the `wide` grid to a monitor wider than 2:1, `tall` to
+    one taller than wide, `laptop` to the built-in screen. A first launch with the ultrawide
+    unplugged gives the laptop its own grid, and the `wide` part folds as item 9 says, so today's
+    mix-up does not repeat. Or wait to seed until all three desk monitors are seen. Gain of the
+    pick: works on day one. Loss: a monitor of the wrong shape at first launch takes a grid.
+    Owner grant: yes.
+15. **Naming setups.** Options: by their monitors, "Laptop + Portrait" (pick), renamed in the
+    dialog; or by time ("Setup 3"). Gain: the name says what is plugged in. Loss: long with four
+    monitors. The seeded one is named Desk.
 
 ## 6. The scene card
 
-17. **Marker.** Options:
+16. **Marker.** Options:
     - Icon (`cd-follow`, `cd-own`, pick): a link mark for "follows", a filled screen mark for "own
       layout", beside Built-in; a following scene's mini map draws its windows as dashed outlines.
       The word is in the mark's title and label, and the strip says it once for the selected scene
-      (rule ux-label-once).
+      (ux-label-once). Gain: no repeated words, and the card keeps today's height. Loss: the owner
+      learns two small marks.
     - Word (`cd-word`): "Built-in · follows Desk" in the tag. Loss: the tag wraps to two or three
       lines beside Apply at both widths, so each card grows; and the word repeats on every card.
-18. **Edited and unsaved** keeps today's Edited dot in the top bar and "· edited" in the tag.
 
 ## 7. Triggers
 
-19. **The count triggers.** Departs from: `decisions/triggers.md`, "A scene per monitor set. Pick
-    the display scene whose monitor set matches." What was built counts screens: the `monitors`
-    extra ("For N screens") and `noext` ("Laptop only") in `app.html`. A count cannot tell
-    Laptop + Portrait from Laptop + Home 27.
-    Proposal, not drawn: the `monitors` extra becomes "Use This Scene on This Setup", with a setup
-    select; `noext` stays as is, since Laptop Only is a setup of one monitor. Owner grant: yes.
+17. **The count triggers.** Options: replace the `monitors` extra ("For N screens") with "Use This
+    Scene on This Setup", with a setup select, and keep `noext` ("Laptop only"), a setup of one
+    monitor (pick); or keep both counts. Gain: Laptop + Portrait and Laptop + Home 27 can pick
+    different scenes. Loss: a saved "For 3 screens" must map to a setup. Not drawn.
+    Departs from: `decisions/triggers.md`, "A scene per monitor set. Pick the display scene whose
+    monitor set matches." What was built counts screens (`app.html`, the `monitors` and `noext`
+    extras). Owner grant: yes.
 
 ## Open questions for the owner
 
 - Item 4: should "When the Monitors Change" fire when the same monitors are only rearranged?
 - Item 7: follow (pick) or frozen copy?
-- Item 8: keep Save, or remember edits with no Save?
+- Item 8: keep Save (pick), or keep edits with no Save?
 - Item 9: fold onto the laptop (pick), onto the portrait, or send to Windows That Stay Put?
-- Item 15: seed the first setup from today's role grids by shape (pick), or wait for all three
-  desk monitors?
-- Item 19: replace "For N screens" with "Use This Scene on This Setup"?
+- Item 14: seed the first setup by shape (pick), or wait for all three desk monitors?
+- Item 17: replace "For N screens" with "Use This Scene on This Setup"?
+- From the critique: does the owner want to edit a setup that is not plugged in (the rail option),
+  or only the one in use?
