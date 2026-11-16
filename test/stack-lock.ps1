@@ -103,6 +103,9 @@
 #     Merge bar: by title ("Refactor", "Pin parser") or as "2 Claude windows", never "Claude moves to Claude".
 #     On a 2x1 span at 1024 the Put Behind label's text box (#drop > span) does not meet the Swap circle, and its chip is not
 #     clipped: scrollWidth is within clientWidth (the chip's words fit it).
+#     The Put Behind label takes the longest form that fits clear of the Swap circle: beside it, else the bottom right corner with
+#     the word Behind, else the icon alone. Never under or over the circle. With Google Fonts loaded (Sora in use), on a 2x1 span and
+#     a 1x1 cell at 1024 and 1440, its box does not meet the circle's box and it is not clipped (the Sora cases at the end).
 #     Forced colours (forced-colors: active): a missing cell (.miss) keeps a visible border, and the disabled Merge button reads as
 #     disabled (forced-color-adjust: none, or the computed colour is GrayText).
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
@@ -245,7 +248,8 @@ function SlBtnPress($scope, $text) {
   SlClick @([double]$c[0], [double]$c[1]); $true }
 # One press on a taken block: the window $fromId is pressed at its centre and held over the point ($ox, $oy) from the block's
 # centre, as fractions of the block's width and height, then released there. Reads the Swap circle and the drop label while held.
-function SlCircleDrop($fromId, $slot, $cs, $rs, $ox, $oy) {
+# -Sora also reads whether Sora is in use (SlSoraState) while the label is held.
+function SlCircleDrop($fromId, $slot, $cs, $rs, $ox, $oy, [switch]$Sora) {
   $bk = SlBlock $slot $cs $rs
   $to = @([double]($bk.l + $bk.w * (0.5 + $ox)), [double]($bk.t + $bk.h * (0.5 + $oy)))
   SlDrag (SlAt (SlBox $fromId) 0.5 0.5) $to -Hold
@@ -254,9 +258,35 @@ function SlCircleDrop($fromId, $slot, $cs, $rs, $ox, $oy) {
   # The label's text box (its span's contents), read while held: the Put Behind or Swap label the drop shows.
   $lb = SlGet "(() => { const s = document.querySelector('#drop > span'); if (!s) return null; const r = document.createRange(); r.selectNodeContents(s); const b = r.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom, text: s.textContent.trim() }; })()"
   # The label's chip, read while held: its content width against the width it is drawn in. A chip narrower than its words clips them.
-  $clip = SlGet "(() => { const s = document.querySelector('#drop > span'); if (!s) return null; return { sw: s.scrollWidth, cw: s.clientWidth, title: s.getAttribute('title') || '', text: s.textContent.trim() }; })()"
+  $clip = SlGet "(() => { const s = document.querySelector('#drop > span'); if (!s) return null; const b = s.getBoundingClientRect(); return { sw: s.scrollWidth, cw: s.clientWidth, title: s.getAttribute('title') || '', text: s.textContent.trim(), icon: !!s.querySelector('svg'), box: { l: b.left, t: b.top, r: b.right, b: b.bottom } }; })()"
+  $soraNow = $null; if ($Sora) { $soraNow = SlSoraState }
   SlRelease $to
-  [pscustomobject]@{ block = $bk; circle = $ci; shown = $shown; to = $to; label = $lb; clip = $clip } }
+  [pscustomobject]@{ block = $bk; circle = $ci; shown = $shown; to = $to; label = $lb; clip = $clip; sora = $soraNow } }
+# Whether Sora is in use for the drop label, read while it is held. The label's font stack starts with Sora, a Sora face has
+# loaded (read after document.fonts.ready, so a face still downloading is not read as missing), and the 600 weight the label sets
+# is available. A page on its fallback font reads on = false, so the case that asks fails its scope.
+function SlSoraState {
+  $r = SlJs "(async () => { await document.fonts.ready; const lab = document.querySelector('#drop > span'); const faces = [...document.fonts].filter(f => /sora/i.test(f.family)); return JSON.stringify({ stack: lab ? getComputedStyle(lab).fontFamily : '', loaded: faces.filter(f => f.status === 'loaded').map(f => f.weight), check: document.fonts.check('600 12px Sora') }); })()"
+  if (-not $r) { return [pscustomobject]@{ on = $false; stack = ''; loaded = @(); check = $false } }
+  $o = $r | ConvertFrom-Json
+  $loaded = @($o.loaded)
+  [pscustomobject]@{ on = [bool](("$($o.stack)" -match '^\s*"?Sora') -and $loaded.Count -gt 0 -and $o.check -eq $true); stack = "$($o.stack)"; loaded = $loaded; check = $o.check }
+}
+# One Put Behind drop on a taken block, with Sora loaded. Scope first: Sora is in use, and the label and the Swap circle are drawn,
+# in a form with the word Behind or as the icon alone. Then the label's box must not meet the circle's box, and the label must not clip.
+function SlSoraCase($w, $h, $shape, $fromId, $cs, $pins) {
+  SlViewport $w $h; SlCase (SlSceneJson $pins)
+  $d = SlCircleDrop $fromId 0 $cs 1 0 (-0.35) -Sora
+  $tag = "label, Sora, $w $shape"
+  $ci = $d.circle
+  $cb = if ($ci) { @{ l = $ci.x - $ci.w / 2; t = $ci.y - $ci.h / 2; r = $ci.x + $ci.w / 2; b = $ci.y + $ci.h / 2 } } else { $null }
+  $lb = if ($d.clip) { $d.clip.box } else { $null }
+  $text = if ($d.label) { "$($d.label.text)" } else { '' }
+  $form = [bool]($text -match 'Behind' -or ($text -eq '' -and $d.clip -and $d.clip.icon))
+  Check "$tag, scope: Sora is in use, and the Put Behind label and the Swap circle are drawn, as a form with Behind or the icon alone" ([bool]($d.sora -and $d.sora.on -and $d.shown -and $cb -and $lb -and $form)) "sora: $(SlShort $d.sora); shown: $($d.shown); label: $(SlShort $d.label); text: '$text'"
+  Check "$tag, red: the label's box does not meet the Swap circle's box" ([bool]($cb -and $lb -and -not (SlMeets $lb $cb))) "label box: $(SlHit $lb); circle box: $(SlHit $cb)"
+  Check "$tag, red: the label is not clipped (scrollWidth within clientWidth)" ([bool]($d.clip -and $d.clip.sw -le $d.clip.cw)) "scrollWidth: $($d.clip.sw); clientWidth: $($d.clip.cw); text: '$text'"
+}
 # The Swap circle is half the block's short side, rounded down, from 28 to 64 px, and centred on the block (tolerance 2 px).
 function SlCircleFits($c, $bk) {
   if (-not $c -or -not $bk) { return $false }
@@ -458,9 +488,12 @@ function SlStartServer($from = $fixture, $tileHome = $env:TILE_HOME) {
   $line = $p.StandardOutput.ReadLineAsync(); if (-not $line.Wait(60000)) { throw 'the server did not print its URL' }
   @($p, $line.Result)
 }
-function SlStartBrowser {
+# -AllowFonts leaves Google Fonts reachable, so the page loads Sora. Without it the fonts are blocked, and the page runs on its fallback font.
+function SlStartBrowser([switch]$AllowFonts) {
   New-Item -ItemType Directory -Force $script:udd | Out-Null
-  $args2 = @('--headless', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', "--user-data-dir=$($script:udd)", '--window-size=1440,900', '--host-resolver-rules="MAP fonts.googleapis.com 0.0.0.0, MAP fonts.gstatic.com 0.0.0.0"', 'about:blank')
+  $args2 = @('--headless', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', "--user-data-dir=$($script:udd)", '--window-size=1440,900')
+  if (-not $AllowFonts) { $args2 += '--host-resolver-rules="MAP fonts.googleapis.com 0.0.0.0, MAP fonts.gstatic.com 0.0.0.0"' }
+  $args2 += 'about:blank'
   # Edge starts with the real user folders (under a temp USERPROFILE it never opens its DevTools port). Its data goes to
   # the run folder (--user-data-dir); the variables go back at once, and the server child keeps the temp profile.
   $keepUser = $env:USERPROFILE; $keepApp = $env:APPDATA
@@ -1959,7 +1992,8 @@ try {
   # F6. A 2x1 span at 1024: the Put Behind label's text box must not meet the Swap circle. Control: the same at 1440.
   SlViewport 1024 768; SlCase (SlSceneJson $pinsCircleSpan)
   $sl1 = SlCircleDrop 1001 0 2 1 0 (-0.35)
-  Check 'circle and label, 2x1 span at 1024, scope: the Swap circle is drawn, and the Put Behind label is drawn beside it' ([bool]($sl1.circle -and $sl1.shown -and $sl1.label -and "$($sl1.label.text)" -match 'Behind')) "circle: $(SlShort $sl1.circle); label: $(SlShort $sl1.label)"
+  # The scope takes a form with the word Behind, or the icon alone (the last fallback, clear of the circle). The overlap and clip asserts stay.
+  Check 'circle and label, 2x1 span at 1024, scope: the Swap circle is drawn, and the Put Behind label is drawn with Behind or as the icon alone' ([bool]($sl1.circle -and $sl1.shown -and $sl1.label -and ("$($sl1.label.text)" -match 'Behind' -or ("$($sl1.label.text)" -eq '' -and $sl1.clip -and $sl1.clip.icon)))) "circle: $(SlShort $sl1.circle); label: $(SlShort $sl1.label); icon: $($sl1.clip.icon)"
   Check 'circle and label, 2x1 span at 1024, red: the label''s text box does not meet the Swap circle' ([bool]($sl1.label -and -not (SlCircleMeets $sl1.circle $sl1.label))) "circle: $(SlShort $sl1.circle); label: $(SlShort $sl1.label)"
   SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
   $sl2 = SlCircleDrop 1001 0 2 1 0 (-0.35)
@@ -2008,6 +2042,19 @@ try {
   $fcMerge = SlGet "(() => { const b = [...document.querySelectorAll('.mbar button')].find(x => x.textContent.trim() === 'Merge'); if (!b) return null; const p = document.createElement('span'); p.style.cssText = 'forced-color-adjust:none;color:GrayText;position:absolute'; document.body.appendChild(p); const gray = getComputedStyle(p).color; p.remove(); const cs = getComputedStyle(b); return { disabled: b.disabled, color: cs.color, gray: gray, fca: cs.forcedColorAdjust, bs: cs.borderTopStyle }; })()"
   Check 'forced colours, guard: a disabled Merge reads as disabled (its text is GrayText, or it opts out of forced colours)' ([bool]($fcMergeState -eq 'disabled' -and $fcMerge -and ($fcMerge.color -eq $fcMerge.gray -or $fcMerge.fca -eq 'none'))) "Merge: $(SlShort $fcMerge)"
   SlSend 'Emulation.setEmulatedMedia' @{ features = @() }
+
+  # ---------- Ruling 2026-11-16 (label fallback): the Put Behind label with Sora loaded ----------
+  # The fonts-blocked cases above prove only the fallback font, so these run in a browser that allows Google Fonts. The label takes
+  # the longest form that fits clear of the Swap circle: beside it, else the bottom right corner with the word Behind, else the icon
+  # alone. It is never under or over the circle. The fonts-blocked browser is stopped first; this one starts on its own profile folder.
+  $script:ws.Dispose(); $script:ws = $null
+  Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*$($script:udd)*" } | % { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  $script:udd = Join-Path $run 'edge-sora'
+  $edgeProc = SlStartBrowser -AllowFonts
+  SlSoraCase 1024 768 '2x1 span' 1001 2 $pinsCircleSpan
+  SlSoraCase 1440 900 '2x1 span' 1001 2 $pinsCircleSpan
+  SlSoraCase 1024 768 '1x1 cell' 1006 1 $pinsCQ
+  SlSoraCase 1440 900 '1x1 cell' 1006 1 $pinsCQ
 } catch {
   $script:fail++; "FAIL  run stopped: $_ (line $($_.InvocationInfo.ScriptLineNumber))"
 } finally {
