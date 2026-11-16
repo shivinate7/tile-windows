@@ -1673,7 +1673,7 @@ try {
   [void](SlBtnPress '[role=alertdialog]' 'Move It')
   $fzPin = SlPin (SlGet 'work[selId]') 'Refactor'
   $fzFill = SlList "prevs[selId].placed.filter(p => p.pin < 0 && !p.behind).map(p => p.id)"
-  $fzOn = SlList "prevs[selId].placed.filter(p => p.pin < 0 && p.slots.includes(9)).map(p => p.id)"
+  $fzOn = SlList "prevs[selId].placed.filter(p => p.pin < 0 && p.slots.includes(10)).map(p => p.id)"
   Check 'locked drag, Move It with a fill: the fill places windows, and none takes the locked tile''s new cell' ([bool]($fzPin -and (SlCells $fzPin) -eq '9' -and @($fzFill).Count -ge 1 -and @($fzOn).Count -eq 0)) "pin: $(SlShort $fzPin); fill-placed: $(SlShort $fzFill); on cell 9: $(SlShort $fzOn)"
 
   SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ)
