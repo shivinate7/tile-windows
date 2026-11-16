@@ -116,3 +116,15 @@ Low findings. Each becomes a debt only after a real incident.
 - Undo moves windows one `-Place` call at a time, a stopgap for a test fake. Once the fake is fixed, go back to one batched call.
 - The board opened as a plain file (`file://`) cannot read `/appnames` and shows capitalised process names.
 - When no window goes back, the Undo toast still says 'partly undone' with 'Put back 0 of N windows'; the mockup says 'not undone'.
+
+## From PR 19 (stack-tweaks) reviews (2026-11-16)
+
+- Test teardown can leave headless Edge running after a test-author run (9 found once).
+- `app.html` The Swap circle has no 3px edge buffer (hysteresis); a drag on the circle's edge can flip between Swap and Put Behind (decision stack-and-lock, Stack and lock).
+- `app.html` The swap-from-list status line ("A takes cell N. B stays where it is.") uses plain app names, so two windows of one app read alike (decision stack-and-lock, Stack and lock).
+- `app.html` Closed-pin names are not deduped: two closed pins of one app read "Excel and Excel" (decision stack-and-lock, Stack and lock).
+- `app.html` During the locked-move warning over a taken cell, the opaque waiting tile sits in front even when the outcome is Put Behind (decision stack-and-lock, Stack and lock).
+- `app.html` At 1024, after Put Behind + Move It, the selected stacked tile shows no title, only a tooltip (main's stacked-tile look) (decision stack-and-lock, Stack and lock).
+- `app.html` In forced colours, the missing-cell stripes run over the neighbouring tile's title (decision stack-and-lock, Stack and lock).
+- `app.html` At 1024 the list group heading cuts to "Moved by a mer…" (decision stack-and-lock, Stack and lock).
+- `app.html` At 1024 on a top-row cell the locked-move warning fits neither below nor above; it opens below and covers the board hint and Windows That Stay Put (decision stack-and-lock, Stack and lock).
