@@ -416,14 +416,17 @@ dialog form{display:grid;gap:10px}
 /* Swap circle: the whole block is the Put Behind target; a circle at its centre is the Swap target. */
 #drop.circ{border:2px dashed var(--select);background:color-mix(in srgb,var(--select) 8%,transparent)}
 #drop.circ.on{border:3px solid var(--select);background:color-mix(in srgb,var(--select) 26%,transparent)}
-#drop.circ>span{bottom:4px;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;background:var(--panel);color:var(--select);box-shadow:inset 0 0 0 1.5px var(--select);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#drop.circ>span{bottom:4px;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;line-height:15px;max-width:var(--lw);background:var(--panel);color:var(--select);box-shadow:inset 0 0 0 1.5px var(--select);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #drop.circ.on>span{background:var(--select);color:var(--select-ink);box-shadow:none}
-#drop.circ>span.t{bottom:1px;font-size:10px;padding:1px 3px;gap:2px;line-height:1.15}
+#drop.circ>span.t{bottom:1px;font-size:10px;padding:1px 3px;gap:2px;line-height:12px}
 #drop.circ>span svg{width:12px;height:12px;flex:none}
 /* A block too short to hold the circle and the label one above the other: the label sits beside the circle, or in the bottom
    right corner when its words do not fit beside it (a 2x1 span at 1024). frame() sets --lw, the width it chose the words for. */
 #drop.circ.side>span,#drop.circ.side>span.t{top:50%;bottom:auto;left:calc(50% + var(--d)/2 + 8px);transform:translateY(-50%);max-width:var(--lw)}
 #drop.circ.corner>span,#drop.circ.corner>span.t{left:auto;right:1px;bottom:1px;transform:none;max-width:var(--lw)}
+/* The icon alone in a corner too small for its usual chip: a square of side --lw on the bottom edge, clear of the circle's square. */
+#drop.circ.corner.icos>span{bottom:0;width:var(--lw);height:var(--lw);padding:1px;gap:0;box-shadow:inset 0 0 0 1px var(--select);justify-content:center}
+#drop.circ.corner.icos>span svg{width:100%;height:100%}
 #drop .swc{position:absolute;left:50%;top:50%;width:var(--d);height:var(--d);transform:translate(-50%,-50%);border-radius:50%;display:grid;place-items:center;align-content:center;border:2px dashed var(--select);background:var(--panel);color:var(--select);font:600 11px/1.1 var(--f)}
 #drop .swc.on{border:3px solid var(--select);background:var(--select);color:var(--select-ink)}
 #drop .swc svg{width:14px;height:14px}
@@ -1344,6 +1347,11 @@ function textW(t,sz=12){if(!measureCtx){measureCtx=document.createElement("canva
 // Whether a [text, icon, tight] chip fits a box cw px wide: its words, a 12px icon with a 4px gap, and 6px padding a side.
 // A tight form sets the words at 10px with 3px padding, so "Behind" and "Locked" keep their words in the narrowest cells.
 const chipFits=([t,ic,tight],cw)=>tight?textW(t,10)+6<=cw:textW(t)+(ic?16:0)+12<=cw;
+// The circle label's chip heights, set by the CSS (#drop.circ>span line-height): the 12px text, the 10px tight text, the icon alone (its height, then its width).
+const CHIP={text:19,tight:14,icon:16,iconW:24};
+// A word measured before its web font loaded is drawn wider than measured, so the label is laid out again when a font finishes loading.
+if(document.fonts){document.fonts.addEventListener("loadingdone",()=>{if(drag&&!raf)raf=requestAnimationFrame(frame)});
+  for(const w of [400,600,700])document.fonts.load(`${w} 12px Sora`).catch(()=>{})}
 // The first form whose chip fits a box cw px wide; the last form always stands. A zone's chip box is the zone's width less
 // its 3px border and 2px padding on each side (pw-10).
 function pickForm(forms,cw){return forms.find((f,i)=>i===forms.length-1||chipFits(f,cw))||forms[forms.length-1]}
@@ -1378,15 +1386,21 @@ function frame(){raf=0;
         const [wt,wi,wg]=pickForm([["Locked, so no Swap",LOCKC],["Locked",LOCKC],["Locked"],["Locked",0,1],["",LOCKC]],pw-10);
         dropEl.innerHTML=`<div class="dz on">${pill(behF)}<span class="why${wg?" t":""}" title="Locked, so no Swap">${wi||""}${esc(wt)}</span></div>`}
       else{const dm=circD(pw,ph),r=dm/2,bw=zone==="swap"?2:3,iw=pw-2*bw,ih=ph-2*bw,words=behF.slice(0,-1),tight=[["Behind",0,1]];
-        // A block too short for the label under the circle: the label goes beside the circle (8px from it, 4px from the edge),
-        // or, when no form with its words fits there, in the bottom right corner (1px in), clear of the circle's curve at the
-        // tight chip's top (14px tall). lw is the label's width: the CSS box (--lw) and the form chosen both use it.
-        let place="",lw=0,forms=behF;
-        if(ph<dm+40){const sw=iw/2-r-12,top=ih-1-14,dy=Math.max(0,top-ih/2),cw=iw-1-(iw/2+(dy<r?Math.sqrt(r*r-dy*dy):0)+2);
+        // A block too short for the label under the circle (chip, 4px gap, both sides): the label takes the longest form that fits
+        // clear of the circle's bounding square. First beside the circle (8px from it, 4px from the edge), then the tight "Behind"
+        // in the bottom right corner (1px in), then the icon alone, beside the circle or in the corner, shrunk to the room left
+        // there. It never goes under the circle. lw is the label's width: the CSS box (--lw) and the form chosen both use it.
+        let place="",lw=iw-8,forms=behF,mini=0;
+        if(ph<dm+2*bw+2*(CHIP.text+4)){
+          const sw=iw/2-r-12,cx=iw/2-r-3,below=h=>ih/2-3-h>=r,icoW=CHIP.iconW;
           if(words.some(f=>chipFits(f,sw))){place="side";lw=sw}
-          else if(chipFits(tight[0],cw)){place="corner";lw=cw;forms=tight}}
-        dropEl.className=(zone==="swap"?"circ":"circ on")+(place?" "+place:"");dropEl.style.display="block";dropEl.style.setProperty("--d",dm+"px");dropEl.style.setProperty("--lw",lw+"px");
-        dropEl.innerHTML=`${place?pill(forms,lw):pill(behF)}<div class="swc${zone==="swap"?" on":""}${dm<48?" sm":""}" style="--d:${dm}px" title="${esc(swapT)}">${SWAPI}${dm<48?"":"Swap"}</div>`}
+          else if(chipFits(tight[0],below(CHIP.tight)?iw-2:cx)){place="corner";lw=below(CHIP.tight)?iw-2:cx;forms=tight}
+          else{forms=[["",BEHIND]];lw=icoW;
+            if(sw>=icoW)place="side";
+            else if(cx>=icoW||below(CHIP.icon))place="corner";
+            else{place="corner";mini=Math.max(6,Math.floor(Math.max(cx,ih/2-r-0.5)));lw=mini}}}
+        dropEl.className=(zone==="swap"?"circ":"circ on")+(place?" "+place:"")+(mini?" icos":"");dropEl.style.display="block";dropEl.style.setProperty("--d",dm+"px");dropEl.style.setProperty("--lw",lw+"px");
+        dropEl.innerHTML=`${pill(forms,lw)}<div class="swc${zone==="swap"?" on":""}${dm<48?" sm":""}" style="--d:${dm}px" title="${esc(swapT)}">${SWAPI}${dm<48?"":"Swap"}</div>`}
       // The chip sits just above the block, so the circle and both targets stay in view.
       if(gh.style.display==="block"){const sr=stage.getBoundingClientRect();gh.style.left=Math.max(0,sr.left+parseFloat(pr.left))+"px";gh.style.top=Math.max(0,sr.top+parseFloat(pr.top)-gh.offsetHeight-4)+"px"}
       if(zone==="swap"){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=big?`${o} moves here`:o}}}
