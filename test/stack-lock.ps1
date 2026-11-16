@@ -36,6 +36,8 @@
 #     always on a locked tile. Hidden, it is visibility:hidden, so elementFromPoint at its centre is not the padlock.
 #     [role=alertdialog] (a locked tile dragged and released: an in-page confirm). Its buttons: "Cancel" (the tile stays put,
 #     still locked) and "Move It" (the tile moves to the cell it was released on, still locked). Nothing moves before Move It.
+#     While that warning is open over a taken cell, the pending tile (.pendtile, pointer-events none) waits in that cell, and
+#     only one title in the cell reads: the taken tile's title is hidden, or the pending tile is opaque. The warning sits outside the cell.
 #     Ctrl+click (ctrlKey) picks a tile or an empty cell. Two or more picks draw .mbar (role=group, aria-label "Picked
 #     cells"), with buttons "Merge", "Cancel" and "Fill to Rectangle". A rectangle's Merge makes a span kept by the first
 #     picked window; the other picked windows go to Windows That Stay Put. A non-rectangle disables Merge (disabled
@@ -99,7 +101,8 @@
 #     A Merge's bay entries carry why "Moved by a merge" (a resize's carry "Covered by a resize").
 #     Two windows of one app are named apart in the Drop Note, the status line (#msg), the locked-drag warning (#lcp) and the
 #     Merge bar: by title ("Refactor", "Pin parser") or as "2 Claude windows", never "Claude moves to Claude".
-#     On a 2x1 span at 1024 the Put Behind label's text box (#drop > span) does not meet the Swap circle.
+#     On a 2x1 span at 1024 the Put Behind label's text box (#drop > span) does not meet the Swap circle, and its chip is not
+#     clipped: scrollWidth is within clientWidth (the chip's words fit it).
 #     Forced colours (forced-colors: active): a missing cell (.miss) keeps a visible border, and the disabled Merge button reads as
 #     disabled (forced-color-adjust: none, or the computed colour is GrayText).
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
@@ -250,8 +253,10 @@ function SlCircleDrop($fromId, $slot, $cs, $rs, $ox, $oy) {
   $shown = SlLabelShown
   # The label's text box (its span's contents), read while held: the Put Behind or Swap label the drop shows.
   $lb = SlGet "(() => { const s = document.querySelector('#drop > span'); if (!s) return null; const r = document.createRange(); r.selectNodeContents(s); const b = r.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom, text: s.textContent.trim() }; })()"
+  # The label's chip, read while held: its content width against the width it is drawn in. A chip narrower than its words clips them.
+  $clip = SlGet "(() => { const s = document.querySelector('#drop > span'); if (!s) return null; return { sw: s.scrollWidth, cw: s.clientWidth, title: s.getAttribute('title') || '', text: s.textContent.trim() }; })()"
   SlRelease $to
-  [pscustomobject]@{ block = $bk; circle = $ci; shown = $shown; to = $to; label = $lb } }
+  [pscustomobject]@{ block = $bk; circle = $ci; shown = $shown; to = $to; label = $lb; clip = $clip } }
 # The Swap circle is half the block's short side, rounded down, from 28 to 64 px, and centred on the block (tolerance 2 px).
 function SlCircleFits($c, $bk) {
   if (-not $c -or -not $bk) { return $false }
@@ -263,6 +268,55 @@ function SlCircleMeets($c, $r) {
   if (-not $c -or -not $r) { return $false }
   $nx = [Math]::Max($r.l, [Math]::Min($c.x, $r.r)); $ny = [Math]::Max($r.t, [Math]::Min($c.y, $r.b))
   [bool]([Math]::Sqrt(($c.x - $nx) * ($c.x - $nx) + ($c.y - $ny) * ($c.y - $ny)) -lt ($c.w / 2)) }
+# The titles in one cell, as a reader sees them: the pending tile's title and the taken tile's title ($takenId's element). A title
+# reads when it is drawn (not display:none, not visibility:hidden, not opacity 0) and some point of its box has no opaque layer
+# above it. A translucent layer over a title does not hide it: the title shows through. The pending tile is pointer-events:none, so
+# it is switched on for each hit test, then put back. Returns the readable count and both boxes (l, t, r, b), or null for a missing one.
+function SlTitles($takenId) {
+  $js = @'
+(() => {
+  const num = (s) => { const v = parseFloat(s); return isNaN(v) ? 0 : v; };
+  const parseA = (p) => (p.endsWith('%') ? parseFloat(p) / 100 : parseFloat(p));
+  const alphaOf = (s) => {
+    if (!s || s === 'transparent') return 0;
+    const m = /^(rgba?|color)\((.*)\)$/.exec(s);
+    if (!m) return 1;
+    const parts = m[2].replace(/^srgb\s+/, '').replace(/,/g, ' ').split(/\s*\/\s*|\s+/).filter(Boolean);
+    return parts.length > 3 ? parseA(parts[3]) : 1;
+  };
+  const effOpacity = (e) => { let o = 1; for (let n = e; n && n.nodeType === 1; n = n.parentElement) o *= num(getComputedStyle(n).opacity); return o; };
+  const opaque = (e) => effOpacity(e) >= 0.999 && alphaOf(getComputedStyle(e).backgroundColor) >= 0.999;
+  const pends = [...document.querySelectorAll('.pendtile')];
+  const coveredAt = (e, x, y) => {
+    pends.forEach((p) => { p.style.pointerEvents = 'auto'; });
+    const list = document.elementsFromPoint(x, y);
+    pends.forEach((p) => { p.style.pointerEvents = ''; });
+    const i = list.indexOf(e);
+    if (i < 0) return false;
+    for (let k = 0; k < i; k++) {
+      const o = list[k];
+      if (o.contains(e) || e.contains(o)) continue;
+      if (opaque(o)) return true;
+    }
+    return false;
+  };
+  const readable = (e) => {
+    if (!e || getComputedStyle(e).visibility !== 'visible' || effOpacity(e) <= 0) return false;
+    const r = e.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    const pts = [[r.left + r.width / 2, r.top + r.height / 2], [r.left + 1, r.top + 1], [r.right - 1, r.top + 1], [r.left + 1, r.bottom - 1], [r.right - 1, r.bottom - 1]];
+    return pts.some(([x, y]) => !coveredAt(e, x, y));
+  };
+  const box = (e) => { if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
+  const taken = els.get(__ID__), tt = taken ? taken.querySelector(':scope > span') : null;
+  const pend = document.querySelector('.pendtile'), pt = pend ? pend.querySelector(':scope > span') : null;
+  const dlg = document.querySelector('[role=alertdialog]');
+  const pr = readable(pt), tr = readable(tt);
+  return { pendText: pt ? pt.textContent : null, takenText: tt ? tt.textContent : null, pendReadable: pr, takenReadable: tr, n: (pr ? 1 : 0) + (tr ? 1 : 0), pendOpacity: pend ? effOpacity(pend) : null, pendBox: box(pend), takenBox: box(taken), dlgBox: box(dlg), dlgOpen: !!dlg };
+})()
+'@
+  SlGet ($js.Replace('__ID__', "$takenId"))
+}
 # Two windows of one app are named apart: both titles' words (Refactor, Pin parser), or "2 Claude windows". Either form passes.
 function SlDistinct($text) { $t = "$text"; [bool](($t -match 'Refactor' -and $t -match 'Pin parser') -or $t -match '2 Claude windows') }
 # What a drop of window $dragText on window $occText did, read from the scene: 'behind' when the dropped window is stacked
@@ -1910,6 +1964,33 @@ try {
   SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
   $sl2 = SlCircleDrop 1001 0 2 1 0 (-0.35)
   Check 'circle and label, 2x1 span at 1440, control: the label''s text box does not meet the Swap circle' ([bool]($sl2.label -and $sl2.circle -and -not (SlCircleMeets $sl2.circle $sl2.label))) "circle: $(SlShort $sl2.circle); label: $(SlShort $sl2.label)"
+
+  # F6b. The Put Behind label on a 2x1 span at 1024 is not clipped (review finding on 22253d0: the chip reads "Behi"). F6 measures
+  #      the words, not the chip, so it passes with the clip. Scope first: the label is drawn on the span, with its Put Behind title.
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCircleSpan)
+  $cl1 = SlCircleDrop 1001 0 2 1 0 (-0.35)
+  Check 'label clip, 2x1 span at 1024, scope: the Put Behind label is drawn on the span' ([bool]($cl1.shown -and $cl1.clip -and "$($cl1.clip.title)" -match 'Behind')) "label: $(SlShort $cl1.clip)"
+  Check 'label clip, 2x1 span at 1024, red: the Put Behind label is not clipped (its content fits its width)' ([bool]($cl1.clip -and $cl1.clip.sw -le ($cl1.clip.cw + 1))) "label: $(SlShort $cl1.clip)"
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCircleSpan)
+  $cl2 = SlCircleDrop 1001 0 2 1 0 (-0.35)
+  Check 'label clip, 2x1 span at 1440, control: the Put Behind label is not clipped' ([bool]($cl2.clip -and $cl2.clip.sw -le ($cl2.clip.cw + 1))) "label: $(SlShort $cl2.clip)"
+
+  # F6c. A locked tile released on a taken cell opens the warning, and its pending tile waits in that cell over the taken tile
+  #      (review finding on 22253d0: at 1440 and 1024 both titles read). Only one title may read in the cell: the taken title is
+  #      hidden, or the pending tile is opaque. Control: with no warning open, the taken title is the one that reads.
+  foreach ($vw in @(@(1440, 900), @(1024, 768))) {
+    $wz = "$($vw[0])"
+    SlViewport $vw[0] $vw[1]; SlCase (SlSceneJson $pinsTwoClaudeLock)
+    $tw0 = SlTitles 1002
+    Check "warning over a taken cell, $wz, control: with no warning, the taken title is the one title that reads" ([bool]($tw0 -and $tw0.n -eq 1 -and $tw0.takenReadable -and -not $tw0.pendText)) "titles: $(SlShort $tw0)"
+    SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlSlotAt 1)
+    $tw = SlTitles 1002; $pb = $tw.pendBox; $tb = $tw.takenBox
+    $inCell = [bool]($tw -and $pb -and $tb -and (($pb.l + $pb.r) / 2) -gt $tb.l -and (($pb.l + $pb.r) / 2) -lt $tb.r -and (($pb.t + $pb.b) / 2) -gt $tb.t -and (($pb.t + $pb.b) / 2) -lt $tb.b)
+    $inView = [bool]($tb -and $tb.l -ge 0 -and $tb.t -ge 0 -and $tb.r -le $vw[0] -and $tb.b -le $vw[1])
+    $apart = [bool]($tw -and $tw.dlgBox -and $tb -and -not (SlMeets $tw.dlgBox $tb))
+    Check "warning over a taken cell, $wz, scope: the warning is open, its pending tile waits over the taken cell in view, and the warning sits outside that cell" ([bool]($tw -and $tw.dlgOpen -and $inCell -and $inView -and $apart)) "warning: $(SlShort $tw.dlgBox); pending: $(SlShort $pb); taken: $(SlShort $tb)"
+    Check "warning over a taken cell, $wz, red: only one title reads in the taken cell" ([bool]($tw -and $tw.n -eq 1)) "readable: $($tw.n); pending '$($tw.pendText)' reads $($tw.pendReadable); taken '$($tw.takenText)' reads $($tw.takenReadable)"
+  }
 
   # F7. Forced colours (review finding on 1ff9835). A guard, green on head: in headless Edge's forced-colors emulation a missing
   #     cell keeps its dashed border on top, and a disabled Merge computes to GrayText. The claim did not reproduce on b9643c3,
