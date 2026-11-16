@@ -135,7 +135,7 @@ named badge, the handles on every edge, Fill Empty Cells and Clear Board.
     Put, as a resize sends them (item 18), and the bar names them (`ms-wins`). Other option: the
     others go behind the first. Pick: the list, so Merge and resize act alike.
 26. **Not a rectangle.** Merge is off, and the bar says why. A dashed amber outline shows the block,
-    and each missing cell is hatched. Fill to Rectangle adds the missing cells to the pick, so the
+    and each missing cell is tinted amber. Fill to Rectangle adds the missing cells to the pick, so the
     owner sees what they cover before Merge (`ms-shape`). Other option: Merge fills the rectangle
     on its own. Pick: Fill to Rectangle.
 27. **No window in the cells.** A span belongs to a window today (a pin's `slots`).
