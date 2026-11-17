@@ -56,12 +56,34 @@ public static class W {
   public static bool Arranged(IntPtr h) { try { return IsWindowArranged(h); } catch (EntryPointNotFoundException) { return false; } }
 }
 '@
+# The live monitor list is read from Windows on every call (Screen.AllScreens and PrimaryScreen are cached for the life of the process).
+# serve.ps1 and tray.ps1 run tile.ps1 in-process, and Add-Type cannot redefine a type: a changed type must get a new name (TileMon1, TileMon2, ...).
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class TileMon1 {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  public delegate bool MonitorEnumProc(IntPtr m, IntPtr hdc, IntPtr r, IntPtr d);
+  [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr clip, MonitorEnumProc f, IntPtr d);
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct MONITORINFOEX { public int cbSize; public RECT rcMonitor, rcWork; public int dwFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szDevice; }
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFOEX i);
+  public static MONITORINFOEX[] Monitors() {
+    var list = new System.Collections.Generic.List<MONITORINFOEX>();
+    EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (m, h, r, d) => {
+      var i = new MONITORINFOEX(); i.cbSize = Marshal.SizeOf(typeof(MONITORINFOEX));
+      if (GetMonitorInfo(m, ref i)) list.Add(i);
+      return true;
+    }, IntPtr.Zero);
+    return list.ToArray();
+  }
+}
+'@
 . (Join-Path $PSScriptRoot 'config.ps1')
 
 # The Win32 reads and writes behind Move-Win, so a test can swap them for fakes and move no window.
 function Get-WinRect($win) { $r = New-Object W+RECT; [void][W]::GetWindowRect($win, [ref]$r); [pscustomobject]@{ W = $r.R - $r.L; H = $r.B - $r.T } }
 # A placement rect (rcNormalPosition) is in workspace coordinates: screen coordinates less the primary work area's offset.
-function Get-WorkspaceOffset { $s = [System.Windows.Forms.Screen]::PrimaryScreen; [pscustomobject]@{ X = $s.WorkingArea.X - $s.Bounds.X; Y = $s.WorkingArea.Y - $s.Bounds.Y } }
+# The primary monitor is the one Windows flags in a fresh read (MONITORINFO dwFlags bit 1), never the per-process Screen.PrimaryScreen cache.
+function Get-WorkspaceOffset { $s = @([TileMon1]::Monitors() | ? { $_.dwFlags -band 1 })[0]; if (-not $s) { return [pscustomobject]@{ X = 0; Y = 0 } }; [pscustomobject]@{ X = $s.rcWork.L - $s.rcMonitor.L; Y = $s.rcWork.T - $s.rcMonitor.T } }
 # Where Windows sends a window when it is restored (screen coordinates), and whether it holds the window snapped.
 function Get-WinRestore($win) {
   $p = New-Object W+WPL; $p.length = [Runtime.InteropServices.Marshal]::SizeOf($p); [void][W]::GetWindowPlacement($win, [ref]$p)
@@ -117,13 +139,27 @@ if (($Json -or $Place -or $PlaceFile) -and -not $PSBoundParameters.ContainsKey('
 $Proc = @($Proc -split ',' | ? { $_ })  # -File passes 'a,b' as one string
 $Skip = @($Skip -split ',' | ? { $_ })
 
+# Monitors: TILE_SCREENS_FILE (a JSON array of {name,x,y,w,h,bw,bh}, read on every call) stands in for the live list, which is
+# read from Windows on every call too. The extra `% { $_ }` unrolls the array Windows PowerShell 5.1 emits as one object. Both give the work area in X,Y,W,H and the bounds' size in BW,BH.
+function Get-Screens {
+  if ($env:TILE_SCREENS_FILE) {
+    # A seam file that is missing, empty or not JSON stops the script: an empty list would read as a desktop with no monitor.
+    $seam = $env:TILE_SCREENS_FILE
+    if (-not (Test-Path -LiteralPath $seam -PathType Leaf)) { throw "TILE_SCREENS_FILE names no file: $seam" }
+    $text = [IO.File]::ReadAllText($seam, [Text.Encoding]::UTF8)
+    if (-not $text.Trim()) { throw "TILE_SCREENS_FILE is empty: $seam" }
+    try { $seamList = ConvertFrom-Json $text -ErrorAction Stop } catch { throw "TILE_SCREENS_FILE is not JSON: $seam" }
+    return @($seamList | % { $_ } | % { [pscustomobject]@{ Name = [string]$_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h } })
+  }
+  @([TileMon1]::Monitors() | % { [pscustomobject]@{ Name = $_.szDevice; BW = $_.rcMonitor.R - $_.rcMonitor.L; BH = $_.rcMonitor.B - $_.rcMonitor.T; X = $_.rcWork.L; Y = $_.rcWork.T; W = $_.rcWork.R - $_.rcWork.L; H = $_.rcWork.B - $_.rcWork.T } })
+}
 # Monitors: bounds pick the role, the working area is where windows go.
 if ($From) {
   $DryRun = [switch]$true
   $snapIn = ConvertFrom-Json (JsonText $From)
   $screens = @($snapIn.monitors | % { [pscustomobject]@{ Name = $_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h } })
 } else {
-  $screens = @([System.Windows.Forms.Screen]::AllScreens | % { $a = $_.WorkingArea; [pscustomobject]@{ Name = $_.DeviceName; BW = $_.Bounds.Width; BH = $_.Bounds.Height; X = $a.X; Y = $a.Y; W = $a.Width; H = $a.Height } })
+  $screens = @(Get-Screens)
 }
 function Pick($role, $taken = @()) {
   $s = @($screens | ? { $taken -notcontains $_.Name })

@@ -325,6 +325,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # The Windows That Stay Put list (decision bay-list): its own file, run in a child powershell like stack-lock.ps1.
   $bayOut = @(Child (Join-Path $PSScriptRoot 'bay.ps1')); $bayOut | % { "$_" }
   $script:fail += [Math]::Max(@($bayOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Fresh screens (tile.ps1 reads the monitor list on every call): its own file, in a child powershell (its FAIL lines count here).
+  $fsOut = @(Child (Join-Path $PSScriptRoot 'fresh-screens.ps1')); $fsOut | % { "$_" }
+  $script:fail += [Math]::Max(@($fsOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
   $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }
