@@ -27,10 +27,28 @@ param([switch]$NoStartup, [switch]$NoLaunch)
   . (Join-Path $new 'tray.ps1') -Lib
   try { [void][Threading.EventWaitHandle]::OpenExisting((TrayName 'Quit')).Set() } catch [Threading.WaitHandleCannotBeOpenedException] {}
   for ($i = 0; $i -lt 50; $i++) { $m = $null; if (-not [Threading.Mutex]::TryOpenExisting((TrayName 'Agent'), [ref]$m)) { break }; $m.Dispose(); Start-Sleep -Milliseconds 100 }
+  # The agent lets go of its mutex before its process exits, and the process still holds the app folder until then. The agent
+  # writes its process id to tray.pid at start, so wait (up to 10 s) for that process to end. Only a PowerShell process counts, since the id may have been reused.
+  $trayPid = 0
+  try { [void][int]::TryParse(([IO.File]::ReadAllText((Join-Path $home_ 'tray.pid'))).Trim(), [ref]$trayPid) } catch {}
+  if ($trayPid -gt 0 -and $trayPid -ne $PID) {
+    $tp = Get-Process -Id $trayPid -ErrorAction SilentlyContinue
+    if ($tp -and $tp.ProcessName -match '^(powershell|pwsh)$') { [void]$tp.WaitForExit(10000) }
+  }
   # Swap by renames: the old app is put back if any step fails, so a failed install leaves it working.
   $old = Join-Path $home_ "app.old-$PID"
   try {
-    if (Test-Path -LiteralPath $app) { Rename-Item -LiteralPath $app -NewName (Split-Path $old -Leaf) }
+    if (Test-Path -LiteralPath $app) {
+      # A process with the app folder as its working directory (a board, a terminal or Explorer window) makes the rename fail until it lets go: retry for about 15 s.
+      $deadline = [Diagnostics.Stopwatch]::StartNew()
+      while ($true) {
+        try { Rename-Item -LiteralPath $app -NewName (Split-Path $old -Leaf); break }
+        catch [IO.IOException], [UnauthorizedAccessException] {
+          if ($deadline.ElapsedMilliseconds -ge 15000) { throw "The app folder is in use, most likely by a running board or a terminal or Explorer window open in it. Close those and run the install again. ($($_.Exception.Message))" }
+          Start-Sleep -Milliseconds 250
+        }
+      }
+    }
     if ($env:TILE_TEST_SWAP_FAIL) { throw 'Test: the swap failed.' }  # test seam: a failure between the renames
     Rename-Item -LiteralPath $new -NewName 'app'
   } catch {

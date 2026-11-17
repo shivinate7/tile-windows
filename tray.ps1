@@ -436,6 +436,8 @@ if ($Link) {
 $quitEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $quitName)
 $openEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $openName)
 $linkEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', (TrayName 'Link'))
+# install.ps1 reads this to wait for the agent process to exit (its mutex is released a little before the process ends).
+Write-TileFile (Join-Path $TileHome 'tray.pid') "$PID"
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # The handler only sets a flag: SystemEvents may call it off the PowerShell thread. The timer does the work.
