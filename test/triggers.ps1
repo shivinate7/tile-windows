@@ -292,14 +292,16 @@ $def = '{"id":"default","name":"Default","builtIn":true,"trigger":{"type":"manua
 $mine = '{"id":"mine","name":"Mine","trigger":{"type":"manual"},"grids":{"wide":{"c":2,"r":1}},"pins":[],"fill":{"mon":"wide","apps":["*"],"skip":[],"sort":"app"}}'
 $mg = Migrate ('{"version":1,' + $cat + ',"scenes":[' + $fri + ',' + $def + ',' + $mine + ']}')
 $mc = ConvertFrom-Json $mg.text; $md = @($mc.scenes | ? { $_.id -eq 'default' })[0]; $mf = @($mc.scenes | ? { $_.id -eq 'fri' })[0]; $mm = @($mc.scenes | ? { $_.id -eq 'mine' })[0]
-Check 'migration: an older config gains Listen, Solo, Thursday Prep, the activity map, the meeting-size rule and the threshold defaults, and its own scenes stay' ($mc.version -eq 3 -and (@($mc.scenes.id) -join ',') -eq 'fri,default,mine,listen,solo,thursday-prep' -and $mc.activity.Count -ge 5 -and $mc.meetingSize.at -eq 25 -and $mc.optDefaults.desk.lockMin -eq 5) $mg.text.Substring(0, 200)
+# The starter config is version 4 (config v4, monitor setups lane C, 2026-11-17).
+Check 'migration: an older config gains Listen, Solo, Thursday Prep, the activity map, the meeting-size rule and the threshold defaults, and its own scenes stay' ($mc.version -eq 4 -and (@($mc.scenes.id) -join ',') -eq 'fri,default,mine,listen,solo,thursday-prep' -and $mc.activity.Count -ge 5 -and $mc.meetingSize.at -eq 25 -and $mc.optDefaults.desk.lockMin -eq 5) $mg.text.Substring(0, 200)
 Check 'migration: a built-in Default gains screens, claudeGrid and an auto block with every switch off' ($md.screens -eq 3 -and $md.claudeGrid.at -eq 4 -and (@($md.auto.PSObject.Properties | ? { $_.Value -ne $false }).Count -eq 0) -and @($md.auto.PSObject.Properties).Count -eq 9)
 Check 'migration: a custom scene gains an auto block with every switch off' ((@($mm.auto.PSObject.Properties).Count -eq 9) -and (@($mf.auto.PSObject.Properties | ? { $_.Value -ne $false }).Count -eq 0))
 Check 'migration: nested and one-item arrays survive the rewrite (categories, days)' ($mc.categories.Count -eq 4 -and $mc.categories[0] -is [array] -and $mc.categories[0][1] -eq 'Code' -and $mf.trigger.days -is [array] -and $mf.trigger.days[0] -eq 5 -and $mc.cats.claude -eq 'code' -and $md.pins[0].slots -is [array] -and $md.pins[0].slots[0] -eq 0 -and $mg.text -notmatch '"Count":|"value":')
 Check 'migration: a second read changes nothing' ($mg.text -ceq $mg.again -and $mg.same)
 $m2 = Migrate ('{"version":2,' + $cat + ',"scenes":[' + $def + ',' + $mine + ']}')
 $mc2 = ConvertFrom-Json $m2.text
-Check 'migration: a version 2 config gets the trigger fields but no starter scene it does not already have' ($mc2.version -eq 3 -and (@($mc2.scenes.id) -join ',') -eq 'default,mine' -and $mc2.scenes[0].claudeGrid.at -eq 4 -and $mc2.optDefaults.noext.sec -eq 30)
+# The starter config is version 4 (config v4, monitor setups lane C, 2026-11-17).
+Check 'migration: a version 2 config gets the trigger fields but no starter scene it does not already have' ($mc2.version -eq 4 -and (@($mc2.scenes.id) -join ',') -eq 'default,mine' -and $mc2.scenes[0].claudeGrid.at -eq 4 -and $mc2.optDefaults.noext.sec -eq 30)
 Remove-Item -Recurse -Force $mig -ErrorAction SilentlyContinue
 
 if ($standalone) { if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { 'All trigger checks passed.' } }
