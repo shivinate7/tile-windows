@@ -169,9 +169,9 @@ try {
     Check 'item 9, fill: Chrome is not in missing' (@($r.missing | ? { $_.app -eq 'chrome' }).Count -eq 0) "missing: $(@($r.missing | ? { $_.app -eq 'chrome' } | ConvertTo-Json -Compress))"
     Check 'item 9, fill: Teams is not listed in left as unplugged (the ruling covers only what the fill would place)' ((LeftWhy $r 2004) -notmatch 'unplugged') (Desc $r 2004)
   }
-  Case 'control: with the ultrawide plugged in, the same fill places Chrome on its first ultrawide cell' {
+  Case 'item 9, fill: with the ultrawide plugged in, the same fill places Chrome on its first ultrawide cell' {
     $rd = Invoke-SceneFrom $sceneFill $snapDesk
-    Check 'control: Chrome is in the ultrawide first cell' (OnCell $rd 2003 1 (CellRect $ultDesk 5 2 0)) (Desc $rd 2003)
+    Check 'item 9, fill: plugged in, Chrome is in the ultrawide first cell' (OnCell $rd 2003 1 (CellRect $ultDesk 5 2 0)) (Desc $rd 2003)
   }
 
   # ---- The live seam: TILE_SCREENS_FILE with ids. No window is needed: a pin on a window that is not open reports missing. ----
