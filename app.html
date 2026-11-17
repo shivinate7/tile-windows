@@ -1891,7 +1891,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="revert"){edit(s=>{Object.keys(s).forEach(k=>delete s[k]);Object.assign(s,clone(saved(selId)))},"Reverted to the saved scene.");sceneMsg="Reverted to the saved scene.";render()}
   else if(t.id==="del"){const s=scene();if(s.builtIn)return;const f=await ask(`Delete ${s.name}?`,`<p class="note">The scene and its trigger go away. Your windows do not move.</p>`,"Delete",true);if(!f)return;
     const next=clone(cfg);next.scenes=next.scenes.filter(x=>x.id!==selId);
-    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){delete work[selId];delete prevs[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
+    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){delete work[selId];delete prevs[selId];delete unsaved[selId];delete failed[selId];delete lq[selId];delete lsaved[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
   else if(t.id==="editcats")editCats();
   else if(t.id==="quit"){if(!await ask("Stop the Tile Windows server?",`<p class="note">This page stops working until you open Tile Windows again. Your scenes are saved. Your windows do not move.</p>`,"Stop Server",true))return;try{await post("quit","quit")}catch(_){}document.body.innerHTML='<p style="padding:24px;font:15px system-ui">Server stopped. You can close this tab.</p>'}
 });
