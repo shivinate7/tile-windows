@@ -1,6 +1,8 @@
 # Split Cell and Free Layout: design notes
 
 Mockup: `layout-free.html`, beside this file. Owner asks of 2026-11-13 09:22 CST.
+Owner rulings of 2026-11-17 14:12 CST are in decision `layout-free`. Items 1, 22 and 23 are
+ruled there. Items 3, 4, 8, 17 and 21 wait on its open questions.
 Deep links: `#s=<state>`, plus `w=1024`, `t=light|dark` and `hide=<option,...>`. With no `t`,
 the page follows the system theme. `#s=all` shows every state.
 States: `split-pick`, `split-cell`, `split-finer`, `edges-on`, `edges-drag`, `edges-gap`,
@@ -43,25 +45,27 @@ Each frame with a new scene shape shows "Saves in the scene as" under it.
 
 ## Split Cell
 
-1. **Trigger.** Select a tile and press S, or press Split Cell in the inspector's Window
-   section. A popover opens under the tile (`ux-answer-at-press`): Direction (Side by Side,
+1. **Trigger.** Two ways in, ruled 2026-11-17 14:12 CST (decision `layout-free`). **Fast:**
+   select a tile and press S, and the cell splits in two at once. Its direction, share and key
+   are open (question (c)). **Menu:** right-click the tile, or press Split Cell in the inspector's
+   Window section. A popover opens under the tile (`ux-answer-at-press`): Direction (Side by Side,
    Stacked), "Claude keeps" (Left or Right; Top or Bottom when stacked), and "Claude's share"
    (1/3, 1/2, 2/3; the bar between the halves reaches quarters, item 10). Three choices, not five: the critique counted five as too many for one popover row. The tile previews the split with a dashed line and a hatched empty
    half. Enter splits, Esc cancels. Gain: one key, one choice, seen before it acts. Loss: a
-   popover over the board at 1024 covers the row under it. Pick: as drawn.
+   popover over the board at 1024 covers the row under it. Pick: the menu as drawn. The mockup draws no fast action.
 2. **Empty cell.** Selecting an empty cell is new. Today only windows select, and Draw Zone picks
    cells. A click on an empty cell selects it; the Window section becomes "Empty Space" with Split
    Cell. Both halves are then empty. Not drawn. Owner grant: yes.
-3. **Model: Subdivide the Cell (pick).** The grid stays 5×2. Cell 2 becomes 2a and 2b. The scene
+3. **Model: Subdivide the Cell (open).** The grid stays 5×2. Cell 2 becomes 2a and 2b. The scene
    saves `grids.wide.splits: [{slot, dir, at}]`, and a pin gains `part` (0 = left or top,
    1 = right or bottom). The engine change is small: `Put` cuts the cell rect by `at` when the
    pin has a `part`. Gain: nothing else on the board changes; zones, fill and held entries keep
-   their slots. Loss: a second kind of slot address. Pick: this.
+   their slots. Loss: a second kind of slot address. Pick: this, until question (a) in decision `layout-free` is answered.
 4. **Model: Finer Grid.** The grid doubles to 10×2 and every pin, zone and held entry gets
    doubled slots. Loss: the fill puts one window per slot, so every filled window becomes half
    as wide unless the fill learns a fill unit (`fill.unit: [2,1]`); the Columns stepper must pass
    8; the board shows 20 drop targets of about 53px at 1440 and 28px at 1024; a 1/3 share needs
-   a 15×2 grid. Gain: one slot kind. Not picked.
+   a 15×2 grid. Gain: one slot kind. Not picked. Open: question (a) in decision `layout-free` may pick it.
 5. **The window keeps its half by a pin.** Split pins the window to its half, as a drop on a cell
    pins it today (board hint "Drag a window to a cell to pin it"). Without the pin, the next fill
    could move it out. Departs from: a window the fill placed becomes pinned.
@@ -76,7 +80,7 @@ Each frame with a new scene shape shows "Saves in the scene as" under it.
    cell under it at the same share.
 8. **One level.** A half cannot be split again. Split Cell on a half is off with "This cell is
    split once already. Join the halves first." Gain: the slot address stays two parts. Loss: no
-   quarter-cell in two steps (drag the bar to 1/4 instead). Pick: one level.
+   quarter-cell in two steps (drag the bar to 1/4 instead). Pick: one level, while item 3 stands (question (a) in decision `layout-free`).
 9. **Join.** J on a selected half, or Join Halves in the inspector, makes the cell whole. If both
    halves hold a window, the selected one keeps the cell and the other goes to a free cell in fill
    order, else to Windows That Stay Put, as resize does (decision `stack-and-lock`).
@@ -119,7 +123,8 @@ and the key F.
 17. **Gaps.** A drag cannot open a gap. A window that leaves (Keep Where It Is) leaves empty
     space, drawn as a dashed box. With Fill Empty Cells on, a new window fills it. Close Gap in the
     inspector grows the neighbour that shares the whole edge (left, above, right, below, in that
-    order); with none, Close Gap is off and says why.
+    order); with none, Close Gap is off and says why. Open: question (b) in decision `layout-free`
+    may give a closed window's space to its neighbour at once, with no dashed gap.
 18. **Lock.** A line that touches a locked window is dotted, with no grip, and its tooltip says
     "Terminal is locked, so this line does not move." (decision `stack-and-lock`: a resize stops
     at a locked tile).
@@ -137,14 +142,16 @@ and the key F.
     it. Gain: never a gap, even on removal; it fits Split Cell. Loss: one window cannot change
     alone; a lock blocks every splitter above it (the right column's top splitter is dotted); a
     grid of 3 rows or more can hold a pinwheel of spans that no tree can cut, so switch-on would
-    have to move windows there. Any spans on a 2-row grid cut into a tree. Not picked.
+    have to move windows there. Any spans on a 2-row grid cut into a tree. Not picked as the model. The owner calls it a solid
+    concept (2026-11-17 14:12 CST). Which part joins Shared Edges is open (decision `layout-free`,
+    question (b)).
 
 ### Option: Free Rects
 
 22. Today's eight handles move by the pixel. Windows may overlap or leave a gap during the drag;
     on release, the neighbour shrinks out of an overlap or grows into a gap. Gain: closest to "as
     I see fit"; a window can also move anywhere. Loss: a gap or an overlap shows during the drag,
-    and the release guesses which neighbour changes. Not picked.
+    and the release guesses which neighbour changes. Rejected by the owner, 2026-11-17 14:12 CST (decision `layout-free`).
 
 ### The six tests
 
@@ -157,7 +164,8 @@ and the key F.
 | Saves and replays through `-Scene` | Yes, areas | Yes, tree | Yes, areas |
 | Back to the grid | Same flow | Same flow | Same flow |
 
-23. **Pick: Shared Edges.** It is the only option that passes all six. The line the owner drags is
+23. **Ruled: Shared Edges**, owner, 2026-11-17 14:12 CST (decision `layout-free`). It is the only
+    option that passes all six. The line the owner drags is
     the only thing that moves, and the gap is closed by the same move, which is the owner's "the
     gaps between items is immediately addressed". Splitter Tree fails per-window resize and makes
     a lock freeze half the board. Free Rects shows the gap it promises to close.
@@ -208,3 +216,7 @@ and the key F.
 - Open: should Free Layout's line drag reach across monitors? Drawn as no.
 - Open: at 1024, a half cell is 27px wide. Is the inspector enough there, or should the board
   zoom to one monitor while Split or Free Layout is in use?
+- Open: "finer grid", the whole board or one cell? Items 3 and 4 (decision `layout-free`,
+  question (a)).
+- Open: which part of Splitter Tree joins Shared Edges (decision `layout-free`, question (b)).
+- Open: the fast action's direction, share and key (decision `layout-free`, question (c)).
