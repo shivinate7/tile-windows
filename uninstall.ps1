@@ -9,6 +9,8 @@ $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 foreach ($l in (Join-Path $programs 'Tile Windows.lnk'), (Join-Path $programs 'Startup\Tile Windows tray.lnk')) { if (Test-Path -LiteralPath $l) { Remove-Item -LiteralPath $l } }
 # The tilewindows:// link (TILE_NO_REGISTRY=1 skips every registry write and delete; tests set it).
 if (-not $env:TILE_NO_REGISTRY) { $linkRoot = @(Get-UndoProtocolKeys)[0].path; if (Test-Path -LiteralPath $linkRoot) { Remove-Item -LiteralPath $linkRoot -Recurse -Force } }
+# The agent's process id file: stale once the agent is stopped, and a leftover one could name a reused process.
+Remove-Item -LiteralPath (Join-Path $TileHome 'tray.pid') -Force -ErrorAction SilentlyContinue
 $app = Join-Path $TileHome 'app'
 if (Test-Path -LiteralPath $app) { Remove-Item -LiteralPath $app -Recurse -Force }
 if ($Purge -and (Test-Path -LiteralPath $TileHome)) { Remove-Item -LiteralPath $TileHome -Recurse -Force }
