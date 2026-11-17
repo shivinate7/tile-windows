@@ -88,11 +88,11 @@
       "blurb": "Laptop only: Chrome on the left half, Claude on the right.",
       "trigger": { "type": "manual", "days": [1, 2, 3, 4, 5], "time": "09:00" },
       "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "setup": false, "noext": false, "grid": false },
-      "grids": { "tall": { "c": 1, "r": 2 }, "laptop": { "c": 2, "r": 1 }, "wide": { "c": 2, "r": 1 } },
+      "grids": { "tall": { "c": 1, "r": 2 }, "laptop": { "c": 1, "r": 1 }, "wide": { "c": 2, "r": 1 } },
       "pins": [
-        { "app": "chrome", "match": "", "mon": "laptop", "slots": [0] }
+        { "app": "chrome", "match": "", "mon": "wide", "slots": [0] }
       ],
-      "fill": { "mon": "laptop", "apps": ["claude"], "skip": ["outlook", "olk", "ms-teams"], "sort": "app" }
+      "fill": { "mon": "wide", "apps": ["claude"], "skip": ["outlook", "olk", "ms-teams"], "sort": "app" }
     },
     {
       "id": "thursday-prep", "name": "Thursday Prep", "since": 2, "layouts": {},

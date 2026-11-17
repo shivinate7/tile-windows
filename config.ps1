@@ -174,6 +174,12 @@ function Get-TileRoles($monitors, $ids) {
   foreach ($c in @($cand | Sort-Object @{ Expression = { $_.w }; Descending = $true }, @{ Expression = { $_.id }; Descending = $false })) {
     if (-not $role.ContainsKey($c.shape)) { $role[$c.shape] = $c.id }
   }
+  # A lone plugged monitor holds the laptop and wide roles whatever its shape, and tall too when it is portrait (as Pick always gave it, coordinator
+  # ruling 2026-11-17 17:42 CST). With two or more monitors a built-in never takes wide.
+  $one = @(@($ids) | Select-Object -Unique)
+  if ($one.Count -eq 1 -and $monitors -and $monitors.PSObject.Properties[[string]$one[0]]) {
+    $tall = $role.ContainsKey('tall'); $role = @{ laptop = [string]$one[0]; wide = [string]$one[0] }; if ($tall) { $role['tall'] = [string]$one[0] }
+  }
   $role
 }
 # The key of a set of monitors: their ids, sorted, joined. Order, position and scale never reach it.
@@ -251,7 +257,7 @@ function Resolve-TileLayout($cfg, $scene, [string]$key) {
     $r = Copy-TileObject $best; $g = [pscustomobject]@{}
     foreach ($gp in @($r.grids.PSObject.Properties)) { if ($ids -ccontains $gp.Name) { $g | Add-Member -NotePropertyName $gp.Name -NotePropertyValue $gp.Value } }
     $pick = Get-TileRoles $cfg.monitors $ids
-    foreach ($shape in $pick.Keys) {
+    foreach ($shape in @('tall', 'laptop', 'wide' | Where-Object { $pick.ContainsKey($_) })) {
       $id = $pick[$shape]
       if ($g.PSObject.Properties[$id]) { continue }
       $tg = if ($scene.grids) { $scene.grids.PSObject.Properties[$shape] }
@@ -261,9 +267,10 @@ function Resolve-TileLayout($cfg, $scene, [string]$key) {
     return $r
   }
   $role = Get-TileRoles $cfg.monitors $ids; $grids = [pscustomobject]@{}
-  foreach ($shape in $role.Keys) {
+  # A monitor holds one grid: a lone monitor holding several roles takes the first of tall, laptop, wide that the scene has a grid for.
+  foreach ($shape in @('tall', 'laptop', 'wide' | Where-Object { $role.ContainsKey($_) })) {
     $tg = if ($scene.grids) { $scene.grids.PSObject.Properties[$shape] }
-    if ($tg) { $grids | Add-Member -NotePropertyName $role[$shape] -NotePropertyValue ([pscustomobject]@{ c = $tg.Value.c; r = $tg.Value.r }) }
+    if ($tg -and -not $grids.PSObject.Properties[[string]$role[$shape]]) { $grids | Add-Member -NotePropertyName $role[$shape] -NotePropertyValue ([pscustomobject]@{ c = $tg.Value.c; r = $tg.Value.r }) }
   }
   $tpl = Copy-TileObject ([pscustomobject]@{ pins = @($scene.pins | Where-Object { $_ }); zones = @($scene.zones | Where-Object { $_ }); fill = $(if ($scene.fill) { $scene.fill } else { [pscustomobject]@{} }) })
   $at = { param($v) if ($v -and $role.ContainsKey([string]$v)) { $role[[string]$v] } else { $v } }
