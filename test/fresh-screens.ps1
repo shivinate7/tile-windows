@@ -467,6 +467,27 @@ $Error.Clear()
     Check 'output technology: control: 0000000A (DisplayPort) is not the built-in panel: SEAM-TD is builtin false, id TST9010-UID4373' ($byT['SEAM-TD'].builtin -eq $false -and $byT['SEAM-TD'].id -eq 'TST9010-UID4373' -and $byT['SEAM-TD'].idKind -eq 'port') "builtin '$($byT['SEAM-TD'].builtin)', id '$($byT['SEAM-TD'].id)', idKind '$($byT['SEAM-TD'].idKind)'"
     Check 'output technology: control: 00000005 (HDMI) is not the built-in panel: SEAM-TH is builtin false, id TST9005-UID4374' ($byT['SEAM-TH'].builtin -eq $false -and $byT['SEAM-TH'].id -eq 'TST9005-UID4374' -and $byT['SEAM-TH'].idKind -eq 'port') "builtin '$($byT['SEAM-TH'].builtin)', id '$($byT['SEAM-TH'].id)', idKind '$($byT['SEAM-TH'].idKind)'"
   }
+  # ---- 12. Two monitors that derive the same id (the same maker, product and EDID serial): each id gets its instance UID appended.
+  #      SEAM-K3 has the same maker and product but its own serial, so its id is the control and must not change.
+  $edidK = New-EdidHex 'TST' '8008' 0 'SAMESER3' 90
+  $edidO = New-EdidHex 'TST' '8008' 0 'OTHERSER4' 90
+  $collFile = Join-Path $run 'ids-collide.json'
+  $collList = @(
+    (New-SeamEntry 'SEAM-K1' 0 1920 1080 (Get-DisplayPath 'TST8008' 'UID4360') $edidK),
+    (New-SeamEntry 'SEAM-K2' 1920 1920 1080 (Get-DisplayPath 'TST8008' 'UID4361') $edidK),
+    (New-SeamEntry 'SEAM-K3' 3840 1920 1080 (Get-DisplayPath 'TST8008' 'UID4362') $edidO)
+  )
+  [IO.File]::WriteAllText($collFile, (ConvertTo-Json -InputObject $collList -Depth 4 -Compress), $utf8)
+  $rc = Get-SeamRun "-File `"$Tile`" -Json -DryRun" @{ TILE_SCREENS_FILE = $collFile }
+  $byK = @{}; foreach ($x in @($rc.Doc.monitors | % { $_ })) { $byK[[string]$x.name] = $x }
+  $namesK = (@($byK.Keys | Sort-Object)) -join ','
+  $scopeK = ($rc.Json) -and ($namesK -eq 'SEAM-K1,SEAM-K2,SEAM-K3')
+  Check 'collide: scope: -Json lists the three SEAM-K monitors, by name' $scopeK "lists [$namesK]; exit $($rc.Code); stderr: $($rc.Err)"
+  if ($scopeK) {
+    Check 'collide: colliding ids get the instance UID appended: SEAM-K1 TST8008-SAMESER3-UID4360, SEAM-K2 TST8008-SAMESER3-UID4361' ($byK['SEAM-K1'].id -eq 'TST8008-SAMESER3-UID4360' -and $byK['SEAM-K2'].id -eq 'TST8008-SAMESER3-UID4361') "ids are '$($byK['SEAM-K1'].id)' and '$($byK['SEAM-K2'].id)'"
+    Check 'collide: control: the colliding monitors keep idKind edid' ($byK['SEAM-K1'].idKind -eq 'edid' -and $byK['SEAM-K2'].idKind -eq 'edid') "idKinds are '$($byK['SEAM-K1'].idKind)' and '$($byK['SEAM-K2'].idKind)'"
+    Check 'collide: control: a monitor whose id does not collide keeps it: SEAM-K3 TST8008-OTHERSER4' ($byK['SEAM-K3'].id -eq 'TST8008-OTHERSER4') "id is '$($byK['SEAM-K3'].id)'"
+  }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
