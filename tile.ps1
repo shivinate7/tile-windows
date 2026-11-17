@@ -3,6 +3,8 @@
 # -Monitor: 'wide' (widest), 'laptop' (smallest), 'tall' (portrait), or a 0-based index.
 # -Pin 'chrome:RFP=1;ms-teams=5+10': put an app's first window (title containing the text after ':', if given) in given slots (spans the box around them).
 # -Json: print monitors (with their role) + windows as JSON (default -Proc '*'), move nothing. Minimized windows carry "min":true.
+#   Each monitor also carries id, builtin, maker, product, serial and idKind: an id that follows the hardware (see Get-MonitorIdentity).
+# -Monitors: print only the monitors (the same objects as -Json's monitors) as a JSON array, move nothing.
 # -Place '<json>' / -PlaceFile <path>: move windows to [{app,title,x,y,w,h,id?}] screen rects (match id, else app + title). Honors -DryRun.
 #   With -Json, print one result per entry as JSON instead of text.
 # -Scene <name|path|json>: run a scene (one grid per monitor role, pins, fill) from config.json or a file. See scenes.json.
@@ -17,7 +19,7 @@
 # -Lib: define Move-Win and the Win32 reads and writes behind it, then return (tests dot-source it and swap those for fakes).
 # Slots number row by row from 1 (top-left).
 # -Cells n: grid with n cells (rows picked for you). Ultrawide default = 10 cells (5x2).
-param([int]$Cols = 0, [int]$Rows = 0, [int]$Cells = 0, [string[]]$Proc = @('claude'), [string]$Monitor = 'wide', [string]$Pin = '', [switch]$List, [switch]$DryRun, [switch]$Json, [string]$Place = '', [string]$PlaceFile = '', [switch]$Default,
+param([int]$Cols = 0, [int]$Rows = 0, [int]$Cells = 0, [string[]]$Proc = @('claude'), [string]$Monitor = 'wide', [string]$Pin = '', [switch]$List, [switch]$DryRun, [switch]$Json, [switch]$Monitors, [string]$Place = '', [string]$PlaceFile = '', [switch]$Default,
   # -Order 'a|b|c': windows whose title contains a, then b, then c come first, in that order.
   [string]$Order = '',
   # -Sort app|category|title|position: fill order. app = -Proc order (then -Order, then where windows sit now).
@@ -74,6 +76,50 @@ public static class TileMon1 {
       return true;
     }, IntPtr.Zero);
     return list.ToArray();
+  }
+}
+'@
+# Monitor identity reads (a second Add-Type: TileMon1's text stays as it is). DevicePath: the device interface path of the monitor
+# on a display adapter (EnumDisplayDevices, flag 1). Targets: every active display target as "<output technology, hex>|<device path>"
+# (QueryDisplayConfig; the path is the same string DevicePath gives). The structs are read as raw memory, so none is declared here.
+Add-Type @'
+using System; using System.Runtime.InteropServices; using System.Collections.Generic;
+public static class TileMonId1 {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct DISPLAY_DEVICE { public int cb; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceString; public int StateFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceID; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string DeviceKey; }
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplayDevicesW(string dev, uint i, ref DISPLAY_DEVICE dd, uint flags);
+  public static string DevicePath(string adapter) {
+    for (uint i = 0; i < 16; i++) {
+      var d = new DISPLAY_DEVICE(); d.cb = Marshal.SizeOf(typeof(DISPLAY_DEVICE));
+      if (!EnumDisplayDevicesW(adapter, i, ref d, 1)) break;
+      if ((d.StateFlags & 1) != 0 && !string.IsNullOrEmpty(d.DeviceID)) return d.DeviceID;
+    }
+    return null;
+  }
+  [DllImport("user32.dll")] static extern int GetDisplayConfigBufferSizes(uint flags, out uint np, out uint nm);
+  [DllImport("user32.dll")] static extern int QueryDisplayConfig(uint flags, ref uint np, IntPtr paths, ref uint nm, IntPtr modes, IntPtr topology);
+  [DllImport("user32.dll")] static extern int DisplayConfigGetDeviceInfo(IntPtr request);
+  // DISPLAYCONFIG_PATH_INFO is 72 bytes (targetInfo at 20: adapter LUID 8, id 4, mode index 4, output technology 4), MODE_INFO 64,
+  // TARGET_DEVICE_NAME 420 (header 20, monitorDevicePath at 164). QDC_ONLY_ACTIVE_PATHS = 2, GET_TARGET_NAME = 2.
+  public static string[] Targets() {
+    var res = new List<string>();
+    uint np, nm;
+    if (GetDisplayConfigBufferSizes(2, out np, out nm) != 0 || np == 0) return res.ToArray();
+    IntPtr paths = Marshal.AllocHGlobal((int)np * 72), modes = Marshal.AllocHGlobal((int)Math.Max(nm, 1) * 64), req = Marshal.AllocHGlobal(420);
+    try {
+      if (QueryDisplayConfig(2, ref np, paths, ref nm, modes, IntPtr.Zero) != 0) return res.ToArray();
+      for (int i = 0; i < np; i++) {
+        long e = paths.ToInt64() + i * 72L;
+        for (int b = 0; b < 420; b += 4) Marshal.WriteInt32(req, b, 0);
+        Marshal.WriteInt32(req, 0, 2); Marshal.WriteInt32(req, 4, 420);
+        Marshal.WriteInt64(req, 8, Marshal.ReadInt64(new IntPtr(e + 20)));
+        Marshal.WriteInt32(req, 16, Marshal.ReadInt32(new IntPtr(e + 28)));
+        if (DisplayConfigGetDeviceInfo(req) != 0) continue;
+        string path = Marshal.PtrToStringUni(new IntPtr(req.ToInt64() + 164), 128);
+        int z = path.IndexOf((char)0); if (z >= 0) path = path.Substring(0, z);
+        res.Add(((uint)Marshal.ReadInt32(new IntPtr(e + 36))).ToString("X8") + "|" + path);
+      }
+    } finally { Marshal.FreeHGlobal(paths); Marshal.FreeHGlobal(modes); Marshal.FreeHGlobal(req); }
+    return res.ToArray();
   }
 }
 '@
@@ -139,9 +185,74 @@ if (($Json -or $Place -or $PlaceFile) -and -not $PSBoundParameters.ContainsKey('
 $Proc = @($Proc -split ',' | ? { $_ })  # -File passes 'a,b' as one string
 $Skip = @($Skip -split ',' | ? { $_ })
 
+# A monitor's identity, from its device interface path (\\?\DISPLAY#<maker+product>#<instance>#{guid}), its EDID bytes and whether it is
+# the machine's own panel. The id follows the hardware, not its port or position:
+#   <maker+product>-<text serial>  (the EDID's 0xFF descriptor, in a block at 54, 72, 90 or 108)  idKind edid
+#   <maker+product>-<bytes 12-15 as a decimal number>, when non-zero                                idKind edid
+#   <maker+product>-builtin, for the machine's own panel                                           idKind builtin
+#   <maker+product>-<UIDnnnn>, the instance's last '&' segment (identical monitors differ by port) idKind port
+#   size-<bw>x<bh>, when there is no device at all                                                 idKind size
+function Get-EdidSerial([byte[]]$e) {
+  if (-not $e -or $e.Length -lt 128) { return $null }
+  foreach ($o in 54, 72, 90, 108) {
+    # A monitor descriptor is 00 00 00 <tag> 00; a timing block has a pixel clock in bytes 0-1 and is no descriptor.
+    if ($e[$o] -ne 0 -or $e[$o + 1] -ne 0 -or $e[$o + 2] -ne 0 -or $e[$o + 3] -ne 0xFF -or $e[$o + 4] -ne 0) { continue }
+    $t = [Text.Encoding]::ASCII.GetString($e, $o + 5, 13); $nl = $t.IndexOf([char]10); if ($nl -ge 0) { $t = $t.Substring(0, $nl) }
+    $t = $t.Trim([char]32, [char]13, [char]0)
+    if ($t) { return [pscustomobject]@{ Text = $t; Number = $null } }
+  }
+  $n = [BitConverter]::ToUInt32($e, 12)
+  if ($n -ne 0) { [pscustomobject]@{ Text = $null; Number = [string]$n } } else { $null }
+}
+function Get-MonitorIdentity($path, [byte[]]$edid, [bool]$builtin, [int]$bw, [int]$bh) {
+  $m = if ($path) { [regex]::Match([string]$path, '^\\\\[?.]\\DISPLAY#([^#]+)#([^#]+)#', 'IgnoreCase') } else { $null }
+  if (-not $m -or -not $m.Success) { return [pscustomobject]@{ Id = "size-${bw}x${bh}"; Builtin = $builtin; Maker = $null; Product = $null; Serial = $null; IdKind = 'size'; Uid = $null } }
+  $mp = $m.Groups[1].Value.ToUpperInvariant(); $inst = $m.Groups[2].Value
+  $sn = Get-EdidSerial $edid
+  $serial = if ($sn) { if ($sn.Text) { $sn.Text } else { $sn.Number } } else { $null }
+  $id, $kind = if ($serial) { "$mp-$serial", 'edid' } elseif ($builtin) { "$mp-builtin", 'builtin' } else { ("$mp-" + $inst.Substring($inst.LastIndexOf('&') + 1)), 'port' }
+  [pscustomobject]@{ Id = $id; Builtin = $builtin; Maker = $mp.Substring(0, [Math]::Min(3, $mp.Length)); Product = $(if ($mp.Length -gt 3) { $mp.Substring(3) } else { $null }); Serial = $serial; IdKind = $kind; Uid = $inst.Substring($inst.LastIndexOf('&') + 1) }
+}
+# The machine's own panel, by DISPLAYCONFIG output technology ($tech: 8 hex digits as Targets() prints them, or a number):
+# internal (0x80000000), LVDS (0x06), embedded DisplayPort (0x0B) and UDI embedded (0x0D). The live read and the seam both use this.
+function Test-BuiltinTech($tech) {
+  if ($null -eq $tech -or "$tech" -eq '') { return $false }
+  try { $v = if ($tech -is [string]) { [Convert]::ToUInt32($tech.Trim(), 16) } else { [uint32]$tech } } catch { return $false }
+  $v -eq 2147483648 -or $v -eq 6 -or $v -eq 11 -or $v -eq 13
+}
+# Two monitors can derive one id (the same maker, product and EDID serial). Each gets its instance UID appended; idKind stays.
+# A screen with no UID (a size id, or an id given as written) is left alone.
+function Resolve-IdCollisions($list) {
+  $dup = @($list | ? { $_.Uid } | Group-Object Id | ? { $_.Count -gt 1 } | % { $_.Name })
+  foreach ($s in $list) { if ($s.Uid -and $dup -contains $s.Id) { $s.Id = "$($s.Id)-$($s.Uid)" } }
+  $list
+}
+function ConvertFrom-HexText($hex) { if (-not $hex) { return $null }; $h = ([string]$hex) -replace '[^0-9A-Fa-f]', ''; [byte[]]@(for ($i = 0; $i + 1 -lt $h.Length; $i += 2) { [Convert]::ToByte($h.Substring($i, 2), 16) }) }
+# The EDID the registry holds for a device interface path, or $null.
+# A failed read keeps the fallback id and writes one warning to stderr (stdout carries the JSON).
+function Write-MonitorWarning([string]$msg) { [Console]::Error.WriteLine("WARNING: $msg") }
+function Get-LiveEdid($path, [string]$name) {
+  $m = [regex]::Match([string]$path, '^\\\\[?.]\\DISPLAY#([^#]+)#([^#]+)#', 'IgnoreCase')
+  if (-not $m.Success) { return $null }
+  $edid = $null; $why = 'no EDID in the registry'
+  try {
+    $k = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Enum\DISPLAY\$($m.Groups[1].Value)\$($m.Groups[2].Value)\Device Parameters")
+    if ($k) { try { $edid = [byte[]]$k.GetValue('EDID') } finally { $k.Close() } }
+  } catch { $why = $_.Exception.Message }
+  if (-not $edid) { Write-MonitorWarning "monitor $name ($path): the EDID read failed ($why), so its id has no serial." }
+  $edid
+}
+# The six identity fields of one monitor, added to $s. $given is a seam entry that carries its own id: passed through, nothing derived.
+function Add-ScreenIdentity($s, $given, $path, $edid, [bool]$builtin) {
+  $i = if ($given) { [pscustomobject]@{ Id = [string]$given.id; Builtin = [bool]$given.builtin; Maker = $given.maker; Product = $given.product; Serial = $given.serial; IdKind = $given.idKind; Uid = $null } } else { Get-MonitorIdentity $path $edid $builtin $s.BW $s.BH }
+  $s | Add-Member -NotePropertyMembers @{ Id = $i.Id; Builtin = $i.Builtin; Maker = $i.Maker; Product = $i.Product; Serial = $i.Serial; IdKind = $i.IdKind; Uid = $i.Uid }
+  $s
+}
 # Monitors: TILE_SCREENS_FILE (a JSON array of {name,x,y,w,h,bw,bh}, read on every call) stands in for the live list, which is
 # read from Windows on every call too. The extra `% { $_ }` unrolls the array Windows PowerShell 5.1 emits as one object. Both give the work area in X,Y,W,H and the bounds' size in BW,BH.
-function Get-Screens {
+# -Identity adds id, builtin, maker, product, serial and idKind (a seam entry with an `id` gives them as written; else path, edid and builtin
+# derive them). Only -Json and -Monitors ask: the registry and display-config reads cost time a placement does not need.
+function Get-Screens([switch]$Identity) {
   if ($env:TILE_SCREENS_FILE) {
     # A seam file that is missing, empty or not JSON stops the script: an empty list would read as a desktop with no monitor.
     $seam = $env:TILE_SCREENS_FILE
@@ -149,17 +260,38 @@ function Get-Screens {
     $text = [IO.File]::ReadAllText($seam, [Text.Encoding]::UTF8)
     if (-not $text.Trim()) { throw "TILE_SCREENS_FILE is empty: $seam" }
     try { $seamList = ConvertFrom-Json $text -ErrorAction Stop } catch { throw "TILE_SCREENS_FILE is not JSON: $seam" }
-    return @($seamList | % { $_ } | % { [pscustomobject]@{ Name = [string]$_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h } })
+    $list = @($seamList | % { $_ } | % {
+      $s = [pscustomobject]@{ Name = [string]$_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h }
+      # A builtin field wins; with none, outputTech decides.
+      $b = if ($_.PSObject.Properties['builtin']) { [bool]$_.builtin } else { Test-BuiltinTech $_.outputTech }
+      if ($Identity) { $given = if ($_.id) { $_ } else { $null }; Add-ScreenIdentity $s $given $_.path (ConvertFrom-HexText $_.edid) $b } else { $s }
+    })
+    if ($Identity) { $list = @(Resolve-IdCollisions $list) }
+    return $list
   }
-  @([TileMon1]::Monitors() | % { [pscustomobject]@{ Name = $_.szDevice; BW = $_.rcMonitor.R - $_.rcMonitor.L; BH = $_.rcMonitor.B - $_.rcMonitor.T; X = $_.rcWork.L; Y = $_.rcWork.T; W = $_.rcWork.R - $_.rcWork.L; H = $_.rcWork.B - $_.rcWork.T } })
+  $internal = @(); $cfgOk = $true
+  if ($Identity) {
+    try { $targets = @([TileMonId1]::Targets()); if (-not $targets.Count) { $cfgOk = $false } } catch { $targets = @(); $cfgOk = $false }
+    $internal = @($targets | ? { Test-BuiltinTech $_.Substring(0, 8) } | % { $_.Substring(9).ToLowerInvariant() })
+  }
+  $list = @([TileMon1]::Monitors() | % {
+    $s = [pscustomobject]@{ Name = $_.szDevice; BW = $_.rcMonitor.R - $_.rcMonitor.L; BH = $_.rcMonitor.B - $_.rcMonitor.T; X = $_.rcWork.L; Y = $_.rcWork.T; W = $_.rcWork.R - $_.rcWork.L; H = $_.rcWork.B - $_.rcWork.T }
+    if ($Identity) {
+      $path = [TileMonId1]::DevicePath($_.szDevice)
+      if (-not $cfgOk -and $path) { Write-MonitorWarning "monitor $($_.szDevice): the DisplayConfig read failed, so it cannot be told as the built-in panel." }
+      Add-ScreenIdentity $s $null $path (Get-LiveEdid $path $_.szDevice) ($internal -contains ([string]$path).ToLowerInvariant())
+    } else { $s }
+  })
+  if ($Identity) { $list = @(Resolve-IdCollisions $list) }
+  $list
 }
 # Monitors: bounds pick the role, the working area is where windows go.
 if ($From) {
   $DryRun = [switch]$true
   $snapIn = ConvertFrom-Json (JsonText $From)
-  $screens = @($snapIn.monitors | % { [pscustomobject]@{ Name = $_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h } })
+  $screens = @($snapIn.monitors | % { [pscustomobject]@{ Name = $_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h; Id = $_.id; Builtin = [bool]$_.builtin; Maker = $_.maker; Product = $_.product; Serial = $_.serial; IdKind = $_.idKind } })
 } else {
-  $screens = @(Get-Screens)
+  $screens = @(Get-Screens -Identity:($Monitors -or ($Json -and -not ($Place -or $PlaceFile -or $sc))))
 }
 function Pick($role, $taken = @()) {
   $s = @($screens | ? { $taken -notcontains $_.Name })
@@ -172,6 +304,12 @@ function Pick($role, $taken = @()) {
 }
 # Scene roles get distinct screens, widest first, so one screen never holds two grids.
 function Roles { $r = @{}; $t = @(); foreach ($k in 'wide', 'tall', 'laptop') { $s = Pick $k $t; if ($s) { $r[$k] = $s; $t += $s.Name } }; $r }
+
+# The monitor objects -Json and -Monitors print.
+function Get-MonitorObjects($roles) {
+  @($screens | % { $n = $_.Name; [pscustomobject]@{ name = $n; role = @($roles.Keys | ? { $roles[$_].Name -eq $n })[0]; x = $_.X; y = $_.Y; w = $_.W; h = $_.H; bw = $_.BW; bh = $_.BH; id = $_.Id; builtin = $_.Builtin; maker = $_.Maker; product = $_.Product; serial = $_.Serial; idKind = $_.IdKind } })
+}
+if ($Monitors) { ConvertTo-Json -InputObject @(Get-MonitorObjects (Roles)) -Depth 3 -Compress; return }
 
 # Windows: every real app window. Each pass ranks them by its own -Proc list.
 if ($From) {
@@ -209,7 +347,7 @@ if ($List) { Ranked $allProc $Skip | Format-Table App, Title -AutoSize | Out-Str
 if ($Json -and -not ($Place -or $PlaceFile -or $sc)) {
   $roles = Roles
   [pscustomobject]@{
-    monitors = @($screens | % { $n = $_.Name; [pscustomobject]@{ name = $n; role = @($roles.Keys | ? { $roles[$_].Name -eq $n })[0]; x = $_.X; y = $_.Y; w = $_.W; h = $_.H; bw = $_.BW; bh = $_.BH } })
+    monitors = @(Get-MonitorObjects $roles)
     # Minimized windows sit at about -25600 (or -32000); a scene still tiles them, so they stay in, marked.
     windows  = @(Ranked $allProc $Skip | ? { $_.Title -ne 'Program Manager' } | % { $o = [ordered]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; x = $_.X; y = $_.Y; w = $_.Wd; h = $_.Ht }; if ($_.X -le -20000) { $o.min = $true }; [pscustomobject]$o })
   } | ConvertTo-Json -Depth 4 -Compress
