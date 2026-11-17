@@ -188,37 +188,47 @@ public static class FreshScreensProbe {
     Check 'live: a -Json call counts the same monitors as a fresh EnumDisplayMonitors' ($liveN -eq $fresh[0]) "tile -Json counts $liveN monitor(s), EnumDisplayMonitors counts $($fresh[0])"
   }
 
-  # ---- 4. Type clash: the base tile.ps1 (ed97406), then this one, in ONE process. ----
-  # The base's Add-Type class W has no Monitors; this tile.ps1's W has one, so in that process its Add-Type meets the base's W.
+  # ---- 4. Type clash: a base tile.ps1, then this one, in ONE process. Two bases: ed97406 (its class W has no Monitors) and 5de673d
+  #      (this lane's base, which also defines TileMon1: serve.ps1 and tray.ps1 keep that class across calls). ----
+  # This tile.ps1's W has Monitors, so in the ed97406 process its Add-Type meets the base's W. A changed TileMon1 meets 5de673d's.
   # A fresh process lists the live monitors. The base's own files come from git, into the run folder.
   Remove-Item env:TILE_SCREENS_FILE -ErrorAction SilentlyContinue
-  $baseDir = Join-Path $run 'base'; New-Item -ItemType Directory -Force $baseDir | Out-Null
-  Save-GitBlob 'ed97406:tile.ps1' (Join-Path $baseDir 'tile.ps1'); Save-GitBlob 'ed97406:config.ps1' (Join-Path $baseDir 'config.ps1')
-  # The helper: both calls in one process. Its answers: OLDTYPE (the base's W, with or without Monitors), NEW (this tile's -Json), NEWERR (its first errors).
+  # The helper: both calls in one process. Its answers: OLDTYPE (the base's W, with or without Monitors), OLDMON1 (the base's TileMon1),
+  # NEW (this tile's -Json), NEWERR (its first errors).
   $clashText = @'
 param([string]$Old, [string]$New)
 $null = & $Old -Json 3>$null 2>$null
 $w = 'W' -as [type]
 'OLDTYPE ' + $(if ($w -and -not $w.GetMethod('Monitors')) { 'no-Monitors' } else { 'other' })
+'OLDMON1 ' + $(if ('TileMon1' -as [type]) { 'yes' } else { 'no' })
 $Error.Clear()
 'NEW ' + ((& $New -Json 3>$null) -join '')
 'NEWERR ' + (@($Error | Select-Object -First 2 | % { "$_" }) -join ' | ')
 '@
   $clashFile = Join-Path $run 'clash-calls.ps1'; [IO.File]::WriteAllText($clashFile, $clashText, $utf8)
-  $clash = Invoke-PsChild "-File `"$clashFile`" -Old `"$(Join-Path $baseDir 'tile.ps1')`" -New `"$Tile`""
-  $clashOut = @($clash.Out -split "`r?`n")
-  $oldType = @($clashOut | ? { $_ -like 'OLDTYPE *' } | % { $_.Substring(8) })
-  $newJson = @($clashOut | ? { $_ -like 'NEW *' } | % { $_.Substring(4) })
-  $newErr = @($clashOut | ? { $_ -like 'NEWERR *' } | % { $_.Substring(7) })
   $clashFresh = Invoke-PsChild "-File `"$Tile`" -Json"
   $freshNames = Get-MonitorNames (@($clashFresh.Out -split "`r?`n" | ? { $_ -notmatch '^WARNING:' }) -join '')
-  if ($oldType.Count -ne 1 -or $oldType[0] -ne 'no-Monitors') {
-    Check 'type clash: scope: the base run left its own class W (no Monitors) in the process' $false "OLDTYPE answer: $($oldType -join ' '); base run stderr: $($clash.Err.Trim())"
-  } elseif ($freshNames -eq '') {
-    'SKIP  type clash: no desktop session (a fresh process lists no monitor), so the same-process list is not compared'
-  } else {
-    $newNames = if ($newJson.Count -eq 0) { '(no result)' } else { Get-MonitorNames $newJson[0] }
-    Check 'type clash: -Json after the base tile.ps1 in the same process lists the live monitors, as a fresh process does' ($newNames -eq $freshNames) "same process lists [$newNames], a fresh process lists [$freshNames]; first error: $(@($newErr)[0])"
+  foreach ($base in 'ed97406', '5de673d') {
+    $baseDir = Join-Path $run "base-$base"; New-Item -ItemType Directory -Force $baseDir | Out-Null
+    Save-GitBlob "${base}:tile.ps1" (Join-Path $baseDir 'tile.ps1'); Save-GitBlob "${base}:config.ps1" (Join-Path $baseDir 'config.ps1')
+    $clash = Invoke-PsChild "-File `"$clashFile`" -Old `"$(Join-Path $baseDir 'tile.ps1')`" -New `"$Tile`""
+    $clashOut = @($clash.Out -split "`r?`n")
+    $oldType = @($clashOut | ? { $_ -like 'OLDTYPE *' } | % { $_.Substring(8) })
+    $oldMon1 = @($clashOut | ? { $_ -like 'OLDMON1 *' } | % { $_.Substring(8) })
+    $newJson = @($clashOut | ? { $_ -like 'NEW *' } | % { $_.Substring(4) })
+    $newErr = @($clashOut | ? { $_ -like 'NEWERR *' } | % { $_.Substring(7) })
+    $scopeClash = ($oldType.Count -eq 1 -and $oldType[0] -eq 'no-Monitors') -and (($base -ne '5de673d') -or ($oldMon1.Count -eq 1 -and $oldMon1[0] -eq 'yes'))
+    if (-not $scopeClash) {
+      Check "type clash ($base): scope: the base run left its own classes in the process" $false "OLDTYPE answer: $($oldType -join ' '); OLDMON1 answer: $($oldMon1 -join ' '); base run stderr: $($clash.Err.Trim())"
+    } elseif ($freshNames -eq '') {
+      "SKIP  type clash ($base): no desktop session (a fresh process lists no monitor), so the same-process list is not compared"
+    } else {
+      $newNames = if ($newJson.Count -eq 0) { '(no result)' } else { Get-MonitorNames $newJson[0] }
+      Check "type clash ($base): -Json after the base tile.ps1 in the same process lists the live monitors, as a fresh process does" ($newNames -eq $freshNames) "same process lists [$newNames], a fresh process lists [$freshNames]; first error: $(@($newErr)[0])"
+      $newMons = @(); try { $newMons = @((ConvertFrom-Json $newJson[0]).monitors | % { $_ }) } catch { }
+      $newNoId = @($newMons | ? { -not $_.id } | % { [string]$_.name })
+      Check "type clash ($base): the same-process -Json gives every monitor an id" (($newMons.Count -gt 0) -and ($newNoId.Count -eq 0)) "monitors: $($newMons.Count); no id on: [$($newNoId -join ', ')]"
+    }
   }
 
   # ---- 5. Bad seam file: -Json must exit non-zero, never print an empty monitor list as success. ----
@@ -394,6 +404,22 @@ $Error.Clear()
   # Green control, passes on the old code: -Monitor keeps binding once -Monitors exists (an exact name wins over a prefix).
   $ctl = Invoke-PsChild "-File `"$Tile`" -From `"$(Join-Path $PSScriptRoot 'fixture.json')`" -Monitor laptop -DryRun"
   Check 'control: -Monitor laptop still binds: the fixture dry run exits 0' ($ctl.Code -eq 0) "exit $($ctl.Code): $($ctl.Err.Trim())"
+  # ---- 8. Live ids: with no seam, every live monitor has an id, and exactly one is builtin (this machine's laptop panel). SKIP with no desktop. ----
+  Remove-Item env:TILE_SCREENS_FILE -ErrorAction SilentlyContinue
+  if (-not $interactive -or $fresh.Count -eq 0 -or $fresh[0] -lt 1) {
+    'SKIP  live ids: no desktop session (EnumDisplayMonitors found no monitor), so the live ids are not read'
+  } else {
+    $lv = Get-SeamRun "-File `"$Tile`" -Json" @{}
+    $lvMon = @($lv.Doc.monitors | % { $_ })
+    $scopeLive = $lvMon.Count -eq $fresh[0]
+    Check 'live ids: scope: -Json lists every live monitor that EnumDisplayMonitors finds' $scopeLive "-Json lists $($lvMon.Count), EnumDisplayMonitors finds $($fresh[0]); exit $($lv.Code); stderr: $($lv.Err)"
+    if ($scopeLive) {
+      $lvNoId = @($lvMon | ? { -not $_.id } | % { [string]$_.name })
+      Check 'live ids: every live monitor has a non-empty id' ($lvNoId.Count -eq 0) "no id on: [$($lvNoId -join ', ')]"
+      $lvBuiltin = @($lvMon | ? { $_.builtin -eq $true })
+      Check 'live ids: exactly one live monitor is builtin' ($lvBuiltin.Count -eq 1) "builtin monitors: $($lvBuiltin.Count) of $($lvMon.Count)"
+    }
+  }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
