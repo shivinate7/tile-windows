@@ -13,8 +13,8 @@
 #     GET  /snapshot  {monitors, windows, setup: {key, name, follows}}; the plugged-in setup is registered in config (first setup: Desk).
 #     GET  /config    the config; GET /layouts: {<scene id>: Resolve-TileLayout's layout of that scene for the plugged-in setup}.
 #     POST /layout    body {scene, key, layout}: 200 and stored when key is plugged in; 409 and no change when not.
-#     POST /config    a whole config; the server keeps its monitors, setups and every scene's layouts, whatever the body carries.
-#                     A layout for a key that is not plugged in is not written (the POST /layout 409 rule).
+#     POST /config    a whole config. The server keeps its monitors, setups and its layouts for every key, plugged in or not, whatever
+#                     the body carries: POST /config writes no layout. Layouts are written only by POST /layout (409 for a key not plugged in).
 #   A route the server lacks answers 404. On 31ea7c1 the /layout and /layouts cases are red for that reason: the route is not built.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
@@ -160,10 +160,12 @@ try {
   $keyOffice = Key-Of 'AUO1', 'DEL2'           # a setup the config knows, not plugged in
   $officeLayout = '{"grids":{"AUO1":{"c":2,"r":1}},"pins":[],"zones":[],"fill":{"mon":null,"held":[]},"bay":{}}'
   $layoutBody = '{"grids":{"AUO1":{"c":3,"r":1}},"pins":[],"zones":[],"fill":{"mon":null,"held":[]},"bay":{}}'
+  $layoutEarlier = '{"grids":{"AUO1":{"c":1,"r":1}},"pins":[],"zones":[],"fill":{"mon":null,"held":[]},"bay":{}}'   # a Desk layout the server replaces
 
   # The config a case starts from: the starters (version 4), the plugged-in monitors with their Desk setup, an Office setup (not
-  # plugged in), and an Office layout on the focus scene. Written into $tileHome before its server starts. Returns the object it wrote.
-  function Write-SeedConfig([string]$tileHome) {
+  # plugged in), and an Office layout on the focus scene. $deskLayout, when given, is the plugged-in setup's layout on that scene too.
+  # Written into $tileHome before its server starts. Returns the object it wrote.
+  function Write-SeedConfig([string]$tileHome, [string]$deskLayout = '') {
     New-Item -ItemType Directory -Force $tileHome | Out-Null
     $c = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8))
     $c.monitors = [pscustomobject]@{}
@@ -174,6 +176,7 @@ try {
     $focus = @($c.scenes | ? { $_.id -eq 'focus' })[0]
     $focus | Add-Member -Force -NotePropertyName layouts -NotePropertyValue ([pscustomobject]@{})
     $focus.layouts | Add-Member -NotePropertyName $keyOffice -NotePropertyValue (ConvertFrom-Json $officeLayout)
+    if ($deskLayout) { $focus.layouts | Add-Member -NotePropertyName $keyDesk -NotePropertyValue (ConvertFrom-Json $deskLayout) }
     [IO.File]::WriteAllText((Join-Path $tileHome 'config.json'), (ConvertTo-Json -Depth 20 -Compress $c), $utf8)
     $c
   }
@@ -207,9 +210,10 @@ try {
 
   # POST /config with a stale copy of the whole config, as the page holds it (app.html:1685 posts clone(cfg)): the body carries every
   # key, with values the server no longer has. The copy is taken at load, before the page's own POST /layout for the plugged-in setup,
-  # so it lacks that layout. $shape turns the copy into the stale state; $label names the variant in each FAIL line.
-  function Stale-Post([string]$label, [scriptblock]$shape) {
-    $tileHome = Join-Path $runDir "home-stale-$label"; [void](Write-SeedConfig $tileHome)
+  # so it lacks that layout, unless $deskLayout seeds one (then the copy carries that older layout). $shape turns the copy into the
+  # stale state; $label names the variant in each FAIL line.
+  function Stale-Post([string]$label, [scriptblock]$shape, [string]$deskLayout = '') {
+    $tileHome = Join-Path $runDir "home-stale-$label"; [void](Write-SeedConfig $tileHome $deskLayout)
     $s = Start-Server $tileHome $snapFile
     try {
       $copy = ConvertFrom-Json (Get-Reply "$($s.url)config").text
@@ -244,6 +248,11 @@ try {
       Add-Member -Force -InputObject $c -NotePropertyName setups -NotePropertyValue ([pscustomobject]@{})
       $f = @($c.scenes | ? { $_.id -eq 'focus' })[0]; Add-Member -Force -InputObject $f -NotePropertyName layouts -NotePropertyValue ([pscustomobject]@{})
     }
+  }
+  # The copy carries a Desk layout (the older one); the server's POST /layout replaces it with $layoutBody. The post must leave $layoutBody
+  # on the server: a layout in a POST /config body is never written (serve.ps1 Save-PostedConfig).
+  Case 'config post: a stale copy that carries the plugged-in layout keeps the layout the server saved since' {
+    Stale-Post 'plugged layout' { param($c) } $layoutEarlier
   }
 
   # POST /config whose scene layouts carry keys that are not plugged in: one set up but not plugged in (Office, content changed), and one
