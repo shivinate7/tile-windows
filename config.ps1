@@ -167,7 +167,9 @@ function Copy-TileObject($o) { ConvertFrom-Json (ConvertTo-Json -Depth 20 -Compr
 # The layout a scene shows on a setup, without changing the config. In order:
 #   1. its own layout for that key;
 #   2. the closest known setup's layout (the setup sharing the most monitors that has a layout in this scene; a tie goes to the one used last),
-#      with its grids mapped onto the key's monitors: a monitor that is not in the key has no grid. Its pins, zones and fill name monitors
+#      with its grids mapped onto the key's monitors: a monitor that is not in the key has no grid. A monitor in the key that the closest
+#      setup lacks gets a grid seeded by its shape from the scene's role template (the 2:1 rule of Get-TileMonShape), not no grid
+#      (coordinator pick, 2026-11-17 12:35 CST). Its pins, zones and fill name monitors
 #      by id and stay as they are, so a window on an unplugged monitor is remembered and has no cell;
 #   3. the scene's role template (grids, pins, zones, fill by wide, tall and laptop), seeded by shape: each role goes to the monitor of that
 #      shape, read from config.monitors (Register stores it). A monitor of no shape takes no grid; a role no monitor has keeps its name
@@ -193,6 +195,13 @@ function Resolve-TileLayout($cfg, $scene, [string]$key) {
   if ($best) {
     $r = Copy-TileObject $best; $g = [pscustomobject]@{}
     foreach ($gp in @($r.grids.PSObject.Properties)) { if ($ids -ccontains $gp.Name) { $g | Add-Member -NotePropertyName $gp.Name -NotePropertyValue $gp.Value } }
+    foreach ($id in $ids) {
+      if ($g.PSObject.Properties[$id]) { continue }
+      $mp = $cfg.monitors.PSObject.Properties[$id]; if (-not $mp) { continue }
+      $shape = Get-TileMonShape $mp.Value; if (-not $shape) { continue }
+      $tg = if ($scene.grids) { $scene.grids.PSObject.Properties[$shape] }
+      if ($tg) { $g | Add-Member -NotePropertyName $id -NotePropertyValue ([pscustomobject]@{ c = $tg.Value.c; r = $tg.Value.r }) }
+    }
     $r | Add-Member -Force grids $g
     return $r
   }
