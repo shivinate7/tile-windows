@@ -386,6 +386,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $un2 = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`" -Purge" @{ TILE_NO_REGISTRY = '1' }; $u2 = $un2.StandardOutput.ReadToEnd() + $un2.StandardError.ReadToEnd(); $un2.WaitForExit()
   Check 'uninstall -Purge removes the scenes too' ($un2.ExitCode -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $iprof '.tile-windows')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk'))) $u2
 
+  # Install swap with a busy app folder (install.ps1's rename): its own file, dot-sourced in a child scope like move.ps1 (its checks count here).
+  & { . (Join-Path $PSScriptRoot 'install-swap.ps1') }
+
   # 10. -Default places windows as main's tile.ps1 does, on the fixture (a fixed snapshot, so windows cannot
   #     change between the two runs). It runs main's whole tree: tile.ps1 reads config.ps1 and scenes.json beside it.
   #     Minimized windows are left out of the snapshot: scenes now leave them minimized (decision: bay-and-group-zones),
