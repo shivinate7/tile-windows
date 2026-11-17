@@ -31,7 +31,7 @@
 #     builtin (true = the machine's own panel) go through the same identity function the live read uses. A null or absent path
 #     means no device: idKind size. maker and product come from the path; serial comes from the EDID.
 #   outputTech (case 11): 8 hex digits, as the live read's Targets() prints them (the DISPLAYCONFIG output technology). An entry with
-#     no builtin field is builtin for 80000000, 0000000B and 0000000D, and for no other value. A builtin field, when present, wins.
+#     no builtin field is builtin for 80000000, 00000006, 0000000B and 0000000D, and for no other value. A builtin field, when present, wins.
 #     The live read classifies its own Targets() values with that same function.
 #   Identity rule: id = <maker+product>-<serial>. serial is the text serial (the 0xFF descriptor, trimmed of its 0x0A and padding),
 #     else bytes 12-15 as a decimal number when non-zero (idKind edid). Else, for a builtin screen, <maker+product>-builtin (idKind
