@@ -126,11 +126,14 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
       pushes Categories off the strip.
 14. **First run** (`mg-first`). The setup plugged in at the first launch after the update is the
     only one, and the list says what will fill it.
-    Migration options: seed by shape (pick): the `wide` grid to a monitor wider than 2:1, `tall` to
-    one taller than wide, `laptop` to the built-in screen. A first launch with the ultrawide
-    unplugged gives the laptop its own grid, and the `wide` part's windows show as unplaced (item 9),
-    so today's mix-up does not repeat. Or wait to seed until all three desk monitors are seen. Gain of the
-    pick: works on day one. Loss: a monitor of the wrong shape at first launch takes a grid.
+    Migration options: seed by shape (pick; coordinator default 2026-11-17 13:26 CST, owner may
+    change): `laptop` to the built-in screen, `wide` to the widest non-built-in landscape monitor (any
+    aspect, 16:9 included), `tall` to a non-built-in monitor taller than wide. Each role goes to one
+    monitor only: the widest candidate, then the lowest id. A built-in screen never takes `wide`. A
+    zero width or height has no shape. A first launch with the `wide` monitor unplugged gives the
+    laptop its own grid, and the `wide` part's windows show as unplaced (item 9), so today's mix-up
+    does not repeat. Or wait to seed until all three desk monitors are seen. Gain of the pick: works
+    on day one. Loss: a monitor of the wrong shape at first launch takes a grid.
     Owner grant: yes.
 15. **Naming setups.** Options: by their monitors, "Laptop + Portrait" (pick), renamed in the
     dialog; or by time ("Setup 3"). Gain: the name says what is plugged in. Loss: long with four
