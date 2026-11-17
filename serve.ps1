@@ -89,22 +89,30 @@ function Add-SnapshotSetup([string]$text) {
   $t = $text.TrimEnd(); if (-not $t.EndsWith('}')) { return $text }
   $t.Substring(0, $t.Length - 1) + ',"setup":' + $setup + '}'
 }
-# A posted whole config, validated, with what the page does not own put back: the server's monitors and setups, and a scene's layouts,
-# when the body lacks them (the page edits scenes; layouts arrive by POST /layout). The text is saved as posted when nothing is put back.
-function Save-PostedConfig([string]$body) {
+# A posted whole config, validated, with what the page does not own put back. The page posts its whole copy, which may be stale
+# (app.html clone(cfg)); it owns the scenes, not the monitors, setups or layouts. Under the lock the server's monitors and setups
+# replace the body's, and each scene's layouts are the server's, plus the body's layout for the plugged-in setup when it has one.
+# A layout for any other key is never written (POST /layout's 409 rule). $key: the plugged-in setup's key, '' when none is known.
+function Save-PostedConfig([string]$body, [string]$key) {
   Test-TileConfig $body
   Use-TileLock {
-    $new = ConvertFrom-Json $body; $cur = ConvertFrom-Json (Get-TileConfigText); $kept = $false
+    $new = ConvertFrom-Json $body; $cur = ConvertFrom-Json (Get-TileConfigText)
+    $asPosted = ConvertTo-Json -Depth 20 -Compress -InputObject $new
     foreach ($k in 'monitors', 'setups') {
       $c = $cur.PSObject.Properties[$k]
-      if (-not $new.PSObject.Properties[$k] -and $c -and @($c.Value.PSObject.Properties).Count) { $new | Add-Member $k $c.Value; $kept = $true }
+      $n = $new.PSObject.Properties[$k]   # set in place, so the key order of a clean save is the page's
+      if ($c -and $n) { $n.Value = $c.Value } elseif ($c) { $new | Add-Member $k $c.Value } elseif ($n) { $new.PSObject.Properties.Remove($k) }
     }
     foreach ($sc in @($new.scenes)) {
-      if ($sc.PSObject.Properties['layouts']) { continue }
-      $old = @($cur.scenes | ? { $_.id -eq $sc.id })[0]
-      if ($old -and $old.layouts -and @($old.layouts.PSObject.Properties).Count) { $sc | Add-Member layouts $old.layouts; $kept = $true }
+      $mine = $sc.PSObject.Properties['layouts']; $old = @($cur.scenes | ? { $_.id -eq $sc.id })[0]
+      $lay = [pscustomobject]@{}
+      if ($old -and $old.layouts) { foreach ($p in @($old.layouts.PSObject.Properties)) { $lay | Add-Member $p.Name $p.Value } }
+      if ($key -and $mine -and $mine.Value) { $q = $mine.Value.PSObject.Properties[$key]; if ($q) { $lay | Add-Member -Force $key $q.Value } }
+      if ($mine) { $mine.Value = $lay } elseif (@($lay.PSObject.Properties).Count) { $sc | Add-Member layouts $lay }
     }
-    Save-TileConfigText $(if ($kept) { ConvertTo-Json -Depth 20 -Compress -InputObject $new } else { $body })
+    # The text as posted when nothing was put back or dropped, so a clean save is byte for byte what the page sent.
+    $out = ConvertTo-Json -Depth 20 -Compress -InputObject $new
+    Save-TileConfigText $(if ($out -ceq $asPosted) { $body } else { $out })
   }
 }
 # POST /layout: the answer's status code. The config is read again under the lock, so a write from the tray or another page is not lost.
@@ -154,7 +162,10 @@ try {
         'GET state' { Send $ctx 200 'application/json' (Get-TileStateText) }
         'POST config' {
           if (-not ($body = Body $ctx $req '{')) { continue }
-          try { Save-PostedConfig $body } catch { Send $ctx 400 'text/plain' "$($_.Exception.Message)"; continue }
+          try {
+            $key = try { Get-TileKnownSetupKey (Get-Plugged) } catch { '' }  # no monitor read: no key, so no layout is written
+            Save-PostedConfig $body $key
+          } catch { Send $ctx 400 'text/plain' "$($_.Exception.Message)"; continue }
           Send $ctx 200 'text/plain' 'Saved'
         }
         'POST layout' {

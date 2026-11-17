@@ -25,6 +25,7 @@ function Get-DueScenes($config, [datetime]$now, $fired) {
 # so a rearranged or rescaled set is the same key (decision monitor-setups, item 4). Objects with no id (a Windows screen list) give the
 # bounds string, where a move changes the key.
 function Get-MonitorKey($screens) {
+  if (-not @($screens | ? { $_ }).Count) { return '' }  # no read (a failed one): no key, so nothing fires
   $k = Get-TileKnownSetupKey $screens; if ($k) { return $k }
   (@($screens | % { "$($_.DeviceName)=$($_.Bounds.Width)x$($_.Bounds.Height)@$($_.Bounds.X),$($_.Bounds.Y)" }) | Sort-Object) -join ';'
 }
@@ -494,10 +495,11 @@ function Offer-Scene($s, [string]$why) {
   $script:offer = [pscustomobject]@{ scene = $s; exp = (Get-Date).AddMinutes(3) }
   if ($icon) { $icon.ShowBalloonTip(15000, 'Meeting in 2 minutes', "Click to arrange your windows for $($s.name).", 'Info') }
 }
-# The plugged-in monitors with their ids (tile.ps1 -Monitors), else Windows' own screen list when that read fails or gives none.
+# The plugged-in monitors with their ids (tile.ps1 -Monitors); $null when that read fails or gives none. A failed read is not a change:
+# Windows' own screen list keys by bounds, a different key for the same monitors, so it is never the fallback.
 function Read-Monitors {
   try { $m = @((ConvertFrom-Json ((& $tile -Monitors 3>$null) -join '')) | % { $_ }); if ($m.Count) { return $m } } catch {}
-  [Windows.Forms.Screen]::AllScreens
+  $null
 }
 function Read-Windows { try { @((((& $tile -Json 3>$null) -join '') | ConvertFrom-Json).windows) } catch { $null } }
 # $prev: the scene on screen before this run ('' when unknown), so Undo can put it back.
