@@ -281,8 +281,8 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $mon9 = [datetime]'2026-10-19 09:00:30'  # a Monday
   Check 'tray: a scheduled scene is due on its day and minute only' ((@(Get-DueScenes $tc $mon9 @{}).id -join ',') -eq 'a' -and @(Get-DueScenes $tc $mon9.AddMinutes(1) @{}).Count -eq 0 -and (@(Get-DueScenes $tc ([datetime]'2026-10-24 09:00') @{}).id -join ',') -eq 'b')
   Check 'tray: a scheduled scene fires once per minute' (@(Get-DueScenes $tc $mon9 @{ a = '2026-10-19 09:00' }).Count -eq 0)
-  # The monitor key is no longer DeviceName+bounds (decision monitor-setups, item 4): its claim lives in setup-plumbing.ps1 (rearranged: no trigger).
-  Check 'tray: display scenes' ((@(Get-DisplayScenes $tc).id -join ',') -eq 'c')
+  # A monitor list with no ids (a Windows screen list) keys by DeviceName and bounds: a move changes the key. Get-MonitorKey's fallback.
+  Check 'tray: display scenes and the monitor key' ((@(Get-DisplayScenes $tc).id -join ',') -eq 'c' -and (Get-MonitorKey @([pscustomobject]@{ DeviceName = 'B'; Bounds = [Drawing.Rectangle]::new(0, 0, 10, 20) }, [pscustomobject]@{ DeviceName = 'A'; Bounds = [Drawing.Rectangle]::new(-5, 1, 3, 4) })) -eq 'A=3x4@-5,1;B=10x20@0,0')
   $cases = @(ConvertFrom-Json (Get-Content -Raw (Join-Path $PSScriptRoot 'teams-call.json')) | % { $_ })
   $bad = @($cases | ? { (Test-TeamsCall $_.mic $_.wins) -ne $_.call } | % { $_.case })
   Check 'tray: Teams call detection, every fixture case' ($cases.Count -eq 11 -and $bad.Count -eq 0) ($bad -join '; ')
