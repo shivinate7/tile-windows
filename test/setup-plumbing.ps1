@@ -6,8 +6,15 @@
 #   Tray: the display key is the setup key, the sorted monitor ids joined by Get-TileSetupKey (config.ps1). A monitor set that is only
 #   rearranged is the same setup, so it fires no display trigger (decision monitor-setups, item 4, coordinator default 2026-11-17 09:50
 #   CST; that item departs from tray.ps1 Get-MonitorKey). Step-Tray counts the monitors in a key by its ids, not by a ';' split.
+#   Server (serve.ps1, -From snapshot, config in a case's own TILE_HOME):
+#     GET  /snapshot  {monitors, windows, setup: {key, name, follows}}; the plugged-in setup is registered in config (first setup: Desk).
+#     GET  /config    the config; GET /layouts: {<scene id>: Resolve-TileLayout's layout of that scene for the plugged-in setup}.
+#     POST /layout    body {scene, key, layout}: 200 and stored when key is plugged in; 409 and no change when not.
+#     POST /config    a whole config; the server keeps its monitors, setups and every scene's layouts.
+#   A route the server lacks answers 404. On 31ea7c1 the /layout and /layouts cases are red for that reason: the route is not built.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
+$tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
@@ -25,6 +32,7 @@ New-Item -ItemType Directory $runDir | Out-Null
 $saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME; TILE_SCREENS_FILE = $env:TILE_SCREENS_FILE }
 $prof = Join-Path $runDir 'profile'; New-Item -ItemType Directory -Force (Join-Path $prof 'AppData\Roaming') | Out-Null
 $env:USERPROFILE = $prof; $env:APPDATA = Join-Path $prof 'AppData\Roaming'; $env:TILE_HOME = $null; $env:TILE_SCREENS_FILE = $null
+$servers = @()   # every server this file starts; the finally block stops what is still running
 
 try {
   Add-Type -AssemblyName System.Drawing   # Rectangle for the monitor bounds; run.ps1 loads it earlier, a child does not
@@ -75,9 +83,191 @@ try {
     Check 'tray: removing a monitor, 3 to 2, fires the display trigger (control)' ($down2 -ne '') "applied: '$down2'"
     Check 'tray: after a removal, a display key of two monitors applies the scene made for two' ($down2 -eq 'two') "applied: '$down2'"
   }
+
+  # ---- Server: the setup on /snapshot, /layouts, /layout and POST /config ----
+  # The plugged-in monitors, in the fixture's order (the fixture has no ids): DISPLAY1 laptop, DISPLAY2 wide, DISPLAY3 tall.
+  $plugged = @(
+    [pscustomobject]@{ id = 'LEN3'; name = 'Laptop'; builtin = $true; bw = 1536; bh = 960 },
+    [pscustomobject]@{ id = 'AUO1'; name = 'Ultrawide'; builtin = $false; bw = 4096; bh = 1728 },
+    [pscustomobject]@{ id = 'DEL2'; name = 'Portrait'; builtin = $false; bw = 1200; bh = 1920 })
+  $snapObj = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'fixture.json'), $utf8))
+  for ($i = 0; $i -lt $plugged.Count; $i++) {
+    $snapObj.monitors[$i] | Add-Member -Force -NotePropertyName id -NotePropertyValue $plugged[$i].id
+    $snapObj.monitors[$i] | Add-Member -Force -NotePropertyName builtin -NotePropertyValue $plugged[$i].builtin
+  }
+  $snapFile = Join-Path $runDir 'snap-ids.json'
+  [IO.File]::WriteAllText($snapFile, (ConvertTo-Json -Depth 8 -Compress $snapObj), $utf8)
+
+  # Helpers for the server cases. Every reply is a value (status and text), so a missing route is a FAIL line, not a throw.
+  function Start-Child([string]$tileHome, [string]$argLine, [hashtable]$extra = @{}) {
+    $psi = New-Object Diagnostics.ProcessStartInfo 'powershell', "-NoProfile -ExecutionPolicy Bypass $argLine"
+    $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.CreateNoWindow = $true
+    $psi.EnvironmentVariables['USERPROFILE'] = $prof; $psi.EnvironmentVariables['APPDATA'] = Join-Path $prof 'AppData\Roaming'
+    $psi.EnvironmentVariables['TILE_HOME'] = $tileHome; $psi.EnvironmentVariables['TILE_SCREENS_FILE'] = ''
+    foreach ($k in $extra.Keys) { $psi.EnvironmentVariables[$k] = $extra[$k] }
+    [Diagnostics.Process]::Start($psi)
+  }
+  # One child run to its end: its exit code and its stdout, without the WARNING lines the product writes to stderr.
+  function Run-Child([string]$argLine, [hashtable]$extra = @{}) {
+    $p = Start-Child '' $argLine $extra
+    $out = $p.StandardOutput.ReadToEnd(); [void]$p.StandardError.ReadToEnd(); $p.WaitForExit()
+    [pscustomobject]@{ code = $p.ExitCode; text = (@($out -split "`r?`n" | ? { $_ -notmatch '^WARNING:' }) -join "`n") }
+  }
+  # A dry-run server on the snapshot file, its config in $tileHome. Returns its process and tokened URL (its first line).
+  function Start-Server([string]$tileHome, [string]$snapPath) {
+    $p = Start-Child $tileHome "-File `"$serve`" -NoBrowser -From `"$snapPath`""
+    $script:servers += $p
+    [pscustomobject]@{ proc = $p; url = $p.StandardOutput.ReadLine() }
+  }
+  function Stop-Server($s) {
+    if ($s.proc.HasExited) { return }
+    try { [void](Invoke-WebRequest -UseBasicParsing "$($s.url)quit" -Method Post -Body 'quit') } catch {}
+    if (-not $s.proc.WaitForExit(5000)) { $s.proc.Kill() }
+  }
+  function Get-Reply([string]$url) {
+    try { $r = Invoke-WebRequest -UseBasicParsing $url; [pscustomobject]@{ code = [int]$r.StatusCode; text = [string]$r.Content } }
+    catch { [pscustomobject]@{ code = [int]$_.Exception.Response.StatusCode; text = '' } }
+  }
+  function Send-Post([string]$url, [string]$body) {
+    try { $r = Invoke-WebRequest -UseBasicParsing $url -Method Post -ContentType 'application/json; charset=utf-8' -Body ($utf8.GetBytes($body)); [pscustomobject]@{ code = [int]$r.StatusCode; text = [string]$r.Content } }
+    catch { [pscustomobject]@{ code = [int]$_.Exception.Response.StatusCode; text = '' } }
+  }
+  # Canonical JSON (keys sorted, arrays in order), as setup-config.ps1 has it: a value compares the same whatever order its file wrote.
+  function Canon($o) {
+    if ($null -eq $o) { return 'null' }
+    if ($o -is [System.Management.Automation.PSCustomObject]) {
+      $pairs = @($o.PSObject.Properties | Sort-Object Name | ForEach-Object { (ConvertTo-Json -Compress -InputObject $_.Name) + ':' + (Canon $_.Value) })
+      return '{' + ($pairs -join ',') + '}'
+    }
+    if ($o -is [Array]) { $items = @($o); return '[' + ((@($items | ForEach-Object { Canon $_ })) -join ',') + ']' }
+    return (ConvertTo-Json -Compress -InputObject $o)
+  }
+  # The config as a comparable value: the times a read moves (lastSeen, lastUsed) are left out.
+  function Config-Shape([string]$text) {
+    $c = ConvertFrom-Json $text
+    if ($c.monitors) { foreach ($m in @($c.monitors.PSObject.Properties)) { [void]$m.Value.PSObject.Properties.Remove('lastSeen') } }
+    if ($c.setups) { foreach ($s in @($c.setups.PSObject.Properties)) { [void]$s.Value.PSObject.Properties.Remove('lastUsed') } }
+    Canon $c
+  }
+  function Keys-Of($o) { if ($null -eq $o) { '' } else { (@($o.PSObject.Properties.Name) | Sort-Object) -join ',' } }
+  function Sorted([object[]]$ids) { (@($ids | ForEach-Object { [string]$_ }) | Sort-Object) -join ',' }
+
+  $keyDesk = Key-Of 'AUO1', 'DEL2', 'LEN3'     # the plugged-in setup
+  $keyOffice = Key-Of 'AUO1', 'DEL2'           # a setup the config knows, not plugged in
+  $officeLayout = '{"grids":{"AUO1":{"c":2,"r":1}},"pins":[],"zones":[],"fill":{"mon":null,"held":[]},"bay":{}}'
+  $layoutBody = '{"grids":{"AUO1":{"c":3,"r":1}},"pins":[],"zones":[],"fill":{"mon":null,"held":[]},"bay":{}}'
+
+  # The config a case starts from: the starters (version 4), the plugged-in monitors with their Desk setup, an Office setup (not
+  # plugged in), and an Office layout on the focus scene. Written into $tileHome before its server starts. Returns the object it wrote.
+  function Write-SeedConfig([string]$tileHome) {
+    New-Item -ItemType Directory -Force $tileHome | Out-Null
+    $c = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8))
+    $c.monitors = [pscustomobject]@{}
+    foreach ($m in $plugged) { $c.monitors | Add-Member -NotePropertyName $m.id -NotePropertyValue ([pscustomobject]@{ name = $m.name; builtin = $m.builtin; lastSeen = '2026-11-09T09:00:00'; bw = $m.bw; bh = $m.bh }) }
+    $c.setups = [pscustomobject]@{}
+    $c.setups | Add-Member -NotePropertyName $keyDesk -NotePropertyValue ([pscustomobject]@{ name = 'Desk'; ids = @($plugged.id | Sort-Object); lastUsed = '2026-11-09T09:00:00' })
+    $c.setups | Add-Member -NotePropertyName $keyOffice -NotePropertyValue ([pscustomobject]@{ name = 'Office'; ids = @('AUO1', 'DEL2'); lastUsed = '2026-11-08T09:00:00' })
+    $focus = @($c.scenes | ? { $_.id -eq 'focus' })[0]
+    $focus | Add-Member -Force -NotePropertyName layouts -NotePropertyValue ([pscustomobject]@{})
+    $focus.layouts | Add-Member -NotePropertyName $keyOffice -NotePropertyValue (ConvertFrom-Json $officeLayout)
+    [IO.File]::WriteAllText((Join-Path $tileHome 'config.json'), (ConvertTo-Json -Depth 20 -Compress $c), $utf8)
+    $c
+  }
+
+  # Control: the snapshot ids reach tile.ps1 -Monitors as written, so the setup key is built from the ids the test wrote.
+  Case 'control: tile -Monitors gives the snapshot ids as written' {
+    $r = Run-Child "-File `"$tile`" -Monitors -From `"$snapFile`""
+    $ids = (@($r.text | ConvertFrom-Json | % { $_ }) | % { [string]$_.id }) -join ','
+    Check 'control: tile -Monitors gives the snapshot ids as written' ($r.code -eq 0 -and $ids -ceq 'LEN3,AUO1,DEL2') "exit $($r.code), ids: $ids"
+  }
+
+  # /snapshot names the plugged-in setup and registers it. A fresh config (no setups) gives the first setup the name Desk.
+  Case 'snapshot: the reply names the setup, and the setup is registered in config' {
+    $s = Start-Server (Join-Path $runDir 'home-snap') $snapFile
+    try {
+      $snap = ConvertFrom-Json (Get-Reply "$($s.url)snapshot").text
+      if ($null -eq $snap.setup) { Check 'snapshot: the reply has a setup' $false 'no setup in the reply' }
+      else {
+        Check 'snapshot: setup.key is the sorted ids of the plugged-in monitors' ($snap.setup.key -ceq $keyDesk) "key: $($snap.setup.key)"
+        Check 'snapshot: the first setup is named Desk' ($snap.setup.name -ceq 'Desk') "name: $($snap.setup.name)"
+        $missing = @(@('key', 'name', 'follows') | ? { $null -eq $snap.setup.PSObject.Properties[$_] })
+        Check 'snapshot: the setup has key, name and follows' ($missing.Count -eq 0) "missing: $($missing -join ',')"
+      }
+      Check 'snapshot: the monitors and windows are still in the reply (control)' ((@($snap.monitors).Count -eq 3) -and (@($snap.windows).Count -eq @($snapObj.windows).Count)) "monitors: $(@($snap.monitors).Count)"
+      $cfg = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+      $sp = $cfg.setups.PSObject.Properties[$keyDesk]
+      Check 'snapshot: the setup is saved in config under its key, named Desk, with its ids' ($null -ne $sp -and $sp.Value.name -ceq 'Desk' -and (Sorted $sp.Value.ids) -ceq (Sorted $plugged.id)) "setups: $(Keys-Of $cfg.setups)"
+      Check 'snapshot: config knows each plugged-in monitor by id' ((Keys-Of $cfg.monitors) -ceq (Sorted $plugged.id)) "monitors: $(Keys-Of $cfg.monitors)"
+    } finally { Stop-Server $s }
+  }
+
+  # POST /config with a stale whole config (no monitors, setups or layouts): the server keeps its own. The page's scene edit still saves.
+  Case 'config post: a stale config keeps the monitors, setups and layouts the server holds' {
+    $seed = Write-SeedConfig (Join-Path $runDir 'home-post')
+    $seedFocus = @($seed.scenes | ? { $_.id -eq 'focus' })[0]
+    $s = Start-Server (Join-Path $runDir 'home-post') $snapFile
+    try {
+      $stale = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+      [void]$stale.PSObject.Properties.Remove('monitors'); [void]$stale.PSObject.Properties.Remove('setups')
+      foreach ($sc in @($stale.scenes)) { [void]$sc.PSObject.Properties.Remove('layouts') }
+      $staleFocus = @($stale.scenes | ? { $_.id -eq 'focus' })[0]; $staleFocus.name = 'Focus edited'
+      $p = Send-Post "$($s.url)config" (ConvertTo-Json -Depth 20 -Compress $stale)
+      Check 'config post: the stale config is accepted' ($p.code -eq 200) "status $($p.code)"
+      $after = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+      $fo = @($after.scenes | ? { $_.id -eq 'focus' })[0]
+      Check 'config post: the page''s own scene edit is saved (control)' ($fo.name -ceq 'Focus edited') "name: $($fo.name)"
+      Check 'config post: the server keeps its monitors' ((Keys-Of $after.monitors) -ceq (Keys-Of $seed.monitors)) "monitors: $(Keys-Of $after.monitors)"
+      Check 'config post: the server keeps its setups' ((Keys-Of $after.setups) -ceq (Keys-Of $seed.setups)) "setups: $(Keys-Of $after.setups)"
+      Check 'config post: the server keeps each scene''s layouts' ((Keys-Of $fo.layouts) -ceq (Keys-Of $seedFocus.layouts)) "layouts: $(Keys-Of $fo.layouts)"
+    } finally { Stop-Server $s }
+  }
+
+  # POST /layout for a key the config knows but that is not plugged in: 409, and nothing is written.
+  Case 'layout: a key that is not plugged in answers 409 and leaves the config as it was' {
+    [void](Write-SeedConfig (Join-Path $runDir 'home-409'))
+    $s = Start-Server (Join-Path $runDir 'home-409') $snapFile
+    try {
+      $before = Config-Shape (Get-Reply "$($s.url)config").text
+      $r = Send-Post "$($s.url)layout" ('{"scene":"focus","key":"' + $keyOffice + '","layout":' + $layoutBody + '}')
+      Check 'layout: a key that is not plugged in answers 409' ($r.code -eq 409) "status $($r.code)"
+      $after = Config-Shape (Get-Reply "$($s.url)config").text
+      Check 'layout: the refused write leaves the config as it was (control)' ($after -ceq $before) 'the config changed'
+    } finally { Stop-Server $s }
+  }
+
+  # POST /layout for the plugged-in setup: 200, and the layout is stored for its scene. The Office layout on that scene is untouched.
+  Case 'layout: the plugged-in setup''s layout is saved for its scene, and the other setup''s layout is untouched' {
+    $seed = Write-SeedConfig (Join-Path $runDir 'home-200')
+    $officeBefore = Canon (@($seed.scenes | ? { $_.id -eq 'focus' })[0].layouts.PSObject.Properties[$keyOffice].Value)
+    $s = Start-Server (Join-Path $runDir 'home-200') $snapFile
+    try {
+      $r = Send-Post "$($s.url)layout" ('{"scene":"focus","key":"' + $keyDesk + '","layout":' + $layoutBody + '}')
+      $fo = @((ConvertFrom-Json (Get-Reply "$($s.url)config").text).scenes | ? { $_.id -eq 'focus' })[0]
+      $stored = $fo.layouts.PSObject.Properties[$keyDesk]
+      Check 'layout: the plugged-in setup''s layout is saved for its scene (200, and stored)' (($r.code -eq 200) -and ($null -ne $stored) -and ($stored.Value.grids.AUO1.c -eq 3)) "status $($r.code), stored: $($null -ne $stored)"
+      Check 'layout: the other setup''s layout for the scene is untouched (control)' ((Canon $fo.layouts.PSObject.Properties[$keyOffice].Value) -ceq $officeBefore) 'the Office layout changed'
+    } finally { Stop-Server $s }
+  }
+
+  # GET /layouts: one entry per scene, each the layout Resolve-TileLayout gives that scene for the plugged-in setup (the product's own resolve).
+  Case 'layouts: GET /layouts gives each scene the layout Resolve-TileLayout gives for the plugged-in setup' {
+    [void](Write-SeedConfig (Join-Path $runDir 'home-layouts'))
+    $s = Start-Server (Join-Path $runDir 'home-layouts') $snapFile
+    try {
+      $r = Get-Reply "$($s.url)layouts"
+      Check 'layouts: GET /layouts answers 200' ($r.code -eq 200) "status $($r.code)"
+      if ($r.code -eq 200) {
+        $got = ConvertFrom-Json $r.text
+        $cfg = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+        $differ = @($cfg.scenes | ? { (Canon $got.PSObject.Properties[$_.id].Value) -cne (Canon (Resolve-TileLayout $cfg $_ $keyDesk)) } | % { $_.id })
+        Check 'layouts: each scene gets the layout Resolve-TileLayout gives for the plugged-in setup' ($differ.Count -eq 0 -and (Keys-Of $got) -ceq (Sorted @($cfg.scenes.id))) "differ: $($differ -join ',')"
+      }
+    } finally { Stop-Server $s }
+  }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
+  foreach ($p in $servers) { if (-not $p.HasExited) { $p.Kill() } }
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue
 }
