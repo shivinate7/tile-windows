@@ -277,6 +277,8 @@ try {
     $other = Register-TileSetup $cfg @($Laptop, $Ultra, $Port)
     Set-Layout $sc $own (New-Layout @{ laptop = (New-Grid 2 2); ultra = (New-Grid 4 1) })
     Set-Layout $sc $other (New-Layout @{ laptop = (New-Grid 1 1); ultra = (New-Grid 5 2); port = (New-Grid 1 2) })
+    # The other setup shares as many screens and was used last, so a Resolve that ignores the own layout takes its layout instead.
+    Set-Used $cfg $own '2026-11-01T10:00:00'
     Set-Used $cfg $other '2026-11-15T10:00:00'
     $r = Resolve-TileLayout $cfg $sc $own
     Check 'resolve own: laptop keeps the cell of its own layout' ((Cell $r.grids 'laptop') -ceq '2,2') "cell: $(Cell $r.grids 'laptop')"
