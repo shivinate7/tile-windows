@@ -1024,7 +1024,10 @@ function renderInsp(V){
   // Scene first: it is what Apply acts on.
   if(LIVE&&s){
     const t=s.trigger||(s.trigger={type:"manual",days:[1,2,3,4,5],time:"09:00"}),isSaved=!!saved(selId),ed=edited(selId);
-    const why={save:s.builtIn&&!autoOnly(s,saved(selId))?"Built-in scenes keep their layout. Use Save As New to change it.":isSaved&&!ed?"No changes to save.":"",
+    // Id mode: the layout saves as the board changes, so Save is for the name and triggers only and there is no Revert.
+    const im=idm(),
+      why=im?{save:s.builtIn&&!autoOnly(metaOf(s),metaOf(saved(selId)||s))?"Built-in scenes keep their name. Use Save As New to change it.":isSaved&&!ed?"No name or trigger changes to save.":"",revert:"",del:s.builtIn?"Built-in scenes cannot be deleted.":""}
+      :{save:s.builtIn&&!autoOnly(s,saved(selId))?"Built-in scenes keep their layout. Use Save As New to change it.":isSaved&&!ed?"No changes to save.":"",
       revert:!isSaved?"Not saved yet, so nothing to revert to.":!ed?"No changes to revert.":"",del:s.builtIn?"Built-in scenes cannot be deleted.":""};
     const fk=focusKey(document.activeElement);
     $("scenebox").innerHTML=`<h2>Scene</h2>
@@ -1034,10 +1037,10 @@ function renderInsp(V){
     <fieldset class="trig"><legend>Main Trigger (Pick One)</legend>${TRIG.map(([v,l])=>`<div class="ropt"><label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}><span>${l}<small>${TRIGH[v]}</small></span></label>${t.type===v?trigFields(s,t):""}</div>`).join("")}</fieldset>
     <details class="xtras" id="xtras"${xOpen?" open":""}><summary><b>Extra Triggers</b><span class="xsum">${xSummary(s)}</span></summary><p class="note">Any number, each with its own switch.</p>${autoUI(s)}</details>
 
-    ${s.builtIn?`<p class="note">This is a built-in scene. Save keeps your trigger settings; its layout stays as shipped. Use Save As New to change the layout.</p>`:""}
+    ${im?`<p class="note">Save keeps the name and triggers.</p>`:s.builtIn?`<p class="note">This is a built-in scene. Save keeps your trigger settings; its layout stays as shipped. Use Save As New to change the layout.</p>`:""}
     <div class="acts"><button type="button" class="btn pri" id="save" ${why.save?`disabled title="${why.save}" aria-describedby="whyoff"`:""}>Save</button>
       <button type="button" class="btn" id="saveas">Save As New</button>
-      <button type="button" class="btn" id="revert" ${why.revert?`disabled title="${why.revert}" aria-describedby="whyoff"`:""}>Revert</button>
+      ${im?"":`<button type="button" class="btn" id="revert" ${why.revert?`disabled title="${why.revert}" aria-describedby="whyoff"`:""}>Revert</button>`}
       <button type="button" class="btn danger" id="del" ${why.del?`disabled title="${why.del}" aria-describedby="whyoff"`:""}>Delete</button></div>
     <p class="note" id="smsg" role="status">${esc(sceneMsg)}</p>
     <p class="why" id="whyoff">${[...new Set([why.save,why.del,!why.save?why.revert:""].filter(Boolean))].map(x=>`<span>${esc(x)}</span>`).join("")}</p>`;
@@ -1058,7 +1061,7 @@ function renderInsp(V){
       <div class="field stack"><label for="sort">Fill order</label><select id="sort" ${off?'disabled title="Fill is off, so the fill order does nothing. Turn on Fill Empty Cells to use it." aria-describedby="fillwhy"':""}>${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note" id="fillwhy">${off?"Fill is off, so the fill order does nothing.":`Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.`}</p></div>`}
     else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`;
 }
-  else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>`;
+  else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>${idm()&&s?`<button type="button" class="btn" id="addgrid">Add a Grid</button>`:""}`;
   $("mon").innerHTML=h;
   const w=selWin&&winById(selWin),x=w&&V[w.id];
   if(!w){inspKey="";$("win").innerHTML=`<p class="note">Click a window on the board to change it here.</p>`}
@@ -1798,6 +1801,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="tobay")unplace(selWin);
   else if(t.id==="zadd")drawZoneDialog();
   else if(t.id==="clearbd")clearBoard();
+  else if(t.id==="addgrid"){const m=curMon;edit(x=>{(x.grids||(x.grids={}))[mk(m)]={c:1,r:1}},`${monName(m)} has a 1×1 grid. Drag windows onto it.`)}
   else if(t.dataset.pick){selId=t.dataset.pick;optim=null;selZone=null;zanchor=null;picks=null;closeAsk(false);render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}
   else if(t.dataset.apply){selId=t.dataset.apply;render();if(!prevs[selId])await preview(selId);applyScene()}
   else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
