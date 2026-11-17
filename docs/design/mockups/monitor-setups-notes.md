@@ -196,7 +196,8 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
     Departs from: main, which reports a failed Save in `smsg` under the Save buttons.
 20. **Save keeps the name and triggers; Revert goes** (`sv-scene`). Save, Save As New and Delete
     stay; Save is on only while the name or a trigger has an unsaved change. The note under the
-    buttons says "Save keeps the name and triggers." The Edited mark in the top bar and the card
+    buttons says "Save keeps the name and triggers." Off, Save says "No name or trigger changes to
+    save.", so beside a failed board save (`sv-failed`) it does not read as "nothing is unsaved". The Edited mark in the top bar and the card
     tag's "· edited" count only those unsaved changes; Undo is on after a board change, and an
     Undo is itself saved at once. Follows from the Save default.
     Departs from: main `renderInsp`, the `revert` button and `why.revert`; `edited()`, which

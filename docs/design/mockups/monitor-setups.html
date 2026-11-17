@@ -551,7 +551,8 @@ function sceneBox(st,F,C){
   if(!C.live)return "";
   const today=st==="bd-today",built=C.sel==="default",sname=SNAME[C.sel],ed=C.edited;
   // Save is on only while the name or a trigger has an unsaved change; board changes are already saved.
-  const why={save:ed?"":"No changes to save.",del:built?"Built-in scenes cannot be deleted.":""};
+  // The reason names what Save covers, so it never reads as a claim about board changes (sv-failed shows both at once).
+  const why={save:ed?"":"No name or trigger changes to save.",del:built?"Built-in scenes cannot be deleted.":""};
   const off=(k,t)=>why[k]?` disabled title="${why[k]}" aria-describedby="${F}-whyoff"`:"";
   const name=`<div class="field stack"><label for="${F}-sn">Name</label><input type="text" id="${F}-sn" value="${sname}" maxlength="40"${built?' disabled title="Built-in scenes keep their name."':""}></div>`;
   if(today){
