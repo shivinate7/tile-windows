@@ -338,6 +338,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Monitor setups, the tray's display key (decision monitor-setups): its own file, in a child powershell (its FAIL lines count here).
   $spOut = @(Child (Join-Path $PSScriptRoot 'setup-plumbing.ps1')); $spOut | % { "$_" }
   $script:fail += [Math]::Max(@($spOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Monitor setups, the page (decision monitor-setups): the board autosaves, Undo, the unplugged window, the inspector and the cards. Its own file, in a child powershell (its FAIL lines count here).
+  $spgOut = @(Child (Join-Path $PSScriptRoot 'setup-page.ps1')); $spgOut | % { "$_" }
+  $script:fail += [Math]::Max(@($spgOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
   $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }
