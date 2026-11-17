@@ -65,10 +65,17 @@ try {
 
   # Tile runs. Every scene run here is a dry run: -From forces it, and the seam run passes -DryRun.
   function Invoke-SceneFrom([string]$scenePath, [string]$snap) { ConvertFrom-Json ((& $tile -Scene $scenePath -From $snap -Json 3>$null) -join '') }
-  function Invoke-SceneSeam([string]$scenePath, $mons) {
-    $seam = Join-Path $run ('seam-' + [guid]::NewGuid().ToString('n') + '.json'); [IO.File]::WriteAllText($seam, (ConvertTo-Json -InputObject @($mons) -Depth 4 -Compress), $utf8)
-    $env:TILE_SCREENS_FILE = $seam
-    try { ConvertFrom-Json ((& $tile -Scene $scenePath -DryRun -Json 3>$null) -join '') } finally { $env:TILE_SCREENS_FILE = $null }
+  # One seam writer for every seam run: $mons becomes the TILE_SCREENS_FILE list. Returns its path.
+  function Write-Seam($mons) { $seam = Join-Path $run ('seam-' + [guid]::NewGuid().ToString('n') + '.json'); [IO.File]::WriteAllText($seam, (ConvertTo-Json -InputObject @($mons) -Depth 4 -Compress), $utf8); $seam }
+  # -Text gives the scene run's text output (a screen that is not plugged in prints no grid line); else its -Json result.
+  function Invoke-SceneSeam([string]$scenePath, $mons, [switch]$Text) {
+    $env:TILE_SCREENS_FILE = Write-Seam $mons
+    try { if ($Text) { (& $tile -Scene $scenePath -DryRun 3>$null) | Out-String } else { ConvertFrom-Json ((& $tile -Scene $scenePath -DryRun -Json 3>$null) -join '') } }
+    finally { $env:TILE_SCREENS_FILE = $null }
+  }
+  function Invoke-MonitorsSeam($mons) {
+    $env:TILE_SCREENS_FILE = Write-Seam $mons
+    try { @(ConvertFrom-Json ((& $tile -Monitors 3>$null) -join '')) } finally { $env:TILE_SCREENS_FILE = $null }
   }
   function Invoke-SceneNamed([string]$name, [string]$snap, [string]$cfgHome) {
     $env:TILE_HOME = $cfgHome
@@ -183,8 +190,14 @@ try {
     $wantSeam = (@($LAP, $ULT) | Sort-Object) -join ','
     $gotSeam = (@($seamObj.id) | Sort-Object) -join ','
     Check 'scope: the seam holds the two ids' ($gotSeam -ceq $wantSeam) "got $gotSeam"
+    # Scope first: -Monitors lists the ultrawide id with role wide, read from the seam (tile.ps1 Get-MonitorObjects).
+    $seamMons = Invoke-MonitorsSeam $seamObj
+    Check 'scope: -Monitors under the seam lists the ultrawide id with role wide' (@($seamMons | ? { $_.id -ceq $ULT -and $_.role -ceq 'wide' }).Count -eq 1) "got: $(@($seamMons | % { "$($_.id)=$($_.role)" }) -join ' ')"
+    # Subject: the scene pass on that screen prints its grid. A screen that is not plugged in prints none, so the same grid text shows it was found.
+    $txt = Invoke-SceneSeam $sceneSeam $seamObj -Text
+    Check 'seam: the scene pass on the ultrawide id prints its 5x2 grid' ($txt -match 'Grid 5x2 \(688 x 700 per slot\)') "output: $txt"
     $r = Invoke-SceneSeam $sceneSeam $seamObj
-    Check 'seam: the pin on the ultrawide id reports no open window (its screen was found by id)' (@($r.missing | ? { $_.app -eq 'zz-none' -and $_.why -eq 'no open window' }).Count -eq 1) "missing: $(@($r.missing | ConvertTo-Json -Compress))"
+    Check 'seam: the pin on the ultrawide id reports no open window' (@($r.missing | ? { $_.app -eq 'zz-none' -and $_.why -eq 'no open window' }).Count -eq 1) "missing: $(@($r.missing | ConvertTo-Json -Compress))"
   }
 
   # ---- Setup B's layout leaves setup A's untouched. The run reads config.json by name and must write nothing. ----
