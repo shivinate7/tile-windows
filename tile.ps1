@@ -256,7 +256,9 @@ function Add-ScreenIdentity($s, $given, $path, $edid, [bool]$builtin) {
 # Monitors: TILE_SCREENS_FILE (a JSON array of {name,x,y,w,h,bw,bh}, read on every call) stands in for the live list, which is
 # read from Windows on every call too. The extra `% { $_ }` unrolls the array Windows PowerShell 5.1 emits as one object. Both give the work area in X,Y,W,H and the bounds' size in BW,BH.
 # -Identity adds id, builtin, maker, product, serial and idKind (a seam entry with an `id` gives them as written; else path, edid and builtin
-# derive them). Only -Json and -Monitors ask: the registry and display-config reads cost time a placement does not need.
+# derive them). Asked by -Monitors, by -Json with no -Place/-PlaceFile/-Scene, and by every -Scene or -Default run without -Place/-PlaceFile
+# (role-keyed layouts too): a scene finds its layout by the ids of the monitors it reads. Other placements skip it. One whole -Monitors run,
+# script load included, took 637-739 ms (3 samples); a scene run pays most of that on top of its placement.
 function Get-Screens([switch]$Identity) {
   if ($env:TILE_SCREENS_FILE) {
     # A seam file that is missing, empty or not JSON stops the script: an empty list would read as a desktop with no monitor.
