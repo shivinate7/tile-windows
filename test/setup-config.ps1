@@ -41,13 +41,15 @@ function Canon($o) {
   return (ConvertTo-Json -Compress -InputObject $o)
 }
 # The first path where a value in $old is missing from $new or changed. $null when every old value is kept as it was.
-function Find-Lost($old, $new, [string]$path = '$') {
+# $Skip lists paths that are allowed to change, such as '$.version' (the schema version moves on purpose).
+function Find-Lost($old, $new, [string]$path = '$', [string[]]$Skip = @()) {
   if ($old -is [System.Management.Automation.PSCustomObject]) {
     if ($new -isnot [System.Management.Automation.PSCustomObject]) { return "$path (not an object)" }
     foreach ($p in @($old.PSObject.Properties)) {
+      if ($Skip -ccontains "$path.$($p.Name)") { continue }
       $np = @($new.PSObject.Properties | Where-Object { $_.Name -ceq $p.Name })[0]
       if ($null -eq $np) { return "$path.$($p.Name) (missing)" }
-      $d = Find-Lost $p.Value $np.Value "$path.$($p.Name)"
+      $d = Find-Lost $p.Value $np.Value "$path.$($p.Name)" $Skip
       if ($d) { return $d }
     }
     return $null
@@ -55,7 +57,7 @@ function Find-Lost($old, $new, [string]$path = '$') {
   if ($old -is [Array]) {
     $oa = @($old); $na = @($new)
     if ($new -isnot [Array] -or $oa.Count -ne $na.Count) { return "$path (array changed)" }
-    for ($i = 0; $i -lt $oa.Count; $i++) { $d = Find-Lost $oa[$i] $na[$i] "$path[$i]"; if ($d) { return $d } }
+    for ($i = 0; $i -lt $oa.Count; $i++) { $d = Find-Lost $oa[$i] $na[$i] "$path[$i]" $Skip; if ($d) { return $d } }
     return $null
   }
   if ((Canon $old) -ceq (Canon $new)) { return $null }
@@ -137,7 +139,8 @@ try {
     Check 'migration: every scene has an empty layouts object' ($bad.Count -eq 0) "scenes without one: $($bad -join ', ')"
   }
   Case 'migration: every existing value is kept' {
-    $lost = Find-Lost (ConvertFrom-Json $v3Text) (ConvertFrom-Json $v4Text)
+    # The version moves 3 -> 4 on purpose; every other v3 value must stay as it was.
+    $lost = Find-Lost (ConvertFrom-Json $v3Text) (ConvertFrom-Json $v4Text) -Skip '$.version'
     Check 'migration: every v3 value is still there, unchanged' ($null -eq $lost) "first lost: $lost"
   }
   Case 'migration: a second update gives the same JSON' {
