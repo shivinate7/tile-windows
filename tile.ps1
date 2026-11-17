@@ -387,6 +387,8 @@ if ($Place -or $PlaceFile) {
 }
 
 $missing = @(); $left = @(); $roleState = @{}
+# Why a window a layout would put on a monitor that is not plugged in is listed in left. One home for the text.
+$script:unpluggedWhy = 'Its screen is unplugged'
 # One grid on one monitor. Pinned windows take their slots; the -Proc apps fill the open
 # slots. Emits text (-DryRun), result objects (-Json), or moves windows.
 # A scene runs it once per phase on every monitor ('pins', then 'zones', then 'fill'), so a pin on any
@@ -453,7 +455,7 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
     $r0 = ($rs | Measure -Min).Minimum; $r1 = ($rs | Measure -Max).Maximum
     $x = $area.X + $c0 * $w; $y = $area.Y + $r0 * $h; $ww = ($c1 - $c0 + 1) * $w; $hh = ($r1 - $r0 + 1) * $h
     $script:claimed["$($it.H)"] = 1
-    if ($phantom) { $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = 'Its screen is unplugged' }; return }
+    if ($phantom) { $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = $script:unpluggedWhy }; return }
     if ($Json) {
       $note = if ($DryRun) { 'dry run' } else { $m = Move-Win $it.H $x $y $ww $hh; if ($m) { "$m" } else { 'moved' } }
       $o = [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; mon = $role; slots = @($slots | % { $_ + 1 }); pin = $pin; zone = $zone; x = $x; y = $y; w = $ww; h = $hh
@@ -503,7 +505,7 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
       $zc = @($z.Slots | Sort-Object | ? { -not $used.ContainsKey($_) }); $z.Slots | % { $used[$_] = 1 }
       $k = [Math]::Min($cand.Count, $zc.Count)
       for ($i = 0; $i -lt $k; $i++) { Put $cand[$i] @($zc[$i]) (-1) $z.Index }
-      foreach ($it in ($cand | Select-Object -Skip $k)) { $script:claimed["$($it.H)"] = 1; $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = $(if ($phantom) { 'Its screen is unplugged' } else { 'zone full' }) } }
+      foreach ($it in ($cand | Select-Object -Skip $k)) { $script:claimed["$($it.H)"] = 1; $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = $(if ($phantom) { $script:unpluggedWhy } else { 'zone full' }) } }
     }
   }
 
@@ -513,7 +515,7 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
     $open = @(0..($Cols * $Rows - 1) | ? { -not $used.ContainsKey($_) })
     $n = [Math]::Min($free.Count, $open.Count)
     for ($i = 0; $i -lt $n; $i++) { Put $free[$i] @($open[$i]) (-1) }
-    $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = 'no free cell' } })
+    $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = $(if ($phantom) { $script:unpluggedWhy } else { 'no free cell' }) } })
     if (-not $Json -and -not $phantom) { "Grid ${Cols}x${Rows} ($w x $h per slot): pinned $($state.pinned), tiled $n of $($free.Count) others." }
   }
 }
@@ -571,8 +573,9 @@ foreach ($role in $passKeys) {
   elseif ($phantom) {
     # No grid for a monitor that is not plugged in (a resolved layout drops it): the cells its entries name are enough to match their windows.
     $named = @(foreach ($x in @($sc.pins) + @($sc.zones) + @($sc.fill.held)) { if ($x -and $x.mon -eq $role) { @($x.slots | % { [int]$_ } | ? { $_ -ge 0 }) } })
-    if (-not $named.Count) { continue }
-    $gc = [int]($named | Measure-Object -Maximum).Maximum + 1; $gr = 1
+    # A fill that names this monitor needs no cell of its own: one cell is enough to claim the windows it would place.
+    if (-not $named.Count -and $sc.fill.mon -ne $role) { continue }
+    $gc = if ($named.Count) { [int]($named | Measure-Object -Maximum).Maximum + 1 } else { 1 }; $gr = 1
   } else { continue }
   $ps = @(for ($i = 0; $i -lt @($sc.pins).Count; $i++) {
     $p = @($sc.pins)[$i]; if ($p.mon -ne $role) { continue }
@@ -590,7 +593,7 @@ foreach ($role in $passKeys) {
     $sl = @($h.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
     if ($sl.Count) { [pscustomobject]@{ Id = $h.id; App = [string]$h.app; Title = [string]$h.title; Slots = $sl } }
   } })
-  $isFill = -not $phantom -and $sc.fill.mon -eq $role
+  $isFill = $sc.fill.mon -eq $role
   if (-not $ps.Count -and -not $isFill -and -not $zs.Count -and -not $hs.Count) { continue }
   if (-not $scr -and -not $phantom) { Write-Warning "No $role monitor. That part of the scene is skipped."; $missing += @($ps | % { [pscustomobject]@{ pin = $_.Index; app = $_.App; match = $_.Match; why = "no $role monitor" } }); continue }
   if ($phantom) { $scr = [pscustomobject]@{ Name = "unplugged $role"; X = 0; Y = 0; W = 100 * $gc; H = 100 * $gr } }
