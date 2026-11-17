@@ -42,8 +42,11 @@ function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $
 $form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray = $null
 
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
-$saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME }
+# The run marks its children as the suite (TILE_TEST_SUITE): tile.ps1 refuses a live move under it unless TILE_TEST_ALLOW_LIVE is set.
+# test\safe-moves.ps1 holds those checks.
+$saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME; TILE_TEST_SUITE = $env:TILE_TEST_SUITE }
 $env:USERPROFILE = Profile 'run'; $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'; $env:TILE_HOME = $null
+$env:TILE_TEST_SUITE = '1'
 try {
   . (Join-Path $root 'config.ps1')
   Check 'the run and its children use a temp profile' ($env:USERPROFILE.StartsWith($tmp) -and $env:APPDATA.StartsWith($tmp) -and $TileHome.StartsWith($tmp)) "$env:USERPROFILE | $TileHome"
