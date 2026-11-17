@@ -140,7 +140,7 @@ try {
     Check 'item 9: Chrome is not placed (never moved)' (-not (PlacedOf $r 2003)) (Desc $r 2003)
     Check 'item 9: Chrome is listed in left with why "Its screen is unplugged"' ((LeftWhy $r 2003) -ceq 'Its screen is unplugged') (Desc $r 2003)
     Check 'item 9: Chrome is not in missing' (@($r.missing | ? { $_.app -eq 'chrome' }).Count -eq 0) "missing: $(@($r.missing | ? { $_.app -eq 'chrome' } | ConvertTo-Json -Compress))"
-    Check 'item 9: Claude still fills the laptop cells 1 and 2' ((OnCell $r 2001 1 (CellRect $lapOnly 4 1 0)) -and (OnCell $r 2002 2 (CellRect $lapOnly 4 1 1))) "$(Desc $r 2001) | $(Desc $r 2002)"
+    Check 'item 9: Claude still fills the laptop cells 1 and 2' ((OnCell $r 2001 1 (CellRect $lapDesk 4 1 0)) -and (OnCell $r 2002 2 (CellRect $lapDesk 4 1 1))) "$(Desc $r 2001) | $(Desc $r 2002)"
   }
 
   Case 'item 9: with the ultrawide back, Chrome returns to its cell and leaves left' {
