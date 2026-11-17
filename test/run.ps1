@@ -332,6 +332,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Config v4 (decision monitor-setups): the v3 -> v4 migration, setup keys, setup registration and the layout a setup resolves to. Its own file, in a child powershell (its FAIL lines count here).
   $suOut = @(Child (Join-Path $PSScriptRoot 'setup-config.ps1')); $suOut | % { "$_" }
   $script:fail += [Math]::Max(@($suOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Engine layouts (decision monitor-setups, items 5 and 9): tile.ps1 places a scene by monitor id. Its own file, in a child powershell (its FAIL lines count here).
+  $elOut = @(Child (Join-Path $PSScriptRoot 'engine-layouts.ps1')); $elOut | % { "$_" }
+  $script:fail += [Math]::Max(@($elOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Monitor setups, the tray's display key (decision monitor-setups): its own file, in a child powershell (its FAIL lines count here).
   $spOut = @(Child (Join-Path $PSScriptRoot 'setup-plumbing.ps1')); $spOut | % { "$_" }
   $script:fail += [Math]::Max(@($spOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))

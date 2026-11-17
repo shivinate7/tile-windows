@@ -15,6 +15,11 @@
 #   (the page sets it, such as when a resize covered the window) is passed through in place of 'in the bay'; the page words it.
 #   A pin's behind ([{app, match}]) stacks windows on its rect: each is placed with behind=true and the pin's index, never filled.
 #   A pin's lock (true) is read by the page, not here: a pin already beats zones and the fill for its cells.
+#   A scene run reads monitor ids. If scene.layouts has an entry for this call's setup key (Get-TileSetupKey over the ids read: -From's
+#   snapshot, the TILE_SCREENS_FILE seam, or the live read), that layout replaces the scene's role template for the call: its grids, pins,
+#   zones and fill name monitors by id. A scene posted already resolved (grids, pins, zones, fill by id at the top level) runs by id too.
+#   No entry and no ids: the role path (wide, tall, laptop) runs, as before. The engine never picks the closest setup; the caller resolves.
+#   A window a layout places on a monitor that is not plugged in is claimed, never moved, and listed in left: 'Its screen is unplugged'.
 # -From <path|json>: use a -Json snapshot instead of the live desktop. Always a dry run.
 # -Lib: define Move-Win and the Win32 reads and writes behind it, then return (tests dot-source it and swap those for fakes).
 # Slots number row by row from 1 (top-left).
@@ -251,7 +256,9 @@ function Add-ScreenIdentity($s, $given, $path, $edid, [bool]$builtin) {
 # Monitors: TILE_SCREENS_FILE (a JSON array of {name,x,y,w,h,bw,bh}, read on every call) stands in for the live list, which is
 # read from Windows on every call too. The extra `% { $_ }` unrolls the array Windows PowerShell 5.1 emits as one object. Both give the work area in X,Y,W,H and the bounds' size in BW,BH.
 # -Identity adds id, builtin, maker, product, serial and idKind (a seam entry with an `id` gives them as written; else path, edid and builtin
-# derive them). Only -Json and -Monitors ask: the registry and display-config reads cost time a placement does not need.
+# derive them). Asked by -Monitors, by -Json with no -Place/-PlaceFile/-Scene, and by every -Scene or -Default run without -Place/-PlaceFile
+# (role-keyed layouts too): a scene finds its layout by the ids of the monitors it reads. Other placements skip it. One whole -Monitors run,
+# script load included, took 637-739 ms (3 samples); a scene run pays most of that on top of its placement.
 function Get-Screens([switch]$Identity) {
   if ($env:TILE_SCREENS_FILE) {
     # A seam file that is missing, empty or not JSON stops the script: an empty list would read as a desktop with no monitor.
@@ -291,7 +298,8 @@ if ($From) {
   $snapIn = ConvertFrom-Json (JsonText $From)
   $screens = @($snapIn.monitors | % { [pscustomobject]@{ Name = $_.name; BW = [int]$(if ($_.bw) { $_.bw } else { $_.w }); BH = [int]$(if ($_.bh) { $_.bh } else { $_.h }); X = [int]$_.x; Y = [int]$_.y; W = [int]$_.w; H = [int]$_.h; Id = $_.id; Builtin = [bool]$_.builtin; Maker = $_.maker; Product = $_.product; Serial = $_.serial; IdKind = $_.idKind } })
 } else {
-  $screens = @(Get-Screens -Identity:($Monitors -or ($Json -and -not ($Place -or $PlaceFile -or $sc))))
+  # A scene reads ids too: its layout is found by the ids of the monitors this call reads.
+  $screens = @(Get-Screens -Identity:([bool]($Monitors -or ($sc -and -not ($Place -or $PlaceFile)) -or ($Json -and -not ($Place -or $PlaceFile -or $sc)))))
 }
 function Pick($role, $taken = @()) {
   $s = @($screens | ? { $taken -notcontains $_.Name })
@@ -381,12 +389,16 @@ if ($Place -or $PlaceFile) {
 }
 
 $missing = @(); $left = @(); $roleState = @{}
+# Why a window a layout would put on a monitor that is not plugged in is listed in left. One home for the text.
+$script:unpluggedWhy = 'Its screen is unplugged'
 # One grid on one monitor. Pinned windows take their slots; the -Proc apps fill the open
 # slots. Emits text (-DryRun), result objects (-Json), or moves windows.
 # A scene runs it once per phase on every monitor ('pins', then 'zones', then 'fill'), so a pin on any
 # monitor beats every zone, and every zone beats the fill. In a scene a minimized window stays where it
 # is (in the bay) unless a pin names it by title. -Proc runs (phase 'all') keep the old single pass.
-function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all', $held = @()) {
+# $phantom: the grid stands for a monitor that is not plugged in. Matching and order are the same, but a window that would take a cell is
+# claimed and listed in left ('Its screen is unplugged'), never moved or placed.
+function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all', $held = @(), $phantom = $false) {
   $scene = $phase -ne 'all'
   $all = @(@($pins.App) + @($fill | ? { $pins.App -notcontains $_ }) | ? { $_ })
   if (-not $script:roleState.ContainsKey("$role")) { $script:roleState["$role"] = @{ used = @{}; pinned = 0 } }
@@ -445,6 +457,7 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
     $r0 = ($rs | Measure -Min).Minimum; $r1 = ($rs | Measure -Max).Maximum
     $x = $area.X + $c0 * $w; $y = $area.Y + $r0 * $h; $ww = ($c1 - $c0 + 1) * $w; $hh = ($r1 - $r0 + 1) * $h
     $script:claimed["$($it.H)"] = 1
+    if ($phantom) { $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = $script:unpluggedWhy }; return }
     if ($Json) {
       $note = if ($DryRun) { 'dry run' } else { $m = Move-Win $it.H $x $y $ww $hh; if ($m) { "$m" } else { 'moved' } }
       $o = [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; mon = $role; slots = @($slots | % { $_ + 1 }); pin = $pin; zone = $zone; x = $x; y = $y; w = $ww; h = $hh
@@ -494,7 +507,7 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
       $zc = @($z.Slots | Sort-Object | ? { -not $used.ContainsKey($_) }); $z.Slots | % { $used[$_] = 1 }
       $k = [Math]::Min($cand.Count, $zc.Count)
       for ($i = 0; $i -lt $k; $i++) { Put $cand[$i] @($zc[$i]) (-1) $z.Index }
-      foreach ($it in ($cand | Select-Object -Skip $k)) { $script:claimed["$($it.H)"] = 1; $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = 'zone full' } }
+      foreach ($it in ($cand | Select-Object -Skip $k)) { $script:claimed["$($it.H)"] = 1; $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = $(if ($phantom) { $script:unpluggedWhy } else { 'zone full' }) } }
     }
   }
 
@@ -504,8 +517,8 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
     $open = @(0..($Cols * $Rows - 1) | ? { -not $used.ContainsKey($_) })
     $n = [Math]::Min($free.Count, $open.Count)
     for ($i = 0; $i -lt $n; $i++) { Put $free[$i] @($open[$i]) (-1) }
-    $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = 'no free cell' } })
-    if (-not $Json) { "Grid ${Cols}x${Rows} ($w x $h per slot): pinned $($state.pinned), tiled $n of $($free.Count) others." }
+    $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = $(if ($phantom) { $script:unpluggedWhy } else { 'no free cell' }) } })
+    if (-not $Json -and -not $phantom) { "Grid ${Cols}x${Rows} ($w x $h per slot): pinned $($state.pinned), tiled $n of $($free.Count) others." }
   }
 }
 
@@ -521,6 +534,23 @@ if (-not $sc) {
 
 # A scene: pins on every monitor, then zones, then the fill; each phase runs portrait, laptop, ultrawide.
 $roles = Roles; $out = @(); $passes = @()
+# By id or by role. A layout for this setup key (config.ps1's Get-TileSetupKey over the ids read) replaces the scene's role template for this
+# call; a scene posted already resolved (a Resolve-TileLayout result: grids, pins, zones or fill naming monitors by id) runs by id as it is. No ids read,
+# or neither: the role path. The caller resolves the closest setup; this never does.
+function Test-IdKeyed($o) {
+  $named = @(if ($o.grids) { $o.grids.PSObject.Properties.Name }) + @(foreach ($x in @($o.pins) + @($o.zones) + @($o.fill) + @($o.fill.held)) { if ($x -and $x.mon) { [string]$x.mon } })
+  @($named | ? { $_ -and 'wide', 'tall', 'laptop' -notcontains $_ }).Count -gt 0
+}
+$idMode = $false
+if ($screens.Count -and -not @($screens | ? { -not $_.Id }).Count) {
+  $setupKey = Get-TileSetupKey $screens
+  $own = if ($sc.layouts) { $sc.layouts.PSObject.Properties[$setupKey] }
+  $lay = if ($own) { $own.Value } elseif (Test-IdKeyed $sc) { $sc }
+  if ($lay) {
+    $sc = [pscustomobject]@{ id = $sc.id; name = $sc.name; grids = $lay.grids; pins = @($lay.pins | ? { $_ }); zones = @($lay.zones | ? { $_ }); fill = $(if ($lay.fill) { $lay.fill } else { [pscustomobject]@{} }); bay = $lay.bay; cats = $sc.cats; categories = $sc.categories }
+    $idMode = $true
+  }
+}
 # Zones on every monitor rank by the scene's fill list and leave out its skipped apps.
 $sceneFillOff = [bool]$sc.fill.off
 $zFill = @($sc.fill.apps); $zSkip = @($Skip + @($sc.fill.skip) | ? { $_ })
@@ -531,9 +561,24 @@ foreach ($b in @($sc.bay | ? { $_ })) {
   if (-not $it -and $b.title) { $it = @($items | ? { -not $claimed.ContainsKey("$($_.H)") -and $_.App -eq [string]$b.app -and $_.Title -ceq [string]$b.title })[0] }
   if ($it) { $claimed["$($it.H)"] = 1; $left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = $(if ($b.why) { [string]$b.why } else { 'in the bay' }) } }
 }
-foreach ($role in 'tall', 'laptop', 'wide') {
-  $g = $sc.grids.$role; if (-not $g) { continue }
-  $gc = [int]$g.c; $gr = [int]$g.r
+# A pass is one monitor: by role (tall, laptop, wide), or by id, a monitor that is not plugged in included (its pass is a phantom: it claims
+# its windows and lists them, and moves none).
+$passKeys = if ($idMode) {
+  @(@($screens | % { [string]$_.Id }) + @(if ($sc.grids) { $sc.grids.PSObject.Properties.Name }) + @(foreach ($x in @($sc.pins) + @($sc.zones) + @($sc.fill) + @($sc.fill.held)) { if ($x -and $x.mon) { [string]$x.mon } }) | ? { $_ } | Select-Object -Unique)
+} else { 'tall', 'laptop', 'wide' }
+foreach ($role in $passKeys) {
+  $gp = if ($sc.grids) { $sc.grids.PSObject.Properties[$role] }
+  $g = if ($gp) { $gp.Value }
+  $scr = if ($idMode) { @($screens | ? { $_.Id -eq $role })[0] } else { $roles[$role] }
+  $phantom = $idMode -and -not $scr
+  if ($g) { $gc = [int]$g.c; $gr = [int]$g.r }
+  elseif ($phantom) {
+    # No grid for a monitor that is not plugged in (a resolved layout drops it): the cells its entries name are enough to match their windows.
+    $named = @(foreach ($x in @($sc.pins) + @($sc.zones) + @($sc.fill.held)) { if ($x -and $x.mon -eq $role) { @($x.slots | % { [int]$_ } | ? { $_ -ge 0 }) } })
+    # A fill that names this monitor needs no cell of its own: one cell is enough to claim the windows it would place.
+    if (-not $named.Count -and $sc.fill.mon -ne $role) { continue }
+    $gc = if ($named.Count) { [int]($named | Measure-Object -Maximum).Maximum + 1 } else { 1 }; $gr = 1
+  } else { continue }
   $ps = @(for ($i = 0; $i -lt @($sc.pins).Count; $i++) {
     $p = @($sc.pins)[$i]; if ($p.mon -ne $role) { continue }
     $sl = @($p.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
@@ -552,14 +597,14 @@ foreach ($role in 'tall', 'laptop', 'wide') {
   } })
   $isFill = $sc.fill.mon -eq $role
   if (-not $ps.Count -and -not $isFill -and -not $zs.Count -and -not $hs.Count) { continue }
-  $scr = $roles[$role]
-  if (-not $scr) { Write-Warning "No $role monitor. That part of the scene is skipped."; $missing += @($ps | % { [pscustomobject]@{ pin = $_.Index; app = $_.App; match = $_.Match; why = "no $role monitor" } }); continue }
-  $passes += [pscustomobject]@{ Scr = $scr; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Held = $hs; Role = $role
+  if (-not $scr -and -not $phantom) { Write-Warning "No $role monitor. That part of the scene is skipped."; $missing += @($ps | % { [pscustomobject]@{ pin = $_.Index; app = $_.App; match = $_.Match; why = "no $role monitor" } }); continue }
+  if ($phantom) { $scr = [pscustomobject]@{ Name = "unplugged $role"; X = 0; Y = 0; W = 100 * $gc; H = 100 * $gr } }
+  $passes += [pscustomobject]@{ Scr = $scr; Phantom = $phantom; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Held = $hs; Role = $role
     Skip = $(if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }); Sort = $(if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }) }
 }
 foreach ($phase in 'pins', 'held', 'zones', 'fill') {
   foreach ($q in $passes) {
-    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase $q.Held
+    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase $q.Held $q.Phantom
     if ($Json) { $out += @($r) } else { $r }
   }
 }
