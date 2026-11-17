@@ -29,8 +29,21 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - Windows That Stay Put (coordinator default 2026-11-17 11:47 CST, owner may change): kept per setup, as part of the layout (item 5).
 - Unplaced reason (coordinator default 2026-11-17 11:47 CST, owner may change): the reason text for an unplaced window is "Its screen is unplugged" (item 9).
 - Offline page (coordinator default 2026-11-17 11:47 CST, owner may change): the offline page (`file://`) cannot autosave. Its edits stay in the page, and Apply downloads a place file, as today (item 8).
-- Ultrawide (coordinator default 2026-11-17 11:47 CST, owner may change): for the grid trigger, an ultrawide is a monitor wider than 2:1, the item 14 Names rule.
 - Item 10, fold select (coordinator default 2026-11-17 11:47 CST, owner may change): dropped. It follows from item 9's ruling, which folds nothing.
+
+**Coordinator rulings, 2026-11-17.**
+- 13:28 CST: the grid trigger's "ultrawide" is whichever monitor holds the wide role.
+- 15:19 CST: the engine never resolves the closest setup; the server posts the resolved layout.
+- 15:23 CST: the tray keeps the name Get-MonitorKey but returns the setup key from monitor ids.
+- 15:23 CST: a 404 "route absent" counts as red for a new route.
+- 15:30 CST: windows the layout's fill would put on an unplugged monitor go to `left` as "Its screen is unplugged" (extends owner item 9).
+- 16:18 CST: POST /config never writes layouts, for any key; only POST /layout does.
+
+**Built.**
+- Identity, PR 27 (monitor ids): built and merged.
+- Config v4, PR 26 (setup config): built and merged.
+- Engine, PR 28 (engine layouts): built and merged.
+- Server and tray, PR 29 (setup plumbing): built and merged.
 
 **Open, not ruled.**
 - Item 7: the `Follow <setup> Again` control (`cd-own`) stays (coordinator default 2026-11-17 11:47 CST). What it links to is not ruled. The notes' items 11 and 16 still name Desk in their examples; rewording them is not ruled.
