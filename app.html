@@ -630,7 +630,8 @@ const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
 const status=t=>{$("msg").textContent=t};
 const scene=()=>work[selId];
 const saved=id=>cfg.scenes.find(s=>s.id===id);
-const edited=id=>!!work[id]&&JSON.stringify(work[id])!==JSON.stringify(saved(id));
+// Id mode: the layout autosaves, so only a name, trigger or extra that Save has not kept counts as an edit.
+const edited=id=>!!work[id]&&(idm()?JSON.stringify(metaOf(work[id]))!==JSON.stringify(metaOf(saved(id)||{})):JSON.stringify(work[id])!==JSON.stringify(saved(id)));
 // A built-in scene is read-only except its trigger switches (.auto): Default carries the first-unlock and grid switches.
 const autoOnly=(a,b)=>{if(!b)return false;const f=o=>{const x=clone(o);["auto","opt","trigger","screens"].forEach(k=>delete x[k]);if(x.claudeGrid)delete x.claudeGrid.at;return JSON.stringify(x)};return f(a)===f(b)};
 const railIds=()=>[...cfg.scenes.map(s=>s.id),...Object.keys(work).filter(id=>!saved(id))];
@@ -1114,7 +1115,35 @@ function heldOff(x,w,mon,cells){const f=x.fill;if(!f||!f.held)return;
 function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
   edit(x=>{x.fill=x.fill||{};x.fill.off=true;delete x.fill.held},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
 // id: the scene to change, by default the selected one. A caller that waits first passes the scene it started on.
-function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";const s=work[id];hist.push({k:"edit",id,s:clone(s)});fn(s);if(msg)status(typeof msg==="function"?msg():msg);render();preview(id);return true}
+function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";const s=work[id];hist.push({k:"edit",id,s:clone(s)});fn(s);if(msg)status(typeof msg==="function"?msg():msg);layoutEdited(id);render();preview(id);return true}
+/* ---------- Autosave: a board change is written for the plugged-in setup (decision monitor-setups, item 8) ---------- */
+// Id mode only. An edit that changes the layout counts as one change only in this page until its POST /layout is answered. The write waits one task, so the edits of one
+// gesture are one POST. A longer wait is unproven: the page test settles on the POSTs in flight once the preview an edit starts answers, and a timer pending then is not seen.
+// Saves of one scene go one at a time (an edit that lands while one is in flight is one more), so the newest layout is the last one written.
+// A trigger or a name changes no layout and sends nothing.
+const SAVE_WAIT=0;
+function layoutEdited(id,now){
+  if(!idm()||!saved(id))return;
+  const cur=JSON.stringify(layoutOf(work[id]));if(cur===lq[id])return;
+  lq[id]=cur;unsaved[id]=(unsaved[id]||0)+1;
+  clearTimeout(svT[id]);if(now)saveLayout(id);else svT[id]=setTimeout(()=>saveLayout(id),SAVE_WAIT)}
+async function saveLayout(id){
+  clearTimeout(svT[id]);
+  if(svBusy[id]){svAgain[id]=true;return}
+  if(!idm()||!work[id]||!saved(id))return;
+  svBusy[id]=true;
+  try{
+    do{svAgain[id]=false;
+      const key=plug.key,at=JSON.stringify(layoutOf(work[id])),lay=forSaveLayout(layoutOf(work[id])),n0=unsaved[id]||0;
+      const r=await post("layout",{scene:id,key,layout:lay});
+      if(!r.ok)throw new Error((await r.text())||`The server said ${r.status}.`);
+      lsaved[id]=at;unsaved[id]=Math.max(0,(unsaved[id]||0)-n0);if(!unsaved[id])delete failed[id];
+      const sc=saved(id);if(sc){(sc.layouts||(sc.layouts={}))[key]=lay}
+    }while(svAgain[id])
+  }catch(e){failed[id]=e instanceof TypeError?"The app server stopped answering.":String(e.message||e)}
+  finally{svBusy[id]=false;render()}}
+const unsavedCount=()=>Object.values(unsaved).reduce((n,v)=>n+v,0);
+const retrySave=()=>{for(const id of Object.keys(failed))saveLayout(id)};
 const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
 // force: the owner confirmed moving a locked tile (askMove); every other caller still refuses it.
 function pinWin(id,mon,slot,cs=1,rs=1,force=false){
@@ -1703,7 +1732,7 @@ $("apply").onclick=async()=>{
 };
 $("undo").onclick=async()=>{if(isBusy)return;const e=hist.pop();if(!e)return;removeNote();
   if(e.k==="rects"){offRects=e.r;render();toast("Undid the last move.");return}
-  if(e.k==="edit"){selId=e.id;work[e.id]=e.s;optim=null;render();preview(selId);toast("Undid the last change.");return}
+  if(e.k==="edit"){selId=e.id;work[e.id]=e.s;optim=null;layoutEdited(e.id,true);render();preview(selId);toast("Undid the last change.");return}
   if(e.k==="apply"){if(e.back.length)await placeBack(e.back);else toast("That Apply moved nothing.")}};
 $("refresh").onclick=()=>refresh();
 $("closeres").onclick=()=>{$("results").hidden=true};
@@ -1716,21 +1745,34 @@ $("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("cmd").tex
   catch(e){const r=document.createRange();r.selectNodeContents($("cmd"));const s=getSelection();s.removeAllRanges();s.addRange(r);$("cmsg").textContent="Press Ctrl+C to copy."}};
 
 /* ---------- Saving scenes ---------- */
+// A layout never goes in this body: only POST /layout writes one, so the wire copy drops them (the page keeps its own in cfg).
 async function saveConfig(next,msg){
-  const r=await post("config",next);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
+  const wire=clone(next);for(const x of wire.scenes)delete x.layouts;
+  const r=await post("config",wire);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
   cfg=next;status(msg);sceneMsg=msg;render();return true}
 // A saved scene keeps only list entries that match an open window, by app and exact title: a window
 // handle means nothing in the next session.
-function forSave(s){s=clone(s);if(s.bay){s.bay=s.bay.filter(b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title))).map(b=>({app:b.app,title:(winById(b.id)||b).title,...(b.why?{why:b.why}:{})}));if(!s.bay.length)delete s.bay}
-  if(s.fill&&s.fill.held){const L=s.fill.held;s.fill.held=L.map(h=>({h,w:heldWin(h,L)})).filter(e=>e.w).map(({h,w})=>({app:h.app,title:w.title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
+// keep: a layout with an empty list is left as it is (an unchanged layout must be written back exactly as the server gave it).
+function stripIds(s,keep){if(Array.isArray(s.bay)&&!(keep&&!s.bay.length)){s.bay=s.bay.filter(b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title))).map(b=>({app:b.app,title:(winById(b.id)||b).title,...(b.why?{why:b.why}:{})}));if(!s.bay.length)delete s.bay}
+  if(s.fill&&Array.isArray(s.fill.held)&&!(keep&&!s.fill.held.length)){const L=s.fill.held;s.fill.held=L.map(h=>({h,w:heldWin(h,L)})).filter(e=>e.w).map(({h,w})=>({app:h.app,title:w.title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
   return s}
-async function saveScene(){const s=scene();if(s.builtIn&&!autoOnly(s,saved(selId)))return;const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId);
-  if(i>=0)next.scenes[i]=forSave(s);else next.scenes.push(forSave(s));await saveConfig(next,`Saved ${s.name}.`)}
-async function saveAsNew(name){const s=forSave(scene()),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
+const forSave=s=>stripIds(clone(s));
+const forSaveLayout=L=>stripIds(clone(L),true);
+// The scene as POST /config takes it. In id mode that is the saved copy (its role template and its layouts) with this scene's name, triggers and extras: the board's layout saves apart, by POST /layout.
+function configScene(id){
+  if(!idm())return forSave(work[id]);
+  const base=clone(saved(id)||work[id]);Object.assign(base,metaOf(work[id]));return base}
+async function saveScene(){const s=scene(),sv=saved(selId);
+  if(s.builtIn&&!(idm()?autoOnly(metaOf(s),sv&&metaOf(sv)):autoOnly(s,sv)))return;
+  const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId),out=configScene(selId);
+  if(i>=0)next.scenes[i]=out;else next.scenes.push(out);await saveConfig(next,`Saved ${s.name}.`)}
+async function saveAsNew(name){const cur=scene(),s=idm()?Object.assign(clone(saved(selId)||cur),metaOf(cur),{layouts:{}}):forSave(cur),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
   Object.assign(s,{id,name:base.slice(0,40),builtIn:false});delete s.blurb;
   const next=clone(cfg);next.scenes.push(s);
-  if(saved(selId))work[selId]=clone(saved(selId));work[id]=clone(s);
-  if(await saveConfig(next,`Saved as ${s.name}.`)){selId=id;render();await preview(id)}}
+  // Id mode: the copy takes the layout on the board, and the scene it came from keeps the layout it has (a board change was saved to it already).
+  const mine=idm()?Object.assign(metaOf(s),layoutOf(clone(cur))):null;
+  if(saved(selId))work[selId]=idm()?Object.assign(metaOf(saved(selId)),layoutOf(work[selId])):clone(saved(selId));work[id]=idm()?mine:clone(s);
+  if(await saveConfig(next,`Saved as ${s.name}.`)){selId=id;if(idm()){unsaved[id]=1;lq[id]=JSON.stringify(layoutOf(work[id]));await saveLayout(id)}render();await preview(id)}}
 // A dialog. A destructive one starts on Cancel.
 function ask(title,body,ok,danger){return new Promise(res=>{const d=$("dlg"),f=$("dlgform");
   f.innerHTML=`<h2>${esc(title)}</h2>${body}<div class="row" style="justify-content:flex-end"><button class="btn" value="" id="dlgCancel">Cancel</button><button class="btn ${danger?"danger solid":"pri"}" value="ok">${esc(ok)}</button></div>`;
