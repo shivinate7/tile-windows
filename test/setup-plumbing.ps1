@@ -6,6 +6,9 @@
 #   Tray: the display key is the setup key, the sorted monitor ids joined by Get-TileSetupKey (config.ps1). A monitor set that is only
 #   rearranged is the same setup, so it fires no display trigger (decision monitor-setups, item 4, coordinator default 2026-11-17 09:50
 #   CST; that item departs from tray.ps1 Get-MonitorKey). Step-Tray counts the monitors in a key by its ids, not by a ';' split.
+#   Tray, a failed read: Read-Monitors (tray.ps1) on a failed tile.ps1 -Monitors returns no monitors or the last good set, never throws, and
+#   never the Windows screen list (no ids, so its key differs). The tick passes Get-MonitorKey of it to Step-Tray: a failed read fires
+#   no display trigger, and neither does the good read after it, for the same monitors.
 #   Server (serve.ps1, -From snapshot, config in a case's own TILE_HOME):
 #     GET  /snapshot  {monitors, windows, setup: {key, name, follows}}; the plugged-in setup is registered in config (first setup: Desk).
 #     GET  /config    the config; GET /layouts: {<scene id>: Resolve-TileLayout's layout of that scene for the plugged-in setup}.
@@ -306,6 +309,42 @@ try {
         Check 'layouts: each scene gets the layout Resolve-TileLayout gives for the plugged-in setup' ($differ.Count -eq 0 -and (Keys-Of $got) -ceq (Sorted @($cfg.scenes.id))) "differ: $($differ -join ',')"
       }
     } finally { Stop-Server $s }
+  }
+
+  # ---- Tray: a failed monitor read is not a change ----
+  # Read-Monitors (tray.ps1) sits below -Lib's return, so its text is taken from tray.ps1 by the PowerShell parser and defined here. The
+  # case then runs the product's own read. The seam (TILE_SCREENS_FILE) makes tile.ps1 -Monitors fail on a file that is never written.
+  Add-Type -AssemblyName System.Windows.Forms   # the fallback read is Windows' own screen list
+  $trayAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'tray.ps1'), [ref]$null, [ref]$null)
+  $readFn = $trayAst.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Read-Monitors' }, $true)
+  if ($readFn) { . ([scriptblock]::Create($readFn.Extent.Text)) }
+  $screensGood = Join-Path $runDir 'screens-good.json'; $screensGone = Join-Path $runDir 'screens-gone.json'
+  [IO.File]::WriteAllText($screensGood, (ConvertTo-Json -Depth 5 -Compress -InputObject @(
+    [pscustomobject]@{ id = 'LEN3'; name = 'DISPLAY1'; x = 0; y = 1000; w = 1536; h = 960; bw = 1536; bh = 960; builtin = $true },
+    [pscustomobject]@{ id = 'AUO1'; name = 'DISPLAY2'; x = 1536; y = 0; w = 4096; h = 1728; bw = 4096; bh = 1728; builtin = $false },
+    [pscustomobject]@{ id = 'DEL2'; name = 'DISPLAY3'; x = 5632; y = 0; w = 1200; h = 1920; bw = 1200; bh = 1920; builtin = $false })), $utf8)
+  # Reads the tray makes in order: a good read, a failed read, then a good read of the same monitors. Each read goes through the tick's
+  # Get-MonitorKey, and each key through Step-Tray with the same fixed clock. The first read only seeds, so it applies nothing.
+  Case 'tray: a failed monitor read fires no display trigger, and the good read after it fires none for the same monitors' {
+    Check 'tray: the monitor read is Read-Monitors in tray.ps1 (scope)' ($null -ne $readFn) 'no Read-Monitors function in tray.ps1'
+    if ($null -eq $readFn) { return }
+    $saveSeam = $env:TILE_SCREENS_FILE
+    try {
+      $env:TILE_SCREENS_FILE = $screensGood; $k1 = Get-MonitorKey (Read-Monitors)
+      $env:TILE_SCREENS_FILE = $screensGone; $failThrows = $false
+      try { $null = & $tile -Monitors 3>$null } catch { $failThrows = $true }
+      $k2 = Get-MonitorKey (Read-Monitors)
+      $env:TILE_SCREENS_FILE = $screensGood; $k3 = Get-MonitorKey (Read-Monitors)
+    } finally { $env:TILE_SCREENS_FILE = $saveSeam }
+    Check 'tray: a good read gives the three monitor ids (scope)' ($k1 -ceq (Key-Of 'LEN3', 'AUO1', 'DEL2')) "key: $k1"
+    Check 'tray: a failed read makes tile.ps1 -Monitors throw (scope)' $failThrows
+    $ts = New-TrayState
+    $a1 = Ids (Step-Tray $ts $d $trayCfg $k1 $null '')
+    $a2 = Ids (Step-Tray $ts $d $trayCfg $k2 $null '')
+    $a3 = Ids (Step-Tray $ts $d $trayCfg $k3 $null '')
+    Check 'tray: the seeding read applies nothing (control)' ($a1 -eq '') "applied: '$a1'"
+    Check 'tray: a failed monitor read fires no display trigger' ($a2 -eq '') "applied: '$a2'"
+    Check 'tray: the good read after a failed read fires no display trigger (same monitors)' ($a3 -eq '') "applied: '$a3'"
   }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
