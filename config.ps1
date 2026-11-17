@@ -121,13 +121,34 @@ function Add-TileLog([string]$active, [string]$text) {
 
 # Monitor setups (config version 4, decision monitor-setups). config.monitors holds each monitor ever seen: {name, builtin, lastSeen, bw, bh}.
 # config.setups holds each set of monitors ever plugged in together: {name, ids[], lastUsed}. A scene keeps one layout per setup in scene.layouts.
-# A monitor's shape role, read from its native size (bw, bh; w, h when those are absent): laptop for the built-in screen, else wide when it is
-# wider than 2:1, tall when it is taller than wide, else ''. The one home for the names Register gives and the roles Resolve seeds by.
+# A monitor's native size (bw, bh; w, h when those are absent) as two numbers, w then h.
+function Get-TileMonSize($m) {
+  $w = [double]$(if ($null -ne $m.bw) { $m.bw } else { $m.w }); $h = [double]$(if ($null -ne $m.bh) { $m.bh } else { $m.h })
+  $w; $h
+}
+# A monitor's shape, read from its native size: laptop for the built-in screen, else tall when it is taller than wide, wide when it is
+# landscape (any aspect, 16:9 included), else '' (a zero width or height, or a square, has no shape). The one home for the shape rule;
+# Register names by it and Get-TileRoles seeds by it. Ultrawide (wider than 2:1) is a name only, never a role.
 function Get-TileMonShape($m) {
   if ($m.builtin) { return 'laptop' }
-  $w = [double]$(if ($null -ne $m.bw) { $m.bw } else { $m.w }); $h = [double]$(if ($null -ne $m.bh) { $m.bh } else { $m.h })
-  if ($h -le 0) { return '' }
-  if ($w -gt 2 * $h) { 'wide' } elseif ($h -gt $w) { 'tall' } else { '' }
+  $w, $h = Get-TileMonSize $m
+  if ($w -le 0 -or $h -le 0) { return '' }
+  if ($h -gt $w) { 'tall' } elseif ($w -gt $h) { 'wide' } else { '' }
+}
+# The seeding pick (decision monitor-setups item 14): each role goes to one monitor of the ids, the widest candidate of its shape, then the
+# lowest id. Returns a hashtable role -> id. A monitor the config does not know has no shape.
+function Get-TileRoles($monitors, $ids) {
+  $cand = @(foreach ($id in @($ids)) {
+    $mp = if ($monitors) { $monitors.PSObject.Properties[[string]$id] }; if (-not $mp) { continue }
+    $shape = Get-TileMonShape $mp.Value; if (-not $shape) { continue }
+    $w, $h = Get-TileMonSize $mp.Value
+    [pscustomobject]@{ id = [string]$id; shape = $shape; w = $w }
+  })
+  $role = @{}
+  foreach ($c in @($cand | Sort-Object @{ Expression = { $_.w }; Descending = $true }, @{ Expression = { $_.id }; Descending = $false })) {
+    if (-not $role.ContainsKey($c.shape)) { $role[$c.shape] = $c.id }
+  }
+  $role
 }
 # The key of a set of monitors: their ids, sorted, joined. Order, position and scale never reach it.
 function Get-TileSetupKey($monitors) {
@@ -146,7 +167,8 @@ function Register-TileSetup($cfg, $monitors) {
     $id = [string]$m.id; $known = $cfg.monitors.PSObject.Properties[$id]
     if ($known) { $known.Value | Add-Member -Force lastSeen $now; continue }
     $bw = [int]$(if ($null -ne $m.bw) { $m.bw } else { $m.w }); $bh = [int]$(if ($null -ne $m.bh) { $m.bh } else { $m.h })
-    $base = switch (Get-TileMonShape ([pscustomobject]@{ builtin = [bool]$m.builtin; bw = $bw; bh = $bh })) { 'laptop' { 'Laptop' } 'wide' { 'Ultrawide' } 'tall' { 'Portrait' } default { 'Monitor' } }
+    $probe = [pscustomobject]@{ builtin = [bool]$m.builtin; bw = $bw; bh = $bh }
+    $base = switch (Get-TileMonShape $probe) { 'laptop' { 'Laptop' } 'tall' { 'Portrait' } 'wide' { if ($bw -gt 2 * $bh) { 'Ultrawide' } else { 'Monitor' } } default { 'Monitor' } }
     # A second monitor of a shape reads "Ultrawide 2"; a monitor of no shape reads "Monitor 1", "Monitor 2" until the owner renames it.
     $taken = @($cfg.monitors.PSObject.Properties | ForEach-Object { [string]$_.Value.name })
     $name = if ($base -eq 'Monitor') { 'Monitor 1' } else { $base }; $n = 2
@@ -168,11 +190,11 @@ function Copy-TileObject($o) { ConvertFrom-Json (ConvertTo-Json -Depth 20 -Compr
 #   1. its own layout for that key;
 #   2. the closest known setup's layout (the setup sharing the most monitors that has a layout in this scene; a tie goes to the one used last),
 #      with its grids mapped onto the key's monitors: a monitor that is not in the key has no grid. A monitor in the key that the closest
-#      setup lacks gets a grid seeded by its shape from the scene's role template (the 2:1 rule of Get-TileMonShape), not no grid
-#      (coordinator pick, 2026-11-17 12:35 CST). Its pins, zones and fill name monitors
+#      setup lacks gets a grid seeded from the scene's role template when it holds a role of the pick (Get-TileRoles), not no grid
+#      (coordinator picks, 2026-11-17 12:35 and 13:26 CST). Its pins, zones and fill name monitors
 #      by id and stay as they are, so a window on an unplugged monitor is remembered and has no cell;
-#   3. the scene's role template (grids, pins, zones, fill by wide, tall and laptop), seeded by shape: each role goes to the monitor of that
-#      shape, read from config.monitors (Register stores it). A monitor of no shape takes no grid; a role no monitor has keeps its name
+#   3. the scene's role template (grids, pins, zones, fill by wide, tall and laptop), seeded by the pick (Get-TileRoles): each role goes to one monitor, read from
+#      config.monitors (Register stores it). A monitor that holds no role takes no grid; a role no monitor has keeps its name
 #      as the pin's monitor, so those windows have no cell either.
 function Resolve-TileLayout($cfg, $scene, [string]$key) {
   $sp = $cfg.setups.PSObject.Properties[$key]
@@ -195,25 +217,22 @@ function Resolve-TileLayout($cfg, $scene, [string]$key) {
   if ($best) {
     $r = Copy-TileObject $best; $g = [pscustomobject]@{}
     foreach ($gp in @($r.grids.PSObject.Properties)) { if ($ids -ccontains $gp.Name) { $g | Add-Member -NotePropertyName $gp.Name -NotePropertyValue $gp.Value } }
-    foreach ($id in $ids) {
+    $pick = Get-TileRoles $cfg.monitors $ids
+    foreach ($shape in $pick.Keys) {
+      $id = $pick[$shape]
       if ($g.PSObject.Properties[$id]) { continue }
-      $mp = $cfg.monitors.PSObject.Properties[$id]; if (-not $mp) { continue }
-      $shape = Get-TileMonShape $mp.Value; if (-not $shape) { continue }
       $tg = if ($scene.grids) { $scene.grids.PSObject.Properties[$shape] }
       if ($tg) { $g | Add-Member -NotePropertyName $id -NotePropertyValue ([pscustomobject]@{ c = $tg.Value.c; r = $tg.Value.r }) }
     }
     $r | Add-Member -Force grids $g
     return $r
   }
-  $role = @{}; $grids = [pscustomobject]@{}
-  foreach ($id in $ids) {
-    $mp = $cfg.monitors.PSObject.Properties[$id]; if (-not $mp) { continue }
-    $shape = Get-TileMonShape $mp.Value; if (-not $shape) { continue }
-    if (-not $role.ContainsKey($shape)) { $role[$shape] = $id }
+  $role = Get-TileRoles $cfg.monitors $ids; $grids = [pscustomobject]@{}
+  foreach ($shape in $role.Keys) {
     $tg = if ($scene.grids) { $scene.grids.PSObject.Properties[$shape] }
-    if ($tg) { $grids | Add-Member -NotePropertyName $id -NotePropertyValue ([pscustomobject]@{ c = $tg.Value.c; r = $tg.Value.r }) }
+    if ($tg) { $grids | Add-Member -NotePropertyName $role[$shape] -NotePropertyValue ([pscustomobject]@{ c = $tg.Value.c; r = $tg.Value.r }) }
   }
-  $tpl = Copy-TileObject ([pscustomobject]@{ pins = $(if ($scene.pins) { @($scene.pins) } else { @() }); zones = $(if ($scene.zones) { @($scene.zones) } else { @() }); fill = $(if ($scene.fill) { $scene.fill } else { [pscustomobject]@{} }) })
+  $tpl = Copy-TileObject ([pscustomobject]@{ pins = @($scene.pins | Where-Object { $_ }); zones = @($scene.zones | Where-Object { $_ }); fill = $(if ($scene.fill) { $scene.fill } else { [pscustomobject]@{} }) })
   $at = { param($v) if ($v -and $role.ContainsKey([string]$v)) { $role[[string]$v] } else { $v } }
   foreach ($x in @($tpl.pins) + @($tpl.zones)) { if ($x -and $x.PSObject.Properties['mon']) { $x.mon = & $at $x.mon } }
   if ($tpl.fill.PSObject.Properties['mon']) { $tpl.fill.mon = & $at $tpl.fill.mon }
