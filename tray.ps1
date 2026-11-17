@@ -21,8 +21,14 @@ function Get-DueScenes($config, [datetime]$now, $fired) {
   $stamp = $now.ToString('yyyy-MM-dd HH:mm'); $day = [int]$now.DayOfWeek; $hm = $now.ToString('HH:mm')
   @($config.scenes | ? { $_.trigger.type -eq 'time' -and @($_.trigger.days) -contains $day -and $_.trigger.time -eq $hm -and $fired[$_.id] -ne $stamp })
 }
-# The monitor set as one string: a change in it (a monitor added, removed or moved) fires 'display' scenes.
-function Get-MonitorKey($screens) { (@($screens | % { "$($_.DeviceName)=$($_.Bounds.Width)x$($_.Bounds.Height)@$($_.Bounds.X),$($_.Bounds.Y)" }) | Sort-Object) -join ';' }
+# The monitor set as one string: a change in it fires 'display' scenes. Monitors that carry an id (tile.ps1 -Monitors) give the setup key,
+# so a rearranged or rescaled set is the same key (decision monitor-setups, item 4). Objects with no id (a Windows screen list) give the
+# bounds string, where a move changes the key.
+function Get-MonitorKey($screens) {
+  if (-not @($screens | ? { $_ }).Count) { return '' }  # no read (a failed one): no key, so nothing fires
+  $k = Get-TileKnownSetupKey $screens; if ($k) { return $k }
+  (@($screens | % { "$($_.DeviceName)=$($_.Bounds.Width)x$($_.Bounds.Height)@$($_.Bounds.X),$($_.Bounds.Y)" }) | Sort-Object) -join ';'
+}
 function Get-DisplayScenes($config) { @($config.scenes | ? { $_.trigger.type -eq 'display' }) }
 
 # Is a Teams call on? $mic: [{name, stop}] from Windows' microphone privacy store (Get-MicUsage); stop = 0
@@ -190,7 +196,7 @@ function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active, $sig 
   if ($sig) { $agenda = Get-TodayAgenda $sig.agenda $now }
   foreach ($x in (Get-DueScenes $cfg $now $s.fired)) { $s.fired[$x.id] = $now.ToString('yyyy-MM-dd HH:mm'); $ev += New-Cand $x.id 'on schedule' 'schedule' }
   if ($key) {
-    $n = @($key -split ';').Count
+    $n = @($key -split '[;|]').Count  # the key's monitors: ids joined by '|' (setup key), or bounds strings joined by ';'
     $d = @(Get-AutoScenes $cfg 'monitors' | ? { (Read-Num $_.screens 0 'monitors.screens') -eq $n })[0]; if (-not $d) { $d = @(Get-DisplayScenes $cfg)[0] }
     if ($s.lastKey -and $key -ne $s.lastKey -and $d) { $ev += New-Cand $d.id 'because the monitors changed' 'display' }
     $s.lastKey = $key
@@ -436,6 +442,9 @@ if ($Link) {
 $quitEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $quitName)
 $openEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $openName)
 $linkEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', (TrayName 'Link'))
+# install.ps1 reads this to wait for the agent process to exit (its mutex is released a little before the process ends). Advisory: a failed write does not stop the agent.
+$trayPidFile = Join-Path $TileHome 'tray.pid'
+try { Write-TileFile $trayPidFile "$PID" } catch {}
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # The handler only sets a flag: SystemEvents may call it off the PowerShell thread. The timer does the work.
@@ -485,6 +494,12 @@ function Note([string]$text) { $script:offer = $null; if ($icon) { $icon.ShowBal
 function Offer-Scene($s, [string]$why) {
   $script:offer = [pscustomobject]@{ scene = $s; exp = (Get-Date).AddMinutes(3) }
   if ($icon) { $icon.ShowBalloonTip(15000, 'Meeting in 2 minutes', "Click to arrange your windows for $($s.name).", 'Info') }
+}
+# The plugged-in monitors with their ids (tile.ps1 -Monitors); $null when that read fails or gives none. A failed read is not a change:
+# Windows' own screen list keys by bounds, a different key for the same monitors, so it is never the fallback.
+function Read-Monitors {
+  try { $m = @((ConvertFrom-Json ((& $tile -Monitors 3>$null) -join '')) | % { $_ }); if ($m.Count) { return $m } } catch {}
+  $null
 }
 function Read-Windows { try { @((((& $tile -Json 3>$null) -join '') | ConvertFrom-Json).windows) } catch { $null } }
 # $prev: the scene on screen before this run ('' when unknown), so Undo can put it back.
@@ -605,7 +620,7 @@ $timer.add_Tick({
   # The monitor key: on the first tick (seeds), then 2 s after the display last changed.
   if ([TileDisplayWatch]::Dirty) { [TileDisplayWatch]::Dirty = $false; $script:dirtyAt = Get-Date }
   $key = $null
-  if ($first -or ($dirtyAt -and ((Get-Date) - $dirtyAt).TotalSeconds -ge 2)) { $script:first = $false; $script:dirtyAt = $null; $key = Get-MonitorKey ([Windows.Forms.Screen]::AllScreens) }
+  if ($first -or ($dirtyAt -and ((Get-Date) - $dirtyAt).TotalSeconds -ge 2)) { $script:first = $false; $script:dirtyAt = $null; $key = Get-MonitorKey (Read-Monitors) }
   # Teams calls: poll every 3 s while any scene applies itself (the in-call guard needs the reading too).
   $call = $null; $any = Test-AnyAuto $cfg; $n = ++$script:tick
   if (($n % 3) -eq 0 -and $any) { $call = Test-TeamsCall (Get-MicUsage) (Get-TeamsWindows) }
@@ -634,5 +649,7 @@ finally {
   $timer.Stop(); Stop-App
   if (-not $NoIcon) { Clear-RunToasts }
   if ($icon) { $icon.Visible = $false; $icon.Dispose() }
+  # Take back tray.pid only while it still names this process (a newer agent may have written its own).
+  try { if ((Test-Path -LiteralPath $trayPidFile) -and ([IO.File]::ReadAllText($trayPidFile).Trim() -eq "$PID")) { Remove-Item -LiteralPath $trayPidFile -Force } } catch {}
   $mutex.ReleaseMutex(); $mutex.Dispose(); $quitEv.Dispose(); $openEv.Dispose(); $linkEv.Dispose()
 }
