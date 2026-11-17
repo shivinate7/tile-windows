@@ -26,8 +26,11 @@
 # Seam for monitor ids (cases 6 to 9). TILE_SCREENS_FILE entries may carry these fields as well:
 #   id given (passthrough): id, builtin, maker, product, serial and idKind are copied to the monitor as given. Nothing is derived.
 #   no id (derived): path (the device interface path \\?\DISPLAY#<maker+product>#<instance>#{guid}), edid (the EDID as hex) and
-#     builtin (true = output technology internal) go through the same identity function the live read uses. A null or absent path
+#     builtin (true = the machine's own panel) go through the same identity function the live read uses. A null or absent path
 #     means no device: idKind size. maker and product come from the path; serial comes from the EDID.
+#   outputTech (case 11): 8 hex digits, as the live read's Targets() prints them (the DISPLAYCONFIG output technology). An entry with
+#     no builtin field is builtin for 80000000, 0000000B and 0000000D, and for no other value. A builtin field, when present, wins.
+#     The live read classifies its own Targets() values with that same function.
 #   Identity rule: id = <maker+product>-<serial>. serial is the text serial (the 0xFF descriptor, trimmed of its 0x0A and padding),
 #     else bytes 12-15 as a decimal number when non-zero (idKind edid). Else, for a builtin screen, <maker+product>-builtin (idKind
 #     builtin). Else <maker+product>-<UIDnnnn> (idKind port), UIDnnnn being the instance's last '&' segment. Else size-<bw>x<bh>
@@ -250,9 +253,12 @@ $Error.Clear()
   # ---- 6. Monitor ids through the seam. The hardware is invented (maker TST, products 1001 to 7007): no owner panel is in the repo. ----
   Remove-Item env:TILE_SCREENS_FILE -ErrorAction SilentlyContinue
   function Get-DisplayPath([string]$hw, [string]$uid) { '\\?\DISPLAY#' + $hw + '#5&1a2b3c4d&0&' + $uid + '#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}' }
-  function New-SeamEntry([string]$name, [int]$x, [int]$bw, [int]$bh, $path = $null, $edid = $null, [bool]$builtin = $false) {
+  function New-SeamEntry([string]$name, [int]$x, [int]$bw, [int]$bh, $path = $null, $edid = $null, [bool]$builtin = $false, $tech = $null) {
     # The work area is 40 px shorter than the bounds, so a reader that uses the wrong size fails the size case.
-    [pscustomobject]@{ name = $name; x = $x; y = 0; w = $bw; h = $bh - 40; bw = $bw; bh = $bh; path = $path; edid = $edid; builtin = $builtin }
+    # $tech sets outputTech instead of builtin, so the entry has no builtin field and the classifier decides.
+    $e = [pscustomobject]@{ name = $name; x = $x; y = 0; w = $bw; h = $bh - 40; bw = $bw; bh = $bh; path = $path; edid = $edid }
+    if ($null -ne $tech) { $e | Add-Member -NotePropertyName outputTech -NotePropertyValue $tech } else { $e | Add-Member -NotePropertyName builtin -NotePropertyValue $builtin }
+    $e
   }
   function Set-EdidBlock([byte[]]$bytes, [int]$off, [byte]$tag, [string]$text = $null) {
     $blk = New-Object byte[] 18
@@ -436,6 +442,31 @@ $Error.Clear()
   $mainOneText = (@($mainOne.Out -split "`r?`n" | ? { $_ -notmatch '^WARNING:' }) -join '').Trim()
   $mainOneDoc = $null; try { $mainOneDoc = $mainOneText | ConvertFrom-Json -ErrorAction Stop } catch { }
   Check 'one monitor: control: main (5de673d) with the same one-monitor seam gives monitors as a JSON array of one' (($mainOneDoc.monitors -is [System.Array]) -and (@($mainOneDoc.monitors).Count -eq 1)) "main's monitors is a $(if ($mainOneDoc -and $mainOneDoc.monitors) { $mainOneDoc.monitors.GetType().Name } else { 'missing' }); exit $($mainOne.Code)"
+  # ---- 11. The machine's own panel by output technology, through the seam's outputTech (contract in the header). ----
+  # 0000000B (embedded DisplayPort), 0000000D (UDI embedded) and 80000000 (internal) make the built-in panel. The controls are
+  # 0000000A (DisplayPort) and 00000005 (HDMI), which stay external. 80000000 is a guard: the live read already counts it.
+  $techFile = Join-Path $run 'ids-tech.json'
+  $techList = @(
+    (New-SeamEntry 'SEAM-T11' 0 1920 1080 (Get-DisplayPath 'TST9011' 'UID4370') $null -tech '0000000B'),
+    (New-SeamEntry 'SEAM-T13' 1920 1920 1080 (Get-DisplayPath 'TST9013' 'UID4371') $null -tech '0000000D'),
+    (New-SeamEntry 'SEAM-TI' 3840 1920 1080 (Get-DisplayPath 'TST9080' 'UID4372') $null -tech '80000000'),
+    (New-SeamEntry 'SEAM-TD' 5760 1920 1080 (Get-DisplayPath 'TST9010' 'UID4373') $null -tech '0000000A'),
+    (New-SeamEntry 'SEAM-TH' 7680 1920 1080 (Get-DisplayPath 'TST9005' 'UID4374') $null -tech '00000005')
+  )
+  [IO.File]::WriteAllText($techFile, (ConvertTo-Json -InputObject $techList -Depth 4 -Compress), $utf8)
+  $rt = Get-SeamRun "-File `"$Tile`" -Json -DryRun" @{ TILE_SCREENS_FILE = $techFile }
+  $byT = @{}; foreach ($x in @($rt.Doc.monitors | % { $_ })) { $byT[[string]$x.name] = $x }
+  $namesT = (@($byT.Keys | Sort-Object)) -join ','
+  $wantT = (@('SEAM-T11', 'SEAM-T13', 'SEAM-TI', 'SEAM-TD', 'SEAM-TH') | Sort-Object) -join ','
+  $scopeT = ($rt.Json) -and ($namesT -eq $wantT)
+  Check 'output technology: scope: -Json lists the five SEAM-T monitors, by name' $scopeT "lists [$namesT], wanted [$wantT]; exit $($rt.Code); stderr: $($rt.Err)"
+  if ($scopeT) {
+    Check 'output technology: 0000000B (embedded DisplayPort) makes SEAM-T11 the built-in panel: builtin true, id TST9011-builtin' ($byT['SEAM-T11'].builtin -eq $true -and $byT['SEAM-T11'].id -eq 'TST9011-builtin' -and $byT['SEAM-T11'].idKind -eq 'builtin') "builtin '$($byT['SEAM-T11'].builtin)', id '$($byT['SEAM-T11'].id)', idKind '$($byT['SEAM-T11'].idKind)'"
+    Check 'output technology: 0000000D (UDI embedded) makes SEAM-T13 the built-in panel: builtin true, id TST9013-builtin' ($byT['SEAM-T13'].builtin -eq $true -and $byT['SEAM-T13'].id -eq 'TST9013-builtin' -and $byT['SEAM-T13'].idKind -eq 'builtin') "builtin '$($byT['SEAM-T13'].builtin)', id '$($byT['SEAM-T13'].id)', idKind '$($byT['SEAM-T13'].idKind)'"
+    Check 'output technology: 80000000 (internal) makes SEAM-TI the built-in panel: builtin true, id TST9080-builtin' ($byT['SEAM-TI'].builtin -eq $true -and $byT['SEAM-TI'].id -eq 'TST9080-builtin' -and $byT['SEAM-TI'].idKind -eq 'builtin') "builtin '$($byT['SEAM-TI'].builtin)', id '$($byT['SEAM-TI'].id)', idKind '$($byT['SEAM-TI'].idKind)'"
+    Check 'output technology: control: 0000000A (DisplayPort) is not the built-in panel: SEAM-TD is builtin false, id TST9010-UID4373' ($byT['SEAM-TD'].builtin -eq $false -and $byT['SEAM-TD'].id -eq 'TST9010-UID4373' -and $byT['SEAM-TD'].idKind -eq 'port') "builtin '$($byT['SEAM-TD'].builtin)', id '$($byT['SEAM-TD'].id)', idKind '$($byT['SEAM-TD'].idKind)'"
+    Check 'output technology: control: 00000005 (HDMI) is not the built-in panel: SEAM-TH is builtin false, id TST9005-UID4374' ($byT['SEAM-TH'].builtin -eq $false -and $byT['SEAM-TH'].id -eq 'TST9005-UID4374' -and $byT['SEAM-TH'].idKind -eq 'port') "builtin '$($byT['SEAM-TH'].builtin)', id '$($byT['SEAM-TH'].id)', idKind '$($byT['SEAM-TH'].idKind)'"
+  }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
