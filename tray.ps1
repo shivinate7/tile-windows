@@ -169,7 +169,7 @@ function Step-NoExternal($s, [datetime]$now, $cfg, $n, [string]$active, [double]
 }
 # The scene (with the config's category map attached, as Get-TileScene gives it) as JSON for tile.ps1 -Scene, its ultrawide grid swapped.
 # The ultrawide is the monitor that holds the wide role (Get-TileRoles over $plugged, the monitors tile.ps1 -Monitors read), not the widest screen.
-# The role template always gets the grid (tile.ps1 picks the wide role the same way). A scene with its own layout for the plugged-in setup runs
+# The role template always gets the grid (tile.ps1's Pick takes the wide role from the same Get-TileRoles). A scene with its own layout for the plugged-in setup runs
 # that layout by monitor id, so the grid goes there too, on the wide-role monitor's id, when the layout has a grid for it.
 function Get-GridSceneJson($sc, $grid, $plugged = $null) {
   $full = ConvertFrom-Json (ConvertTo-Json -Depth 8 -Compress $sc); $full.grids.wide = $grid

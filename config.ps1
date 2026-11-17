@@ -80,8 +80,12 @@ function Update-TileSetupSwitch([string]$text) {
       $gone += $(if ($x.screens) { "$($x.name) ($($x.screens) screens)" } else { [string]$x.name })
     }
     if (-not $gone.Count) { return $text }
-    $new = ConvertTo-Json -Depth 10 $c; Save-TileConfigText $new
-    Use-TileLock { Add-TileNote "Use This Scene for This Many Screens is gone, so it is off for $($gone -join ', '). Pick a setup for each of them under Use This Scene on This Setup." }
+    $new = ConvertTo-Json -Depth 10 $c
+    # The note first, then the save, so a failure never leaves the switch off on disk with no note. Any failure returns the old text unchanged: the
+    # next read retries, and a note already written is not written twice.
+    $msg = "Use This Scene for This Many Screens is gone, so it is off for $($gone -join ', '). Pick a setup for each of them under Use This Scene on This Setup."
+    Use-TileLock { if (-not (Get-TileNote).Contains($msg)) { Add-TileNote $msg } }
+    Save-TileConfigText $new
     $new
   } catch { $text }
 }
