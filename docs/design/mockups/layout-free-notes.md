@@ -45,14 +45,14 @@ Each frame with a new scene shape shows "Saves in the scene as" under it.
 
 ## Split Cell
 
-1. **Trigger.** Two ways in, ruled 2026-11-17 14:12 CST (decision `layout-free`). **Fast:**
-   select a tile and press S, and the cell splits in two at once. Its direction, share and key
-   are open (question (c)). **Menu:** right-click the tile, or press Split Cell in the inspector's
-   Window section. A popover opens under the tile (`ux-answer-at-press`): Direction (Side by Side,
+1. **Trigger.** Select a tile and press S, or press Split Cell in the inspector's Window
+   section. A popover opens under the tile (`ux-answer-at-press`): Direction (Side by Side,
    Stacked), "Claude keeps" (Left or Right; Top or Bottom when stacked), and "Claude's share"
    (1/3, 1/2, 2/3; the bar between the halves reaches quarters, item 10). Three choices, not five: the critique counted five as too many for one popover row. The tile previews the split with a dashed line and a hatched empty
    half. Enter splits, Esc cancels. Gain: one key, one choice, seen before it acts. Loss: a
-   popover over the board at 1024 covers the row under it. Pick: the menu as drawn. The mockup draws no fast action.
+   popover over the board at 1024 covers the row under it. Pick: the menu as drawn. The mockup draws no fast action. Owner, 2026-11-17 14:12 CST (decision
+   `layout-free`): right-click also opens this menu, and a fast action splits the selected cell in
+   two at once. Its trigger, direction and share are open (question (c)).
 2. **Empty cell.** Selecting an empty cell is new. Today only windows select, and Draw Zone picks
    cells. A click on an empty cell selects it; the Window section becomes "Empty Space" with Split
    Cell. Both halves are then empty. Not drawn. Owner grant: yes.
@@ -219,4 +219,4 @@ and the key F.
 - Open: "finer grid", the whole board or one cell? Items 3 and 4 (decision `layout-free`,
   question (a)).
 - Open: which part of Splitter Tree joins Shared Edges (decision `layout-free`, question (b)).
-- Open: the fast action's direction, share and key (decision `layout-free`, question (c)).
+- Open: the fast action's trigger, direction and share (decision `layout-free`, question (c)).
