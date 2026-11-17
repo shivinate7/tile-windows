@@ -420,6 +420,22 @@ $Error.Clear()
       Check 'live ids: at most one live monitor is builtin' ($lvBuiltin.Count -le 1) "builtin monitors: $($lvBuiltin.Count) of $($lvMon.Count)"
     }
   }
+
+  # ---- 10. One monitor: -Json lists monitors in a JSON array, as -Monitors and main's tile.ps1 (5de673d) do. ----
+  $oneFile = Join-Path $run 'ids-one.json'
+  [IO.File]::WriteAllText($oneFile, (ConvertTo-Json -InputObject @(New-SeamEntry 'SEAM-ONE' 0 1920 1080) -Depth 4 -Compress), $utf8)
+  $r10 = Get-SeamRun "-File `"$Tile`" -Json -DryRun" @{ TILE_SCREENS_FILE = $oneFile }
+  $names10 = (@($r10.Doc.monitors | % { [string]$_.name }) | Sort-Object) -join ','
+  Check 'one monitor: scope: -Json lists SEAM-ONE' ($names10 -eq 'SEAM-ONE') "lists [$names10]; exit $($r10.Code); stderr: $($r10.Err)"
+  Check 'one monitor: -Json gives monitors as a JSON array of one, not a bare object' (($r10.Json) -and ($r10.Doc.monitors -is [System.Array]) -and (@($r10.Doc.monitors).Count -eq 1)) "monitors is a $(if ($r10.Doc.monitors) { $r10.Doc.monitors.GetType().Name } else { 'null' }); exit $($r10.Code)"
+  # Green controls: three monitors already give an array, -Monitors gives one as an array, and main's tile.ps1 gives one as an array.
+  Check 'one monitor: control: -Json with three monitors gives monitors as a JSON array of three' (($threeRun.Doc.monitors -is [System.Array]) -and (@($threeRun.Doc.monitors).Count -eq 3)) "monitors is a $(if ($threeRun.Doc.monitors) { $threeRun.Doc.monitors.GetType().Name } else { 'null' }); exit $($threeRun.Code)"
+  $oneMon = Get-SeamRun "-File `"$Tile`" -Monitors -DryRun -Proc no-app-matches-this-test" @{ TILE_SCREENS_FILE = $oneFile }
+  Check 'one monitor: control: -Monitors prints one monitor inside a JSON array' ($oneMon.Json -and $oneMon.Text.StartsWith('[') -and (@($oneMon.Doc).Count -eq 1)) "stdout starts '$($oneMon.Text.Substring(0, [Math]::Min(40, $oneMon.Text.Length)))'; exit $($oneMon.Code)"
+  $mainOne = Invoke-PsChild "-File `"$(Join-Path $run 'base-5de673d\tile.ps1')`" -Json -DryRun" @{ TILE_SCREENS_FILE = $oneFile }
+  $mainOneText = (@($mainOne.Out -split "`r?`n" | ? { $_ -notmatch '^WARNING:' }) -join '').Trim()
+  $mainOneDoc = $null; try { $mainOneDoc = $mainOneText | ConvertFrom-Json -ErrorAction Stop } catch { }
+  Check 'one monitor: control: main (5de673d) with the same one-monitor seam gives monitors as a JSON array of one' (($mainOneDoc.monitors -is [System.Array]) -and (@($mainOneDoc.monitors).Count -eq 1)) "main's monitors is a $(if ($mainOneDoc -and $mainOneDoc.monitors) { $mainOneDoc.monitors.GetType().Name } else { 'missing' }); exit $($mainOne.Code)"
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
