@@ -333,7 +333,7 @@ try {
     Check 'resolve seed: the built-in screen takes the laptop cell' ((Cell $r.grids 'laptop') -ceq '1,1') "laptop: $(Cell $r.grids 'laptop')"
     Check 'resolve seed: the 16:9 screen, widest in pixels, takes no role cell' ((Cell $r.grids 'uhd') -ceq 'none') "uhd: $(Cell $r.grids 'uhd')"
   }
-  Case 'resolve: a screen the setup does not have gets no grid' {
+  Case 'resolve: a screen the key does not have gets no grid' {
     $cfg = ConvertFrom-Json $v4Text
     $ok = IsV4 $cfg
     Check 'resolve missing: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
@@ -344,8 +344,8 @@ try {
     $k2 = Register-TileSetup $cfg @($Laptop)
     Set-Layout $sc $k1 (New-Layout @{ laptop = (New-Grid 1 1); ultra = (New-Grid 5 2) })
     $r = Resolve-TileLayout $cfg $sc $k2
-    Check 'resolve missing: the screen the setup has keeps its cell' ((Cell $r.grids 'laptop') -ceq '1,1') "cell: $(Cell $r.grids 'laptop')"
-    Check 'resolve missing: the screen the setup lacks has no grid in the result' ((Cell $r.grids 'ultra') -ceq 'none') "cell: $(Cell $r.grids 'ultra')"
+    Check 'resolve missing: the screen the key has keeps its cell' ((Cell $r.grids 'laptop') -ceq '1,1') "cell: $(Cell $r.grids 'laptop')"
+    Check 'resolve missing: the screen the key lacks has no grid in the result' ((Cell $r.grids 'ultra') -ceq 'none') "cell: $(Cell $r.grids 'ultra')"
   }
 
   # ---- Run folder sweep (a harness check, not a product claim) ----
