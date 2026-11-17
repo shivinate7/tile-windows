@@ -10,7 +10,8 @@
 #     GET  /snapshot  {monitors, windows, setup: {key, name, follows}}; the plugged-in setup is registered in config (first setup: Desk).
 #     GET  /config    the config; GET /layouts: {<scene id>: Resolve-TileLayout's layout of that scene for the plugged-in setup}.
 #     POST /layout    body {scene, key, layout}: 200 and stored when key is plugged in; 409 and no change when not.
-#     POST /config    a whole config; the server keeps its monitors, setups and every scene's layouts.
+#     POST /config    a whole config; the server keeps its monitors, setups and every scene's layouts, whatever the body carries.
+#                     A layout for a key that is not plugged in is not written (the POST /layout 409 rule).
 #   A route the server lacks answers 404. On 31ea7c1 the /layout and /layouts cases are red for that reason: the route is not built.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
@@ -201,24 +202,66 @@ try {
     } finally { Stop-Server $s }
   }
 
-  # POST /config with a stale whole config (no monitors, setups or layouts): the server keeps its own. The page's scene edit still saves.
-  Case 'config post: a stale config keeps the monitors, setups and layouts the server holds' {
-    $seed = Write-SeedConfig (Join-Path $runDir 'home-post')
-    $seedFocus = @($seed.scenes | ? { $_.id -eq 'focus' })[0]
-    $s = Start-Server (Join-Path $runDir 'home-post') $snapFile
+  # POST /config with a stale copy of the whole config, as the page holds it (app.html:1685 posts clone(cfg)): the body carries every
+  # key, with values the server no longer has. The copy is taken at load, before the page's own POST /layout for the plugged-in setup,
+  # so it lacks that layout. $shape turns the copy into the stale state; $label names the variant in each FAIL line.
+  function Stale-Post([string]$label, [scriptblock]$shape) {
+    $tileHome = Join-Path $runDir "home-stale-$label"; [void](Write-SeedConfig $tileHome)
+    $s = Start-Server $tileHome $snapFile
     try {
-      $stale = ConvertFrom-Json (Get-Reply "$($s.url)config").text
-      [void]$stale.PSObject.Properties.Remove('monitors'); [void]$stale.PSObject.Properties.Remove('setups')
-      foreach ($sc in @($stale.scenes)) { [void]$sc.PSObject.Properties.Remove('layouts') }
-      $staleFocus = @($stale.scenes | ? { $_.id -eq 'focus' })[0]; $staleFocus.name = 'Focus edited'
-      $p = Send-Post "$($s.url)config" (ConvertTo-Json -Depth 20 -Compress $stale)
-      Check 'config post: the stale config is accepted' ($p.code -eq 200) "status $($p.code)"
+      $copy = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+      $lay = Send-Post "$($s.url)layout" ('{"scene":"focus","key":"' + $keyDesk + '","layout":' + $layoutBody + '}')
+      Check "config post ($label): the plugged-in layout save is accepted (scope)" ($lay.code -eq 200) "status $($lay.code)"
+      $base = ConvertFrom-Json (Get-Reply "$($s.url)config").text   # the server's state, which the stale post must leave alone
+      & $shape $copy
+      $cf = @($copy.scenes | ? { $_.id -eq 'focus' })[0]; $cf.name = 'Focus edited'
+      $p = Send-Post "$($s.url)config" (ConvertTo-Json -Depth 20 -Compress $copy)
+      Check "config post ($label): the stale config is accepted (scope)" ($p.code -eq 200) "status $($p.code)"
+      $after = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+      $fo = @($after.scenes | ? { $_.id -eq 'focus' })[0]; $bfo = @($base.scenes | ? { $_.id -eq 'focus' })[0]
+      Check "config post ($label): the page's own scene edit is saved (control)" ($fo.name -ceq 'Focus edited') "name: $($fo.name)"
+      Check "config post ($label): the server keeps its monitors" ((Canon $after.monitors) -ceq (Canon $base.monitors)) "monitors: $(Keys-Of $after.monitors)"
+      Check "config post ($label): the server keeps its setups" ((Canon $after.setups) -ceq (Canon $base.setups)) "setups: $(Keys-Of $after.setups)"
+      Check "config post ($label): the server keeps each scene's layouts, the plugged-in setup's too" ((Canon $fo.layouts) -ceq (Canon $bfo.layouts)) "layouts: $(Keys-Of $fo.layouts)"
+    } finally { Stop-Server $s }
+  }
+  # Old values under the same keys: a renamed monitor, a renamed setup.
+  Case 'config post: a stale copy with old values keeps the server''s monitors, setups and layouts' {
+    Stale-Post 'old values' {
+      param($c)
+      foreach ($m in @($c.monitors.PSObject.Properties)) { $m.Value.name = "Old $($m.Name)" }
+      foreach ($sp in @($c.setups.PSObject.Properties)) { $sp.Value.name = 'Old set' }
+    }
+  }
+  # Empty values: a copy taken before the first snapshot registered the setup.
+  Case 'config post: a stale copy with empty monitors, setups and layouts keeps the server''s' {
+    Stale-Post 'empty' {
+      param($c)
+      Add-Member -Force -InputObject $c -NotePropertyName monitors -NotePropertyValue ([pscustomobject]@{})
+      Add-Member -Force -InputObject $c -NotePropertyName setups -NotePropertyValue ([pscustomobject]@{})
+      $f = @($c.scenes | ? { $_.id -eq 'focus' })[0]; Add-Member -Force -InputObject $f -NotePropertyName layouts -NotePropertyValue ([pscustomobject]@{})
+    }
+  }
+
+  # POST /config whose scene layouts carry keys that are not plugged in: one set up but not plugged in (Office, content changed), and one
+  # no setup has. The rule is POST /layout's (409): nothing is written for such a key. The scene edit in the same body is saved (control).
+  Case 'config post: a layout for a key that is not plugged in is not written' {
+    $tileHome = Join-Path $runDir 'home-notplugged'; [void](Write-SeedConfig $tileHome)
+    $s = Start-Server $tileHome $snapFile
+    try {
+      $base = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+      $bfo = @($base.scenes | ? { $_.id -eq 'focus' })[0]
+      $officeBefore = Canon $bfo.layouts.PSObject.Properties[$keyOffice].Value
+      $copy = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+      $cf = @($copy.scenes | ? { $_.id -eq 'focus' })[0]; $cf.name = 'Focus edited'
+      $cf.layouts | Add-Member -Force -NotePropertyName $keyOffice -NotePropertyValue (ConvertFrom-Json $layoutBody)
+      $cf.layouts | Add-Member -Force -NotePropertyName 'ZZZ9' -NotePropertyValue (ConvertFrom-Json $layoutBody)
+      $p = Send-Post "$($s.url)config" (ConvertTo-Json -Depth 20 -Compress $copy)
       $after = ConvertFrom-Json (Get-Reply "$($s.url)config").text
       $fo = @($after.scenes | ? { $_.id -eq 'focus' })[0]
-      Check 'config post: the page''s own scene edit is saved (control)' ($fo.name -ceq 'Focus edited') "name: $($fo.name)"
-      Check 'config post: the server keeps its monitors' ((Keys-Of $after.monitors) -ceq (Keys-Of $seed.monitors)) "monitors: $(Keys-Of $after.monitors)"
-      Check 'config post: the server keeps its setups' ((Keys-Of $after.setups) -ceq (Keys-Of $seed.setups)) "setups: $(Keys-Of $after.setups)"
-      Check 'config post: the server keeps each scene''s layouts' ((Keys-Of $fo.layouts) -ceq (Keys-Of $seedFocus.layouts)) "layouts: $(Keys-Of $fo.layouts)"
+      Check 'config post: the scene edit in the same body is saved (control)' ($fo.name -ceq 'Focus edited') "status $($p.code), name: $($fo.name)"
+      Check 'config post: the layout for a setup not plugged in (Office) is not written' ((Canon $fo.layouts.PSObject.Properties[$keyOffice].Value) -ceq $officeBefore) 'the Office layout changed'
+      Check 'config post: a layout for a key no setup has is not written' ($null -eq $fo.layouts.PSObject.Properties['ZZZ9']) 'the key ZZZ9 was written'
     } finally { Stop-Server $s }
   }
 
