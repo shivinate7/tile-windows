@@ -332,6 +332,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Fresh screens (tile.ps1 reads the monitor list on every call): its own file, in a child powershell (its FAIL lines count here).
   $fsOut = @(Child (Join-Path $PSScriptRoot 'fresh-screens.ps1')); $fsOut | % { "$_" }
   $script:fail += [Math]::Max(@($fsOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # The live-move guard for tile.ps1 under the suite (TILE_TEST_SUITE): its own file, in a child powershell (its FAIL lines count here).
+  $smOut = @(Child (Join-Path $PSScriptRoot 'safe-moves.ps1')); $smOut | % { "$_" }
+  $script:fail += [Math]::Max(@($smOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Config v4 (decision monitor-setups): the v3 -> v4 migration, setup keys, setup registration and the layout a setup resolves to. Its own file, in a child powershell (its FAIL lines count here).
   $suOut = @(Child (Join-Path $PSScriptRoot 'setup-config.ps1')); $suOut | % { "$_" }
   $script:fail += [Math]::Max(@($suOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))

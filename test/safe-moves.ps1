@@ -1,13 +1,13 @@
 # Checks for the live-move guard in tile.ps1. Under the suite (TILE_TEST_SUITE=1, which test\run.ps1 sets for its children), a run that
 # moves windows is refused unless the caller names TILE_TEST_ALLOW_LIVE=1. The refusal exits non-zero, names TILE_TEST_ALLOW_LIVE, and
 # comes before any pass (no 'Grid' line). What the builder meets:
-#   TILE_TEST_SUITE=1: the suite. Exempt from the refusal: -DryRun, -From, -Monitors, a dot-source with -Lib, and -Json only as the
+#   TILE_TEST_SUITE=1: the suite. Exempt from the refusal: -DryRun, -From, -Monitors, -List (it returns before any Move-Win), a dot-source with -Lib, and -Json only as the
 #     bare snapshot (no -Scene, -Default, -Place or -PlaceFile: with those, -Json still moves windows unless -DryRun is set).
 #   TILE_TEST_ALLOW_LIVE=1: the caller accepts a live run. Unset, or any other value, is refused.
 # Cases. Red means it fails on 656a8cf for the named cause. Green means a control that holds on 656a8cf and must keep holding.
 #   Scope (green): a probe child shows which seam vars reached it; the bare snapshot lists no window named tile-test-no-such-app.
 #   1 refusal (red): under the suite, a flagless -Scene, -PlaceFile, bare -Monitor, -Scene -Json or -PlaceFile -Json run is refused.
-#   2 controls (green): -DryRun, bare -Json, -Monitors, -From and a -Lib dot-source still run under the suite.
+#   2 controls (green): -DryRun, bare -Json, -Monitors, -List, -From and a -Lib dot-source still run under the suite.
 #   3 opt-in (green): TILE_TEST_ALLOW_LIVE=1 lets a flagless -Scene run.
 #   4 outside the suite (green): with no suite var, a flagless -Scene is not refused.
 #   5 seam (red): test\run.ps1 sets TILE_TEST_SUITE=1 for its children.
@@ -112,6 +112,12 @@ try {
   [IO.File]::WriteAllText($libProbe, ". '$tile' -Lib; if (Get-Command Move-Win -ErrorAction SilentlyContinue) { [Console]::Out.Write('ok') }", $utf8)
   $lib = Invoke-PsChild "-File `"$libProbe`"" (New-ChildEnv $suite)
   Check '2e suite: a dot-source with -Lib is not refused (exit 0, Move-Win defined, no refusal text)' ($lib.Code -eq 0 -and $lib.Out -eq 'ok' -and (($lib.Out + $lib.Err) -notmatch 'TILE_TEST_ALLOW_LIVE')) "exit $($lib.Code); out [$(Short $lib.Out)] err [$(Short $lib.Err)]"
+  # -List prints the screens and the windows of the named app, then returns before any Move-Win (tile.ps1 returns at its -List line,
+  # ahead of every Move-Win call). The seam gives one screen, so the screen line is fixed; -Proc names no open window, so no title prints.
+  $listSeam = Join-Path $run 'screens-list.json'
+  [IO.File]::WriteAllText($listSeam, '[{"name":"SEAM-LIST","x":0,"y":0,"w":1920,"h":1040,"bw":1920,"bh":1080}]', $utf8)
+  $ls = Invoke-PsChild "-File `"$tile`" -List -Proc tile-test-no-such-app" (New-ChildEnv @{ TILE_TEST_SUITE = '1'; TILE_SCREENS_FILE = $listSeam })
+  Check '2f suite: -List still runs (exit 0, its screen line, not refused)' ($ls.Code -eq 0 -and $ls.Out -match 'SEAM-LIST \{X=0,Y=0,Width=1920,Height=1040\}' -and (($ls.Out + $ls.Err) -notmatch 'TILE_TEST_ALLOW_LIVE')) "exit $($ls.Code); out [$(Short $ls.Out)] err [$(Short $ls.Err)]"
 
   # ---- 3. The opt-in lets a flagless run proceed (green on 656a8cf). ----
   $al = Invoke-PsChild "-File `"$tile`" -Scene `"$sceneNone`"" (New-ChildEnv $live)
