@@ -4,7 +4,7 @@
 #                           the plugged-in monitor set, registered in config (decision monitor-setups). follows = the closest known
 #                           setup's name while this one has no layout of its own, else ''. A snapshot whose monitors carry no ids has key ''.
 #   GET  /<token>/config    config.json (scenes and settings); created from scenes.json on first run
-#   POST /<token>/config    body = whole config; validated, then written. A body without monitors, setups or a scene's layouts keeps the server's.
+#   POST /<token>/config    body = whole config; validated, then written. It always keeps the server's monitors, setups and each scene's layouts.
 #   GET  /<token>/layouts   {scene id: the layout Resolve-TileLayout gives that scene for the plugged-in setup}
 #   POST /<token>/layout    body = {scene, key, layout}; saves that scene's layout for key. 409 and no change when key is not the plugged-in setup.
 #   GET  /<token>/state     state.json (scene last applied, recent log)
@@ -90,10 +90,9 @@ function Add-SnapshotSetup([string]$text) {
   $t.Substring(0, $t.Length - 1) + ',"setup":' + $setup + '}'
 }
 # A posted whole config, validated, with what the page does not own put back. The page posts its whole copy, which may be stale
-# (app.html clone(cfg)); it owns the scenes, not the monitors, setups or layouts. Under the lock the server's monitors and setups
-# replace the body's, and each scene's layouts are the server's, plus the body's layout for the plugged-in setup when it has one.
-# A layout for any other key is never written (POST /layout's 409 rule). $key: the plugged-in setup's key, '' when none is known.
-function Save-PostedConfig([string]$body, [string]$key) {
+# (app.html clone(cfg)); it owns the scenes, not the monitors, setups or layouts. Under the lock the server's monitors, setups and
+# each scene's layouts replace the body's. Only POST /layout writes a layout.
+function Save-PostedConfig([string]$body) {
   Test-TileConfig $body
   Use-TileLock {
     $new = ConvertFrom-Json $body; $cur = ConvertFrom-Json (Get-TileConfigText)
@@ -107,7 +106,6 @@ function Save-PostedConfig([string]$body, [string]$key) {
       $mine = $sc.PSObject.Properties['layouts']; $old = @($cur.scenes | ? { $_.id -eq $sc.id })[0]
       $lay = [pscustomobject]@{}
       if ($old -and $old.layouts) { foreach ($p in @($old.layouts.PSObject.Properties)) { $lay | Add-Member $p.Name $p.Value } }
-      if ($key -and $mine -and $mine.Value) { $q = $mine.Value.PSObject.Properties[$key]; if ($q) { $lay | Add-Member -Force $key $q.Value } }
       if ($mine) { $mine.Value = $lay } elseif (@($lay.PSObject.Properties).Count) { $sc | Add-Member layouts $lay }
     }
     # The text as posted when nothing was put back or dropped, so a clean save is byte for byte what the page sent.
@@ -162,10 +160,7 @@ try {
         'GET state' { Send $ctx 200 'application/json' (Get-TileStateText) }
         'POST config' {
           if (-not ($body = Body $ctx $req '{')) { continue }
-          try {
-            $key = try { Get-TileKnownSetupKey (Get-Plugged) } catch { '' }  # no monitor read: no key, so no layout is written
-            Save-PostedConfig $body $key
-          } catch { Send $ctx 400 'text/plain' "$($_.Exception.Message)"; continue }
+          try { Save-PostedConfig $body } catch { Send $ctx 400 'text/plain' "$($_.Exception.Message)"; continue }
           Send $ctx 200 'text/plain' 'Saved'
         }
         'POST layout' {
