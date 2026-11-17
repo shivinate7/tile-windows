@@ -12,6 +12,8 @@
 #   Monitor ids (case 6 on): each monitor carries id, builtin, maker, product, serial and idKind (the seam contract below). Case 6
 #     checks the EDID parse and the id rule through the seam; case 7 checks -Monitors and the kept -Json fields; case 8 checks the
 #     live ids (SKIP with no desktop); case 9 extends case 4 with main's tile.ps1 (5de673d), whose TileMon1 is the clash risk.
+#   Cases 10 to 13: -Json lists one monitor in an array (10); outputTech sets the built-in panel (11); colliding ids get the
+#     instance UID appended (12); -From keeps the identity fields of its snapshot (13).
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\fresh-screens.ps1 [-Tile <path to a tile.ps1 copy>]
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines. The sweep of old run folders is stack-lock.ps1's.
 #
@@ -487,6 +489,27 @@ $Error.Clear()
     Check 'collide: colliding ids get the instance UID appended: SEAM-K1 TST8008-SAMESER3-UID4360, SEAM-K2 TST8008-SAMESER3-UID4361' ($byK['SEAM-K1'].id -eq 'TST8008-SAMESER3-UID4360' -and $byK['SEAM-K2'].id -eq 'TST8008-SAMESER3-UID4361') "ids are '$($byK['SEAM-K1'].id)' and '$($byK['SEAM-K2'].id)'"
     Check 'collide: control: the colliding monitors keep idKind edid' ($byK['SEAM-K1'].idKind -eq 'edid' -and $byK['SEAM-K2'].idKind -eq 'edid') "idKinds are '$($byK['SEAM-K1'].idKind)' and '$($byK['SEAM-K2'].idKind)'"
     Check 'collide: control: a monitor whose id does not collide keeps it: SEAM-K3 TST8008-OTHERSER4' ($byK['SEAM-K3'].id -eq 'TST8008-OTHERSER4') "id is '$($byK['SEAM-K3'].id)'"
+  }
+  # ---- 13. -From keeps each monitor's identity (id, builtin, maker, product, serial, idKind) from the -Json snapshot. ----
+  # The snapshot is section 6's nine-monitor run with its windows left out, so no real window title is written or read.
+  $snapMons = @($ra.Doc.monitors | % { $_ })
+  $snapPath = Join-Path $run 'snap-ids.json'
+  [IO.File]::WriteAllText($snapPath, (ConvertTo-Json -InputObject ([pscustomobject]@{ monitors = $snapMons; windows = @() }) -Depth 4 -Compress), $utf8)
+  $fr = Get-SeamRun "-File `"$Tile`" -From `"$snapPath`" -Json -DryRun" @{}
+  $fm = @($fr.Doc.monitors | % { $_ })
+  $fb = @{}; foreach ($x in $fm) { $fb[[string]$x.name] = $x }
+  $snapNames = (@($snapMons | % { [string]$_.name }) | Sort-Object) -join ','
+  $fromNames = (@($fm | % { [string]$_.name }) | Sort-Object) -join ','
+  $scopeFrom = ($fr.Json) -and ($snapNames -eq $fromNames) -and ($snapMons.Count -eq 9) -and (@($snapMons | ? { -not $_.id }).Count -eq 0)
+  Check 'from: scope: -From -Json lists the nine snapshot monitors, by name, and the snapshot gives each an id' $scopeFrom "-From lists [$fromNames]; snapshot lists [$snapNames]; exit $($fr.Code); stderr: $($fr.Err)"
+  if ($scopeFrom) {
+    $fromRoles = (@($fm | % { "$($_.name)=$($_.role)" }) | Sort-Object) -join ','
+    $snapRoles = (@($snapMons | % { "$($_.name)=$($_.role)" }) | Sort-Object) -join ','
+    Check 'from: control: -From keeps each monitor''s name and role' ($fromRoles -eq $snapRoles) "roles: -From [$fromRoles]; snapshot [$snapRoles]"
+    $idFields = 'id', 'builtin', 'maker', 'product', 'serial', 'idKind'
+    $lost = @()
+    foreach ($x in $snapMons) { foreach ($f in $idFields) { $want = [string]$x.$f; $got = [string]$fb[[string]$x.name].$f; if ($want -ne $got) { $lost += "$($x.name).$f snapshot '$want', -From '$got'" } } }
+    Check 'from: -From keeps the six identity fields of all nine snapshot monitors' ($lost.Count -eq 0) "$($lost.Count) field(s) differ, first: $(@($lost)[0])"
   }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
