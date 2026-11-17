@@ -9,6 +9,9 @@
 #   Type clash (case 4): ONE powershell process runs the base tile.ps1 (git ed97406), then this one. This one's -Json lists the live
 #     monitors, as a fresh process does. The base's Add-Type class W has no Monitors, so this one's W clashes with it in that process.
 #   Bad seam (case 5): with TILE_SCREENS_FILE set to an empty file, to invalid JSON, or to a missing path, -Json exits non-zero.
+#   Monitor ids (case 6 on): each monitor carries id, builtin, maker, product, serial and idKind (the seam contract below). Case 6
+#     checks the EDID parse and the id rule through the seam; case 7 checks -Monitors and the kept -Json fields; case 8 checks the
+#     live ids (SKIP with no desktop); case 9 extends case 4 with main's tile.ps1 (5de673d), whose TileMon1 is the clash risk.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\fresh-screens.ps1 [-Tile <path to a tile.ps1 copy>]
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines. The sweep of old run folders is stack-lock.ps1's.
 #
@@ -20,6 +23,18 @@
 #   A file that is empty, not JSON, or missing: -Json exits non-zero (case 5).
 #   Live read (cases 1 and 4 hold it to this): a direct Win32 call (EnumDisplayMonitors and GetMonitorInfo), not AllScreens,
 #     and no PrimaryScreen read either. The class it defines must not clash with an older tile.ps1 in the same process (case 4).
+# Seam for monitor ids (cases 6 to 9). TILE_SCREENS_FILE entries may carry these fields as well:
+#   id given (passthrough): id, builtin, maker, product, serial and idKind are copied to the monitor as given. Nothing is derived.
+#   no id (derived): path (the device interface path \\?\DISPLAY#<maker+product>#<instance>#{guid}), edid (the EDID as hex) and
+#     builtin (true = output technology internal) go through the same identity function the live read uses. A null or absent path
+#     means no device: idKind size. maker and product come from the path; serial comes from the EDID.
+#   Identity rule: id = <maker+product>-<serial>. serial is the text serial (the 0xFF descriptor, trimmed of its 0x0A and padding),
+#     else bytes 12-15 as a decimal number when non-zero (idKind edid). Else, for a builtin screen, <maker+product>-builtin (idKind
+#     builtin). Else <maker+product>-<UIDnnnn> (idKind port), UIDnnnn being the instance's last '&' segment. Else size-<bw>x<bh>
+#     (idKind size), from the bounds, not the work area.
+#   Descriptors: an EDID has four 18-byte blocks at 54, 72, 90 and 108. A monitor descriptor starts 00 00 00 <tag> 00 and holds 13
+#     text bytes at block+5; the tag is at block+3. A timing block has a non-zero pixel clock in bytes 0-1 and is no descriptor,
+#     whatever its byte 3.
 param([string]$Tile = (Join-Path (Split-Path $PSScriptRoot) 'tile.ps1'))
 $ErrorActionPreference = 'Stop'
 $script:fail = 0
@@ -220,6 +235,125 @@ $Error.Clear()
       $r = Invoke-PsChild "-File `"$Tile`" -Json" @{ TILE_SCREENS_FILE = $bad[1] }
       $shown = $r.Out.Trim(); $shown = $shown.Substring(0, [Math]::Min(80, $shown.Length))
       Check "bad seam ($($bad[0])): tile.ps1 -Json exits non-zero" ($r.Code -ne 0) "exit $($r.Code) on a bad seam file; stdout starts: $shown"
+    }
+  }
+  # ---- 6. Monitor ids through the seam. The hardware is invented (maker TST, products 1001 to 7007): no owner panel is in the repo. ----
+  Remove-Item env:TILE_SCREENS_FILE -ErrorAction SilentlyContinue
+  function Get-DisplayPath([string]$hw, [string]$uid) { '\\?\DISPLAY#' + $hw + '#5&1a2b3c4d&0&' + $uid + '#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}' }
+  function New-SeamEntry([string]$name, [int]$x, [int]$bw, [int]$bh, $path = $null, $edid = $null, [bool]$builtin = $false) {
+    # The work area is 40 px shorter than the bounds, so a reader that uses the wrong size fails the size case.
+    [pscustomobject]@{ name = $name; x = $x; y = 0; w = $bw; h = $bh - 40; bw = $bw; bh = $bh; path = $path; edid = $edid; builtin = $builtin }
+  }
+  function Set-EdidBlock([byte[]]$bytes, [int]$off, [byte]$tag, [string]$text = $null) {
+    $blk = New-Object byte[] 18
+    $blk[3] = $tag
+    if ($null -ne $text) {
+      $t = [Text.Encoding]::ASCII.GetBytes($text)
+      [Array]::Copy($t, 0, $blk, 5, $t.Length)
+      if ($t.Length -lt 13) { $blk[5 + $t.Length] = 0x0A; for ($k = 6 + $t.Length; $k -lt 18; $k++) { $blk[$k] = 0x20 } }
+    }
+    [Array]::Copy($blk, 0, $bytes, $off, 18)
+  }
+  # A 128-byte EDID 1.4 as hex. $product: 4 hex digits (bytes 10-11, little-endian). $number: bytes 12-15, little-endian.
+  # $text: the 0xFF serial, in the block at $textAt (90 or 108); null = no text serial.
+  function New-EdidHex([string]$maker, [string]$product, [uint32]$number = 0, [string]$text = $null, [int]$textAt = 108) {
+    $b = New-Object byte[] 128
+    [Array]::Copy([byte[]](0, 255, 255, 255, 255, 255, 255, 0), 0, $b, 0, 8)
+    $m = (([int][char]$maker[0] - 64) -shl 10) -bor (([int][char]$maker[1] - 64) -shl 5) -bor ([int][char]$maker[2] - 64)
+    $b[8] = [byte](($m -shr 8) -band 0xFF); $b[9] = [byte]($m -band 0xFF)
+    $p = [Convert]::ToInt32($product, 16)
+    $b[10] = [byte]($p -band 0xFF); $b[11] = [byte](($p -shr 8) -band 0xFF)
+    for ($k = 0; $k -lt 4; $k++) { $b[12 + $k] = [byte](([uint32]$number -shr (8 * $k)) -band 0xFF) }
+    $b[16] = 1; $b[17] = 30; $b[18] = 1; $b[19] = 4; $b[20] = 0x80
+    # 54: a timing block (non-zero pixel clock) whose byte 3 is 0xFF. 72: a 0xFC name. 90 and 108: the serial, or a dummy (tag 0x10).
+    [Array]::Copy([byte[]](0x02, 0x3A, 0x80, 0xFF, 0x70, 0x38, 0x2D, 0x40, 0x58, 0x2C, 0x45, 0x00, 0xF4, 0x19, 0x11, 0x00, 0x00, 0x1E), 0, $b, 54, 18)
+    Set-EdidBlock $b 72 0xFC 'TEST PANEL'
+    foreach ($off in 90, 108) { if ($null -ne $text -and $off -eq $textAt) { Set-EdidBlock $b $off 0xFF $text } else { Set-EdidBlock $b $off 0x10 } }
+    $sum = 0; for ($k = 0; $k -lt 127; $k++) { $sum += $b[$k] }
+    $b[127] = [byte]((256 - ($sum % 256)) % 256)
+    [BitConverter]::ToString($b).Replace('-', '')
+  }
+  # One -Json or -Monitors child with a seam: its exit code, stdout (warnings dropped, trimmed), parsed JSON or $null, and stderr.
+  function Get-SeamRun([string]$argLine, [hashtable]$envSet) {
+    $r = Invoke-PsChild $argLine $envSet
+    $text = (@($r.Out -split "`r?`n" | ? { $_ -notmatch '^WARNING:' }) -join '').Trim()
+    $doc = $null; $ok = $false
+    try { $doc = $text | ConvertFrom-Json -ErrorAction Stop; $ok = $true } catch { }
+    [pscustomobject]@{ Code = $r.Code; Text = $text; Doc = $doc; Json = $ok; Err = $r.Err.Trim() }
+  }
+  $edidS1 = New-EdidHex 'TST' '1001' 555000111 'TESTSNA1' 90   # a text serial beside a non-zero number: the text wins
+  $edidS2 = New-EdidHex 'TST' '2002' 0 'TESTSNB2' 108          # a text serial alone, with its 0x0A and padding
+  $edidS3 = New-EdidHex 'TST' '3003'                            # builtin: no text serial, number 0
+  $edidN1 = New-EdidHex 'TST' '5005' 123456789                  # a number alone
+  $edidF1 = New-EdidHex 'TST' '7007' 0 'ABCDEFGHIJKLM' 108     # a 13-character text serial, no 0x0A
+  $edidP1 = New-EdidHex 'TST' '6006'                            # neither a text serial nor a number
+  $seamS1 = New-SeamEntry 'SEAM-S1' 0 3440 1440 (Get-DisplayPath 'TST1001' 'UID4352') $edidS1 $false
+  $seamS2 = New-SeamEntry 'SEAM-S2' 3440 1080 1920 (Get-DisplayPath 'TST2002' 'UID4353') $edidS2 $false
+  $seamS3 = New-SeamEntry 'SEAM-S3' 4520 1920 1200 (Get-DisplayPath 'TST3003' 'UID4354') $edidS3 $true
+  $seamN1 = New-SeamEntry 'SEAM-N1' 6440 1920 1080 (Get-DisplayPath 'TST5005' 'UID4355') $edidN1 $false
+  $seamF1 = New-SeamEntry 'SEAM-F1' 8360 1920 1080 (Get-DisplayPath 'TST7007' 'UID4356') $edidF1 $false
+  $seamP1 = New-SeamEntry 'SEAM-P1' 10280 1920 1080 (Get-DisplayPath 'TST6006' 'UID4358') $edidP1 $false
+  $seamP2 = New-SeamEntry 'SEAM-P2' 12200 1920 1080 (Get-DisplayPath 'TST6006' 'UID4359') $edidP1 $false
+  $seamZ1 = New-SeamEntry 'SEAM-Z1' 14120 1920 1080
+  $seamPT = [pscustomobject]@{ name = 'SEAM-PT1'; x = 16040; y = 0; w = 1920; h = 1040; bw = 1920; bh = 1080; id = 'GIVEN-ID-1'; builtin = $false; maker = 'GIV'; product = 'EN01'; serial = 'GIVENSER'; idKind = 'edid' }
+  # The same hardware in another order, with other names and positions (for the order case): SEAM-A is S3, SEAM-C is S1, SEAM-B is S2.
+  $movedS3 = New-SeamEntry 'SEAM-A' 0 1920 1200 (Get-DisplayPath 'TST3003' 'UID4354') $edidS3 $true
+  $movedS1 = New-SeamEntry 'SEAM-C' 2000 3440 1440 (Get-DisplayPath 'TST1001' 'UID4352') $edidS1 $false
+  $movedS2 = New-SeamEntry 'SEAM-B' 5440 1080 1920 (Get-DisplayPath 'TST2002' 'UID4353') $edidS2 $false
+  $nineFile = Join-Path $run 'ids-nine.json'; $threeFile = Join-Path $run 'ids-three.json'; $movedFile = Join-Path $run 'ids-moved.json'
+  [IO.File]::WriteAllText($nineFile, (ConvertTo-Json -InputObject @($seamS1, $seamS2, $seamS3, $seamN1, $seamF1, $seamP1, $seamP2, $seamZ1, $seamPT) -Depth 4 -Compress), $utf8)
+  [IO.File]::WriteAllText($threeFile, (ConvertTo-Json -InputObject @($seamS1, $seamS2, $seamS3) -Depth 4 -Compress), $utf8)
+  [IO.File]::WriteAllText($movedFile, (ConvertTo-Json -InputObject @($movedS3, $movedS1, $movedS2) -Depth 4 -Compress), $utf8)
+
+  # The nine seam monitors, one -Json call. Scope first: the right names are listed; then the subject, the ids.
+  $ra = Get-SeamRun "-File `"$Tile`" -Json" @{ TILE_SCREENS_FILE = $nineFile }
+  $rmon = @($ra.Doc.monitors | % { $_ })
+  $nineNames = (@($rmon | % { [string]$_.name }) | Sort-Object) -join ','
+  $wantNine = (@('SEAM-S1', 'SEAM-S2', 'SEAM-S3', 'SEAM-N1', 'SEAM-F1', 'SEAM-P1', 'SEAM-P2', 'SEAM-Z1', 'SEAM-PT1') | Sort-Object) -join ','
+  $scopeNine = $nineNames -eq $wantNine
+  Check 'ids: scope: the seam run lists the nine seam monitors, by name' $scopeNine "lists [$nineNames], wanted [$wantNine]; exit $($ra.Code); stderr: $($ra.Err)"
+  if ($scopeNine) {
+    $by = @{}; foreach ($x in $rmon) { $by[[string]$x.name] = $x }
+    $s1 = $by['SEAM-S1']; $s2 = $by['SEAM-S2']; $s3 = $by['SEAM-S3']; $n1 = $by['SEAM-N1']; $f1 = $by['SEAM-F1']
+    $p1 = $by['SEAM-P1']; $p2 = $by['SEAM-P2']; $z1 = $by['SEAM-Z1']; $pt = $by['SEAM-PT1']
+    Check 'passthrough: an entry with an id is listed as given (id, maker, product, serial, idKind): SEAM-PT1' ($pt.id -eq 'GIVEN-ID-1' -and $pt.maker -eq 'GIV' -and $pt.product -eq 'EN01' -and $pt.serial -eq 'GIVENSER' -and $pt.idKind -eq 'edid') "id '$($pt.id)', maker '$($pt.maker)', product '$($pt.product)', serial '$($pt.serial)', idKind '$($pt.idKind)'"
+    Check 'parser: a text serial beats a non-zero number: SEAM-S1 serial is TESTSNA1' ($s1.serial -eq 'TESTSNA1') "serial is '$($s1.serial)'"
+    Check 'parser: a text serial in the last block is read, trimmed of its 0x0A and padding: SEAM-S2 serial is TESTSNB2' ($s2.serial -eq 'TESTSNB2') "serial is '$($s2.serial)'"
+    Check 'parser: a number alone is the serial, in decimal, idKind edid: SEAM-N1 serial is 123456789' ($n1.serial -eq '123456789' -and $n1.idKind -eq 'edid') "serial '$($n1.serial)', idKind '$($n1.idKind)'"
+    Check 'parser: a 13-character text serial with no 0x0A is read whole: SEAM-F1 serial is ABCDEFGHIJKLM' ($f1.serial -eq 'ABCDEFGHIJKLM') "serial is '$($f1.serial)'"
+    # Empty alone is no claim (a monitor with no serial field reads as empty too), so the case also needs the port fallback to have run.
+    Check 'parser: neither a text serial nor a number: SEAM-P1 serial is empty and idKind is port' ((-not $p1.serial) -and $p1.idKind -eq 'port') "serial '$($p1.serial)', idKind '$($p1.idKind)'"
+    Check 'id rule: a text serial gives <maker+product>-<serial>: SEAM-S1 TST1001-TESTSNA1, SEAM-S2 TST2002-TESTSNB2' ($s1.id -eq 'TST1001-TESTSNA1' -and $s2.id -eq 'TST2002-TESTSNB2') "ids are '$($s1.id)' and '$($s2.id)'"
+    Check 'id rule: a builtin screen with no serial gives <maker+product>-builtin, builtin true, idKind builtin: SEAM-S3' ($s3.id -eq 'TST3003-builtin' -and $s3.builtin -eq $true -and $s3.idKind -eq 'builtin') "id '$($s3.id)', builtin '$($s3.builtin)', idKind '$($s3.idKind)'"
+    $builtinNames = @($rmon | ? { $_.builtin -eq $true } | % { [string]$_.name })
+    Check 'id rule: SEAM-S3 is the only builtin monitor' (($builtinNames -join ',') -eq 'SEAM-S3') "builtin monitors: [$($builtinNames -join ', ')]"
+    Check 'id rule: a number gives <maker+product>-<decimal>: SEAM-N1 TST5005-123456789' ($n1.id -eq 'TST5005-123456789') "id is '$($n1.id)'"
+    Check 'id rule: a 13-character text serial gives the whole serial: SEAM-F1 TST7007-ABCDEFGHIJKLM' ($f1.id -eq 'TST7007-ABCDEFGHIJKLM') "id is '$($f1.id)'"
+    Check 'id rule: two identical monitors with no serial get ids by port: SEAM-P1 TST6006-UID4358, SEAM-P2 TST6006-UID4359' ($p1.id -eq 'TST6006-UID4358' -and $p2.id -eq 'TST6006-UID4359' -and $p1.idKind -eq 'port' -and $p2.idKind -eq 'port') "ids '$($p1.id)' and '$($p2.id)', idKinds '$($p1.idKind)' and '$($p2.idKind)'"
+    Check 'id rule: a monitor with no device path gives size-<bw>x<bh> from its bounds, idKind size: SEAM-Z1' ($z1.id -eq 'size-1920x1080' -and $z1.idKind -eq 'size') "id '$($z1.id)', idKind '$($z1.idKind)'"
+    Check 'id fields: maker and product come from the device path: SEAM-S1 TST and 1001' ($s1.maker -eq 'TST' -and $s1.product -eq '1001') "maker '$($s1.maker)', product '$($s1.product)'"
+  }
+
+  # Same process, three -Json calls, the seam file rewritten between them (the case 2 helper): call 2 repeats call 1's list, and
+  # call 3 has the same hardware in another order, with other names and positions. The ids follow the hardware, not the list.
+  $idRun = @(& powershell -NoProfile -ExecutionPolicy Bypass -File $seamFile -Tile $Tile -Screens $screensFile -First $threeFile -Second $threeFile -Third $movedFile)
+  $calls = @($idRun | ? { "$_" -like 'RESULT *' } | % { "$_".Substring(7) })
+  function Get-IdMap([string]$json) { $h = @{}; try { foreach ($x in @((ConvertFrom-Json $json).monitors | % { $_ })) { $h[[string]$x.name] = [string]$x.id } } catch { }; $h }
+  $ids1 = if ($calls.Count -ge 1) { Get-IdMap $calls[0] } else { @{} }
+  $ids2 = if ($calls.Count -ge 2) { Get-IdMap $calls[1] } else { @{} }
+  $ids3 = if ($calls.Count -ge 3) { Get-IdMap $calls[2] } else { @{} }
+  $scopeRun = ($calls.Count -eq 3) -and ($ids1.Count -eq 3) -and ($ids2.Count -eq 3) -and ($ids3.Count -eq 3)
+  Check 'ids: scope: three calls in one process each list three monitors' $scopeRun "results: $($calls.Count); names in call 1: [$(@($ids1.Keys) -join ', ')]; call 3: [$(@($ids3.Keys) -join ', ')]; errors: $(@($idRun | ? { "$_" -like 'ERROR *' }) -join ' / ')"
+  if ($scopeRun) {
+    $noId1 = @($ids1.Keys | ? { -not $ids1[$_] })
+    Check 'ids: call 1 gives every monitor a non-empty id' ($noId1.Count -eq 0) "no id on: $($noId1 -join ', ')"
+    if ($noId1.Count -eq 0) {
+      $map1 = (@($ids1.Keys | Sort-Object | % { "$_=$($ids1[$_])" })) -join ';'
+      $map2 = (@($ids2.Keys | Sort-Object | % { "$_=$($ids2[$_])" })) -join ';'
+      Check 'ids: call 2, same process and same list, gives the same ids as call 1' ($map1 -eq $map2) "call 1: $map1; call 2: $map2"
+      $moved = @{ 'SEAM-A' = 'SEAM-S3'; 'SEAM-C' = 'SEAM-S1'; 'SEAM-B' = 'SEAM-S2' }
+      $diff = @($moved.Keys | ? { $ids3[$_] -ne $ids1[$moved[$_]] } | % { "$_ is '$($ids3[$_])', wanted '$($ids1[$moved[$_]])'" })
+      Check 'ids: call 3, with names, order and positions changed for the same hardware, keeps each id' ($diff.Count -eq 0) ($diff -join '; ')
     }
   }
 } catch {
