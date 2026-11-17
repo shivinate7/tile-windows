@@ -138,7 +138,7 @@ param([string]$Tile, [string]$Screens, [string]$First, [string]$Second, [string]
 $env:TILE_SCREENS_FILE = $Screens
 foreach ($list in $First, $Second, $Third) {
   Copy-Item -LiteralPath $list -Destination $Screens -Force
-  try { 'RESULT ' + ((& $Tile -Json 3>$null | ? { "$_" -notmatch '^WARNING:' }) -join '') } catch { 'ERROR ' + $_.Exception.Message }
+  try { 'RESULT ' + ((& $Tile -Json -DryRun 3>$null | ? { "$_" -notmatch '^WARNING:' }) -join '') } catch { 'ERROR ' + $_.Exception.Message }
 }
 '@
   $seamFile = Join-Path $run 'seam-calls.ps1'; [IO.File]::WriteAllText($seamFile, $seamText, $utf8)
@@ -184,7 +184,7 @@ public static class FreshScreensProbe {
     'SKIP  live: no desktop session (EnumDisplayMonitors found no monitor), so the -Json count is not compared'
   } else {
     Remove-Item env:TILE_SCREENS_FILE -ErrorAction SilentlyContinue
-    $liveN = try { @((ConvertFrom-Json (((& powershell -NoProfile -ExecutionPolicy Bypass -File $Tile -Json 3>$null) | ? { "$_" -notmatch '^WARNING:' }) -join '')).monitors).Count } catch { -1 }
+    $liveN = try { @((ConvertFrom-Json (((& powershell -NoProfile -ExecutionPolicy Bypass -File $Tile -Json -DryRun 3>$null)| ? { "$_" -notmatch '^WARNING:' }) -join '')).monitors).Count } catch { -1 }
     Check 'live: a -Json call counts the same monitors as a fresh EnumDisplayMonitors' ($liveN -eq $fresh[0]) "tile -Json counts $liveN monitor(s), EnumDisplayMonitors counts $($fresh[0])"
   }
 
@@ -197,16 +197,16 @@ public static class FreshScreensProbe {
   # NEW (this tile's -Json), NEWERR (its first errors).
   $clashText = @'
 param([string]$Old, [string]$New)
-$null = & $Old -Json 3>$null 2>$null
+$null = & $Old -Json -DryRun 3>$null 2>$null
 $w = 'W' -as [type]
 'OLDTYPE ' + $(if ($w -and -not $w.GetMethod('Monitors')) { 'no-Monitors' } else { 'other' })
 'OLDMON1 ' + $(if ('TileMon1' -as [type]) { 'yes' } else { 'no' })
 $Error.Clear()
-'NEW ' + ((& $New -Json 3>$null) -join '')
+'NEW ' + ((& $New -Json -DryRun 3>$null) -join '')
 'NEWERR ' + (@($Error | Select-Object -First 2 | % { "$_" }) -join ' | ')
 '@
   $clashFile = Join-Path $run 'clash-calls.ps1'; [IO.File]::WriteAllText($clashFile, $clashText, $utf8)
-  $clashFresh = Invoke-PsChild "-File `"$Tile`" -Json"
+  $clashFresh = Invoke-PsChild "-File `"$Tile`" -Json -DryRun"
   $freshNames = Get-MonitorNames (@($clashFresh.Out -split "`r?`n" | ? { $_ -notmatch '^WARNING:' }) -join '')
   foreach ($base in 'ed97406', '5de673d') {
     $baseDir = Join-Path $run "base-$base"; New-Item -ItemType Directory -Force $baseDir | Out-Null
@@ -242,7 +242,7 @@ $Error.Clear()
     Check 'bad seam: scope: the three bad files are empty, not JSON and absent' $false 'a fixture is not what its name says'
   } else {
     foreach ($bad in @(@('empty file', $emptySeam), @('invalid JSON', $brokenSeam), @('missing path', $missingSeam))) {
-      $r = Invoke-PsChild "-File `"$Tile`" -Json" @{ TILE_SCREENS_FILE = $bad[1] }
+      $r = Invoke-PsChild "-File `"$Tile`" -Json -DryRun" @{ TILE_SCREENS_FILE = $bad[1] }
       $shown = $r.Out.Trim(); $shown = $shown.Substring(0, [Math]::Min(80, $shown.Length))
       Check "bad seam ($($bad[0])): tile.ps1 -Json exits non-zero" ($r.Code -ne 0) "exit $($r.Code) on a bad seam file; stdout starts: $shown"
     }
@@ -316,7 +316,7 @@ $Error.Clear()
   [IO.File]::WriteAllText($movedFile, (ConvertTo-Json -InputObject @($movedS3, $movedS1, $movedS2) -Depth 4 -Compress), $utf8)
 
   # The nine seam monitors, one -Json call. Scope first: the right names are listed; then the subject, the ids.
-  $ra = Get-SeamRun "-File `"$Tile`" -Json" @{ TILE_SCREENS_FILE = $nineFile }
+  $ra = Get-SeamRun "-File `"$Tile`" -Json -DryRun" @{ TILE_SCREENS_FILE = $nineFile }
   $rmon = @($ra.Doc.monitors | % { $_ })
   $nineNames = (@($rmon | % { [string]$_.name }) | Sort-Object) -join ','
   $wantNine = (@('SEAM-S1', 'SEAM-S2', 'SEAM-S3', 'SEAM-N1', 'SEAM-F1', 'SEAM-P1', 'SEAM-P2', 'SEAM-Z1', 'SEAM-PT1') | Sort-Object) -join ','
@@ -368,7 +368,7 @@ $Error.Clear()
   }
   # ---- 7. -Monitors prints only the monitors (the same objects -Json lists); -Json keeps role and its fields and gains the six id fields. ----
   function Get-MonKey($o) { (@($o.PSObject.Properties | Sort-Object Name | % { "$($_.Name)=$($_.Value)" }) -join ';') }
-  $threeRun = Get-SeamRun "-File `"$Tile`" -Json" @{ TILE_SCREENS_FILE = $threeFile }
+  $threeRun = Get-SeamRun "-File `"$Tile`" -Json -DryRun" @{ TILE_SCREENS_FILE = $threeFile }
   $tmon = @($threeRun.Doc.monitors | % { $_ })
   $threeNames = (@($tmon | % { [string]$_.name }) | Sort-Object) -join ','
   $scopeThree = $threeNames -eq 'SEAM-S1,SEAM-S2,SEAM-S3'
@@ -404,12 +404,12 @@ $Error.Clear()
   # Green control, passes on the old code: -Monitor keeps binding once -Monitors exists (an exact name wins over a prefix).
   $ctl = Invoke-PsChild "-File `"$Tile`" -From `"$(Join-Path $PSScriptRoot 'fixture.json')`" -Monitor laptop -DryRun"
   Check 'control: -Monitor laptop still binds: the fixture dry run exits 0' ($ctl.Code -eq 0) "exit $($ctl.Code): $($ctl.Err.Trim())"
-  # ---- 8. Live ids: with no seam, every live monitor has an id, and exactly one is builtin (this machine's laptop panel). SKIP with no desktop. ----
+  # ---- 8. Live ids: with no seam, every live monitor has an id, and at most one is builtin (a desktop PC has none). SKIP with no desktop. ----
   Remove-Item env:TILE_SCREENS_FILE -ErrorAction SilentlyContinue
   if (-not $interactive -or $fresh.Count -eq 0 -or $fresh[0] -lt 1) {
     'SKIP  live ids: no desktop session (EnumDisplayMonitors found no monitor), so the live ids are not read'
   } else {
-    $lv = Get-SeamRun "-File `"$Tile`" -Json" @{}
+    $lv = Get-SeamRun "-File `"$Tile`" -Json -DryRun" @{}
     $lvMon = @($lv.Doc.monitors | % { $_ })
     $scopeLive = $lvMon.Count -eq $fresh[0]
     Check 'live ids: scope: -Json lists every live monitor that EnumDisplayMonitors finds' $scopeLive "-Json lists $($lvMon.Count), EnumDisplayMonitors finds $($fresh[0]); exit $($lv.Code); stderr: $($lv.Err)"
@@ -417,7 +417,7 @@ $Error.Clear()
       $lvNoId = @($lvMon | ? { -not $_.id } | % { [string]$_.name })
       Check 'live ids: every live monitor has a non-empty id' ($lvNoId.Count -eq 0) "no id on: [$($lvNoId -join ', ')]"
       $lvBuiltin = @($lvMon | ? { $_.builtin -eq $true })
-      Check 'live ids: exactly one live monitor is builtin' ($lvBuiltin.Count -eq 1) "builtin monitors: $($lvBuiltin.Count) of $($lvMon.Count)"
+      Check 'live ids: at most one live monitor is builtin' ($lvBuiltin.Count -le 1) "builtin monitors: $($lvBuiltin.Count) of $($lvMon.Count)"
     }
   }
 } catch {
