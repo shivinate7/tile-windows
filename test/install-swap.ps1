@@ -1,10 +1,18 @@
-# Checks for install.ps1's swap when the installed app folder is busy. The swap renames the old app aside (install.ps1 line 33),
-# and a process whose working directory is that folder makes the rename fail: "being used by another process". Two cases,
-# each with its own scope:
+# Checks for install.ps1's swap when the installed app folder is busy, for its tray.pid wait, and for uninstall.ps1's tray.pid
+# removal. The swap renames the old app aside (the Rename-Item retry loop in install.ps1), and a process whose working directory is
+# that folder makes the rename fail: "being used by another process". Each case has its own scope:
 #   Frees up (case 1): a holder keeps the app folder busy and lets go 8 s after the install starts. The install waits the holder
 #     out, swaps the new app in, and leaves no staging or old folder.
 #   Never frees up (case 2, a green control): the holder never lets go. The install gives up in bounded time, exits non-zero,
 #     leaves the old app in place, and leaves no staging folder.
+#   Stale tray.pid (case 3): tray.pid names a powershell this user cannot wait on (its DACL refuses WaitForExit, which is how
+#     install.ps1 waits for tray.pid). The install must still succeed: exit 0, the new app in place, no staging folder left.
+#   Live tray.pid (case 4, a green control): tray.pid names a holder that lets go 24 s after the install starts. The install waits
+#     for it. A version without that wait fails this case (the scratch mutant shows it). The arithmetic is at the case.
+#   Uninstall (case 5): uninstall.ps1 without -Purge removes tray.pid.
+#   Name collision (case 6): app.old-<install pid> already exists, so the rename fails for a reason that is not a lock. The install
+#     must fail with its own error, not the "in use" message that follows its 15 s retry. Fast failure has no clock check here;
+#     the missing "in use" text stands in for it.
 # Scope before subject (P7): each case checks that the holder is up and that a rename of the folder is refused before it reads
 # the install's result. Each check names one cause.
 # Why 8 s: on the dev machine install.ps1 reaches its rename about 4 s after it starts (most of that is dot-sourcing tray.ps1 -Lib),
@@ -33,6 +41,7 @@ $run = Join-Path (Join-Path $env:TEMP 'tile-windows-test-runs') ("$PID-" + [guid
 New-Item -ItemType Directory -Force $run | Out-Null
 $marker = [DateTime]::new(2001, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)  # a fixed old time for the old tile.ps1: a swapped-in copy has another
 $holdMs = 8000
+$holdTrayMs = 24000  # case 4: the holder named by tray.pid lets go this long after the install starts (see that case)
 $started = New-Object Collections.ArrayList  # every process this file starts; the finally kills what still runs
 $holders = New-Object Collections.ArrayList
 $savedEnv = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA }
@@ -101,6 +110,44 @@ function New-OldApp([string]$prof) {
   [pscustomobject]@{ Ok = $ok; Code = $i.Proc.ExitCode; Err = $i.Err }
 }
 
+# Case 3 needs a process that Get-Process names but WaitForExit cannot open. This sets a DACL that gives SYSTEM only, so this
+# user gets no SYNCHRONIZE on a new handle. The owner keeps READ_CONTROL and WRITE_DAC, so no admin rights are needed.
+if (-not ('TileSwapDacl' -as [type])) {
+  Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public static class TileSwapDacl {
+  [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+  static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string sddl, uint rev, out IntPtr sd, out uint size);
+  [DllImport("advapi32.dll", SetLastError = true)]
+  static extern bool SetKernelObjectSecurity(IntPtr handle, uint info, IntPtr sd);
+  public static void SetDacl(IntPtr handle, string sddl) {
+    IntPtr sd; uint size;
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, out sd, out size)) throw new Win32Exception(Marshal.GetLastWin32Error());
+    if (!SetKernelObjectSecurity(handle, 4, sd)) throw new Win32Exception(Marshal.GetLastWin32Error());
+  }
+}
+'@
+}
+
+# A child powershell that sleeps, with the DACL above. It is in the run folder, so it holds nothing else. Returns the process.
+function Start-Unwaitable {
+  $psi = New-Object Diagnostics.ProcessStartInfo 'powershell', '-NoProfile -ExecutionPolicy Bypass -Command Start-Sleep -Seconds 120'
+  $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.WorkingDirectory = $run
+  $p = [Diagnostics.Process]::Start($psi)
+  [void]$started.Add($p)
+  [TileSwapDacl]::SetDacl($p.Handle, 'D:(A;;GA;;;SY)')
+  $p
+}
+
+# True when Get-Process names the pid powershell and WaitForExit is refused: the case 3 setup needs exactly that.
+function Test-Unwaitable([int]$id) {
+  $tp = Get-Process -Id $id -ErrorAction SilentlyContinue
+  if (-not $tp -or $tp.ProcessName -notmatch '^(powershell|pwsh)$') { return $false }
+  try { [void]$tp.WaitForExit(0); return $false } catch { return $true }
+}
+
 try {
   Check 'swap: the cases run in their own run folder, not the real profile' ($env:USERPROFILE.StartsWith($run))
 
@@ -148,6 +195,78 @@ try {
         Check 'no staging or old folder is left after the failed install' ($st2.Staging -eq 0) "$($st2.Staging) app.* folder(s) left beside the app"
       }
     }
+  }
+  # ---- Case 3: tray.pid names a powershell this user cannot wait on (a stale pid). The install must still succeed. ----
+  $p3 = Make-Profile 'stale'
+  $old3 = New-OldApp $p3
+  Check 'setup (stale tray.pid): a first install puts the old app in place (nine files)' $old3.Ok "first install exit $($old3.Code): $(@($old3.Err.Result.Trim() -split "`r?`n")[0])"
+  if ($old3.Ok) {
+    $stale = Start-Unwaitable
+    Check 'stale tray.pid (scope): the pid is a powershell whose WaitForExit is refused' (Test-Unwaitable $stale.Id) "pid $($stale.Id) can be waited on, so the case would not test a refused wait"
+    [IO.File]::WriteAllText((Join-Path $p3 '.tile-windows\tray.pid'), "$($stale.Id)", [Text.Encoding]::ASCII)
+    $i3 = Start-Install $p3 '-NoStartup -NoLaunch'
+    $exited3 = Wait-Exit $i3.Proc 60000
+    try { $stale.Kill() } catch { }
+    Check 'install exits 0 when tray.pid names a process it cannot wait on' ($exited3 -and $i3.Proc.ExitCode -eq 0) "exit $($i3.Proc.ExitCode): $(@($i3.Err.Result.Trim() -split "`r?`n")[0])"
+    $st3 = Get-AppState $p3
+    Check 'the new app replaces the old one when tray.pid is stale' ($st3.Count -eq 9 -and $null -ne $st3.Stamp -and $st3.Stamp -ne $marker) "$($st3.Count) files, tile.ps1 time $($st3.Stamp)"
+    Check 'no staging or old folder is left when tray.pid is stale' ($st3.Staging -eq 0) "$($st3.Staging) app.* folder(s) left beside the app"
+  }
+
+  # ---- Case 4 (green control): tray.pid names a holder that lets go 24 s after the install starts. ----
+  # The install waits up to 10 s on tray.pid, then retries the rename for 15 s. Without that wait the retry starts near 4 s and gives
+  # up near 19 s, so a 24 s holder fails. With the wait, the retry starts near 14 s and gets through by about 29 s.
+  $p4 = Make-Profile 'pidwait'
+  $old4 = New-OldApp $p4
+  Check 'setup (live tray.pid): a first install puts the old app in place (nine files)' $old4.Ok "first install exit $($old4.Code): $(@($old4.Err.Result.Trim() -split "`r?`n")[0])"
+  if ($old4.Ok) {
+    $h4 = New-Holder (Join-Path $p4 '.tile-windows\app') 'pidwait'
+    Check 'holder (live tray.pid): its process is up and has set its ready event' $h4.Up 'the holder did not start'
+    if ($h4.Up) {
+      [IO.File]::WriteAllText((Join-Path $p4 '.tile-windows\tray.pid'), "$($h4.Proc.Id)", [Text.Encoding]::ASCII)
+      $held4 = Test-Held (Join-Path $p4 '.tile-windows\app')
+      Check 'holder (live tray.pid): a rename of the app folder is refused while the holder holds it' $held4 'the holder does not hold the folder: the rename went through'
+      if ($held4) {
+        $i4 = Start-Install $p4 '-NoStartup -NoLaunch'
+        if (-not $i4.Proc.WaitForExit($holdTrayMs)) { [void]$h4.Release.Set() }  # the folder frees up 24 s after the install starts
+        $exited4 = Wait-Exit $i4.Proc 60000
+        [void]$h4.Release.Set()
+        Check 'install waits for the live tray.pid holder and exits 0 once the folder frees up' ($exited4 -and $i4.Proc.ExitCode -eq 0) "exit $($i4.Proc.ExitCode): $(@($i4.Err.Result.Trim() -split "`r?`n")[0])"
+        $st4 = Get-AppState $p4
+        Check 'the new app replaces the old one after the tray.pid holder lets go' ($st4.Count -eq 9 -and $null -ne $st4.Stamp -and $st4.Stamp -ne $marker) "$($st4.Count) files, tile.ps1 time $($st4.Stamp)"
+        Check 'no staging or old folder is left after the tray.pid wait' ($st4.Staging -eq 0) "$($st4.Staging) app.* folder(s) left beside the app"
+      }
+    }
+  }
+
+  # ---- Case 5: uninstall without -Purge removes tray.pid. ----
+  $p5 = Make-Profile 'untray'
+  $old5 = New-OldApp $p5
+  Check 'setup (uninstall): a first install puts the old app in place (nine files)' $old5.Ok "first install exit $($old5.Code): $(@($old5.Err.Result.Trim() -split "`r?`n")[0])"
+  if ($old5.Ok) {
+    $tpid5 = Join-Path $p5 '.tile-windows\tray.pid'
+    [IO.File]::WriteAllText($tpid5, '4242', [Text.Encoding]::ASCII)  # uninstall never reads it, so only its removal clears it
+    $un5 = Start-Child $p5 "-File `"$(Join-Path $p5 '.tile-windows\app\uninstall.ps1')`"" @{ TILE_NO_REGISTRY = '1' }
+    $uout5 = $un5.StandardOutput.ReadToEnd() + $un5.StandardError.ReadToEnd(); $un5.WaitForExit()
+    Check 'uninstall without -Purge exits 0 (scope)' ($un5.ExitCode -eq 0) "exit $($un5.ExitCode): $(@($uout5.Trim() -split "`r?`n")[0])"
+    Check 'uninstall without -Purge removes tray.pid' (-not (Test-Path -LiteralPath $tpid5)) 'tray.pid is still in the profile after uninstall'
+  }
+
+  # ---- Case 6: app.old-<install pid> already exists, so the rename is a name collision, not a lock. ----
+  $p6 = Make-Profile 'clash'
+  $old6 = New-OldApp $p6
+  Check 'setup (name collision): a first install puts the old app in place (nine files)' $old6.Ok "first install exit $($old6.Code): $(@($old6.Err.Result.Trim() -split "`r?`n")[0])"
+  if ($old6.Ok) {
+    $i6 = Start-Install $p6 '-NoStartup -NoLaunch'
+    # The install's own name for its old app. It is taken at once, well before the install reaches its rename (about 4 s in).
+    [void](New-Item -ItemType Directory -Force -Path (Join-Path $p6 ".tile-windows\app.old-$($i6.Proc.Id)"))
+    $exited6 = Wait-Exit $i6.Proc 60000
+    $err6 = $i6.Err.Result
+    $st6 = Get-AppState $p6
+    Check 'a name collision on app.old-<pid> fails the install' ($exited6 -and $i6.Proc.ExitCode -ne 0) "exit $($i6.Proc.ExitCode)"
+    Check 'a name collision leaves the old app in place' ($st6.Count -eq 9 -and $st6.Stamp -eq $marker) "$($st6.Count) files, tile.ps1 time $($st6.Stamp)"
+    Check 'a name collision is not reported as the app folder being in use' ($err6 -notmatch 'in use') "reported: $(@($err6.Trim() -split "`r?`n")[0])"
+    Check 'a name collision leaves no app.new-* staging folder' (@(Get-ChildItem -LiteralPath (Join-Path $p6 '.tile-windows') -Filter 'app.new-*' -Force -ErrorAction SilentlyContinue).Count -eq 0) "app.new-* folder(s) left beside the app"
   }
 } catch {
   $script:fail++; "FAIL  swap cases stopped: $_"
