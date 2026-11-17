@@ -31,9 +31,12 @@ param([switch]$NoStartup, [switch]$NoLaunch)
   # writes its process id to tray.pid at start, so wait (up to 10 s) for that process to end. Only a PowerShell process counts, since the id may have been reused.
   $trayPid = 0
   try { [void][int]::TryParse(([IO.File]::ReadAllText((Join-Path $home_ 'tray.pid'))).Trim(), [ref]$trayPid) } catch {}
+  # The wait is best-effort: a process this user cannot open or wait on (a stale id) skips it, and the rename retry below still covers a late exit.
   if ($trayPid -gt 0 -and $trayPid -ne $PID) {
-    $tp = Get-Process -Id $trayPid -ErrorAction SilentlyContinue
-    if ($tp -and $tp.ProcessName -match '^(powershell|pwsh)$') { [void]$tp.WaitForExit(10000) }
+    try {
+      $tp = Get-Process -Id $trayPid -ErrorAction Stop
+      if ($tp.ProcessName -match '^(powershell|pwsh)$') { [void]$tp.WaitForExit(10000) }
+    } catch {}
   }
   # Swap by renames: the old app is put back if any step fails, so a failed install leaves it working.
   $old = Join-Path $home_ "app.old-$PID"
@@ -44,6 +47,10 @@ param([switch]$NoStartup, [switch]$NoLaunch)
       while ($true) {
         try { Rename-Item -LiteralPath $app -NewName (Split-Path $old -Leaf); break }
         catch [IO.IOException], [UnauthorizedAccessException] {
+          # Only a lock clears by waiting: sharing violation (Win32 32), lock violation (33) or a refused handle. Any other failure (say, app.old-<pid> already exists) cannot.
+          $hr = $_.Exception.HResult
+          $isLock = $_.Exception -is [UnauthorizedAccessException] -or ((($hr -shr 16) -band 0xFFFF) -eq 0x8007 -and (($hr -band 0xFFFF) -in 32, 33))
+          if (-not $isLock) { throw "Could not move the old app folder aside: $($_.Exception.Message)" }
           if ($deadline.ElapsedMilliseconds -ge 15000) { throw "The app folder is in use, most likely by a running board or a terminal or Explorer window open in it. Close those and run the install again. ($($_.Exception.Message))" }
           Start-Sleep -Milliseconds 250
         }

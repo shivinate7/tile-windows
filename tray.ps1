@@ -436,8 +436,9 @@ if ($Link) {
 $quitEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $quitName)
 $openEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $openName)
 $linkEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', (TrayName 'Link'))
-# install.ps1 reads this to wait for the agent process to exit (its mutex is released a little before the process ends).
-Write-TileFile (Join-Path $TileHome 'tray.pid') "$PID"
+# install.ps1 reads this to wait for the agent process to exit (its mutex is released a little before the process ends). Advisory: a failed write does not stop the agent.
+$trayPidFile = Join-Path $TileHome 'tray.pid'
+try { Write-TileFile $trayPidFile "$PID" } catch {}
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # The handler only sets a flag: SystemEvents may call it off the PowerShell thread. The timer does the work.
@@ -636,5 +637,7 @@ finally {
   $timer.Stop(); Stop-App
   if (-not $NoIcon) { Clear-RunToasts }
   if ($icon) { $icon.Visible = $false; $icon.Dispose() }
+  # Take back tray.pid only while it still names this process (a newer agent may have written its own).
+  try { if ((Test-Path -LiteralPath $trayPidFile) -and ([IO.File]::ReadAllText($trayPidFile).Trim() -eq "$PID")) { Remove-Item -LiteralPath $trayPidFile -Force } } catch {}
   $mutex.ReleaseMutex(); $mutex.Dispose(); $quitEv.Dispose(); $openEv.Dispose(); $linkEv.Dispose()
 }
