@@ -67,15 +67,12 @@ redraws the board; windows move on Apply or by that trigger, as today.
 6. **Which setup a new one starts from.** Options: most monitors shared, a tie to the one used
    last (pick); or always Desk. Gain: a setup with Home 27 starts from Home, which knows that
    monitor, not from Desk, which does not. Loss: the source can change as setups are added; the strip names it each time.
-7. **Follow, or a frozen copy.** Options:
-   - Follow (pick): the layout stays linked to Desk; a later change to Desk reaches it until the
-     owner changes and saves it on the new setup. Follow Desk Again (`cd-own`) links it back.
-     Gain: change Desk once and the setups that follow keep up. Loss: a Desk change can move
-     windows on a setup the owner was not looking at.
-   - Frozen copy: built once at first sight. Gain: what you saw stays. Loss: a Desk change must be
-     made again on each setup.
-   Not drawn: the two differ only in the strip's words.
-8. **Save stays.** Options: keep Save (pick); or keep each edit for the setup with no Save.
+7. **Follow, or a frozen copy.** Ruled (owner, 2026-11-17 09:47 CST): follow the closest known
+   setup until the owner saves a change on the new one. Frozen copy: not taken. Items 11 and 16
+   still say "follows Desk". Decision `monitor-setups` (decisions/monitor-setups.md) holds what
+   stays open.
+8. **Save stays.** Open (owner, 2026-11-17 09:47 CST): the owner asked how autosave would work. No
+   ruling yet. Options: keep Save (pick); or keep each edit for the setup with no Save.
    Gain: one edit flow, as today (`app.html` Save and Revert); a test move is not kept by mistake.
    Loss: an edit not saved is lost when the monitors change. Edits on Laptop + Portrait never write
    to Desk; replugging the ultrawide brings Desk back as it was (`bd-back`).
@@ -84,25 +81,21 @@ redraws the board; windows move on Apply or by that trigger, as today.
 
 ## 3. Where the missing monitor's windows go
 
-9. **Options, one per state** (Default has seven windows on the ultrawide):
-   - Fold onto the laptop (`fd-laptop`, pick). The remaining monitor closest in shape (landscape
-     to landscape). Its grid grows to 2×2: its own window keeps cell 1, and each category of folded
-     window takes one cell, stacked in the scene's fill order (Claude +2; File Explorer behind
-     Excel). Gain: every window has a place, and like windows stay together. Loss: four windows
-     wait behind others; the stack badge names them.
-   - Fold onto the portrait (`fd-portrait`). The larger monitor by area: 1×2 grows to 1×5. Gain:
-     more pixels. Loss: wide apps in short rows, and mail and chat lose half their height.
-   - Send to Windows That Stay Put (`fd-stay`). The windows stay where Windows left them, listed as
-     "Its screen is unplugged". Gain: nothing moves that the owner did not place. Loss: seven
-     windows piled on the laptop by Windows itself.
-   The fill follows the windows: in `fd-laptop` the laptop now "fills".
+9. **Where the missing ultrawide's windows go.** Ruled (owner, 2026-11-17 09:47 CST), replacing
+   the three options this item drew (fold onto the laptop, fold onto the portrait, send to Windows
+   That Stay Put). The app remembers which windows were on the ultrawide, and their cells. While it
+   is unplugged, those windows show in Windows That Stay Put as unplaced, so the owner can arrange a
+   new layout for this setup. When the ultrawide comes back, they return to their remembered cells.
+   The mockup's `fd-laptop`, `fd-portrait` and `fd-stay` states show the replaced options. Decision
+   `monitor-setups` (decisions/monitor-setups.md) has the owner's words and what stays open.
    Departs from: main, `tile.ps1`'s per-role loop, which skips a role with no screen ("No $role
-   monitor. That part of the scene is skipped.") and lists its pins as missing. `fd-stay` is
-   closest to that. Owner grant: yes.
+   monitor. That part of the scene is skipped.") and lists its pins as missing. Owner grant: the
+   ruling above.
 10. **Change it per setup.** Options: a select in the strip, "Ultrawide's windows go to" (pick);
     or one rule for every setup. Gain: the owner fixes a bad fold in one press. Loss: one more
     control; it shows only while a monitor of the source setup is missing. A change rebuilds the
     scenes that follow, not those with their own layout.
+    Open: the select chose among item 9's replaced options. Decision `monitor-setups` holds it.
 
 ## 4. Showing the active setup
 
@@ -134,8 +127,8 @@ redraws the board; windows move on Apply or by that trigger, as today.
     only one, and the list says what will fill it.
     Migration options: seed by shape (pick): the `wide` grid to a monitor wider than 2:1, `tall` to
     one taller than wide, `laptop` to the built-in screen. A first launch with the ultrawide
-    unplugged gives the laptop its own grid, and the `wide` part folds as item 9 says, so today's
-    mix-up does not repeat. Or wait to seed until all three desk monitors are seen. Gain of the
+    unplugged gives the laptop its own grid, and the `wide` part's windows show as unplaced (item 9),
+    so today's mix-up does not repeat. Or wait to seed until all three desk monitors are seen. Gain of the
     pick: works on day one. Loss: a monitor of the wrong shape at first launch takes a grid.
     Owner grant: yes.
 15. **Naming setups.** Options: by their monitors, "Laptop + Portrait" (pick), renamed in the
@@ -155,21 +148,27 @@ redraws the board; windows move on Apply or by that trigger, as today.
 
 ## 7. Triggers
 
-17. **The count triggers.** Options: replace the `monitors` extra ("For N screens") with "Use This
-    Scene on This Setup", with a setup select, and keep `noext` ("Laptop only"), a setup of one
-    monitor (pick); or keep both counts. Gain: Laptop + Portrait and Laptop + Home 27 can pick
-    different scenes. Loss: a saved "For 3 screens" must map to a setup. Not drawn.
+17. **The count triggers.** Ruled (owner, 2026-11-17 09:47 CST): option a. Replace the `monitors`
+    extra ("For N screens") with "Use This Scene on This Setup", with a setup select, and keep
+    `noext` ("Laptop only"), a setup of one monitor. Keep both counts: not taken.
+    Gain: Laptop + Portrait and Laptop + Home 27 can pick different scenes. Loss: a saved "For 3 screens" must map to a setup. Not drawn.
     Departs from: `decisions/triggers.md`, "A scene per monitor set. Pick the display scene whose
     monitor set matches." What was built counts screens (`app.html`, the `monitors` and `noext`
-    extras). Owner grant: yes.
+    extras). Owner grant: the ruling above.
 
 ## Open questions for the owner
 
 - Item 4: should "When the Monitors Change" fire when the same monitors are only rearranged?
-- Item 7: follow (pick) or frozen copy?
-- Item 8: keep Save (pick), or keep edits with no Save?
-- Item 9: fold onto the laptop (pick), onto the portrait, or send to Windows That Stay Put?
-- Item 14: seed the first setup by shape (pick), or wait for all three desk monitors?
-- Item 17: replace "For N screens" with "Use This Scene on This Setup"?
+  Coordinator default, owner may change: no (decision `monitor-setups`).
+- Item 7: ruled (owner, 2026-11-17 09:47 CST). Decision `monitor-setups` holds what stays open.
+- Item 8: keep Save (pick), or keep edits with no Save? Open. The owner asked how autosave would
+  work.
+- Item 9: ruled (owner, 2026-11-17 09:47 CST). Decision `monitor-setups` holds what stays open.
+- Item 10 and the fold select in item 11: open, since item 9 leaves no fold to choose. Decision
+  `monitor-setups` holds it.
+- Item 14: seed the first setup by shape. Coordinator default, owner may change (decision
+  `monitor-setups`).
+- Item 17: ruled (owner, 2026-11-17 09:47 CST): option a.
 - From the critique: does the owner want to edit a setup that is not plugged in (the rail option),
-  or only the one in use?
+  or only the one in use? Coordinator default, owner may change: only the one in use (decision
+  `monitor-setups`).
