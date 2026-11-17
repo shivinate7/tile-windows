@@ -31,8 +31,10 @@ function Set-TileBad([string]$path, [string]$fresh) {
   $bad = "$path.bad"; if (Test-Path -LiteralPath $bad) { $bad = "$path.$((Get-Date).ToString('yyyyMMdd-HHmmss-fff')).bad" }
   Retry-TileIO { [IO.File]::Copy($path, $bad, $false); [IO.File]::Delete($path) }
   $n = "$([IO.Path]::GetFileName($path)) could not be read, so $fresh. The old file is $([IO.Path]::GetFileName($bad))."
-  $script:TileNote = $n; Write-TileFile $TileNoteFile ((@((Get-TileNote), $n) | ? { $_ }) -join ' ')
+  Add-TileNote $n
 }
+# Adds a line to note.txt (the page shows it until dismissed) and keeps it in this process for the tray's balloon. Callers hold the lock.
+function Add-TileNote([string]$n) { $script:TileNote = $n; Write-TileFile $TileNoteFile ((@((Get-TileNote), $n) | ? { $_ }) -join ' ') }
 function Get-TileNote { if (Test-Path -LiteralPath $TileNoteFile) { Read-TileFile $TileNoteFile } else { '' } }
 function Clear-TileNote { Use-TileLock { if (Test-Path -LiteralPath $TileNoteFile) { Retry-TileIO { [IO.File]::Delete($TileNoteFile) } } } }
 
@@ -63,10 +65,30 @@ function Update-TileConfig([string]$text) {
     $out = ConvertTo-Json -Depth 10 $c; Save-TileConfigText $out; $out
   } catch { $text }
 }
+# "Use This Scene for This Many Screens" (auto.monitors, scene.screens) was replaced by "Use This Scene on This Setup" (auto.setup, scene.setupKey;
+# owner ruling Q4 A, 2026-11-17 09:47 CST, decision monitor-setups item 17). A scene with the old switch on loads with it off, and a note asks the owner
+# to pick a setup for it; nothing else in the scene changes. It runs on every read but parses only a config that still has the switch on, so it is
+# not tied to the version: a version 4 config written before this change gets it too. A separate step, not a branch of Update-TileConfig,
+# so that one stays a no-op once the config is current.
+function Update-TileSetupSwitch([string]$text) {
+  if ($text -notmatch '"monitors"\s*:\s*true') { return $text }
+  try {
+    $c = ConvertFrom-Json $text; $gone = @()
+    foreach ($x in @($c.scenes)) {
+      if (-not ($x.auto -and $x.auto.PSObject.Properties['monitors'] -and [bool]$x.auto.monitors)) { continue }
+      $x.auto.PSObject.Properties.Remove('monitors')
+      $gone += $(if ($x.screens) { "$($x.name) ($($x.screens) screens)" } else { [string]$x.name })
+    }
+    if (-not $gone.Count) { return $text }
+    $new = ConvertTo-Json -Depth 10 $c; Save-TileConfigText $new
+    Use-TileLock { Add-TileNote "Use This Scene for This Many Screens is gone, so it is off for $($gone -join ', '). Pick a setup for each of them under Use This Scene on This Setup." }
+    $new
+  } catch { $text }
+}
 function Get-TileConfigText {
   if (Test-Path -LiteralPath $TileConfig) {
     $t = Read-TileFile $TileConfig
-    try { Test-TileConfig $t; return (Update-TileConfig $t) } catch {
+    try { Test-TileConfig $t; return (Update-TileSetupSwitch (Update-TileConfig $t)) } catch {
       # Check again under the lock: another writer may have fixed or already moved it.
       $ok = Use-TileLock { if (Test-Path -LiteralPath $TileConfig) { $t2 = Read-TileFile $TileConfig; try { Test-TileConfig $t2; $t2 } catch { Set-TileBad $TileConfig 'the starter scenes are back' } } }
       if ($ok) { return $ok }

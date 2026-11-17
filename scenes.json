@@ -20,7 +20,7 @@
       "claudeGrid": { "at": 4, "dense": { "c": 6, "r": 2 }, "roomy": { "c": 4, "r": 2 } },
       "blurb": "Portrait: Outlook over Teams. Laptop: new Outlook. Ultrawide: Claude, Chrome, then the rest.",
       "trigger": { "type": "manual", "days": [1, 2, 3, 4, 5], "time": "08:30" },
-      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "monitors": false, "noext": false, "grid": false },
+      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "setup": false, "noext": false, "grid": false },
       "grids": { "tall": { "c": 1, "r": 2 }, "laptop": { "c": 1, "r": 1 }, "wide": { "c": 5, "r": 2 } },
       "pins": [
         { "app": "outlook", "match": "- Outlook", "mon": "tall", "slots": [0] },
@@ -33,7 +33,7 @@
       "id": "focus", "name": "Focus", "layouts": {},
       "blurb": "Three big columns: a browser, then two Claude windows. Mail and chat stay on the side screens.",
       "trigger": { "type": "manual", "days": [1, 2, 3, 4], "time": "09:00" },
-      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "monitors": false, "noext": false, "grid": false },
+      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "setup": false, "noext": false, "grid": false },
       "grids": { "tall": { "c": 1, "r": 2 }, "laptop": { "c": 1, "r": 1 }, "wide": { "c": 3, "r": 1 } },
       "pins": [
         { "app": "chrome", "match": "", "mon": "wide", "slots": [0] },
@@ -47,7 +47,7 @@
       "id": "meetings", "name": "Meetings", "layouts": {},
       "blurb": "Teams takes the left half of the ultrawide. Both mail apps stack on the portrait.",
       "trigger": { "type": "manual", "days": [1, 2, 3, 4, 5], "time": "11:00" },
-      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "monitors": false, "noext": false, "grid": false },
+      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "setup": false, "noext": false, "grid": false },
       "grids": { "tall": { "c": 1, "r": 2 }, "laptop": { "c": 1, "r": 1 }, "wide": { "c": 4, "r": 2 } },
       "pins": [
         { "app": "ms-teams", "match": "", "mon": "wide", "slots": [0, 1, 4, 5] },
@@ -60,7 +60,7 @@
       "id": "review", "name": "Review", "layouts": {},
       "blurb": "A browser big on the left of the ultrawide. Everything else fills by title.",
       "trigger": { "type": "manual", "days": [5], "time": "14:00" },
-      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "monitors": false, "noext": false, "grid": false },
+      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "setup": false, "noext": false, "grid": false },
       "grids": { "tall": { "c": 1, "r": 2 }, "laptop": { "c": 1, "r": 1 }, "wide": { "c": 4, "r": 2 } },
       "pins": [
         { "app": "chrome", "match": "", "mon": "wide", "slots": [0, 1, 4, 5] },
@@ -74,7 +74,7 @@
       "id": "listen", "name": "Listen", "since": 2, "layouts": {},
       "blurb": "Teams takes one column of the ultrawide for a big call. Both mail apps stack on the portrait.",
       "trigger": { "type": "manual", "days": [1, 2, 3, 4, 5], "time": "11:00" },
-      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "monitors": false, "noext": false, "grid": false },
+      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "setup": false, "noext": false, "grid": false },
       "grids": { "tall": { "c": 1, "r": 2 }, "laptop": { "c": 1, "r": 1 }, "wide": { "c": 4, "r": 1 } },
       "pins": [
         { "app": "ms-teams", "match": "", "mon": "wide", "slots": [0] },
@@ -87,7 +87,7 @@
       "id": "solo", "name": "Solo", "since": 2, "screens": 1, "layouts": {},
       "blurb": "Laptop only: Chrome on the left half, Claude on the right.",
       "trigger": { "type": "manual", "days": [1, 2, 3, 4, 5], "time": "09:00" },
-      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "monitors": false, "noext": false, "grid": false },
+      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "setup": false, "noext": false, "grid": false },
       "grids": { "tall": { "c": 1, "r": 2 }, "laptop": { "c": 1, "r": 1 }, "wide": { "c": 2, "r": 1 } },
       "pins": [
         { "app": "chrome", "match": "", "mon": "wide", "slots": [0] }
@@ -98,7 +98,7 @@
       "id": "thursday-prep", "name": "Thursday Prep", "since": 2, "layouts": {},
       "blurb": "Governance prep: Procore in Chrome on the left of the ultrawide, Outlook on the portrait.",
       "trigger": { "type": "manual", "days": [4], "time": "14:30" },
-      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "monitors": false, "noext": false, "grid": false },
+      "auto": { "desk": false, "window": false, "activity": false, "size": false, "gaps": false, "offer": false, "setup": false, "noext": false, "grid": false },
       "grids": { "tall": { "c": 1, "r": 2 }, "laptop": { "c": 1, "r": 1 }, "wide": { "c": 4, "r": 2 } },
       "pins": [
         { "app": "chrome", "match": "Procore", "mon": "wide", "slots": [0, 1, 4, 5] },

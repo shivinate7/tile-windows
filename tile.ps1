@@ -304,7 +304,9 @@ if ($From) {
 function Pick($role, $taken = @()) {
   $s = @($screens | ? { $taken -notcontains $_.Name })
   switch ($role) {
-    'wide'   { $s | Sort-Object BW -Descending | Select-Object -First 1 }
+    # The widest landscape monitor that is not the built-in panel (decision monitor-setups item 14: the laptop never takes wide). With none, the widest of all:
+    # a laptop alone is the wide role. Builtin is unset where the monitor list carries no identity, so every screen is a candidate there.
+    'wide'   { $c = @($s | ? { -not $_.Builtin -and $_.BW -gt $_.BH }); if (-not $c.Count) { $c = $s }; $c | Sort-Object BW -Descending | Select-Object -First 1 }
     'laptop' { $s | Sort-Object { $_.BW * $_.BH } | Select-Object -First 1 }
     'tall'   { $s | Where-Object { $_.BH -gt $_.BW } | Select-Object -First 1 }
     default  { $screens[[int]$role] }
