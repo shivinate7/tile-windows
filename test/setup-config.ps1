@@ -8,6 +8,9 @@
 #   monitors: {<id>: {name, builtin, lastSeen}}      setups: {<key>: {name, ids[], lastUsed}}
 #   scene.layouts: {<key>: {grids: {<id>: {c, r}}, pins, zones, fill: {mon, held}, bay}}
 #   scene.grids, pins and fill stay role-keyed (wide, tall, laptop): they are the seed template.
+# Seeding (coordinator pick, 2026-11-17 13:26 CST): laptop = the built-in screen; wide = the widest non-builtin landscape screen, any
+#   aspect, 16:9 included; tall = a non-builtin screen taller than wide. Each role goes to one screen (the widest, then the lowest id).
+#   A zero width or height has no shape. A 16:9 external that takes wide is named "Monitor N" unless wider than 2:1 ("Ultrawide").
 # A key is the sorted monitor ids joined. Its separator is not pinned: every key here comes from the product.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
@@ -85,7 +88,15 @@ function New-Mon([string]$id, [string]$name, [int]$x, [int]$y, [int]$w, [int]$h,
 $Laptop = New-Mon 'laptop' 'Panel A' 0 1200 1920 1200 $true
 $Ultra = New-Mon 'ultra' 'Panel B' 1920 0 3440 1440     # wider than 2:1
 $Port = New-Mon 'port' 'Panel C' -1080 0 1080 1920      # taller than wide
-$Uhd = New-Mon 'uhd' 'Panel D' 5360 0 3840 2160         # widest in pixels, but 16:9: no shape role
+$Uhd = New-Mon 'uhd' 'Panel D' 5360 0 3840 2160         # widest in pixels and 16:9: the widest landscape screen takes wide (pick 2026-11-17 13:26 CST)
+# Screens for the seeding pick (2026-11-17 13:26 CST). The ids sort so the wider 16:9 screen comes after the narrower one.
+$Lap15 = New-Mon 'laptop' 'Panel A' 0 1200 1536 960 $true   # the built-in screen at 1536x960 (a 1.6:1 panel)
+$Ext1 = New-Mon 'ext1' 'Panel E' 1536 0 1920 1080           # 16:9 external, narrower
+$Ext2 = New-Mon 'ext2' 'Panel F' 3456 0 2560 1440           # 16:9 external, wider
+$TieA = New-Mon 'tie1' 'Panel G' 6016 0 2560 1440           # 16:9, the same width as tie2
+$TieB = New-Mon 'tie2' 'Panel H' 8576 0 2560 1440
+$ZeroW = New-Mon 'zerow' 'Panel I' 11136 0 0 1080           # zero width, 1080 tall: no shape
+$ZeroH = New-Mon 'zeroh' 'Panel J' 11136 1200 1920 0        # 1920 wide, zero height: no shape
 
 # The repo's v3 scenes.json is the input (the owner's shape). If the working file has moved on, the v3 text is read at the base commit.
 $v3Base = '5de673d'
@@ -157,6 +168,38 @@ try {
     Check 'never seeds: no monitor or setup entries after two updates' ($n -eq 0) "monitor and setup entries: $n"
     $layoutN = @(@($v.scenes) | ForEach-Object { Count-Props $_.layouts } | Where-Object { $_ -ne 0 })
     Check 'never seeds: no layout entries after two updates' ($layoutN.Count -eq 0) "scenes with layout entries: $($layoutN.Count)"
+  }
+  # The "second update" case above returns early (version 4 is not below the starters' version), so it proves nothing about the
+  # migration body. These two rewind the version to 3, the version the input had, so the body runs again on migrated data.
+  Case 'migration again: the body runs on the empty v4 result and changes nothing' {
+    $e = ConvertFrom-Json $v4Text
+    $ok = IsV4 $e
+    Check 'migration again empty: scope, the v4 result has the monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $before = ConvertFrom-Json $v4Text
+    $e | Add-Member -Force -NotePropertyName version -NotePropertyValue 3
+    $re = ConvertFrom-Json (Update-TileConfig (ConvertTo-Json -Depth 10 $e))
+    Check 'migration again empty: the body ran, so the version is 4 again' ($re.version -eq 4) "version: $($re.version)"
+    Check 'migration again empty: the config comes back with the same JSON' ((Canon $re) -ceq (Canon $before)) "first changed: $(Find-Lost $before $re)"
+  }
+  Case 'migration again: the body runs on a config with a setup, a layout and a pin with behind, and changes nothing' {
+    $f = ConvertFrom-Json $v4Text
+    $ok = IsV4 $f
+    Check 'migration again full: scope, the v4 result has the monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $f 'default'
+    Check 'migration again full: scope, the default scene is read' ($null -ne $sc) 'no default scene'
+    if ($null -eq $sc) { return }
+    $k = Register-TileSetup $f @($Laptop, $Ultra)
+    $lay = New-Layout @{ laptop = (New-Grid 2 2); ultra = (New-Grid 4 1) }
+    $lay.pins = @([pscustomobject]@{ app = 'chrome'; match = ''; mon = 'laptop'; slots = @(0); behind = @([pscustomobject]@{ app = 'outlook'; match = '- Outlook' }) })
+    Set-Layout $sc $k $lay
+    Set-Used $f $k '2026-11-15T10:00:00'
+    $before = ConvertFrom-Json (ConvertTo-Json -Depth 10 $f)
+    $f | Add-Member -Force -NotePropertyName version -NotePropertyValue 3
+    $re = ConvertFrom-Json (Update-TileConfig (ConvertTo-Json -Depth 10 $f))
+    Check 'migration again full: the body ran, so the version is 4 again' ($re.version -eq 4) "version: $($re.version)"
+    Check 'migration again full: the setup, layout and pin come back unchanged' ((Canon $re) -ceq (Canon $before)) "first changed: $(Find-Lost $before $re)"
   }
 
   # ---- Deep layouts through the config path ----
@@ -326,12 +369,14 @@ try {
     $sc = SceneOf $cfg 'default'
     $roles = ((Cell $sc.grids 'wide') -ceq '5,2') -and ((Cell $sc.grids 'tall') -ceq '1,2') -and ((Cell $sc.grids 'laptop') -ceq '1,1')
     Check 'resolve seed: scope, the scene has its role grids (wide 5,2, tall 1,2, laptop 1,1)' $roles "wide $(Cell $sc.grids 'wide'), tall $(Cell $sc.grids 'tall'), laptop $(Cell $sc.grids 'laptop')"
+    # Re-pointed to the pick (coordinator, 2026-11-17 13:26 CST): wide is the widest landscape screen, 16:9 included. Uhd (3840) takes it;
+    # Ultra (3440, wider than 2:1 but narrower) is the second screen of that shape and gets no seeded grid.
     $k = Register-TileSetup $cfg @($Uhd, $Ultra, $Port, $Laptop)
     $r = Resolve-TileLayout $cfg $sc $k
-    Check 'resolve seed: the screen wider than 2:1 takes the wide cell, not the widest in pixels' ((Cell $r.grids 'ultra') -ceq '5,2') "ultra: $(Cell $r.grids 'ultra')"
+    Check 'resolve seed: the widest landscape screen takes the wide cell, 16:9 included' ((Cell $r.grids 'uhd') -ceq '5,2') "uhd: $(Cell $r.grids 'uhd')"
+    Check 'resolve seed: a second landscape screen gets no seeded grid' ((Cell $r.grids 'ultra') -ceq 'none') "ultra: $(Cell $r.grids 'ultra')"
     Check 'resolve seed: the portrait screen takes the tall cell' ((Cell $r.grids 'port') -ceq '1,2') "port: $(Cell $r.grids 'port')"
     Check 'resolve seed: the built-in screen takes the laptop cell' ((Cell $r.grids 'laptop') -ceq '1,1') "laptop: $(Cell $r.grids 'laptop')"
-    Check 'resolve seed: the 16:9 screen, widest in pixels, takes no role cell' ((Cell $r.grids 'uhd') -ceq 'none') "uhd: $(Cell $r.grids 'uhd')"
   }
   Case 'resolve: a screen the key does not have gets no grid' {
     $cfg = ConvertFrom-Json $v4Text
@@ -368,6 +413,121 @@ try {
     Check 'resolve grow: port keeps the cell of the closest setup' ((Cell $r.grids 'port') -ceq '4,2') "cell: $(Cell $r.grids 'port')"
     $want = Cell $sc.grids 'wide'
     Check 'resolve grow: the new wide screen takes the wide cell of the role template' ((Cell $r.grids 'ultra') -ceq $want) "ultra: $(Cell $r.grids 'ultra'), template wide: $want"
+  }
+
+  # ---- Seeding by the coordinator pick (2026-11-17 13:26 CST): the wide role goes to the widest landscape screen, 16:9 included ----
+  Case 'resolve seed: an empty scene resolves to empty zones and pins, in the stored form' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve empty: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve empty: scope, the default scene is read' ($null -ne $sc) 'no default scene'
+    if ($null -eq $sc) { return }
+    $sc | Add-Member -Force -NotePropertyName pins -NotePropertyValue @()
+    $sc | Add-Member -Force -NotePropertyName zones -NotePropertyValue @()
+    $k = Register-TileSetup $cfg @($Lap15)
+    Check 'resolve empty: scope, the setup has no layout of its own, so the role template is used' (-not $sc.layouts.PSObject.Properties[$k]) 'the setup already has a layout'
+    $r = Resolve-TileLayout $cfg $sc $k
+    $txt = ConvertTo-Json -InputObject $r -Depth 10 -Compress
+    Check 'resolve empty: the stored pins are []' ($txt -cmatch '"pins":\[\]') ([regex]::Match($txt, '"pins":.{0,30}').Value)
+    Check 'resolve empty: the stored zones are []' ($txt -cmatch '"zones":\[\]') ([regex]::Match($txt, '"zones":.{0,30}').Value)
+  }
+  Case 'resolve seed: a scene with one pin and one zone keeps both in the stored form' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve full: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve full: scope, the default scene is read' ($null -ne $sc) 'no default scene'
+    if ($null -eq $sc) { return }
+    $sc | Add-Member -Force -NotePropertyName pins -NotePropertyValue @([pscustomobject]@{ app = 'chrome'; match = 'Pull'; mon = 'wide'; slots = @(1) })
+    $sc | Add-Member -Force -NotePropertyName zones -NotePropertyValue @([pscustomobject]@{ mon = 'wide'; slots = @(0, 1); app = 'claude' })
+    $k = Register-TileSetup $cfg @($Lap15)
+    $r = Resolve-TileLayout $cfg $sc $k
+    $back = ConvertFrom-Json (ConvertTo-Json -Depth 10 -Compress -InputObject $r)
+    Check 'resolve full: the one pin is kept' (@($back.pins).Count -eq 1 -and $back.pins[0].app -ceq 'chrome') "pins: $(Canon $back.pins)"
+    Check 'resolve full: the one zone is kept' (@($back.zones).Count -eq 1 -and $back.zones[0].app -ceq 'claude') "zones: $(Canon $back.zones)"
+  }
+  Case 'resolve seed: a laptop with a 16:9 external: the external takes the wide cell, the laptop its own, and the name is Monitor N' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve 16:9: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve 16:9: scope, the scene has its role grids (wide 5,2, laptop 1,1)' ((Cell $sc.grids 'wide') -ceq '5,2' -and (Cell $sc.grids 'laptop') -ceq '1,1') "wide $(Cell $sc.grids 'wide'), laptop $(Cell $sc.grids 'laptop')"
+    $k = Register-TileSetup $cfg @($Lap15, $Ext2)
+    Check 'resolve 16:9: the built-in screen is named Laptop' ([string]$cfg.monitors.laptop.name -like 'Laptop*') "name: $([string]$cfg.monitors.laptop.name)"
+    Check 'resolve 16:9: the 2560x1440 external is named Monitor N, not Ultrawide' ([string]$cfg.monitors.ext2.name -cmatch '^Monitor \d+$') "name: $([string]$cfg.monitors.ext2.name)"
+    $r = Resolve-TileLayout $cfg $sc $k
+    Check 'resolve 16:9: the external takes the wide cell of the role template' ((Cell $r.grids 'ext2') -ceq '5,2') "ext2: $(Cell $r.grids 'ext2')"
+    Check 'resolve 16:9: the laptop keeps the laptop cell' ((Cell $r.grids 'laptop') -ceq '1,1') "laptop: $(Cell $r.grids 'laptop')"
+  }
+  Case 'resolve seed: a lone built-in laptop takes no wide cell' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve lone laptop: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve lone laptop: scope, the default scene is read' ($null -ne $sc) 'no default scene'
+    if ($null -eq $sc) { return }
+    $k = Register-TileSetup $cfg @($Lap15)
+    $r = Resolve-TileLayout $cfg $sc $k
+    Check 'resolve lone laptop: the laptop takes the laptop cell' ((Cell $r.grids 'laptop') -ceq '1,1') "laptop: $(Cell $r.grids 'laptop')"
+    $wideHolders = @($r.grids.PSObject.Properties | Where-Object { $_.Value.c -eq 5 -and $_.Value.r -eq 2 }).Count
+    Check 'resolve lone laptop: no monitor takes the wide cell' ($wideHolders -eq 0) "monitors with the wide cell: $wideHolders"
+  }
+  Case 'resolve seed: of two 16:9 externals only the wider takes the wide cell' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve two 16:9: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve two 16:9: scope, the default scene is read' ($null -ne $sc) 'no default scene'
+    if ($null -eq $sc) { return }
+    $k = Register-TileSetup $cfg @($Ext1, $Ext2)
+    $r = Resolve-TileLayout $cfg $sc $k
+    Check 'resolve two 16:9: the wider external takes the wide cell' ((Cell $r.grids 'ext2') -ceq '5,2') "ext2: $(Cell $r.grids 'ext2')"
+    Check 'resolve two 16:9: the narrower external gets no seeded grid' ((Cell $r.grids 'ext1') -ceq 'none') "ext1: $(Cell $r.grids 'ext1')"
+  }
+  Case 'resolve seed: of two equal-width 16:9 externals the lower id takes the wide cell' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve tie 16:9: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve tie 16:9: scope, the default scene is read' ($null -ne $sc) 'no default scene'
+    if ($null -eq $sc) { return }
+    $k = Register-TileSetup $cfg @($TieB, $TieA)
+    $r = Resolve-TileLayout $cfg $sc $k
+    Check 'resolve tie 16:9: the lower id takes the wide cell' ((Cell $r.grids 'tie1') -ceq '5,2') "tie1: $(Cell $r.grids 'tie1')"
+    Check 'resolve tie 16:9: the higher id gets no seeded grid' ((Cell $r.grids 'tie2') -ceq 'none') "tie2: $(Cell $r.grids 'tie2')"
+  }
+  Case 'resolve seed: a zero-width screen has no shape: not named Portrait, no tall cell' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve zero width: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve zero width: scope, the default scene is read' ($null -ne $sc) 'no default scene'
+    if ($null -eq $sc) { return }
+    $k = Register-TileSetup $cfg @($Lap15, $ZeroW)
+    Check 'resolve zero width: the zero-width screen is not named Portrait' ([string]$cfg.monitors.zerow.name -notlike 'Portrait*') "name: $([string]$cfg.monitors.zerow.name)"
+    $r = Resolve-TileLayout $cfg $sc $k
+    Check 'resolve zero width: the zero-width screen takes no tall cell' ((Cell $r.grids 'zerow') -ceq 'none') "zerow: $(Cell $r.grids 'zerow')"
+  }
+  Case 'resolve seed: a zero-height screen has no shape (control)' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve zero height: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve zero height: scope, the default scene is read' ($null -ne $sc) 'no default scene'
+    if ($null -eq $sc) { return }
+    $k = Register-TileSetup $cfg @($Lap15, $ZeroH)
+    Check 'resolve zero height: the zero-height screen is not named Portrait or Ultrawide' ([string]$cfg.monitors.zeroh.name -notlike 'Portrait*' -and [string]$cfg.monitors.zeroh.name -notlike 'Ultrawide*') "name: $([string]$cfg.monitors.zeroh.name)"
+    $r = Resolve-TileLayout $cfg $sc $k
+    Check 'resolve zero height: the zero-height screen takes no grid' ((Cell $r.grids 'zeroh') -ceq 'none') "zeroh: $(Cell $r.grids 'zeroh')"
   }
 
   # ---- Run folder sweep (a harness check, not a product claim) ----
