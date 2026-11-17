@@ -149,6 +149,31 @@ try {
     Check 'item 9: Chrome is not in left' ((LeftWhy $r 2003) -eq '') "left why: '$(LeftWhy $r 2003)'"
   }
 
+  # ---- Item 9, fill: the layout's fill names the unplugged ultrawide and the browse apps (the browse category in scenes.json). ----
+  $browseApps = @(([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json).cats.PSObject.Properties | ? { $_.Value -eq 'browse' } | % { $_.Name })
+  $fillUlt = [pscustomobject]@{ mon = $ULT; apps = $browseApps; skip = @(); sort = 'app' }
+  $gFillDesk = @{}; $gFillDesk[$ULT] = [pscustomobject]@{ c = 5; r = 2 }; $gFillDesk[$LAP] = [pscustomobject]@{ c = 4; r = 1 }
+  $layFill = Layout (Keyed $gFillDesk) @() $fillUlt
+  $sceneFill = Write-Json 'fill-scene.json' ([pscustomobject]@{ id = 'fill'; name = 'Fill'; layouts = (KeyedOne $kDesk $layFill) })
+  $resFill = Resolve-TileLayout $cfgRes ([pscustomobject]@{ id = 'fill'; name = 'Fill'; layouts = (KeyedOne $kDesk $layFill) }) $kLap
+  $postFill = Write-Json 'post-fill.json' ([pscustomobject]@{ id = 'post-fill'; name = 'Post fill'; grids = $resFill.grids; pins = @($resFill.pins); zones = @($resFill.zones); fill = $resFill.fill; bay = @($resFill.bay) })
+
+  Case 'item 9, fill: a fill that names the unplugged ultrawide lists its Chrome in left, not unlisted' {
+    $lapObj = Get-Content -Raw -LiteralPath $lapOnly | ConvertFrom-Json
+    $pf = Get-Content -Raw -LiteralPath $postFill | ConvertFrom-Json
+    Check 'scope: the laptop-only snapshot has no ultrawide id, and Chrome is open' ((@($lapObj.monitors.id) -notcontains $ULT) -and @($lapObj.windows | ? { $_.app -eq 'chrome' }).Count -ge 1) (@($lapObj.monitors.id) -join ',')
+    Check 'scope: the posted fill names the ultrawide id, and its apps include chrome' (([string]$pf.fill.mon -ceq $ULT) -and (@($pf.fill.apps) -contains 'chrome')) "fill: $(ConvertTo-Json -Depth 4 -Compress $pf.fill)"
+    $r = Invoke-SceneFrom $postFill $lapOnly
+    Check 'item 9, fill: Chrome is not placed (never moved)' (-not (PlacedOf $r 2003)) (Desc $r 2003)
+    Check 'item 9, fill: Chrome is listed in left with why "Its screen is unplugged"' ((LeftWhy $r 2003) -ceq 'Its screen is unplugged') (Desc $r 2003)
+    Check 'item 9, fill: Chrome is not in missing' (@($r.missing | ? { $_.app -eq 'chrome' }).Count -eq 0) "missing: $(@($r.missing | ? { $_.app -eq 'chrome' } | ConvertTo-Json -Compress))"
+    Check 'item 9, fill: Teams is not listed in left as unplugged (the ruling covers only what the fill would place)' ((LeftWhy $r 2004) -notmatch 'unplugged') (Desc $r 2004)
+  }
+  Case 'control: with the ultrawide plugged in, the same fill places Chrome on its first ultrawide cell' {
+    $rd = Invoke-SceneFrom $sceneFill $snapDesk
+    Check 'control: Chrome is in the ultrawide first cell' (OnCell $rd 2003 1 (CellRect $ultDesk 5 2 0)) (Desc $rd 2003)
+  }
+
   # ---- The live seam: TILE_SCREENS_FILE with ids. No window is needed: a pin on a window that is not open reports missing. ----
   $gSeam = @{}; $gSeam[$ULT] = [pscustomobject]@{ c = 5; r = 2 }
   $laySeam = Layout (Keyed $gSeam) @([pscustomobject]@{ app = 'zz-none'; match = ''; mon = $ULT; slots = @(1) }) ([pscustomobject]@{ mon = $ULT; apps = @(); skip = @(); sort = 'app' })
