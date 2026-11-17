@@ -138,3 +138,9 @@ Low findings. Each becomes a debt only after a real incident.
 - `app.html` A block about 30px tall can let the shrunk chip poke out 1px. The 28px circle already overflows such a block (decision stack-and-lock, Stack and lock).
 - Decision wording: "the block's solid border" holds only on the Put Behind half; the Swap half's border is dashed (decision stack-and-lock, Stack and lock).
 - `install.ps1` On 2026-11-17 09:48 CST the install swap failed at the app-folder rename ("being used by another process") and rolled back. The agent frees its mutex before its process exits. Fix: the agent writes tray.pid and the install waits up to 10 s for that process, then retries the rename for about 15 s and, on final failure, says the app folder is in use (task fb-0948-1). The first upgrade from an agent that predates tray.pid relies on the retry alone.
+
+## From PR 24 (install-swap-retry) reviews (2026-11-17)
+
+- `install.ps1` ~30-40 vs `tray.ps1` ~641: a gracefully quitting tray deletes `tray.pid` before it releases its mutex, so the installer's 10 s process-exit wait is skipped on a normal upgrade. The 15 s rename retry covers the gap. The comment at `install.ps1:30-31` no longer describes that path.
+- `install.ps1` ~60-63: the second rename (`app.new` to `app`) has no retry. A brief antivirus handle fails the install and rolls back, and a failed rollback leaves `app.new` with no `app`. No test covers it.
+- Test runs killed mid-way (a turn ending while a background run goes) leave `%TEMP%\tile-test-*` and `%TEMP%\tile-windows-test-runs\*` folders whose paths can exceed 260 characters and break later suite runs. Delete them with a `\\?\` long-path prefix.
