@@ -348,6 +348,28 @@ try {
     Check 'resolve missing: the screen the key lacks has no grid in the result' ((Cell $r.grids 'ultra') -ceq 'none') "cell: $(Cell $r.grids 'ultra')"
   }
 
+  Case 'resolve: a screen the key adds to the closest setup takes its shape grid from the role template' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve grow: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve grow: the default scene is read' ($null -ne $sc) 'no default scene'
+    if ($null -eq $sc) { return }
+    Check 'resolve grow: scope, the scene has a wide role grid to seed from' ((Cell $sc.grids 'wide') -cne 'none') "wide: $(Cell $sc.grids 'wide')"
+    # The closest setup (laptop and portrait) has its own cells, different from the template's, so a seed from the template alone fails the controls.
+    $k1 = Register-TileSetup $cfg @($Laptop, $Port)
+    $lay1 = New-Layout @{ laptop = (New-Grid 2 1); port = (New-Grid 4 2) }
+    Set-Layout $sc $k1 $lay1
+    $k3 = Register-TileSetup $cfg @($Laptop, $Port, $Ultra)
+    Check 'resolve grow: scope, the closest setup has no grid for the new wide screen' ((Cell $lay1.grids 'ultra') -ceq 'none') "cell: $(Cell $lay1.grids 'ultra')"
+    $r = Resolve-TileLayout $cfg $sc $k3
+    Check 'resolve grow: laptop keeps the cell of the closest setup' ((Cell $r.grids 'laptop') -ceq '2,1') "cell: $(Cell $r.grids 'laptop')"
+    Check 'resolve grow: port keeps the cell of the closest setup' ((Cell $r.grids 'port') -ceq '4,2') "cell: $(Cell $r.grids 'port')"
+    $want = Cell $sc.grids 'wide'
+    Check 'resolve grow: the new wide screen takes the wide cell of the role template' ((Cell $r.grids 'ultra') -ceq $want) "ultra: $(Cell $r.grids 'ultra'), template wide: $want"
+  }
+
   # ---- Run folder sweep (a harness check, not a product claim) ----
   Case 'run folder: the sweep removes an old sibling run folder and keeps a new one' {
     $now = Get-Date
