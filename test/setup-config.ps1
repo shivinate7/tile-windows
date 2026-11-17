@@ -11,6 +11,8 @@
 # Seeding (coordinator pick, 2026-11-17 13:26 CST): laptop = the built-in screen; wide = the widest non-builtin landscape screen, any
 #   aspect, 16:9 included; tall = a non-builtin screen taller than wide. Each role goes to one screen (the widest, then the lowest id).
 #   A zero width or height has no shape. A 16:9 external that takes wide is named "Monitor N" unless wider than 2:1 ("Ultrawide").
+#   A lone plugged screen holds laptop and wide, and tall when it is portrait, as on main (coordinator ruling 2026-11-17 17:42 CST).
+#   With two or more screens the rule above stands: a built-in never takes wide.
 # A key is the sorted monitor ids joined. Its separator is not pinned: every key here comes from the product.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
@@ -463,7 +465,7 @@ try {
     Check 'resolve 16:9: the external takes the wide cell of the role template' ((Cell $r.grids 'ext2') -ceq '5,2') "ext2: $(Cell $r.grids 'ext2')"
     Check 'resolve 16:9: the laptop keeps the laptop cell' ((Cell $r.grids 'laptop') -ceq '1,1') "laptop: $(Cell $r.grids 'laptop')"
   }
-  Case 'resolve seed: a lone built-in laptop takes no wide cell' {
+  Case 'resolve seed: a lone built-in laptop also holds the wide role' {
     $cfg = ConvertFrom-Json $v4Text
     $ok = IsV4 $cfg
     Check 'resolve lone laptop: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
@@ -474,8 +476,37 @@ try {
     $k = Register-TileSetup $cfg @($Lap15)
     $r = Resolve-TileLayout $cfg $sc $k
     Check 'resolve lone laptop: the laptop takes the laptop cell' ((Cell $r.grids 'laptop') -ceq '1,1') "laptop: $(Cell $r.grids 'laptop')"
-    $wideHolders = @($r.grids.PSObject.Properties | Where-Object { $_.Value.c -eq 5 -and $_.Value.r -eq 2 }).Count
-    Check 'resolve lone laptop: no monitor takes the wide cell' ($wideHolders -eq 0) "monitors with the wide cell: $wideHolders"
+    Check 'resolve lone laptop: scope, the built-in is registered as a monitor' ($null -ne $cfg.monitors.PSObject.Properties['laptop']) 'no laptop monitor in the config'
+    $wideRole = (Get-TileRoles $cfg.monitors @('laptop'))['wide']
+    Check 'resolve lone laptop: the lone built-in holds the wide role too' ([string]$wideRole -ceq 'laptop') "wide role: '$([string]$wideRole)'"
+  }
+  # A lone plugged monitor holds laptop and wide, and tall when it is portrait (as on main's Pick). Get-TileRoles keys by role; the ids are the
+  # monitors' own (Lap15, Ext2, Port are the fixtures above).
+  Case 'seed: a lone plugged monitor holds the laptop and wide roles, and tall when it is portrait' {
+    $alone = @(
+      [pscustomobject]@{ name = 'built-in laptop'; mon = $Lap15; want = @{ laptop = 'laptop'; wide = 'laptop' } },
+      [pscustomobject]@{ name = '16:9 external'; mon = $Ext2; want = @{ laptop = 'ext2'; wide = 'ext2' } },
+      [pscustomobject]@{ name = 'portrait'; mon = $Port; want = @{ laptop = 'port'; wide = 'port'; tall = 'port' } })
+    foreach ($a in $alone) {
+      $m = New-Object PSObject
+      $m | Add-Member -NotePropertyName ([string]$a.mon.id) -NotePropertyValue ([pscustomobject]@{ name = $a.mon.name; builtin = [bool]$a.mon.builtin; bw = $a.mon.bw; bh = $a.mon.bh })
+      Check "seed, lone $($a.name): scope, one monitor is registered" (@($m.PSObject.Properties).Count -eq 1) "monitors: $(@($m.PSObject.Properties).Count)"
+      $roles = Get-TileRoles $m @([string]$a.mon.id)
+      foreach ($role in $a.want.Keys) {
+        Check "seed, lone $($a.name): the $role role is held by it" ([string]$roles[$role] -ceq $a.want[$role]) "${role}: '$([string]$roles[$role])'"
+      }
+    }
+  }
+  # Controls, green on the old code: no monitor holds no role, and with two monitors item 14 stands (a built-in never takes wide).
+  Case 'seed: with no monitor no role is held, and with a built-in and a portrait no monitor takes wide' {
+    $none = Get-TileRoles (New-Object PSObject) @()
+    Check 'seed, no monitor: no role is held (control)' (@($none.Keys).Count -eq 0) "roles: $(@($none.Keys) -join ',')"
+    $two = New-Object PSObject
+    foreach ($x in @($Lap15, $Port)) { $two | Add-Member -NotePropertyName ([string]$x.id) -NotePropertyValue ([pscustomobject]@{ name = $x.name; builtin = [bool]$x.builtin; bw = $x.bw; bh = $x.bh }) }
+    Check 'seed, built-in and portrait: scope, two monitors are registered' (@($two.PSObject.Properties).Count -eq 2) "monitors: $(@($two.PSObject.Properties).Count)"
+    $roles2 = Get-TileRoles $two @('laptop', 'port')
+    Check 'seed, built-in and portrait: no monitor takes wide (control)' ([string]$roles2['wide'] -ceq '') "wide: '$([string]$roles2['wide'])'"
+    Check 'seed, built-in and portrait: the portrait takes tall and the built-in takes laptop (control)' (([string]$roles2['tall'] -ceq 'port') -and ([string]$roles2['laptop'] -ceq 'laptop')) "tall: '$([string]$roles2['tall'])' laptop: '$([string]$roles2['laptop'])'"
   }
   Case 'resolve seed: of two 16:9 externals only the wider takes the wide cell' {
     $cfg = ConvertFrom-Json $v4Text
