@@ -281,6 +281,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $mon9 = [datetime]'2026-10-19 09:00:30'  # a Monday
   Check 'tray: a scheduled scene is due on its day and minute only' ((@(Get-DueScenes $tc $mon9 @{}).id -join ',') -eq 'a' -and @(Get-DueScenes $tc $mon9.AddMinutes(1) @{}).Count -eq 0 -and (@(Get-DueScenes $tc ([datetime]'2026-10-24 09:00') @{}).id -join ',') -eq 'b')
   Check 'tray: a scheduled scene fires once per minute' (@(Get-DueScenes $tc $mon9 @{ a = '2026-10-19 09:00' }).Count -eq 0)
+  # A monitor list with no ids (a Windows screen list) keys by DeviceName and bounds: a move changes the key. Get-MonitorKey's fallback.
   Check 'tray: display scenes and the monitor key' ((@(Get-DisplayScenes $tc).id -join ',') -eq 'c' -and (Get-MonitorKey @([pscustomobject]@{ DeviceName = 'B'; Bounds = [Drawing.Rectangle]::new(0, 0, 10, 20) }, [pscustomobject]@{ DeviceName = 'A'; Bounds = [Drawing.Rectangle]::new(-5, 1, 3, 4) })) -eq 'A=3x4@-5,1;B=10x20@0,0')
   $cases = @(ConvertFrom-Json (Get-Content -Raw (Join-Path $PSScriptRoot 'teams-call.json')) | % { $_ })
   $bad = @($cases | ? { (Test-TeamsCall $_.mic $_.wins) -ne $_.call } | % { $_.case })
@@ -334,6 +335,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Engine layouts (decision monitor-setups, items 5 and 9): tile.ps1 places a scene by monitor id. Its own file, in a child powershell (its FAIL lines count here).
   $elOut = @(Child (Join-Path $PSScriptRoot 'engine-layouts.ps1')); $elOut | % { "$_" }
   $script:fail += [Math]::Max(@($elOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Monitor setups, the tray's display key (decision monitor-setups): its own file, in a child powershell (its FAIL lines count here).
+  $spOut = @(Child (Join-Path $PSScriptRoot 'setup-plumbing.ps1')); $spOut | % { "$_" }
+  $script:fail += [Math]::Max(@($spOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
   $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }

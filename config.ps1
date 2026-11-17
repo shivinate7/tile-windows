@@ -156,6 +156,13 @@ function Get-TileSetupKey($monitors) {
   [Array]::Sort($ids, [StringComparer]::Ordinal)
   $ids -join '|'
 }
+# The setup key of monitors that all carry an id, else '' (no monitors, or one without an id, has no setup). Where a monitor list may come
+# from an older snapshot or a Windows screen list, which have no ids.
+function Get-TileKnownSetupKey($monitors) {
+  $m = @($monitors | Where-Object { $_ })
+  if (-not $m.Count -or @($m | Where-Object { -not $_.id }).Count) { return '' }
+  Get-TileSetupKey $m
+}
 # Adds what the config does not know yet (each unknown monitor, named by shape; the setup these monitors make, named Desk when it is the
 # first) and notes that they are plugged in now. Returns the setup key. A repeat call adds nothing; it only moves lastSeen and lastUsed.
 function Register-TileSetup($cfg, $monitors) {
