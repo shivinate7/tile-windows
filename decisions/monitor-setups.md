@@ -9,10 +9,11 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - Item 9, where the missing ultrawide's windows go. The owner's own answer, replacing the three options the mockup drew (fold onto the laptop, fold onto the portrait, send to Windows That Stay Put). The app remembers which windows were on the ultrawide, and their cells. While it is unplugged, those windows show in Windows That Stay Put as unplaced, so the owner can arrange a new layout for this setup. When the ultrawide comes back, they return to their remembered cells. Owner's words: "windows that were on the ultrawide to be remembered that they were there but when unplugged and I'm on the app they should just be back in the dock as though they're unplaced so that way I can create a new arrangement".
   You said "dock"; the term is Windows That Stay Put, which lists the windows the board has not placed.
   Departs from: main, `tile.ps1`'s per-role loop, which skips a role with no screen and lists its pins as missing.
-- Item 7, follow or a frozen copy. Follow the closest known setup until the owner saves a change on the new one. Frozen copy: not taken. This replaces the mockup's pick, which linked the layout to Desk.
+- Item 7, follow or a frozen copy. Follow the closest known setup until the owner makes a change on the new one. Frozen copy: not taken. This replaces the mockup's pick, which linked the layout to Desk.
 - Item 17, the count triggers. Option a: replace the `monitors` extra ("For N screens") with "Use This Scene on This Setup", with a setup select. The `noext` extra ("Laptop only") stays. Keep both counts: not taken.
   Departs from: `decisions/triggers.md`, "A scene per monitor set. Pick the display scene whose monitor set matches." What was built counts screens (`app.html`, the `monitors` and `noext` extras).
-- Item 8, Save or edits kept with no Save: open, no ruling. The owner asked how autosave would work. The mockup's pick (keep Save) is not ruled.
+- Item 8, autosave (owner, 2026-11-17 11:38 CST). Owner's word: "autosave". Every board edit is written straight away for the setup in use. Layouts have no Save or Revert. Undo still steps back moves. This replaces the mockup's pick, keep Save. Loss: a test move is kept; Undo is the way back.
+  Departs from: main, `app.html` `save` and `revert` buttons.
 
 **Coordinator defaults, recorded 2026-11-17 09:50 CST.** The designer's picks the owner did not overrule. The notes mark items 1, 4, 5 and 14 "Owner grant: yes"; the owner's silence on them is not a grant.
 - Item 1, how a monitor is known (coordinator default, owner may change). By its hardware: the maker, product code and serial Windows reports (`WmiMonitorID`), with the built-in screen found by its connection (`WmiMonitorConnectionParams`). Fallback: maker, product and port. Unmeasured: the builder verifies that a WMI monitor maps to a `Screen.DeviceName`, and how two identical monitors with no serial differ. Departs from: main, `tile.ps1` `Pick` and `Roles`, and `app.html` `ROLE` and `monName()`, which name a monitor by its size role.
@@ -22,7 +23,7 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - Edit only the plugged-in setup (coordinator default, owner may change). Monitors and Setups (item 13) is a dialog from the strip; a setup not plugged in cannot be edited. The rail option is not taken. This answers the critique's question on editing an unplugged setup.
 
 **Open, not ruled.**
-- Item 8: keep Save, or keep each edit with no Save. The owner asked how autosave would work. Not answered here.
+- Item 8: the Edited mark on the scene name and the "· edited" tag on a card. With autosave there is no unsaved edit to mark. Whether they stay, and what they show, is not ruled.
 - Item 7: "closest known setup" is not defined. Read as item 6's pick: the setup with most monitors shared, a tie to the one used last. The owner has not confirmed that reading.
 - Item 7: the "Follow Desk Again" control (`cd-own`). Whether it stays, and what it links to, is not ruled. The strip (item 11) and the scene card (item 16) of the notes still say "follows Desk".
 - Item 9: the reason text for the unplaced windows is not ruled. The notes' "Its screen is unplugged" came from a replaced option.

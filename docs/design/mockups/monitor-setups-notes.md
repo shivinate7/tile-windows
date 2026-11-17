@@ -20,10 +20,10 @@ bd-noid, fd-stay, cd-own), `-target` (fd-laptop, fd-portrait), `-list` (fd-stay)
 
 Terms. A **setup** is the set of monitors plugged in at once. A scene's layout on a setup either
 **follows** another setup (built from it, and kept in step with it) or is its **own layout**
-(changed and saved on that setup). "Follows Desk" is the one phrase the screen uses for the first.
+(changed on that setup). "Follows Desk" is the one phrase the screen uses for the first.
 
 Unchanged from main: the board, tiles, stacks, the inspector's Columns and Rows, Windows That Stay
-Put, Save and Revert, the Edited dot and "· edited" tag, and the "When the Monitors Change" trigger,
+Put, and the "When the Monitors Change" trigger,
 which applies its scene on a setup change as today (`decisions/triggers.md`). A setup change
 redraws the board; windows move on Apply or by that trigger, as today.
 
@@ -68,16 +68,16 @@ redraws the board; windows move on Apply or by that trigger, as today.
    last (pick); or always Desk. Gain: a setup with Home 27 starts from Home, which knows that
    monitor, not from Desk, which does not. Loss: the source can change as setups are added; the strip names it each time.
 7. **Follow, or a frozen copy.** Ruled (owner, 2026-11-17 09:47 CST): follow the closest known
-   setup until the owner saves a change on the new one. Frozen copy: not taken. Items 11 and 16
+   setup until the owner makes a change on the new one. Frozen copy: not taken. Items 11 and 16
    still say "follows Desk". Decision `monitor-setups` (decisions/monitor-setups.md) holds what
    stays open.
-8. **Save stays.** Open (owner, 2026-11-17 09:47 CST): the owner asked how autosave would work. No
-   ruling yet. Options: keep Save (pick); or keep each edit for the setup with no Save.
-   Gain: one edit flow, as today (`app.html` Save and Revert); a test move is not kept by mistake.
-   Loss: an edit not saved is lost when the monitors change. Edits on Laptop + Portrait never write
-   to Desk; replugging the ultrawide brings Desk back as it was (`bd-back`).
-   Departs from: the coordinator's reading ("any edit the owner makes is remembered for that
-   setup"). Not blocking.
+8. **Autosave.** Ruled (owner, 2026-11-17 11:38 CST): autosave. Owner's word: "autosave". Every board
+   edit is written straight away for the setup in use. Layouts have no Save or Revert. Undo still
+   steps back moves. Replaces the mockup's pick, keep Save. Loss: a test move is kept; Undo is the
+   way back. Edits on Laptop + Portrait never write to Desk; replugging the ultrawide brings Desk
+   back as it was (`bd-back`). The Edited mark and "· edited" tag are not ruled; decision
+   `monitor-setups` holds them.
+   Departs from: main, `app.html` `save` and `revert` buttons.
 
 ## 3. Where the missing monitor's windows go
 
@@ -101,7 +101,7 @@ redraws the board; windows move on Apply or by that trigger, as today.
 
 11. **The setup strip.** Options: a strip above the board (pick); or the top bar's crumb. The
     strip holds a small map, the setup's name, one sentence on the selected scene ("Default follows
-    Desk until you change it and Save"), the fold select and Monitors and Setups.
+    Desk until you change it"), the fold select and Monitors and Setups.
     Gain: it sits beside the board it describes (ux-control-beside-area) and has room for the
     sentence and the select. Loss: about 56px of board height at 1440, two rows at 1024. At 1024,
     Monitors and Setups shows its icon only, with its name as title and label.
@@ -161,8 +161,7 @@ redraws the board; windows move on Apply or by that trigger, as today.
 - Item 4: should "When the Monitors Change" fire when the same monitors are only rearranged?
   Coordinator default, owner may change: no (decision `monitor-setups`).
 - Item 7: ruled (owner, 2026-11-17 09:47 CST). Decision `monitor-setups` holds what stays open.
-- Item 8: keep Save (pick), or keep edits with no Save? Open. The owner asked how autosave would
-  work.
+- Item 8: ruled (owner, 2026-11-17 11:38 CST): autosave. Decision `monitor-setups` holds what stays open.
 - Item 9: ruled (owner, 2026-11-17 09:47 CST). Decision `monitor-setups` holds what stays open.
 - Item 10 and the fold select in item 11: open, since item 9 leaves no fold to choose. Decision
   `monitor-setups` holds it.
