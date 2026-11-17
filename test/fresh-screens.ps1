@@ -356,6 +356,44 @@ $Error.Clear()
       Check 'ids: call 3, with names, order and positions changed for the same hardware, keeps each id' ($diff.Count -eq 0) ($diff -join '; ')
     }
   }
+  # ---- 7. -Monitors prints only the monitors (the same objects -Json lists); -Json keeps role and its fields and gains the six id fields. ----
+  function Get-MonKey($o) { (@($o.PSObject.Properties | Sort-Object Name | % { "$($_.Name)=$($_.Value)" }) -join ';') }
+  $threeRun = Get-SeamRun "-File `"$Tile`" -Json" @{ TILE_SCREENS_FILE = $threeFile }
+  $tmon = @($threeRun.Doc.monitors | % { $_ })
+  $threeNames = (@($tmon | % { [string]$_.name }) | Sort-Object) -join ','
+  $scopeThree = $threeNames -eq 'SEAM-S1,SEAM-S2,SEAM-S3'
+  Check 'json: scope: the three seam monitors are listed by name' $scopeThree "lists [$threeNames]; exit $($threeRun.Code); stderr: $($threeRun.Err)"
+  if ($scopeThree) {
+    $tb = @{}; foreach ($x in $tmon) { $tb[[string]$x.name] = $x }
+    Check 'json keeps role: SEAM-S1 wide, SEAM-S2 tall, SEAM-S3 laptop' ($tb['SEAM-S1'].role -eq 'wide' -and $tb['SEAM-S2'].role -eq 'tall' -and $tb['SEAM-S3'].role -eq 'laptop') "roles: S1 '$($tb['SEAM-S1'].role)', S2 '$($tb['SEAM-S2'].role)', S3 '$($tb['SEAM-S3'].role)'"
+    $oldFields = @('name', 'role', 'x', 'y', 'w', 'h', 'bw', 'bh')
+    $noOld = @($tmon | % { $o = $_; $oldFields | ? { $o.PSObject.Properties.Name -notcontains $_ } })
+    Check 'json keeps the existing monitor fields and the windows list' (($noOld.Count -eq 0) -and ($threeRun.Text -match '"windows":')) "missing fields: [$($noOld -join ', ')]; windows list present: $($threeRun.Text -match '"windows":')"
+    $idFields = @('id', 'builtin', 'maker', 'product', 'serial', 'idKind')
+    $noId = @($tmon | % { $o = $_; $idFields | ? { $o.PSObject.Properties.Name -notcontains $_ } })
+    Check 'json: every monitor carries id, builtin, maker, product, serial and idKind' ($noId.Count -eq 0) "missing fields: [$($noId -join ', ')]"
+  }
+
+  # -DryRun and a -Proc no app matches on every -Monitors call: a tile.ps1 without the switch must not place or move a real window.
+  $mrun = Get-SeamRun "-File `"$Tile`" -Monitors -DryRun -Proc no-app-matches-this-test" @{ TILE_SCREENS_FILE = $threeFile }
+  $monArray = $mrun.Text.StartsWith('[') -and $mrun.Json
+  Check 'monitors: scope: -Monitors prints one JSON array of monitors' $monArray "exit $($mrun.Code); stdout starts '$($mrun.Text.Substring(0, [Math]::Min(40, $mrun.Text.Length)))'; stderr: $($mrun.Err)"
+  if ($monArray -and $scopeThree) {
+    $mm = @($mrun.Doc | % { $_ })
+    Check 'monitors: prints only the monitors: no windows list in its output' ($mrun.Text -notmatch '"windows"') "output has a windows list"
+    $jk = @{}; foreach ($x in $tmon) { $jk[[string]$x.name] = Get-MonKey $x }
+    $mk = @{}; foreach ($x in $mm) { $mk[[string]$x.name] = Get-MonKey $x }
+    $sameObjects = ($mk.Count -eq 3) -and ((@($jk.Keys | Sort-Object) -join ',') -eq (@($mk.Keys | Sort-Object) -join ',')) -and (@($jk.Keys | ? { $jk[$_] -ne $mk[$_] }).Count -eq 0)
+    Check 'monitors: the same monitor objects as -Json (same fields and values, by name)' $sameObjects "-Json: $(@($jk.Values) -join ' | '); -Monitors: $(@($mk.Values) -join ' | ')"
+  }
+
+  $emptyFile = Join-Path $run 'ids-empty.json'; [IO.File]::WriteAllText($emptyFile, '[]', $utf8)
+  $erun = Get-SeamRun "-File `"$Tile`" -Monitors -DryRun -Proc no-app-matches-this-test" @{ TILE_SCREENS_FILE = $emptyFile }
+  Check 'monitors: no monitor prints an empty JSON array' ($erun.Text -eq '[]') "stdout '$($erun.Text)'; exit $($erun.Code); stderr: $($erun.Err)"
+
+  # Green control, passes on the old code: -Monitor keeps binding once -Monitors exists (an exact name wins over a prefix).
+  $ctl = Invoke-PsChild "-File `"$Tile`" -From `"$(Join-Path $PSScriptRoot 'fixture.json')`" -Monitor laptop -DryRun"
+  Check 'control: -Monitor laptop still binds: the fixture dry run exits 0' ($ctl.Code -eq 0) "exit $($ctl.Code): $($ctl.Err.Trim())"
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
