@@ -539,7 +539,7 @@ $cs = if ($sc -and $sc.cats) { $sc } else { ConvertFrom-Json ([IO.File]::ReadAll
 $cats = $cs.cats; $catOrder = @($cs.categories | % { [string]$_[0] }); if (-not $catOrder.Count) { $catOrder = @('code', 'browse', 'comms', 'other') }
 if (-not $sc) {
   $scr = Pick $Monitor
-  # A direct -Monitor wide run with no monitor holding the wide role (a laptop alone, or with a portrait) falls back to the widest screen, as before
+  # A direct -Monitor wide run with no monitor holding the wide role (a laptop with a portrait) falls back to the widest screen, as before
   # item 14; scenes and the role path keep item 14 and send such a pin to left (coordinator ruling 2026-11-17 19:03 CST).
   if (-not $scr -and $Monitor -eq 'wide') { $scr = @($screens | Sort-Object { -$_.BW } | Select-Object -First 1)[0] }
   if (-not $scr) { throw "No monitor matches '$Monitor'." }
