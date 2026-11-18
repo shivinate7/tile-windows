@@ -17,6 +17,13 @@
 #     POST /layout    body {scene, key, layout}: 200 and stored when key is plugged in; 409 and no change when not.
 #     POST /config    a whole config. The server keeps its monitors, setups and its layouts for every key, plugged in or not, whatever
 #                     the body carries: POST /config writes no layout. Layouts are written only by POST /layout (409 for a key not plugged in).
+#     POST /rename    body {kind, id, name}. kind 'monitor': id is the monitor id; kind 'setup': id is the setup key. 200 and the name is saved
+#                     in config monitors or setups, and nothing else changes. 404 for an unknown kind or id.
+#     POST /forget    body {kind, id}. 200 and the entry is removed from config. A forgotten setup's layouts go from every scene. Forgetting a
+#                     monitor also forgets each setup it is in (decision monitor-setups, item 13). 409 and no change when the monitor is
+#                     plugged in or the setup is the one in use (the refusal POST /layout gives a key not plugged in). 404 for an unknown kind or id.
+#     Lock: the rename and the forget run under the config lock (Use-TileLock). The lock case holds that lock, writes a scene under it and
+#     checks both changes survive. It cannot by itself show a missing lock: an unlocked rename passes when its read comes after the write.
 #   A route the server lacks answers 404. On 31ea7c1 the /layout and /layouts cases are red for that reason: the route is not built.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
@@ -166,8 +173,9 @@ try {
 
   # The config a case starts from: the starters (version 4), the plugged-in monitors with their Desk setup, an Office setup (not
   # plugged in), and an Office layout on the focus scene. $deskLayout, when given, is the plugged-in setup's layout on that scene too.
-  # Written into $tileHome before its server starts. Returns the object it wrote.
-  function Write-SeedConfig([string]$tileHome, [string]$deskLayout = '') {
+  # $alsoOffice names more scenes that also get the Office layout (the focus scene always has it). Written into $tileHome before its
+  # server starts. Returns the object it wrote.
+  function Write-SeedConfig([string]$tileHome, [string]$deskLayout = '', [string[]]$alsoOffice = @()) {
     New-Item -ItemType Directory -Force $tileHome | Out-Null
     $c = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8))
     $c.monitors = [pscustomobject]@{}
@@ -179,6 +187,11 @@ try {
     $focus | Add-Member -Force -NotePropertyName layouts -NotePropertyValue ([pscustomobject]@{})
     $focus.layouts | Add-Member -NotePropertyName $keyOffice -NotePropertyValue (ConvertFrom-Json $officeLayout)
     if ($deskLayout) { $focus.layouts | Add-Member -NotePropertyName $keyDesk -NotePropertyValue (ConvertFrom-Json $deskLayout) }
+    foreach ($id in $alsoOffice) {
+      $sc = @($c.scenes | ? { $_.id -eq $id })[0]
+      if (-not $sc.PSObject.Properties['layouts'] -or $null -eq $sc.layouts) { $sc | Add-Member -Force -NotePropertyName layouts -NotePropertyValue ([pscustomobject]@{}) }
+      $sc.layouts | Add-Member -NotePropertyName $keyOffice -NotePropertyValue (ConvertFrom-Json $officeLayout)
+    }
     [IO.File]::WriteAllText((Join-Path $tileHome 'config.json'), (ConvertTo-Json -Depth 20 -Compress $c), $utf8)
     $c
   }
@@ -357,6 +370,153 @@ try {
         Check 'layouts: Focus follows none once Desk has its own layout there' ($f2 -ceq '') "follows: $(if ($null -eq $f2) { 'missing' } else { "'$f2'" })"
       }
     } finally { Stop-Server $s2 }
+  }
+
+  # ---- Server: rename and forget (decision monitor-setups, item 13). Routes in the header. On 54b842b neither route is built, so each
+  # answer is 404 and each case is red by assert, named "route absent". ----
+  function Cfg-Of($s) { ConvertFrom-Json (Get-Reply "$($s.url)config").text }
+  function Setup-Of($c, [string]$key) { $p = $c.setups.PSObject.Properties[$key]; if ($p) { $p.Value } }
+  function Monitor-Of($c, [string]$id) { $p = $c.monitors.PSObject.Properties[$id]; if ($p) { $p.Value } }
+  function Layout-Of($c, [string]$scene, [string]$key) { $sc = @($c.scenes | ? { $_.id -eq $scene })[0]; if ($sc -and $sc.PSObject.Properties['layouts'] -and $sc.layouts) { $p = $sc.layouts.PSObject.Properties[$key]; if ($p) { $p.Value } } }
+  # A value as Canon reads it, with its name field left out: the other fields must come back as they were.
+  function Without-Name($o) { if ($null -eq $o) { return 'null' }; $x = ConvertFrom-Json (ConvertTo-Json -Depth 10 -Compress -InputObject $o); [void]$x.PSObject.Properties.Remove('name'); Canon $x }
+  # The status of a reply as a FAIL detail. A 404 names the route as absent (or an unknown id); any other wrong status shows both codes.
+  function Note-Status($r, [string]$route, [int]$want) { if ($r.code -eq $want) { 'ok' } elseif ($r.code -eq 404) { "POST /$route answered 404: route absent, or the id is unknown" } else { "status $($r.code), want $want" } }
+
+  Case 'rename: POST /rename changes a monitor''s name and the setup in use''s name in config, and keeps the other fields' {
+    $hdir = Join-Path $runDir 'home-rename'; [void](Write-SeedConfig $hdir)
+    $s = Start-Server $hdir $snapFile
+    try {
+      $before = Cfg-Of $s
+      $rm = Send-Post "$($s.url)rename" '{"kind":"monitor","id":"AUO1","name":"Wide 49"}'
+      Check 'rename monitor: POST /rename answers 200' ($rm.code -eq 200) (Note-Status $rm 'rename' 200)
+      $rs = Send-Post "$($s.url)rename" ('{"kind":"setup","id":"' + $keyDesk + '","name":"Main desk"}')
+      Check 'rename setup: POST /rename answers 200' ($rs.code -eq 200) (Note-Status $rs 'rename' 200)
+      $after = Cfg-Of $s
+      if ($rm.code -eq 200) {
+        Check 'rename monitor: config holds the new name' ((Monitor-Of $after 'AUO1').name -ceq 'Wide 49') "name: $((Monitor-Of $after 'AUO1').name)"
+        Check 'rename monitor: its other fields are kept' ((Without-Name (Monitor-Of $after 'AUO1')) -ceq (Without-Name (Monitor-Of $before 'AUO1'))) 'a field other than name changed'
+      }
+      if ($rs.code -eq 200) {
+        Check 'rename setup: config holds the new name' ((Setup-Of $after $keyDesk).name -ceq 'Main desk') "name: $((Setup-Of $after $keyDesk).name)"
+        Check 'rename setup: its monitors and last-used time are kept' ((Without-Name (Setup-Of $after $keyDesk)) -ceq (Without-Name (Setup-Of $before $keyDesk))) 'a field other than name changed'
+      }
+      Check 'rename: the other monitor and setup keep their names (control)' ((Monitor-Of $after 'LEN3').name -ceq 'Laptop' -and (Setup-Of $after $keyOffice).name -ceq 'Office') 'an unrelated name changed'
+    } finally { Stop-Server $s }
+  }
+
+  # The page holds a copy of the whole config. A save of that copy after a dialog rename must not put the old names back: the server keeps
+  # its monitors and setups under the lock, whatever the body carries.
+  Case 'rename: a whole-config POST from a copy taken before the rename keeps the new names' {
+    $hdir = Join-Path $runDir 'home-rename-stale'; [void](Write-SeedConfig $hdir)
+    $s = Start-Server $hdir $snapFile
+    try {
+      $copy = Cfg-Of $s
+      $rm = Send-Post "$($s.url)rename" '{"kind":"monitor","id":"AUO1","name":"Wide 49"}'
+      $rs = Send-Post "$($s.url)rename" ('{"kind":"setup","id":"' + $keyDesk + '","name":"Main desk"}')
+      $renamed = $rm.code -eq 200 -and $rs.code -eq 200
+      Check 'stale copy: both renames answer 200 (scope)' $renamed "$(Note-Status $rm 'rename' 200) | $(Note-Status $rs 'rename' 200)"
+      if ($renamed) {
+        $p = Send-Post "$($s.url)config" (ConvertTo-Json -Depth 20 -Compress -InputObject $copy)
+        Check 'stale copy: the whole-config POST is accepted (control)' ($p.code -eq 200) "status $($p.code)"
+        $after = Cfg-Of $s
+        Check 'stale copy: the monitor keeps its new name' ((Monitor-Of $after 'AUO1').name -ceq 'Wide 49') "name: $((Monitor-Of $after 'AUO1').name)"
+        Check 'stale copy: the setup keeps its new name' ((Setup-Of $after $keyDesk).name -ceq 'Main desk') "name: $((Setup-Of $after $keyDesk).name)"
+      }
+    } finally { Stop-Server $s }
+  }
+
+  Case 'forget: POST /forget refuses the monitor plugged in and the setup in use, with 409 and no change' {
+    $hdir = Join-Path $runDir 'home-forget-refused'; [void](Write-SeedConfig $hdir)
+    $s = Start-Server $hdir $snapFile
+    try {
+      $before = Canon (Cfg-Of $s)
+      $fm = Send-Post "$($s.url)forget" '{"kind":"monitor","id":"AUO1"}'
+      Check 'forget monitor: a monitor plugged in is refused with 409' ($fm.code -eq 409) (Note-Status $fm 'forget' 409)
+      if ($fm.code -eq 409) { Check 'forget monitor: the refused forget leaves the config as it was' ((Canon (Cfg-Of $s)) -ceq $before) 'the config changed' }
+      $fs = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyDesk + '"}')
+      Check 'forget setup: the setup in use is refused with 409' ($fs.code -eq 409) (Note-Status $fs 'forget' 409)
+      if ($fs.code -eq 409) { Check 'forget setup: the refused forget leaves the config as it was' ((Canon (Cfg-Of $s)) -ceq $before) 'the config changed' }
+    } finally { Stop-Server $s }
+  }
+
+  # The setup not in use has an Office layout on three scenes (focus, meetings, review). Forgetting it removes all three, and the
+  # layout the setup in use has on focus stays.
+  Case 'forget: POST /forget removes a setup not in use from config, and its layouts from every scene' {
+    $hdir = Join-Path $runDir 'home-forget-setup'; [void](Write-SeedConfig $hdir $layoutBody @('meetings', 'review'))
+    $s = Start-Server $hdir $snapFile
+    try {
+      $before = Cfg-Of $s
+      $heldBefore = @($before.scenes | ? { $_.PSObject.Properties['layouts'] -and $_.layouts.PSObject.Properties[$keyOffice] } | % { $_.id })
+      Check 'forget setup: the setup not in use has layouts on three scenes before the forget (scope)' ($heldBefore.Count -eq 3) "held on: $($heldBefore -join ',')"
+      if ($heldBefore.Count -eq 3) {
+        $r = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyOffice + '"}')
+        Check 'forget setup: POST /forget answers 200' ($r.code -eq 200) (Note-Status $r 'forget' 200)
+        if ($r.code -eq 200) {
+          $after = Cfg-Of $s
+          Check 'forget setup: the setup is gone from config' ($null -eq (Setup-Of $after $keyOffice)) 'the setup is still in config'
+          $heldAfter = @($after.scenes | ? { $_.PSObject.Properties['layouts'] -and $_.layouts.PSObject.Properties[$keyOffice] } | % { $_.id })
+          Check 'forget setup: no scene keeps a layout for it' ($heldAfter.Count -eq 0) "still on: $($heldAfter -join ',')"
+          Check 'forget setup: the setup in use keeps its own Focus layout (control)' ($null -ne (Setup-Of $after $keyDesk) -and (Canon (Layout-Of $after 'focus' $keyDesk)) -ceq (Canon (ConvertFrom-Json $layoutBody))) 'the Desk setup or its Focus layout changed'
+        }
+      }
+    } finally { Stop-Server $s }
+  }
+
+  # Forgetting a monitor not plugged in forgets each setup it is in (item 13), with that setup's layouts. Home 27 is in setup AUO1|H27,
+  # which has a layout on the meetings scene.
+  Case 'forget: POST /forget removes an unplugged monitor, and each setup it is in with its layouts' {
+    $hdir = Join-Path $runDir 'home-forget-monitor'; $c = Write-SeedConfig $hdir
+    $c.monitors | Add-Member -NotePropertyName 'H27' -NotePropertyValue ([pscustomobject]@{ name = 'Home 27'; builtin = $false; lastSeen = '2026-11-09T09:00:00'; bw = 2560; bh = 1440 })
+    $c.setups | Add-Member -NotePropertyName 'AUO1|H27' -NotePropertyValue ([pscustomobject]@{ name = 'Home'; ids = @('AUO1', 'H27'); lastUsed = '2026-11-09T09:00:00' })
+    $meet = @($c.scenes | ? { $_.id -eq 'meetings' })[0]
+    if (-not $meet.PSObject.Properties['layouts'] -or $null -eq $meet.layouts) { $meet | Add-Member -Force -NotePropertyName layouts -NotePropertyValue ([pscustomobject]@{}) }
+    $meet.layouts | Add-Member -NotePropertyName 'AUO1|H27' -NotePropertyValue (ConvertFrom-Json $officeLayout)
+    [IO.File]::WriteAllText((Join-Path $hdir 'config.json'), (ConvertTo-Json -Depth 20 -Compress $c), $utf8)
+    $s = Start-Server $hdir $snapFile
+    try {
+      $before = Cfg-Of $s
+      Check 'forget monitor: the setup it is in has a layout on a scene before the forget (scope)' ($null -ne (Setup-Of $before 'AUO1|H27') -and $null -ne (Layout-Of $before 'meetings' 'AUO1|H27')) 'no Home setup or no layout for it'
+      $r = Send-Post "$($s.url)forget" '{"kind":"monitor","id":"H27"}'
+      Check 'forget monitor: POST /forget answers 200 for a monitor not plugged in' ($r.code -eq 200) (Note-Status $r 'forget' 200)
+      if ($r.code -eq 200) {
+        $after = Cfg-Of $s
+        Check 'forget monitor: the monitor is gone from config' ($null -eq (Monitor-Of $after 'H27')) 'H27 is still in config'
+        Check 'forget monitor: the setup it is in is gone, and so is its layout on every scene' ($null -eq (Setup-Of $after 'AUO1|H27') -and @($after.scenes | ? { $_.PSObject.Properties['layouts'] -and $_.layouts.PSObject.Properties['AUO1|H27'] }).Count -eq 0) 'the setup AUO1|H27 or a layout for it is still there'
+        Check 'forget monitor: the setups it was not in are kept (control)' ($null -ne (Setup-Of $after $keyDesk) -and $null -ne (Setup-Of $after $keyOffice)) 'Desk or Office is gone'
+      }
+    } finally { Stop-Server $s }
+  }
+
+  # The rename runs under the config lock, as the other writers do. This case holds that lock (the mutex config.ps1 names for this home),
+  # posts a rename, writes a scene's name under the lock, and lets go. Both the rename and the scene must survive.
+  Case 'rename: a change written under the config lock survives a rename posted while the lock is held' {
+    Add-Type -AssemblyName System.Net.Http
+    $hdir = Join-Path $runDir 'home-lock'; [void](Write-SeedConfig $hdir)
+    $s = Start-Server $hdir $snapFile
+    try {
+      $hash = [BitConverter]::ToString([Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($hdir.ToLowerInvariant()))).Replace('-', '').Substring(0, 12)
+      $mutex = New-Object Threading.Mutex($false, "Local\TileWindows-Write-$hash")
+      $held = $false; $task = $null
+      try {
+        $held = $mutex.WaitOne(10000)
+        Check 'rename under the lock: the test holds the config lock (scope)' $held 'another writer held the config lock'
+        if ($held) {
+          $task = (New-Object Net.Http.HttpClient).PostAsync("$($s.url)rename", (New-Object Net.Http.StringContent('{"kind":"monitor","id":"LEN3","name":"Built-in"}', $utf8, 'application/json')))
+          $cfgPath = Join-Path $hdir 'config.json'
+          $c = ConvertFrom-Json ([IO.File]::ReadAllText($cfgPath, $utf8))
+          @($c.scenes | ? { $_.id -eq 'focus' })[0].name = 'Focus under lock'
+          [IO.File]::WriteAllText($cfgPath, (ConvertTo-Json -Depth 20 -Compress $c), $utf8)
+        }
+      } finally { if ($held) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
+      if ($held) {
+        $code = [int]$task.Result.StatusCode
+        Check 'rename under the lock: POST /rename answers 200 once the lock is free' ($code -eq 200) (Note-Status @{ code = $code } 'rename' 200)
+        $after = Cfg-Of $s
+        Check 'rename under the lock: the scene written under the lock is kept (control)' ((@($after.scenes | ? { $_.id -eq 'focus' })[0]).name -ceq 'Focus under lock') 'the scene name written under the lock is lost'
+        if ($code -eq 200) { Check 'rename under the lock: the rename is kept' ((Monitor-Of $after 'LEN3').name -ceq 'Built-in') 'the rename is lost' }
+      }
+    } finally { Stop-Server $s }
   }
 
   # ---- Tray: a failed monitor read is not a change ----
