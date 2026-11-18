@@ -1,0 +1,76 @@
+{
+  "set": "empty",
+  "scenes": {
+    "default": {
+      "grids": {"wide":{"c":5,"r":2},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [],
+      "left": [],
+      "missing": [
+        {"pin":0,"app":"outlook","match":"- Outlook","why":"no open window"},
+        {"pin":1,"app":"ms-teams","match":"","why":"no open window"},
+        {"pin":2,"app":"olk","match":"","why":"no open window"}
+      ]
+    },
+    "focus": {
+      "grids": {"wide":{"c":3,"r":1},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [],
+      "left": [],
+      "missing": [
+        {"pin":1,"app":"outlook","match":"- Outlook","why":"no open window"},
+        {"pin":2,"app":"ms-teams","match":"","why":"no open window"},
+        {"pin":3,"app":"olk","match":"","why":"no open window"},
+        {"pin":0,"app":"chrome","match":"","why":"no open window"}
+      ]
+    },
+    "meetings": {
+      "grids": {"wide":{"c":4,"r":2},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [],
+      "left": [],
+      "missing": [
+        {"pin":1,"app":"outlook","match":"","why":"no open window"},
+        {"pin":2,"app":"olk","match":"","why":"no open window"},
+        {"pin":0,"app":"ms-teams","match":"","why":"no open window"}
+      ]
+    },
+    "review": {
+      "grids": {"wide":{"c":4,"r":2},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [],
+      "left": [],
+      "missing": [
+        {"pin":1,"app":"outlook","match":"- Outlook","why":"no open window"},
+        {"pin":2,"app":"ms-teams","match":"","why":"no open window"},
+        {"pin":3,"app":"olk","match":"","why":"no open window"},
+        {"pin":0,"app":"chrome","match":"","why":"no open window"}
+      ]
+    },
+    "listen": {
+      "grids": {"wide":{"c":4,"r":1},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [],
+      "left": [],
+      "missing": [
+        {"pin":1,"app":"outlook","match":"","why":"no open window"},
+        {"pin":2,"app":"olk","match":"","why":"no open window"},
+        {"pin":0,"app":"ms-teams","match":"","why":"no open window"}
+      ]
+    },
+    "solo": {
+      "grids": {"wide":{"c":2,"r":1},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [],
+      "left": [],
+      "missing": [
+        {"pin":0,"app":"chrome","match":"","why":"no open window"}
+      ]
+    },
+    "thursday-prep": {
+      "grids": {"wide":{"c":4,"r":2},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [],
+      "left": [],
+      "missing": [
+        {"pin":1,"app":"outlook","match":"- Outlook","why":"no open window"},
+        {"pin":2,"app":"ms-teams","match":"","why":"no open window"},
+        {"pin":3,"app":"olk","match":"","why":"no open window"},
+        {"pin":0,"app":"chrome","match":"Procore","why":"no open window"}
+      ]
+    }
+  }
+}

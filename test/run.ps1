@@ -336,6 +336,10 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Fresh screens (tile.ps1 reads the monitor list on every call): its own file, in a child powershell (its FAIL lines count here).
   $fsOut = @(Child (Join-Path $PSScriptRoot 'fresh-screens.ps1')); $fsOut | % { "$_" }
   $script:fail += [Math]::Max(@($fsOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Golden layouts (missing coverage): today's rects for every starter scene on five snapshots, and the page's cellRect against them.
+  # Its own file, in a child powershell (its FAIL lines count here).
+  $glOut = @(Child (Join-Path $PSScriptRoot 'golden-layouts.ps1')); $glOut | % { "$_" }
+  $script:fail += [Math]::Max(@($glOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # The live-move guard for tile.ps1 under the suite (TILE_TEST_SUITE): its own file, in a child powershell (its FAIL lines count here).
   $smOut = @(Child (Join-Path $PSScriptRoot 'safe-moves.ps1')); $smOut | % { "$_" }
   $script:fail += [Math]::Max(@($smOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
