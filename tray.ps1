@@ -475,6 +475,19 @@ function New-GapState($sc, $placed, [datetime]$at) {
   foreach ($src in @($sc.grids) + @(if ($sc.layouts) { $sc.layouts.PSObject.Properties | % { $_.Value.grids } })) { if ($src) { foreach ($p in $src.PSObject.Properties) { $grids[$p.Name] = $p.Value } } }
   [pscustomobject]@{ scene = [string]$sc.id; tiled = @($placed | ? { $_.id -and $_.mon } | % { [pscustomobject]@{ hwnd = [int64]$_.id; mon = [string]$_.mon } }); absent = @(); grids = $grids; lastApply = $at; quietMs = 1500 }
 }
+# The gap watch's tray-side steps. Set-GapWatch runs after each apply: it keeps the scene's tiled windows and hands their handles to the
+# hook. Clear-GapWatch drops them, so no event is read against a layout that is no longer on screen. They sit above the -Lib return because
+# Apply-Scene calls Set-GapWatch, and a caller that loads only the functions has no TileWinWatch1: there both do nothing.
+function Set-GapWatch($sc, $placed) {
+  if (-not ('TileWinWatch1' -as [type])) { return }
+  $script:gap = New-GapState $sc $placed (Get-Date)
+  try { [TileWinWatch1]::SetTiled([long[]]@($script:gap.tiled | % { $_.hwnd })) } catch {}
+}
+function Clear-GapWatch {
+  if (-not ('TileWinWatch1' -as [type])) { return }
+  $script:gap = $null
+  try { [TileWinWatch1]::SetTiled([long[]]@()) } catch {}
+}
 if ($Lib) { return }
 
 $quitName = TrayName 'Quit'; $openName = TrayName 'Open'
@@ -545,7 +558,8 @@ try { [TileInput]::Start() } catch { Write-Warning "Some automatic triggers are 
 # the process's own windows are skipped. The callback drops everything but the window itself (idObject 0, idChild 0) on a handle in the
 # tiled set, and keeps the last event per handle with its time. The tray's 1 s tick drains it: no timer and no polling here.
 # Cost: one call into C# per create, show or hide event in the session (often hundreds a second); each is two compares and one set lookup.
-Add-Type @'
+# A second run of this body in one process finds the type loaded and starts nothing: the first run's delegate stays referenced.
+if (-not ('TileWinWatch1' -as [type])) { Add-Type @'
 using System; using System.Collections.Generic; using System.Runtime.InteropServices;
 public static class TileWinWatch1 {
   delegate void WinEventProc(IntPtr hook, uint ev, IntPtr hwnd, int idObj, int idChild, uint thread, uint time);
@@ -564,18 +578,23 @@ public static class TileWinWatch1 {
       seen.Clear(); return r;
     }
   }
+  static IntPtr hookA, hookB;
+  static bool started;
   public static void Start() {
+    if (started) return;
+    started = true;
     keep = delegate(IntPtr hook, uint ev, IntPtr hwnd, int o, int c, uint th, uint tm) {
       if (o != 0 || c != 0) return;
       long h = (long)hwnd;
       lock (gate) { if (tiled.Contains(h)) seen[h] = new long[] { ev, DateTime.UtcNow.Ticks }; }
     };
     // Flags 2: out of context, skip own process. 0x8001 to 0x8003: destroy, show, hide. 0x0016 and 0x0017: minimize start and end.
-    SetWinEventHook(0x8001, 0x8003, IntPtr.Zero, keep, 0, 0, 2);
-    SetWinEventHook(0x0016, 0x0017, IntPtr.Zero, keep, 0, 0, 2);
+    hookA = SetWinEventHook(0x8001, 0x8003, IntPtr.Zero, keep, 0, 0, 2);
+    hookB = SetWinEventHook(0x0016, 0x0017, IntPtr.Zero, keep, 0, 0, 2);
   }
 }
 '@
+}
 try { [TileWinWatch1]::Start() } catch { Write-Warning "The gap watch is off: $($_.Exception.Message)" }
 $tile = Join-Path $PSScriptRoot 'tile.ps1'; $serve = Join-Path $PSScriptRoot 'serve.ps1'
 $srv = $null; $url = ''; $state = New-TrayState; $dirtyAt = $null; $tick = 0; $first = $true
@@ -596,13 +615,6 @@ function Read-Monitors {
   $null
 }
 function Read-Windows { try { @((((& $tile -Json 3>$null) -join '') | ConvertFrom-Json).windows) } catch { $null } }
-# The gap watch's tray-side steps. Set-GapWatch runs after each apply: it keeps the scene's tiled windows and hands their handles to the
-# hook. Clear-GapWatch drops them, so no event is read against a layout that is no longer on screen.
-function Set-GapWatch($sc, $placed) {
-  $script:gap = New-GapState $sc $placed (Get-Date)
-  try { [TileWinWatch1]::SetTiled([long[]]@($script:gap.tiled | % { $_.hwnd })) } catch {}
-}
-function Clear-GapWatch { $script:gap = $null; try { [TileWinWatch1]::SetTiled([long[]]@()) } catch {} }
 # The gap-fill run. STUB: the engine's -GapFill (lane L5a) does not exist yet, so this calls nothing that moves a window; it logs one line.
 # Gap-fill acts only on a monitor whose layout has Free Layout on (free.areas), so today no tick reaches it. L5a replaces this body.
 function Invoke-GapFill($run) {
@@ -747,7 +759,7 @@ $timer.add_Tick({
   # A read here recovered from a bad file: the page shows the note until dismissed; the tray says it once.
   if ($TileNote) { Note $TileNote; $script:TileNote = '' }
   # The gap watch reads what its hook recorded since the last tick; events of a scene that is no longer the active one are dropped.
-  $gw = [TileWinWatch1]::Drain()
+  $gw = try { [TileWinWatch1]::Drain() } catch { @() }
   if ($gap -and $gw.Count -and $active -eq $gap.scene) {
     $ge = for ($i = 0; $i -lt $gw.Count; $i += 3) { [pscustomobject]@{ event = [int]$gw[$i + 1]; idObject = 0; idChild = 0; hwnd = $gw[$i]; time = (New-Object DateTime $gw[$i + 2], 'Utc').ToLocalTime() } }
     $run = Step-GapFill $gap $ge (Get-Date)
