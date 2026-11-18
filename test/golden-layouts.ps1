@@ -11,6 +11,7 @@
 # layout change re-freezes the affected file by hand, in the same commit, with its reason.
 # Finer grid (L1): split copies of frozen starters (mult on the wide grid) must keep the frozen rects outside the split cell. Cases below the
 # frozen-set loop; each runs tile.ps1 -Scene <json> -From <snapshot> -Json, a dry run.
+# Free areas (L3): each frozen wide placement, rebuilt as an area of its grid, lands on its frozen rect. Cases after the split cases.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\golden-layouts.ps1
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
 $ErrorActionPreference = 'Stop'
@@ -184,6 +185,43 @@ try {
       Check "L1 split stacked ${set}: 1001 keeps the top half of slot 1 (same x, y and width, shorter)" ([bool]($f -and $k -and [int]$k.x -eq [int]$f.x -and [int]$k.y -eq [int]$f.y -and [int]$k.w -eq [int]$f.w -and [int]$k.h -gt 0 -and [int]$k.h -lt [int]$f.h)) "now $(RectText $k), frozen $(RectText $f)"
       $o = SplitOthers $got $fz '1001'
       Check "L1 split stacked ${set}: the other $($o.n) frozen windows keep their rects, and none is added" $o.same "differ: $($o.bad -join ', '); placed $($got.Count), frozen $($fz.Count)"
+    }
+  }
+
+  # ---- L3 (free areas, plan layout-free-build, item 24): each frozen placement of a starter's wide grid, rebuilt as an area of that grid, lands on
+  # its frozen rect. An area is the cells one window covers, as fractions of the work area, cut the way L0 cuts (a cell is int(W / c) wide, so the
+  # last edge sits at c cells, not at W: on 4096 wide, five columns end at 4095). The starter's wide pins, zones and fill are dropped, since the areas
+  # place the wide windows; its tall and laptop parts stay, so every frozen placement is checked.
+  function L3Areas($mon, [int]$c, [int]$r, $placed) {
+    $cw = [int]($mon.w / $c); $ch = [int]($mon.h / $r)
+    foreach ($p in @($placed)) {
+      $cols = @(); $rows = @()
+      foreach ($s in @($p.slots)) { $s0 = [int]$s - 1; $cols += ($s0 % $c); $rows += [int][Math]::Floor($s0 / $c) }
+      $c0 = [int](($cols | Measure-Object -Minimum).Minimum); $c1 = [int](($cols | Measure-Object -Maximum).Maximum)
+      $r0 = [int](($rows | Measure-Object -Minimum).Minimum); $r1 = [int](($rows | Measure-Object -Maximum).Maximum)
+      $x0 = $c0 * $cw; $x1 = ($c1 + 1) * $cw; $y0 = $r0 * $ch; $y1 = ($r1 + 1) * $ch
+      $win = @($fx.windows | ? { [int64]$_.id -eq [int64]$p.id })[0]
+      [pscustomobject]@{ rect = @(($x0 / $mon.w), ($y0 / $mon.h), (($x1 - $x0) / $mon.w), (($y1 - $y0) / $mon.h)); app = [string]$win.app; title = [string]$win.title }
+    }
+  }
+  foreach ($set in @('1365x1001', '3440x1392', '1080x1872', 'fixture')) {
+    $gold = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $goldenDir "$set.json"), $utf8))
+    $wideMon = @($sets[$set].monitors | ? { $_.role -eq 'wide' })[0]
+    foreach ($id in $ids) {
+      $fz = $gold.scenes.PSObject.Properties[$id]; if ($null -eq $fz) { continue }
+      $frozen = @($fz.Value.placed); $onWide = @($frozen | ? { $_.mon -eq 'wide' })
+      Case "L3 areas ${set} ${id}: every frozen placement, rebuilt as an area of its grid, lands on its frozen rect" {
+        Check "L3 areas ${set} ${id}: scope, the frozen entry places windows on the wide grid" ($onWide.Count -gt 0) "no wide placement in golden/$set.json"
+        $s = GoldenCopy $id; $gr = $s.grids.wide
+        $areas = @(L3Areas $wideMon ([int]$gr.c) ([int]$gr.r) $onWide)
+        SetProp $s.grids 'wide' ([pscustomobject]@{ c = [int]$gr.c; r = [int]$gr.r; free = [pscustomobject]@{ areas = $areas } })
+        SetProp $s 'pins' @(@($s.pins) | ? { $_.mon -ne 'wide' }); SetProp $s 'zones' @(@($s.zones) | ? { $_ -and $_.mon -ne 'wide' })
+        if ($s.fill.mon -eq 'wide') { SetProp $s 'fill' ([pscustomobject]@{ mon = 'wide'; apps = @(); skip = @(); sort = 'app' }) }
+        $got = GoldenRunPosted (GoldenPosted $s) (ConvertTo-Json -Depth 6 -Compress $sets[$set]) "L3 $set $id"
+        $byId = @{}; foreach ($p in @($got.placed)) { $byId["$([int64]$p.id)"] = $p }
+        $bad = @(foreach ($p in $frozen) { $q = $byId["$([int64]$p.id)"]; if (-not ($q -and [string]$q.mon -ceq [string]$p.mon -and (SameRect $q $p))) { "$($p.id) $($p.mon) frozen $(RectText $p), now $(if ($q) { "$($q.mon) $(RectText $q)" } else { 'not placed' })" } })
+        Check "L3 areas ${set} ${id}: the placed windows match the frozen layout (rect and monitor)" ($bad.Count -eq 0 -and @($got.placed).Count -eq $frozen.Count) "$($bad.Count) differ; placed $(@($got.placed).Count), frozen $($frozen.Count): $(@($bad | Select-Object -First 3) -join ' | ')"
+      }
     }
   }
 
