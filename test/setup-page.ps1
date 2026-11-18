@@ -24,11 +24,11 @@
 #     monitor and each setup in a name field. Forget is off for the monitor plugged in and for the setup in use, and each off Forget's reason
 #     is the text its aria-describedby names. An unplugged monitor and its setup have Forget on. Two states: plugged-in only (empty), and
 #     with an unplugged monitor and its setup (full).
-#   bd-noid (item 3): a snapshot whose monitors carry no id shows the strip, amber, with a Remember It by Its Size button. Two shapes: every
-#     monitor with no id, and only one (the mockup's Monitor 2).
+#     The Forget of a setup that holds a plugged-in monitor is refused by the server (409, setup-plumbing.ps1), not checked here.
+#   Size id (item 3, coordinator ruling 21:04 CST): a monitor whose id is size-WxH is remembered by that id. The strip is the normal one, and
+#     no Remember It by Its Size button is on the page. Two shapes: every monitor with a size id, and only the ultrawide.
 #   Offline, dialog: the offline page shows no Monitors and Setups button and sends no request. A guard: green on the old commit, and a
 #     mutant with the button turns it red (run on a scratch copy).
-# On 54b842b the strip has no Monitors and Setups button and no bd-noid strip, so those cases are red by assert.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, and delete cases. The setup change, Apply, autosave and failed-read cases are red on the page as it stands.
 $ErrorActionPreference = 'Stop'
@@ -219,12 +219,14 @@ function Open-Dialog($sock) {
 function Dlg-Rows($sock, [string[]]$names) {
   Js $sock ($dlgHelpers + 'const names = ' + (ConvertTo-Json -Compress -InputObject @($names)) + '; return names.map(n => ({ n: n, row: !!rowOf(n), off: offOf(n), reason: reasonOf(n) }))')
 }
-# A snapshot whose monitors carry no id: every one of them (the sample file's shape), and only the ultrawide (the mockup's Monitor 2).
-$noIdAll = [IO.File]::ReadAllText($fixture, $utf8)
-$noIdOneObj = ConvertFrom-Json $snapAText
-$noIdU1 = @($noIdOneObj.monitors | ? { $_.id -eq 'U1' })[0]
-[void]$noIdU1.PSObject.Properties.Remove('id')
-$noIdOne = ConvertTo-Json -Depth 10 -Compress -InputObject $noIdOneObj
+# A snapshot whose monitors carry size ids (size-WxH, as tile.ps1 gives a monitor with no device): every one of them, and only the ultrawide.
+$sizeAllObj = ConvertFrom-Json $snapAText
+foreach ($m in @($sizeAllObj.monitors)) { $m.id = "size-$($m.bw)x$($m.bh)" }
+$sizeAll = ConvertTo-Json -Depth 10 -Compress -InputObject $sizeAllObj
+$sizeOneObj = ConvertFrom-Json $snapAText
+$sizeU1 = @($sizeOneObj.monitors | ? { $_.id -eq 'U1' })[0]
+$sizeU1.id = "size-$($sizeU1.bw)x$($sizeU1.bh)"
+$sizeOne = ConvertTo-Json -Depth 10 -Compress -InputObject $sizeOneObj
 # Wraps fetch before the page's own scripts run, so a request made while the page loads is recorded too.
 $recordJs = '(() => { window.__sent = []; const f = window.fetch.bind(window); window.fetch = (u, o) => { window.__sent.push(((o && o.method) || "GET").toUpperCase() + " " + String(u)); return f(u, o); }; })();'
 
@@ -474,41 +476,45 @@ try {
     }
   }
 
-  # Full state: an unplugged monitor (Home 27) and the setup Home, which holds it. Forget is on for both; the plugged-in rows stay off.
+  # Full state: an unplugged monitor (Home 27) and the setup Home, made of two monitors that are not plugged in (Home 27 and Home 28). Forget is
+  # on for both; the plugged-in rows stay off. (Home holds no plugged-in monitor: a setup that holds one cannot be forgotten, ruling 21:04 CST.)
   Case 'Monitors and Setups: an unplugged monitor and its setup are listed, with Forget on for them' {
     $cfg = New-Config
     $cfg.monitors | Add-Member -NotePropertyName 'H27' -NotePropertyValue ([pscustomobject]@{ name = 'Home 27'; builtin = $false; lastSeen = $stamp; bw = 2560; bh = 1440 })
-    $cfg.setups | Add-Member -NotePropertyName 'H27|L1' -NotePropertyValue ([pscustomobject]@{ name = 'Home'; ids = @('H27', 'L1'); lastUsed = $stamp })
+    $cfg.monitors | Add-Member -NotePropertyName 'H28' -NotePropertyValue ([pscustomobject]@{ name = 'Home 28'; builtin = $false; lastSeen = $stamp; bw = 2560; bh = 1440 })
+    $cfg.setups | Add-Member -NotePropertyName 'H27|H28' -NotePropertyValue ([pscustomobject]@{ name = 'Home'; ids = @('H27', 'H28'); lastUsed = $stamp })
     Put-Config $cfg
     $opened = Open-Page $ws $url 'focus'
-    Check 'the page opens on Focus with the unplugged monitor known (control)' $opened 'the page did not open on Focus in time'
+    Check 'the page opens on Focus with the unplugged monitors known (control)' $opened 'the page did not open on Focus in time'
     $st = Open-Dialog $ws
     Check 'the strip has a Monitors and Setups button that opens a dialog (scope)' ($st -eq 'open') $(if ($st -eq 'nobutton') { 'no Monitors and Setups button in the strip' } else { 'no Monitors and Setups dialog after the click' })
     if ($st -eq 'open') {
-      $r = Dlg-Rows $ws @('Laptop', 'Portrait', 'Ultrawide', 'Desk', 'Home 27', 'Home')
+      $r = Dlg-Rows $ws @('Laptop', 'Portrait', 'Ultrawide', 'Desk', 'Home 27', 'Home 28', 'Home')
       $unlisted = @($r | ? { -not $_.row } | % { $_.n })
-      Check 'the dialog lists the unplugged Home 27 and the setup Home, each in a name field' ($unlisted.Count -eq 0) "not listed: $($unlisted -join ', ')"
+      Check 'the dialog lists the unplugged Home 27 and Home 28 and the setup Home, each in a name field' ($unlisted.Count -eq 0) "not listed: $($unlisted -join ', ')"
       $plugOn = @($r | ? { $_.n -in @('Laptop', 'Portrait', 'Ultrawide', 'Desk') -and $_.row -and -not $_.off } | % { $_.n })
       Check 'Forget stays off for each plugged-in monitor and for the setup in use' ($plugOn.Count -eq 0) "Forget on for: $($plugOn -join ', ')"
-      $unplugOff = @($r | ? { $_.n -in @('Home 27', 'Home') -and $_.row -and $_.off } | % { $_.n })
-      Check 'Forget is on for Home 27 and for the setup Home, which are not plugged in or in use' ($unplugOff.Count -eq 0) "Forget off for: $($unplugOff -join ', ')"
+      $unplugOff = @($r | ? { $_.n -in @('Home 27', 'Home 28', 'Home') -and $_.row -and $_.off } | % { $_.n })
+      Check 'Forget is on for Home 27, Home 28 and the setup Home, which are not plugged in or in use' ($unplugOff.Count -eq 0) "Forget off for: $($unplugOff -join ', ')"
     }
   }
 
-  # bd-noid (decision monitor-setups, item 3): a snapshot whose monitors carry no id. The strip shows, amber, and offers Remember It by Its
-  # Size. Both shapes: every monitor with no id, and only one.
-  Case 'bd-noid: a snapshot whose monitors carry no id shows the strip amber, with Remember It by Its Size' {
+  # A monitor whose id is a size (size-WxH, tile.ps1 Get-MonitorIdentity: a monitor with no device) is remembered by that id (decision
+  # monitor-setups item 3, coordinator ruling 21:04 CST). So the strip is the normal one, and no Remember It by Its Size button is on the page.
+  # Both shapes: every monitor with a size id, and only the ultrawide.
+  Case 'size id: a snapshot whose monitors carry size ids shows the normal strip, with no Remember It by Its Size button anywhere' {
     Put-Config (New-Config)
-    foreach ($v in @(@{ label = 'every monitor'; text = $noIdAll }, @{ label = 'one monitor, Monitor 2'; text = $noIdOne })) {
+    foreach ($v in @(@{ label = 'every monitor'; text = $sizeAll }, @{ label = 'one monitor, the ultrawide'; text = $sizeOne })) {
       $opened = Open-Page $ws $url 'focus' $v.text
-      Check "bd-noid ($($v.label)): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      Check "size id ($($v.label)): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
       if (-not $opened) { continue }
       $shown = WaitFor $ws '!document.getElementById("setbar").hidden' 20
-      Check "bd-noid ($($v.label)): the strip is shown (scope)" $shown 'the strip stays hidden for a snapshot with a monitor that has no id'
+      Check "size id ($($v.label)): the strip is shown (scope)" $shown 'the strip stays hidden for a snapshot with size ids'
       if (-not $shown) { continue }
       $bar = Js $ws $stripJs
-      Check "bd-noid ($($v.label)): the strip is amber" ($bar.warn -eq $true) "strip text: '$($bar.text)'"
-      Check "bd-noid ($($v.label)): the strip offers Remember It by Its Size" (@($bar.buttons | ? { $_ -ceq 'Remember It by Its Size' }).Count -eq 1) "strip buttons: $(@($bar.buttons) -join ', ')"
+      Check "size id ($($v.label)): the strip is not amber" ($bar.warn -ne $true) "strip text: '$($bar.text)'"
+      $remembers = Js $ws 'return [...document.querySelectorAll("button")].filter(b => /Remember It by Its Size/.test(b.textContent)).length'
+      Check "size id ($($v.label)): no Remember It by Its Size button anywhere on the page" ($remembers -eq 0) "buttons with that name: $remembers"
     }
   }
 
