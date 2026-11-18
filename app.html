@@ -141,8 +141,40 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .sid span{font-size:12px;color:var(--muted)}
 .sid span strong{color:var(--ink);font-weight:600}
 .sbtns{display:flex;gap:6px;flex-wrap:wrap}
-@media (max-width:1180px){.setbar{gap:6px 10px;padding:6px 8px}.sid{flex-basis:200px}}
+.sbtns .btn svg{width:14px;height:14px}
+@media (max-width:1180px){.setbar{gap:6px 10px;padding:6px 8px}.sid{flex-basis:200px}
+  /* At this width Monitors and Setups shows its icon only, with its name as title and label. */
+  .sbtns .btn.mg{padding:5px 8px}.sbtns .btn.mg .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 @media (forced-colors:active){.smap i{border-color:CanvasText}.setbar.warn{border-left-color:CanvasText}}
+/* Monitors and Setups: the dialog's rows, and the monitor's own name field in the inspector. */
+#mgdlg{width:min(600px,calc(100vw - 32px));max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);padding:16px;overflow:auto}
+#mgdlg>div{display:grid;gap:10px}
+.dsec{display:grid;gap:0}
+.dsec>h3{margin:4px 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.dsec>h3 span{font:400 12px var(--f);text-transform:none;letter-spacing:0}
+.lrow{display:grid;grid-template-columns:62px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.lrow .smap{width:62px}
+.lrow .nm{display:grid;gap:2px;min-width:0}
+.lrow .nm input{font-weight:600;max-width:240px;min-height:30px;padding:3px 7px}
+.lrow .nm small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.lrow .rt{display:flex;align-items:center;gap:8px;justify-self:end}
+.lrow .st{font-size:12px;color:var(--muted);white-space:nowrap}
+.lrow .st.now{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.lrow details{grid-column:2/-1;font-size:12px;color:var(--muted)}
+.lrow details summary{font-weight:500;color:var(--muted);width:max-content}
+.lrow details code{font:11.5px var(--f-mono);overflow-wrap:anywhere}
+.lrow .btn{min-height:28px;padding:3px 10px;font-size:12px}
+.dempty{margin:0;padding:10px 0 4px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+#mgdlg .why{font-size:12px;color:var(--muted);margin:0}
+#mgdlg h2:focus,#mgdlg .say:focus{outline:none}
+/* The rename or forget message: in the row acted on, or at the head of its section when that row is gone. */
+#mgdlg .say{color:var(--ink)}
+#mgdlg .say .bad{color:var(--bad)}
+.lrow .say{grid-column:2/-1}
+.dsec>.say{padding:8px 0;border-top:1px solid var(--line)}
+.mname{display:grid;gap:4px}
+.mname .note b{color:var(--ink);font-weight:600}
+@media (forced-colors:active){.lrow .st.now{background:CanvasText}}
 
 /* Canvas */
 .canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;justify-content:safe center;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -610,6 +642,7 @@ dialog form{display:grid;gap:10px}
 </div>
 
 <dialog id="dlg"><form method="dialog" id="dlgform"></form></dialog>
+<dialog id="mgdlg" aria-labelledby="mgh"></dialog>
 
 <script>
 "use strict";
@@ -658,7 +691,7 @@ const PIN='<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hid
 let snap=null,cfg={scenes:[],cats:LIVE?{}:OFFLINE_CATS,categories:CATS0},work={},selId=null,prevs={},pseq={},selWin=null,curMon=null,hist=[],isBusy=false,serverDry=false,
   st={active:"",log:[]},hidden=new Set(),showGrid=true,G={x0:0,y0:0,S:1},els=new Map(),drawn={},optim=null,drag=null,raf=0,
   offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zanchor=null,selZone=null,xOpen=false,rz=null,hdl=null,noteEl=null,noteT=0,flashId=null,flashT=0,picks=null,lockAsk=null,bayFlash=new Set(),bayFlashT=0,
-  plug=null,layoutsOk=false,lays={},lsaved={},lq={},unsaved={},failed={},stale={},readErr="",svT={},svBusy={},svAgain={},lastKey="";
+  plug=null,layoutsOk=false,mgSay=null,lays={},lsaved={},lq={},unsaved={},failed={},stale={},readErr="",svT={},svBusy={},svAgain={},lastKey="";
 const clone=o=>JSON.parse(JSON.stringify(o));
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
@@ -855,13 +888,27 @@ function smapHTML(gone,W0=58,H0=30){
   const boxes=M.map(m=>({x:m.x,y:m.y,w:m.w,h:m.h,gone:false})),k=M.reduce((a,m)=>a+m.w/(m.bw||m.w),0)/M.length;
   const gap=Math.round((x1-x0)*.04);
   for(const id of gone){const c=cfg.monitors[id],w=c.bw*k;x1+=gap;boxes.push({x:x1,y:y0,w,h:c.bh*k,gone:true});x1+=w}
-  const yy1=Math.max(y1,...boxes.map(b=>b.y+b.h)),S=Math.min((W0-6)/(x1-x0),(H0-6)/(yy1-y0)),ox=(W0-(x1-x0)*S)/2,oy=(H0-(yy1-y0)*S)/2;
+  return smapDraw(boxes,W0,H0)}
+// Boxes {x,y,w,h,gone} drawn to scale in a W0 by H0 map.
+function smapDraw(boxes,W0=58,H0=30){
+  const x0=Math.min(...boxes.map(b=>b.x)),y0=Math.min(...boxes.map(b=>b.y)),x1=Math.max(...boxes.map(b=>b.x+b.w)),yy1=Math.max(...boxes.map(b=>b.y+b.h)),
+    S=Math.min((W0-6)/(x1-x0),(H0-6)/(yy1-y0)),ox=(W0-(x1-x0)*S)/2,oy=(H0-(yy1-y0)*S)/2;
   return `<span class="smap" style="width:${W0}px;height:${H0}px" aria-hidden="true">${boxes.map(b=>`<i${b.gone?' class="gone"':""} style="left:${(ox+(b.x-x0)*S).toFixed(1)}px;top:${(oy+(b.y-y0)*S).toFixed(1)}px;width:${Math.max(b.w*S,3).toFixed(1)}px;height:${Math.max(b.h*S,3).toFixed(1)}px"></i>`).join("")}</span>`}
+// The monitors config knows by id, side by side at one scale: config keeps a monitor's size, not where it sat.
+function smapKnown(ids,W0=62,H0=30){let x=0;const boxes=[];
+  for(const id of ids){const c=(cfg.monitors||{})[id];if(!c||!c.bw||!c.bh)continue;boxes.push({x,y:0,w:c.bw,h:c.bh});x+=c.bw+Math.round(c.bw*.06)}
+  return boxes.length?smapDraw(boxes,W0,H0):`<span class="smap" style="width:${W0}px;height:${H0}px" aria-hidden="true"></span>`}
 // A save that failed, or a re-read that failed, says so here, beside the board it is about, and stays until a save or a read lands (decision monitor-setups, item 19).
 // A save the server refused because the setup changed offers Refresh and no retry: sending it again would write this layout under the setup that is no longer plugged in.
+const MGI='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="3" width="9" height="6" rx="1"/><rect x="11.5" y="1.5" width="3.5" height="9" rx="1"/><path d="M4 12.5h3M5.5 9v3.5"/></svg>';
+const MGBTN=`<button type="button" class="btn mg" id="mgopen" title="Monitors and Setups" aria-label="Monitors and Setups">${MGI}<span class="t">Monitors and Setups</span></button>`;
 function renderSetbar(){
   const el=$("setbar");
   if(!idm()||!snap||!scene()){el.hidden=true;if(el.dataset.h){el.dataset.h="";el.innerHTML=""}return}
+  const b=idBar(),cls=b.cls,html=b.html;
+  if(el.dataset.h!==cls+html){el.dataset.h=cls+html;el.className=cls;el.innerHTML=html;if(cls.includes("warn"))el.setAttribute("role","status");else el.removeAttribute("role")}
+  el.hidden=false}
+function idBar(){
   const s=scene(),L=layState(selId),n=unsavedCount(),bad=Object.keys(failed).filter(i=>unsaved[i]&&work[i]);
   const sc=`<strong>${esc(s.name)}</strong>`,rbtn=`<div class="sbtns"><button type="button" class="btn" id="srefresh">Refresh</button></div>`;let sub,cls="setbar",extra="";
   if(bad.length&&n&&bad.some(i=>stale[i])){cls+=" warn";
@@ -873,9 +920,108 @@ function renderSetbar(){
   else if(L&&L.own)sub=`${sc} has its own layout here. Board changes save as you make them.`;
   else if(L&&L.name)sub=`${sc} follows ${esc(L.name)} until you change it.`;
   else sub=`${sc} starts from its starter layout here. Board changes save as you make them.`;
-  const html=`${smapHTML(goneIds())}<div class="sid"><b>${esc(plugName())}</b><span>${sub}</span></div>${extra}`;
-  if(el.dataset.h!==cls+html){el.dataset.h=cls+html;el.className=cls;el.innerHTML=html;if(cls.includes("warn"))el.setAttribute("role","status");else el.removeAttribute("role")}
-  el.hidden=false}
+  return{cls,html:`${smapHTML(goneIds())}<div class="sid"><b>${esc(plugName())}</b><span>${sub}</span></div>${extra}<div class="sbtns">${MGBTN}</div>`}}
+
+/* ---------- Monitors and Setups: see, rename and forget what is remembered (decision monitor-setups, item 13) ---------- */
+// A rename or a forget is a server write (POST /rename, POST /forget); the page reads config again after it, so the copy it holds never drifts.
+const mgKnown=(kind)=>(kind==="setup"?cfg.setups:cfg.monitors)||{};
+const mgQ=v=>String(v).replace(/["\\]/g,"\\$&");
+function mgWhen(iso){const d=new Date(iso);if(!iso||isNaN(d))return"";
+  return d.toDateString()===new Date().toDateString()?`Today ${d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",hour12:false})}`:d.toLocaleDateString([],{month:"short",day:"numeric"})}
+// A monitor's native size (bw×bh, the screen bounds tile.ps1 reports, as config keeps it), or "" when unknown. The dialog and the inspector both show this one.
+const monSize=c=>c&&c.bw&&c.bh?`${c.bw}×${c.bh}`:"";
+// What config knows about a monitor, in plain words: its native size, and whether it is the built-in screen. No maker or product codes.
+function mgDetail(c){return[monSize(c),c.builtin?"Built-in screen":""].filter(Boolean).join(" · ")}
+const mgSetupCount=id=>Object.values(cfg.setups||{}).filter(x=>(x.ids||[]).includes(id)).length;
+function mgHTML(){
+  const have=new Set(snap?snap.monitors.map(m=>m.id).filter(Boolean):[]),key=plug?plug.key:"",byDate=f=>(a,b)=>String(b[1][f]||"").localeCompare(String(a[1][f]||""))||a[1].name.localeCompare(b[1].name);
+  const mons=Object.entries(cfg.monitors||{}).sort((a,b)=>(have.has(b[0])-have.has(a[0]))||byDate("lastSeen")(a,b));
+  const sets=Object.entries(cfg.setups||{}).sort((a,b)=>((b[0]===key)-(a[0]===key))||byDate("lastUsed")(a,b));
+  const nOn=mons.filter(([id])=>have.has(id)).length,inUse=sets.some(([k])=>k===key);
+  // The rename or forget message sits in the row acted on, and that row's control names it (aria-describedby). A row that is gone (a forget that
+  // landed) leaves it at the head of its section.
+  const at=(kind,id)=>!!mgSay&&mgSay.kind===kind&&mgSay.id===id,lost=!!mgSay&&!mgKnown(mgSay.kind)[mgSay.id],
+    desc=(kind,id,ctl,base)=>{const d=[base,at(kind,id)&&mgSay.ctl===ctl?"mgsay":""].filter(Boolean).join(" ");return d?` aria-describedby="${d}"`:""},
+    here=(kind,id)=>at(kind,id)?mgSayHTML():"",head=kind=>lost&&mgSay.kind===kind?mgSayHTML():"";
+  const mrow=([id,c])=>{const on=have.has(id),det=mgDetail(c);
+    return`<div class="lrow">${smapKnown([id])}<div class="nm"><input type="text" value="${esc(c.name)}" aria-label="Name of the monitor ${esc(det||id)}" maxlength="24" autocomplete="off" data-rk="monitor" data-rid="${esc(id)}"${desc("monitor",id,"rk","")}><small>${esc(det)}</small></div>
+      <div class="rt">${on?`<span class="st now" role="img" aria-label="Plugged in" title="Plugged in"></span>`:`<span class="st" title="Last seen">${esc(mgWhen(c.lastSeen))}</span>`}<button type="button" class="btn" data-fk="monitor" data-fid="${esc(id)}"${on?` disabled title="Plugged in now. Unplug it to forget it."`:""}${desc("monitor",id,"fk",on?"mgwhy":"")}>Forget</button></div>
+      ${here("monitor",id)}<details><summary>What Windows calls it</summary><code>${esc(id)}</code></details></div>`};
+  const srow=([k,x])=>{const on=k===key;
+    return`<div class="lrow">${smapKnown(x.ids||[])}<div class="nm"><input type="text" value="${esc(x.name)}" aria-label="Name of the setup" maxlength="32" autocomplete="off" data-rk="setup" data-rid="${esc(k)}"${desc("setup",k,"rk","")}><small>${esc((x.ids||[]).map(i=>((cfg.monitors||{})[i]||{}).name||"A monitor").join(", "))}</small></div>
+      <div class="rt">${on?`<span class="st now" role="img" aria-label="In use" title="In use"></span>`:`<span class="st" title="Last used">${esc(mgWhen(x.lastUsed))}</span>`}<button type="button" class="btn" data-fk="setup" data-fid="${esc(k)}"${on?` disabled title="In use now. Plug in other monitors to forget it."`:""}${desc("setup",k,"fk",on?"mgwhy":"")}>Forget</button></div>${here("setup",k)}</div>`};
+  const mh=nOn===mons.length?`All ${mons.length} plugged in`:`${mons.length} known. A dot marks the ${nOn} plugged in; the rest show when last seen.`;
+  const sh=sets.length===1&&inUse?"1 so far, in use":`${sets.length} known.${inUse?" A dot marks the one in use; the rest show when last used.":""}`;
+  const first=sets.length===1?`<p class="dempty">Plug in a different set of monitors and it is added here. Its layouts follow ${esc(sets[0][1].name)} until you change them.</p>`:"";
+  return`<div><h2 id="mgh" tabindex="-1">Monitors and Setups</h2><p class="note">Tile Windows knows each monitor by its hardware, and keeps a layout per scene for each set of monitors it has seen. Forget removes that setup's layouts from every scene.</p>
+    <section class="dsec"><h3>Monitors <span>${esc(mh)}</span></h3>${head("monitor")}${mons.map(mrow).join("")}</section>
+    <section class="dsec"><h3>Setups <span>${esc(sh)}</span></h3>${head("setup")}${sets.map(srow).join("")}${first}</section>
+    <p class="why" id="mgwhy">Forget is off for a monitor that is plugged in and for the setup in use.</p>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn pri" id="mgdone">Done</button></div></div>`}
+// Redraws the open dialog and keeps the scroll place and the focused control (or $focus, a selector, when given).
+function mgRender($focus){
+  const d=$("mgdlg"),ae=document.activeElement,top=d.scrollTop;let sel=$focus||"";
+  // Text typed in a name field, and the caret in the focused one, survive the redraw (a rename or forget that returns while the user types).
+  const typed=[...d.querySelectorAll("input[data-rk]")].filter(i=>i.value!==i.defaultValue).map(i=>[i.dataset.rk,i.dataset.rid,i.value]),
+    caret=ae&&ae.closest&&ae.closest("#mgdlg")&&ae.selectionStart!=null?[ae.selectionStart,ae.selectionEnd]:null;
+  if(!sel&&ae&&ae.closest&&ae.closest("#mgdlg")){if(ae.dataset.rk)sel=`[data-rk="${ae.dataset.rk}"][data-rid="${mgQ(ae.dataset.rid)}"]`;else if(ae.dataset.fk)sel=`[data-fk="${ae.dataset.fk}"][data-fid="${mgQ(ae.dataset.fid)}"]`;else if(ae.id)sel="#"+ae.id}
+  d.innerHTML=mgHTML();d.scrollTop=top;
+  for(const[k,i,v]of typed){const e=d.querySelector(`input[data-rk="${k}"][data-rid="${mgQ(i)}"]`);if(e)e.value=v}
+  if(sel){const e=d.querySelector(sel);if(e&&!e.disabled){e.focus();if(caret&&e.selectionStart!=null)try{e.setSelectionRange(caret[0],caret[1])}catch(_){}}}}
+function mgOpen(){mgSay=null;mgRender();const d=$("mgdlg");if(!d.open)d.showModal();$("mgh").focus()}
+const mgFail=e=>e instanceof TypeError?"The app server stopped answering":String(e.message||e).replace(/\.\s*$/,"");
+// The message: what happened (ok), then what failed (bad, a "Could not…" sentence, shown in --bad).
+const mgSayHTML=()=>`<p class="why say" id="mgsay" role="status" tabindex="-1">${esc(mgSay.ok)}${mgSay.ok&&mgSay.bad?" ":""}${mgSay.bad?`<span class="bad">${esc(mgSay.bad)}</span>`:""}</p>`;
+// m: {kind, id, ctl: "rk" (the name field) or "fk" (Forget), ok, bad}. The redraw puts it in that row and scrolls it into view. Focus goes to
+// $focus when given and still there, else stays where it was; when focus would leave the dialog, it goes to the message.
+function mgSaid(m,$focus){mgSay=m;status([m.ok,m.bad].filter(Boolean).join(" "));const d=$("mgdlg");if(!d.open)return;
+  mgRender($focus);const p=$("mgsay");if(!p)return;if(!d.contains(document.activeElement))p.focus();p.scrollIntoView({block:"nearest"})}
+async function mgRename(t){
+  const kind=t.dataset.rk,id=t.dataset.rid,cur=mgKnown(kind)[id];if(!cur)return;
+  const name=t.value.trim().slice(0,kind==="setup"?32:24),m={kind,id,ctl:"rk",ok:"",bad:""};
+  if(!name||name===cur.name){t.value=cur.name;return}
+  try{const r=await post("rename",{kind,id,name});if(!r.ok)throw new Error((await r.text())||`The server said ${r.status}.`)}
+  catch(e){t.value=cur.name;return mgSaid({...m,bad:`Could not rename: ${mgFail(e)}.`})}
+  cur.name=name;t.value=name;
+  const bad=await mgReread(readKnown);render();
+  mgSaid({...m,ok:`Renamed to ${name}.`,bad:bad?`Could not read the names again: ${bad}.`:""})}
+// A scene aimed at a forgotten setup loses that aim, as the server's Clear-TileSetupTriggers (config.ps1) does: its setupKey goes and its setup
+// switch turns off. The saved copy, the working copy and Undo's copies all take it, so no later Save or Undo sends the old aim back.
+function mgUnaim(keys){if(!keys.length)return;
+  for(const s of[...cfg.scenes,...Object.values(work),...hist.filter(h=>h.k==="edit").map(h=>h.s)])
+    if(s&&s.setupKey!=null&&keys.includes(String(s.setupKey))){delete s.setupKey;if(s.auto&&s.auto.setup)s.auto.setup=false}}
+// The warning names what goes with it: for a monitor, each setup it is in; for each setup, how many scenes had their own layout there.
+async function mgForget(t){
+  const kind=t.dataset.fk,id=t.dataset.fid,cur=mgKnown(kind)[id];if(!cur)return;
+  const sets=cfg.setups||{},gone=kind==="setup"?[id]:Object.keys(sets).filter(k=>(sets[k].ids||[]).includes(id));
+  const nSc=cfg.scenes.filter(x=>gone.some(k=>x.layouts&&hasKey(x.layouts,k))).length;
+  const lay=nSc?`${plural(nSc,"scene")} had ${nSc===1?"its":"their"} own layout there. Forgetting removes ${nSc===1?"it":"them"}.`:"No scene has its own layout there.";
+  const body=kind==="setup"?`<p class="note">${esc(cur.name)} is no longer remembered. ${lay}</p>`
+    :`<p class="note">${esc(cur.name)} is no longer remembered${gone.length?`, and neither ${gone.length===1?"is the setup it is in":"are the setups it is in"}: ${esc(gone.map(k=>sets[k].name).join(", "))}`:""}. ${gone.length?lay:"No setup holds it."}</p>`;
+  if(!await ask(`Forget ${cur.name}?`,body,"Forget",true))return;
+  const m={kind,id,ctl:"fk",ok:"",bad:""},btn=`[data-fk="${kind}"][data-fid="${mgQ(id)}"]`,had=Object.keys(sets);let r;
+  try{r=await post("forget",{kind,id});if(!r.ok&&r.status!==409&&r.status!==404)throw new Error((await r.text())||`The server said ${r.status}.`)}
+  catch(e){return mgSaid({...m,bad:`Could not forget ${cur.name}: ${mgFail(e)}.`},btn)}
+  // The server switched off the scenes aimed at what it dropped; the page does the same before anything redraws, even if the re-read fails.
+  if(r.ok)mgUnaim(gone);
+  // The answer is in; a failed re-read after it is shown on its own and never turns a forget that landed into "Could not forget".
+  const bad=await mgReread(mgReload);
+  // A setup the re-read no longer has (dropped here or by another forget) takes its scenes' aim with it too.
+  if(!bad){const more=had.filter(k=>!hasKey(cfg.setups||{},k)&&!gone.includes(k));if(more.length){mgUnaim(more);render()}}
+  const say=r.status===409?`${cur.name} is ${kind==="setup"?"in use":"plugged in"} now, so it stays.`:r.status===404?`${cur.name} was already gone.`:`Forgot ${cur.name}.`;
+  // The server's note (a scene lost its setup: pick another) goes in the dialog's message line while the dialog is open, where a toast would sit
+  // behind it; the toast shows when the dialog closes. With the dialog shut it shows now. Last, so no later message replaces it.
+  const nh=r.headers.get("X-Tile-Note"),note=nh?decodeURIComponent(nh):"",inDlg=!!note&&$("mgdlg").open;
+  mgSaid({...m,ok:inDlg?`${say} ${note}`:say,bad:bad?`Could not read the names again: ${bad}.`:""},btn);
+  if(inDlg)mgNote=note;else noteFrom(r)}
+let mgNote="";  // a server note held back while the dialog is open: toasted when it closes
+$("mgdlg").addEventListener("close",()=>{if(!mgNote)return;const n=mgNote;mgNote="";toast(n,"warn",{sticky:true});noteUp=true});
+// A read after a write that landed: "" when it worked, else why it failed. The strip says so too (readErr), until a read lands.
+async function mgReread(read){try{await read();return""}catch(e){readErr=mgFail(e);render();return readErr}}
+// After a forget: names, setups and the layouts the scenes follow are read again. Edits that are only in this page, and Undo, stay.
+async function mgReload(){
+  await readKnown();if(plug){await readLayouts({setup:plug});reseed()}
+  render();previewAll()}
 
 /* ---------- Drawing ---------- */
 function build(){
@@ -1140,6 +1286,9 @@ function renderRail(){
   if(st.log)$("recent").innerHTML=st.log.slice(0,5).map(l=>`<li><span>${esc(l.t)}</span>${esc(l.x)}</li>`).join("");
 }
 const stepper=(lbl,val,attrs,min,max,off=false)=>`<span class="step"><button type="button" ${attrs} data-d="-1" aria-label="Fewer ${lbl}" ${val<=min||off?"disabled":""}>−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" ${attrs} data-d="1" aria-label="More ${lbl}" ${val>=max||off?"disabled":""}>+</button></span>`;
+// The monitor's own name (item 2): a live page that knows the monitor by id. A rename is POST /rename.
+const monNameField=m=>{const c=idm()?(cfg.monitors||{})[m.id]:null;
+  return c?`<div class="mname"><div class="field stack"><label for="monName">Name</label><input type="text" id="monName" value="${esc(c.name)}" maxlength="24" autocomplete="off" data-rk="monitor" data-rid="${esc(m.id)}"></div></div>`:""};
 function renderInsp(V){
   const s=LIVE?scene():null,m=curMon,g=gridOf(m);
   // Scene first: it is what Apply acts on.
@@ -1175,7 +1324,7 @@ function renderInsp(V){
   else $("zonebox").innerHTML="";
   const mons=LIVE?snap.monitors.filter(x=>mk(x)):snap.monitors;
   let h=`<div class="seg" role="group" aria-label="Monitor">${mons.map(x=>`<button type="button" data-mon="${snap.monitors.indexOf(x)}" aria-pressed="${x===m}">${esc(monName(x))}</button>`).join("")}</div>
-    <p class="note">${m.w}×${m.h} pixels.</p>`;
+    ${monNameField(m)}<p class="note">${monSize(idm()&&(cfg.monitors||{})[m.id]||{bw:m.bw||m.w,bh:m.bh||m.h})} pixels.${idm()&&(cfg.monitors||{})[m.id]?`${(cfg.monitors[m.id].builtin||m.builtin)?" Built-in screen.":""} In ${plural(mgSetupCount(m.id),"setup")}.`:""}</p>`;
   if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
     if(s&&s.fill&&s.fill.mon===mk(m)){const off=!!s.fill.off;
       h+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="fillSw" ${off?"":"checked"}><span class="xt"><b>Fill Empty Cells</b><small>${off?"Windows stay where they are. A new window waits in Windows That Stay Put.":"Windows that are not pinned fill the free cells."}</small></span></label>
@@ -1183,7 +1332,9 @@ function renderInsp(V){
     else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`;
 }
   else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>${idm()&&s?`<button type="button" class="btn" id="addgrid">Add a Grid</button>`:""}`;
-  $("mon").innerHTML=h;
+  // A name being typed is not redrawn under the cursor; the picker's labels are still patched in place, so a rename shows there before the field is left.
+  if(!(document.activeElement&&document.activeElement.id==="monName"))$("mon").innerHTML=h;
+  else $("mon").querySelectorAll(".seg button[data-mon]").forEach(b=>{b.textContent=monName(snap.monitors[+b.dataset.mon])});
   const w=selWin&&winById(selWin),x=w&&V[w.id];
   if(!w){inspKey="";$("win").innerHTML=`<p class="note">Click a window on the board to change it here.</p>`}
   else{const p=x.p,pin=LIVE&&p&&p.pin>=0&&!p.behind?s.pins[p.pin]:null,box=pin?bbox(pin.slots,s.grids[pin.mon]):null,lockd=!!(pin&&pin.lock),stk=pin?stackOf(p.pin):[],onBoard=LIVE&&!inBay(x)&&x.kind!=="behind"&&!!x.r;
@@ -1965,6 +2116,9 @@ document.addEventListener("click",async ev=>{
   if(menuId&&!ev.target.closest("#cmenu,[data-menu]"))closeMenu();
   const t=ev.target.closest("button")||(pb&&pb.isConnected&&overEl(pb,ev.clientX,ev.clientY)?pb:null);if(!t||t.classList.contains("tile")||t.closest("#toast"))return;
   if(t.dataset.mon!==undefined){curMon=snap.monitors[+t.dataset.mon];render()}
+  else if(t.id==="mgopen")mgOpen();
+  else if(t.id==="mgdone")$("mgdlg").close();
+  else if(t.dataset.fk)mgForget(t);
   else if(t.dataset.bay){selWin=+t.dataset.bay;render();requestAnimationFrame(()=>{const m=$("moveto");if(m)m.focus()})}
   else if(t.dataset.zone!==undefined){selZone=+t.dataset.zone;render()}
   else if(t.id==="zdone"){selZone=null;render()}
@@ -2003,7 +2157,8 @@ $("grid").onchange=e=>{showGrid=e.target.checked;render()};
 document.addEventListener("toggle",e=>{if(e.target.id==="xtras")xOpen=e.target.open},true);
 
 document.addEventListener("change",ev=>{const t=ev.target;
-  if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
+  if(t.dataset.rk)mgRename(t);
+  else if(t.id==="sort")edit(s=>{s.fill.sort=t.value},`Fill order: ${SORTS.find(x=>x[0]===t.value)[1]}.`);
   else if(t.id==="fillSw"){const on=t.checked,id=selId;
     // Off holds what the newest placement shows, so it waits for a preview still in flight (a drop just before it).
     // The switch changes the scene it was pressed on, even when another scene is picked during the wait.
