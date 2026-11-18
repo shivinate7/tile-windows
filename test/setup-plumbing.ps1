@@ -15,6 +15,9 @@
 #                     plugged-in setup; follows is the name of the closest known setup whose layout the scene holds while the plugged-in
 #                     setup has none of its own there, else ''. The page takes both from here (it keeps no copy of the setup pick).
 #     POST /layout    body {scene, key, layout}: 200 and stored when key is plugged in; 409 and no change when not.
+#     POST /layout/remove  body {scene, key}: 200 and that scene's layout for key is dropped; the scene's other keys and the other scenes
+#                     stay. 409 and no change when key is not plugged in, as POST /layout. The card's Follow Again sends it (decision
+#                     monitor-setups, item 7). A route the server lacks answers 404, and the case's first check says so.
 #     POST /config    a whole config. The server keeps its monitors, setups and its layouts for every key, plugged in or not, whatever
 #                     the body carries: POST /config writes no layout. Layouts are written only by POST /layout (409 for a key not plugged in).
 #   A route the server lacks answers 404. On 31ea7c1 the /layout and /layouts cases are red for that reason: the route is not built.
@@ -357,6 +360,43 @@ try {
         Check 'layouts: Focus follows none once Desk has its own layout there' ($f2 -ceq '') "follows: $(if ($null -eq $f2) { 'missing' } else { "'$f2'" })"
       }
     } finally { Stop-Server $s2 }
+  }
+
+  # ---- Follow Again: POST /layout/remove drops one scene's own layout for one key (decision monitor-setups, item 7) ----
+  # The scene then follows the closest known setup that holds its layout. The seed: focus has its own layout on the plugged setup and
+  # Office holds one too (Office shares two monitors with Desk); review holds a Desk layout, which must survive the remove.
+  Case 'remove: the route drops one scene''s layout for the plugged-in key, keeps the rest, and answers 409 for a key not plugged in' {
+    $home3 = Join-Path $runDir 'home-remove'
+    [void](Write-SeedConfig $home3 $layoutBody)
+    $c3 = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $home3 'config.json'), $utf8))
+    $rv3 = @($c3.scenes | ? { $_.id -eq 'review' })[0]
+    $rv3 | Add-Member -Force -NotePropertyName layouts -NotePropertyValue ([pscustomobject]@{})
+    $rv3.layouts | Add-Member -NotePropertyName $keyDesk -NotePropertyValue (ConvertFrom-Json $layoutEarlier)
+    [IO.File]::WriteAllText((Join-Path $home3 'config.json'), (ConvertTo-Json -Depth 20 -Compress -InputObject $c3), $utf8)
+    $s = Start-Server $home3 $snapFile
+    try {
+      $before = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+      $bfo = @($before.scenes | ? { $_.id -eq 'focus' })[0]; $brv = @($before.scenes | ? { $_.id -eq 'review' })[0]
+      Check 'remove: focus has its own layout on the plugged-in key before the remove (control)' ($null -ne $bfo.layouts.PSObject.Properties[$keyDesk]) 'no own layout to remove'
+      $offBefore = Canon $bfo.layouts.PSObject.Properties[$keyOffice].Value
+      $rvBefore = Canon $brv.layouts.PSObject.Properties[$keyDesk].Value
+      $r = Send-Post "$($s.url)layout/remove" ('{"scene":"focus","key":"' + $keyDesk + '"}')
+      Check 'remove: the route is on the server and answers 200 for the plugged-in key (scope)' ($r.code -eq 200) "status $($r.code)"
+      if ($r.code -eq 200) {
+        $after = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+        $fo = @($after.scenes | ? { $_.id -eq 'focus' })[0]; $ro = @($after.scenes | ? { $_.id -eq 'review' })[0]
+        Check 'remove: focus has no own layout on the plugged-in key' ($null -eq $fo.layouts.PSObject.Properties[$keyDesk]) 'the layout is still there'
+        Check 'remove: focus keeps its layout for the other setup (Office)' ((Canon $fo.layouts.PSObject.Properties[$keyOffice].Value) -ceq $offBefore) 'the Office layout changed'
+        Check 'remove: review keeps its layout for the plugged-in key' ((Canon $ro.layouts.PSObject.Properties[$keyDesk].Value) -ceq $rvBefore) 'the review layout changed'
+        $lay = ConvertFrom-Json (Get-Reply "$($s.url)layouts").text
+        $f = Follows-Of $lay.focus
+        Check 'remove: focus now follows Office, the closest setup that holds its layout' ($f -ceq 'Office') "follows: $(if ($null -eq $f) { 'missing' } else { "'$f'" })"
+        $beforeRefused = Config-Shape (Get-Reply "$($s.url)config").text
+        $refused = Send-Post "$($s.url)layout/remove" ('{"scene":"focus","key":"' + $keyOffice + '"}')
+        Check 'remove: a key not plugged in (Office) answers 409' ($refused.code -eq 409) "status $($refused.code)"
+        Check 'remove: the refused remove leaves the config as it was' ((Config-Shape (Get-Reply "$($s.url)config").text) -ceq $beforeRefused) 'the config changed'
+      }
+    } finally { Stop-Server $s }
   }
 
   # ---- Tray: a failed monitor read is not a change ----
