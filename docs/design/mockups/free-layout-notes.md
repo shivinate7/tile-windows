@@ -66,6 +66,9 @@ F2. **Seams come from the spaces.** The page works out each line from the spaces
     So after a plain drag, the line in the other row keeps its own grip. A part that touches a locked
     window is dotted, with no grip, and says why (item 18). Gain: one rule draws every state, so the
     builder gets the rule, not a list. Loss: a long line in many rows shows many grips. Pick: as drawn.
+    How spaces appear and go: switch-on makes one space per cell (or span), Split adds one space
+    (F13), and Close Gap removes one (F12). There is no tool to draw a space by hand: that was Free
+    Rects, rejected (item 22).
 
 F3. **The Shift move is found at the drag.** Every drag shows a tip at the pointer that names the
     other move: "This row only. Shift moves the whole line." on a plain drag, "Shift: the whole line,
@@ -96,7 +99,7 @@ F6. **Keys (item 19, owned by L4).** The monitor decides: on a Free Layout monit
     as the pointer, and the whole-line move has a keyboard way (the plan named none). Loss: a key
     means two things by monitor; Alt+Shift+arrows is a three-key chord. Pick: as drawn.
     Departs from: plan L4 (Shift+arrows move lines by 1/48, no whole-line key) — adds Alt for the
-    whole line, and arrows swap with the next space.
+    whole line, and arrows swap with the next space. Owner grant: yes.
 
 F7. **Assign by drop, one home.** A drop on an empty space pins the window there; the space lights
     and says "Notepad goes here" (state `assign-drop`). A drop on a space a window holds uses today's
@@ -119,11 +122,13 @@ F10. **Whether the board shows a gone window's space as lent (owned by L4).** Th
        lent, each part hatched in the colour of the window that has it, with a solid edge on that
        window's side. Selecting it says who has how much and that restore gives it back. Gain: what
        you drag is what saves; the board never shows a layout that is not saved. Loss: the board and
-       the screen differ while the window is gone.
+       the screen differ while the window is gone; for a closed window that never reopens, they
+       differ with no end, until Close Gap or a drag.
      - Grown Neighbours (state `gap-grown`): the board draws the screen: the neighbours grown, and
        the gone window's saved space as a dashed outline. Gain: the board matches the screen. Loss: a
        drag on a grown neighbour edits a rect that is not saved, so it is unclear what it changes.
-     Pick: Lent Space. The hatch carries meaning (space on loan), as `layout-free-notes.md` item 29
+     A closed window's space is lent the same way (ruling 2026-11-18 11:08 CST: closed and
+     minimized); its space fills again when that app opens and matches the area. Pick: Lent Space. The hatch carries meaning (space on loan), as `layout-free-notes.md` item 29
      says of every hatch here; each part keeps a solid or dashed edge, so forced colours keep it.
 
 F11. **A gap that stays.** When no side qualifies (here: Terminal and File Explorer locked), the
@@ -137,7 +142,7 @@ F12. **Close Gap uses the gone-window rule.** Close Gap on an empty space remove
      window, this saves. Gain: one rule for every space that empties (plan: "Close Gap calls the same
      function"). Loss: an owner who wanted one neighbour to take it all drags the line after.
      Departs from: `layout-free-notes.md` item 17 (Close Gap grows the one neighbour that shares the
-     whole edge) — both qualifying sides meet in the middle, per the plan and M1.
+     whole edge) — both qualifying sides meet in the middle, per the plan and M1. Owner grant: yes.
 
 F13. **Split in Free Layout** (item 28). The split menu of `split-cell.html` (S1, Menu List), halves
      only (S1 default). Each group says "Adds a line", since no grid doubles. The heading names the
@@ -154,8 +159,8 @@ F14. **Errors.** Two, both from real paths:
      Departs from: today's results row (raw engine text) — plain words, a fix button, and the raw
      text behind a disclosure.
 
-F15. **The switch on a 1×1 monitor (item 15, owned by L4).** Off, with "One window fills this
-     monitor, so it has no line to move. Split its cell first." and a Split Cell button beside it,
+F15. **The switch on a 1×1 monitor (item 15, owned by L4).** Off, with item 15's words, "One
+     window fills this monitor. Split it first." (plan L4's test reads them), and a Split Cell button beside it,
      which opens the split menu on that window (`ux-no-dead-end`). After a split the switch turns on.
      Gain: the reason leads straight to the fix. Loss: none. Pick: as drawn.
 
