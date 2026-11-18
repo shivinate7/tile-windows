@@ -34,7 +34,7 @@
 #   Offline, dialog: the offline page shows no Monitors and Setups button and sends no request. A guard: green on the old commit, and a
 #     mutant with the button turns it red (run on a scratch copy).
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
-# clears Undo, and delete cases. The setup change, Apply, autosave and failed-read cases are red on the page as it stands.
+# clears Undo, delete, size id, and Could not forget cases.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $serve = Join-Path $root 'serve.ps1'; $appHtml = Join-Path $root 'app.html'
