@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor Setups</title>
+<style>
+/* Tokens copied from app.html :root (lines 13-23). No web fonts: this page opens from disk with no network, so the stacks fall back to Segoe UI. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --tmix:26%; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D; --ok:#17754B; --bad:#B42318;
+  /* Mockup chrome only, never product UI: the dashed Today and New labels. */
+  --ann-new:#C0267A; --ann-today:#4F574F;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- Mockup shell (not product UI) ---------- */
+.mk{display:grid;gap:12px;padding:16px}
+.banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
+.banner b{color:var(--ann-new)}
+.mkhead{display:grid;gap:4px}
+.mkhead h1{margin:0;font:700 20px var(--f-disp);letter-spacing:-.01em}
+.mkhead p{margin:0;color:var(--muted);max-width:80ch}
+.mkbar{display:grid;gap:8px}
+.mkrow{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.mkgrp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkgrp>span{color:var(--muted);font-size:12px;min-width:44px}
+.mkseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.mkseg button{min-height:32px;border:0;background:transparent;padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.mkseg button+button{border-left:1px solid var(--line)}
+.mkseg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.mkopts{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;font-size:12.5px}
+.mkopts label{display:inline-flex;gap:6px;align-items:center;min-height:32px;cursor:pointer}
+.mkopts input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.mkopts .sep{color:var(--muted);font-size:12px}
+.item{display:grid;gap:10px;padding-top:6px}
+.item>h2{margin:8px 0 0;font:700 18px var(--f-disp);letter-spacing:-.01em}
+.item>p{margin:0;color:var(--muted);max-width:90ch}
+.shot{display:grid;gap:6px}
+.shot h3.cap{margin:6px 0 0;font:700 15px var(--f-disp);letter-spacing:-.01em;color:var(--ink)}
+.shot h3.cap .note{font:12px var(--f);color:var(--muted)}
+.shot .capn{margin:0;color:var(--muted);max-width:90ch}
+.kind{font:600 11px var(--f);padding:1px 6px;border-radius:3px;border:1px dashed var(--ann-new);color:var(--ann-new);margin-left:6px;vertical-align:2px}
+.kind.today{border-color:var(--ann-today);color:var(--ann-today)}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.art{position:relative}
+.art.w1440{width:1440px}.art.w1440 .app{height:900px}
+.art.w1024{width:1024px}.art.w1024 .app{height:768px}
+/* Today / New labels */
+.ann{position:absolute;border:1.5px dashed var(--ann-new);border-radius:4px;pointer-events:none;z-index:40}
+.ann.today{border-color:var(--ann-today)}
+.ann>em,.abox>em{position:absolute;left:-2px;font:600 10.5px/1 var(--f);font-style:normal;white-space:nowrap;padding:2px 5px;border-radius:3px;background:var(--panel);color:var(--ann-new);border:1px dashed var(--ann-new)}
+.ann>em{top:calc(100% + 3px)}.ann.up>em{top:auto;bottom:calc(100% + 3px)}.ann.end>em{left:auto;right:-2px}
+.ann.today>em,.abox.today>em{color:var(--ann-today);border-color:var(--ann-today)}
+.abox{position:relative;outline:1.5px dashed var(--ann-new);outline-offset:3px;border-radius:2px;margin-top:14px}
+.abox.today{outline-color:var(--ann-today)}
+.abox>em{top:-19px;left:-4px;z-index:2}
+.abox.inl{margin-top:0;outline-offset:1px}
+.nolabels .ann{display:none}.nolabels .abox{outline:0;margin-top:0}.nolabels .abox>em{display:none}
+
+/* ---------- Product UI: copied from app.html ---------- */
+.app{position:relative;display:grid;grid-template-columns:232px minmax(0,1fr) 268px;grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"top top top" "rail canvas insp" "status status status";background:var(--panel);overflow:hidden}
+.top{grid-area:top;position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:9px 16px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font:700 15px var(--f-disp);letter-spacing:-.01em;margin:0}
+.brand svg{width:20px;height:20px;color:var(--select)}
+.crumb{color:var(--muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--ink);font-weight:600}
+.edited{color:var(--ink);font-weight:600}
+.edited::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hi);margin:0 6px 1px 8px}
+.tools{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;border:1px solid var(--line);background:var(--panel);padding:5px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:color-mix(in srgb,var(--ink) 40%,var(--line))}
+.btn.pri{background:var(--select);color:var(--select-ink);border-color:var(--select);font-weight:600}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 55%,var(--line))}
+.btn:disabled{cursor:not-allowed;color:var(--muted);background:transparent;border-style:dashed;border-color:var(--line)}
+.btn svg{width:15px;height:15px}
+.switch{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 6px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.switch input{appearance:none;width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;margin:0;cursor:pointer;flex:none}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel)}
+.switch input:checked{background:var(--ink)} .switch input:checked::after{left:14px}
+.toast{position:absolute;right:16px;top:calc(100% + 6px);z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;max-width:min(460px,calc(100vw - 32px));
+  padding:9px 10px 9px 14px;border-radius:8px;background:var(--ink);color:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent);font-weight:500}
+.toast .btn{min-height:28px;background:transparent;color:inherit;border-color:color-mix(in srgb,currentColor 40%,transparent)}
+.rail,.insp{min-width:0;min-height:0;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:auto}
+.rail{grid-area:rail;border-right:1px solid var(--line)}
+.insp{grid-area:insp;border-left:1px solid var(--line);gap:0;padding-top:4px}
+.isec{display:grid;gap:8px;padding:12px 0 16px;border-bottom:1px solid var(--line)}
+.isec:last-child{border-bottom:0}
+.app h2{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:10px 0 0;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.app h2:first-child{margin-top:0}
+.insp h2{margin:0;color:var(--ink);font-size:12px;font-weight:700;text-transform:none;letter-spacing:0}
+.cards{display:grid;gap:6px}
+.card{position:relative;display:grid;gap:4px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.card.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.pick{display:grid;gap:5px;border:0;background:transparent;padding:0;text-align:left;min-width:0;border-radius:4px}
+.pick strong{font:700 15px var(--f-disp);letter-spacing:-.01em;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pick small{color:var(--muted);font-size:12px}
+.live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);min-width:0}
+.mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden;display:block}
+.mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
+.mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
+.cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
+.legend{display:grid;gap:2px}
+.lg{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;border:0;background:transparent;padding:4px 6px;border-radius:4px;text-align:left}
+.lg .ct{margin-left:auto;font:12px var(--f-mono);color:var(--muted)}
+.note{font-size:12px;color:var(--muted);margin:0}
+.canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.canvas>*{width:100%;flex:none}
+.canvas>.stage{width:auto}
+.stage{position:relative;user-select:none}
+.mon{position:absolute;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
+.mon.cur{outline:2px dashed var(--ink);outline-offset:4px}
+.mon .cell{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);background:color-mix(in srgb,var(--ink) 6%,transparent);border-radius:2px;position:relative;min-width:0;min-height:0}
+.mon .cell i{position:absolute;right:3px;bottom:1px;font:normal 11px var(--f-mono);color:var(--muted)}
+.mlab{position:absolute;display:flex;gap:6px;align-items:baseline;font-size:11px;color:var(--muted);white-space:nowrap;transform:translateY(-100%);padding-bottom:3px}
+.mlab button{border:0;background:transparent;padding:0;font-weight:600;color:var(--ink);font-size:11.5px}
+.mlab button[aria-pressed="true"]{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.tile{position:absolute;display:flex;flex-direction:column;align-items:flex-start;gap:2px;overflow:hidden;padding:3px 5px 3px 8px;border-radius:3px;
+  border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);background:color-mix(in srgb,var(--cat) var(--tmix),var(--panel));color:var(--ink);font-size:12px;line-height:1.2;cursor:grab;contain:layout paint}
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
+.tile b{font:600 11px var(--f);padding:1px 5px;border-radius:2px;background:var(--cat);color:var(--panel);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;max-width:100%}
+.tile .pinmark{position:absolute;top:22px;right:5px;width:12px;height:12px;color:var(--cat)}
+.tile.pin span{max-width:calc(100% - 12px)}
+.tile.pin{border-width:2px;border-color:var(--cat);background:color-mix(in srgb,var(--cat) 34%,var(--panel))}
+.tile.pin,.tile.fill{z-index:2}
+.tile.stacked{z-index:3}
+.tile.stacked span{-webkit-line-clamp:2}
+.tile.narrow span{-webkit-line-clamp:2}
+.tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 5px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1;max-width:calc(100% - 12px)}
+.tile .stk svg{width:10px;height:10px;flex:none}
+.tile .stk span{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}
+.tile .stk span.n{flex:none;overflow:visible}
+.stkedge{position:absolute;pointer-events:none;z-index:2;border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--cat) 14%,var(--panel))}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
+.boardbar .hint{margin:0;flex:1 1 300px}
+.status{grid-area:status;display:flex;flex-wrap:wrap;gap:4px 18px;padding:7px 16px;border-top:1px solid var(--line);font:12px var(--f-mono);color:var(--muted);align-items:center}
+.status .msg{color:var(--ink)}
+select,input[type=text]{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-height:32px;min-width:0;max-width:100%}
+select:disabled,input:disabled{color:var(--muted);border-style:dashed;cursor:not-allowed}
+input[type=text]{width:100%}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;min-height:30px;border:0;background:transparent;padding:5px 2px;font-size:12px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.field{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px}
+.field>label,.field>span:first-child{color:var(--muted)}
+.field.stack{flex-direction:column;align-items:stretch;gap:4px}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.step button{border:0;background:transparent;width:30px;height:30px;font-size:15px}
+.step span{min-width:26px;text-align:center;font:500 12.5px var(--f-mono)}
+.bay{display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel))}
+.bay h2{margin:0;justify-content:flex-start;gap:10px}
+.bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
+.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
+.bgrp h3{display:flex;gap:6px;align-items:center;margin:0 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.bgrp ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;font-size:12px}
+.chip b{font-weight:600;white-space:nowrap}
+.chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip small{grid-column:1/-1;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bfoot{display:flex;gap:8px 12px;align-items:stretch;flex-wrap:wrap}
+.dropslot{flex:1 1 220px;display:flex;align-items:center;justify-content:center;min-height:32px;padding:4px 8px;border:1px dashed var(--muted);border-radius:5px;color:var(--muted);font-size:12px;text-align:center}
+/* The dialog look of app.html (dialog, dialog::backdrop, dialog h2), drawn in place so the frame shows it open. */
+.backdrop{position:absolute;inset:0;z-index:60;display:grid;place-items:center;background:color-mix(in srgb,#000 40%,transparent)}
+.dlg{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:16px;width:min(600px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;display:grid;gap:10px}
+.dlg>h2{font:700 18px var(--f-disp);text-transform:none;letter-spacing:0;color:var(--ink);margin:0}
+.dlg .row{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.abox.dlgbox{position:absolute;inset:0;z-index:60;outline-offset:-3px}
+.abox.dlgbox>em{top:8px;left:8px;z-index:61}
+
+/* 1024: app.html's @media (max-width:1180px) rules, keyed on the artboard instead of the viewport. */
+.w1024 .app{grid-template-columns:minmax(0,1fr) 252px;grid-template-rows:auto auto minmax(0,1fr) auto;grid-template-areas:"top top" "rail rail" "canvas insp" "status status"}
+.w1024 .rail{flex-direction:row;align-items:stretch;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;padding:8px 12px;gap:12px}
+.w1024 .rail>section{display:flex;flex-direction:column;gap:6px;flex:none}
+.w1024 .cards{grid-auto-flow:column;grid-auto-columns:176px}
+.w1024 .card .pick small,.w1024 .legend+.note{display:none}
+.w1024 .legend{grid-template-columns:repeat(2,auto);column-gap:6px}
+.w1024 .canvas{padding:18px 14px}
+
+/* ---------- New: the setup strip above the board ---------- */
+/* One line that names the plugged-in setup and what the selected scene does on it. It sits above the board it describes (ux-control-beside-area). */
+.setbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.setbar.warn{background:var(--hi-bg);border-color:color-mix(in srgb,var(--hi) 60%,var(--line));border-left:3px solid var(--hi)}
+.smap{position:relative;flex:none;width:58px;height:30px;border-radius:4px;background:var(--canvas)}
+.smap i{position:absolute;background:var(--screen);border:1.5px solid color-mix(in srgb,var(--ink) 70%,var(--canvas));border-radius:2px}
+.smap i.gone{background:transparent;border:1.5px dashed var(--muted)}
+.sid{display:grid;gap:0;min-width:0;flex:1 1 260px}
+.sid b{font:700 14px var(--f-disp);letter-spacing:-.01em}
+.sid span{font-size:12px;color:var(--muted)}
+.sid span strong{color:var(--ink);font-weight:600}
+.sfold{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}
+.sfold select{color:var(--ink)}
+.sbtns{display:flex;gap:6px;flex-wrap:wrap}
+.sbtns .btn svg{width:14px;height:14px}
+.w1024 .setbar{gap:6px 10px;padding:6px 8px}
+.w1024 .sid{flex-basis:200px}
+/* At 1024 Monitors and Setups keeps its icon and gives up its words (title and label keep them), so the strip stays two rows. */
+.w1024 .sbtns .btn.mg{padding:5px 8px}
+.w1024 .sbtns .btn.mg .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* A marker on each scene card: does this scene follow the source setup here, or has its own layout? Icon only; the word is in its title and label, and the setup strip says it once for the selected scene. */
+.lay{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:3px;flex:none;color:var(--muted)}
+.lay svg{width:13px;height:13px}
+.lay.own{background:var(--ink);color:var(--panel)}
+/* A scene that follows another setup draws its mini map's windows as outlines: borrowed, not set here. */
+.mini.follow b{background:transparent;border:1.5px dashed color-mix(in srgb,var(--cat) 85%,var(--panel))}
+/* The monitor's own name field in the inspector. */
+.mname{display:grid;gap:4px}
+.mname .note b{color:var(--ink);font-weight:600}
+/* Monitors and Setups: the list rows. */
+.dsec{display:grid;gap:0}
+.dsec>h3{margin:4px 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.dsec>h3 span{font:400 12px var(--f);text-transform:none;letter-spacing:0}
+.lrow{display:grid;grid-template-columns:62px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.lrow .smap{width:62px}
+.lrow .nm{display:grid;gap:2px;min-width:0}
+.lrow .nm input{font-weight:600;max-width:240px;min-height:30px;padding:3px 7px}
+.lrow .nm small{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.lrow .rt{display:flex;align-items:center;gap:8px;justify-self:end}
+.lrow .st{font-size:12px;color:var(--muted);white-space:nowrap}
+.lrow .st.now{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.dlg .why{font-size:12px;color:var(--muted);margin:0}
+@media (forced-colors:active){.lrow .st.now{background:CanvasText}}
+.lrow details{grid-column:2/-1;font-size:12px;color:var(--muted)}
+.lrow details summary{font-weight:500;color:var(--muted);width:max-content}
+.lrow details code{font:11.5px var(--f-mono);overflow-wrap:anywhere}
+.lrow .btn{min-height:28px;padding:3px 10px;font-size:12px}
+.dempty{margin:0;padding:10px 0 4px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+/* The rail option: a Setups section under Scenes. */
+.srow{display:grid;grid-template-columns:44px minmax(0,1fr);gap:2px 8px;align-items:center;width:100%;padding:5px 6px;border:0;border-radius:6px;background:transparent;text-align:left}
+.srow:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.srow .smap{width:44px;height:24px;grid-row:span 2}
+.srow b{font-weight:600;font-size:12.5px;display:flex;gap:6px;align-items:center}
+.srow small{font-size:11.5px;color:var(--muted)}
+.srow[aria-current="true"]{box-shadow:inset 0 0 0 1px var(--ink)}
+.srow[aria-current="true"] b::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.w1024 .slist{display:grid;grid-auto-flow:column;grid-auto-columns:150px;gap:4px}
+@media (forced-colors:active){.lay.own{border:1px solid CanvasText}.smap i{border-color:CanvasText}.mini.follow b{border-color:CanvasText}.setbar.warn{border-left-color:CanvasText}}
+</style>
+</head>
+<body>
+<div class="mk">
+  <p class="banner" role="note"><b>Sample.</b><span>Every monitor, serial, window, title, date and count on this page is invented. No figure here is real.</span></p>
+  <header class="mkhead">
+    <h1>Monitor Setups</h1>
+    <p>Owner's ask, 2026-11-16 14:46 CST: remember monitors and their layouts by what is plugged in, like Windows does, but act more dynamically. Each monitor is known by its hardware, not its size rank. Each set of plugged-in monitors is a setup. Each scene keeps a layout per setup; a new setup starts from the closest one it has seen. Dashed pink labels mark what is new; dashed grey labels mark what exists today. Each option has a switch below that hides it.</p>
+  </header>
+  <nav class="mkbar" aria-label="Mockup controls">
+    <div class="mkgrp"><span id="lblState">State</span><div class="mkseg" id="segState" role="group" aria-labelledby="lblState"></div></div>
+    <div class="mkrow">
+      <div class="mkgrp"><span id="lblW">Width</span><div class="mkseg" id="segW" role="group" aria-labelledby="lblW"></div></div>
+      <div class="mkgrp"><span id="lblT">Theme</span><div class="mkseg" id="segT" role="group" aria-labelledby="lblT"></div></div>
+    </div>
+    <div class="mkopts" role="group" aria-label="Show options">
+      <span class="sep">Options:</span>
+      <label><input type="checkbox" data-o="setups" checked>Setup Strip</label>
+      <label><input type="checkbox" data-o="laptop" checked>Fold Onto the Laptop</label>
+      <label><input type="checkbox" data-o="portrait" checked>Fold Onto the Portrait</label>
+      <label><input type="checkbox" data-o="stay" checked>Send to Windows That Stay Put</label>
+      <label><input type="checkbox" data-o="dialog" checked>Monitors and Setups Dialog</label>
+      <label><input type="checkbox" data-o="rail" checked>Setups in the Rail</label>
+      <label><input type="checkbox" data-o="icon" checked>Card Marker as Icon</label>
+      <label><input type="checkbox" data-o="word" checked>Card Marker as Word</label>
+      <span class="sep">Overlays:</span>
+      <label><input type="checkbox" id="oLabels" checked>Today and New Labels</label>
+    </div>
+  </nav>
+  <div id="frames"></div>
+</div>
+<script>
+"use strict";
+/* ---------- Sample (invented) ---------- */
+// Monitors, known by hardware. det is what Windows reports, in the person's words; id is the machine text, shown only in a closed disclosure.
+const HW={
+  lap:{name:"Laptop",det:"Built-in screen",id:"BOE0A1F · internal"},
+  uw:{name:"Ultrawide",det:"38-inch wide, serial ending 7Q2",id:"GSM7742 · 0x2207Q2"},
+  por:{name:"Portrait",det:"24-inch, turned upright, serial ending K19",id:"DEL41B8 · 0x8K19"},
+  h27:{name:"Home 27",det:"27-inch, serial ending 0AF",id:"AUS27A9 · 0x110AF"},
+  m2:{name:"Monitor 2",det:"No ID from Windows. 1920×1080 on HDMI.",id:"(none)"}};
+// Where each monitor sits in each setup (Windows coordinates, working area). The Desk numbers are the app's own sample.
+const GEO={
+  desk:{lap:[-1536,769,1536,912],uw:[0,0,4096,1680],por:[4096,-1354,1200,1872]},
+  lp:{lap:[0,480,1536,912],por:[1536,0,1200,1872]},
+  solo:{lap:[0,0,1536,912]},
+  home:{lap:[0,560,1536,912],h27:[1536,0,2560,1400]},
+  noid:{lap:[0,240,1536,912],m2:[1536,0,1920,1040]}};
+const SETUP={
+  desk:{name:"Desk",mons:["lap","uw","por"],when:"Last used today 08:12",own:"7 scenes"},
+  lp:{name:"Laptop + Portrait",mons:["lap","por"],when:"New today 14:31",own:"1 scene"},
+  solo:{name:"Laptop Only",mons:["lap"],when:"Last used Nov 14",own:"2 scenes"},
+  home:{name:"Home",mons:["lap","h27"],when:"Last used Nov 9",own:"none"}};
+const W={
+  ca:{app:"Claude",cat:"code",title:"Refactor the grid solver"},
+  cb:{app:"Claude",cat:"code",title:"Monitor setups lane"},
+  vs:{app:"VS Code",cat:"code",title:"tile.ps1"},
+  ch:{app:"Chrome",cat:"browse",title:"Quarterly roadmap"},
+  te:{app:"Terminal",cat:"code",title:"pwsh - tiler"},
+  ex:{app:"Excel",cat:"other",title:"Budget FY27.xlsx"},
+  fe:{app:"File Explorer",cat:"other",title:"Projects"},
+  ou:{app:"Outlook",cat:"comms",title:"Inbox - Outlook"},
+  tm:{app:"Teams",cat:"comms",title:"Team chat"},
+  on:{app:"Outlook (new)",cat:"comms",title:"Calendar"}};
+const CATN={code:"Code",browse:"Browse",comms:"Comms",other:"Other"};
+
+/* ---------- Icons ---------- */
+const I={
+  logo:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1"/><rect x="11" y="3" width="7" height="6" rx="1"/><rect x="2" y="11" width="16" height="6" rx="1"/></svg>',
+  pin:'<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M4 1h4l-.6 3.2L9.5 6v1H6.6L6 11.5 5.4 7H2.5V6l2.1-1.8z"/></svg>',
+  behind:'<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="1.5" y="4" width="6.5" height="6.5" rx="1" fill="currentColor" fill-opacity=".25"/><path d="M4 4V1.5h6.5V8H8"/></svg>',
+  link:'<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 8a2.4 2.4 0 0 0 3.4 0l2-2a2.4 2.4 0 0 0-3.4-3.4l-.6.6M8 6a2.4 2.4 0 0 0-3.4 0l-2 2a2.4 2.4 0 0 0 3.4 3.4l.6-.6"/></svg>',
+  own:'<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="2.5" width="10.4" height="7" rx="1"/><path d="M5 12h4M7 9.5V12"/></svg>',
+  screens:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="3" width="9" height="6" rx="1"/><rect x="11.5" y="1.5" width="3.5" height="9" rx="1"/><path d="M4 12.5h3M5.5 9v3.5"/></svg>'};
+
+/* ---------- View state, from the URL hash ---------- */
+const OPTS=["setups","laptop","portrait","stay","dialog","rail","icon","word"];
+/* [key, item, option, name, caption] */
+const STATES=[
+  ["bd-today",1,"today","Today: the Laptop Is Called Ultrawide","The ultrawide is unplugged. Today the widest screen left takes the Ultrawide role, so the laptop gets the 5×2 grid and seven windows. The Laptop role has no screen, so Outlook (new) is skipped."],
+  ["bd-new",1,"setups","Unplugged: a New Setup, Built From Desk","Each screen keeps its own name. A strip above the board names the setup and says the scene follows Desk; no toast, so nothing covers the strip. The board shows Default's layout for this setup; Apply moves the windows, unless a trigger does it."],
+  ["bd-back",1,"setups","Plugged Back In: Desk Returns As It Was","Desk is a setup it has seen, so its layout comes back untouched. Nothing done on Laptop + Portrait wrote to Desk. The strip names Desk and says other setups follow it."],
+  ["bd-noid",1,"setups","A Monitor With No ID","A hotel monitor reports no maker or serial, so it cannot be told apart next time. The strip says so and offers to remember it by its size. Until then the layout follows Desk and edits last only while it is plugged in."],
+  ["fd-laptop",2,"laptop","Fold Onto the Laptop","The ultrawide's seven windows go to the remaining screen closest in shape: the laptop, landscape like the ultrawide. Its grid grows to 2×2, its own window keeps cell 1, and each category of folded window takes one cell, stacked in fill order."],
+  ["fd-portrait",2,"portrait","Fold Onto the Portrait","The seven windows go to the portrait, the larger screen by area. Its grid grows from 1×2 to 1×5: one row per category under Outlook and Teams. The rows are short."],
+  ["fd-stay",2,"stay","Send to Windows That Stay Put","The ultrawide's part of the scene waits. Its windows go to Windows That Stay Put, where Windows left them (on the laptop). The laptop and portrait keep their own layout."],
+  ["mg-dialog",3,"dialog","Monitors and Setups, in a Dialog","The strip's Monitors and Setups button opens one dialog. Each monitor and setup has a name field and a Forget button. A plugged-in monitor and the setup in use cannot be forgotten, and say why."],
+  ["mg-first",3,"dialog","First Run: One Setup So Far","After the update, the setup plugged in at first launch is the only one. The list says what will fill it."],
+  ["mg-rail",3,"rail","Setups in the Rail","Other option: a Setups section under Scenes in the left rail. A click opens that setup's layouts on the board, so the owner can edit a setup that is not plugged in. Renaming a monitor stays in the inspector."],
+  ["cd-follow",4,"icon","Scene Cards: Following Desk","On Laptop + Portrait, Default and Meetings follow Desk: their cards show a link mark and their mini maps draw windows as outlines. Focus has its own layout here: a filled screen mark and filled windows. The strip says the word once, for the selected scene."],
+  ["cd-own",4,"icon","Scene Cards: Own Layout","Focus is selected. It was changed and saved on this setup, so it no longer follows Desk. The strip says so and offers Follow Desk Again."],
+  ["cd-word",4,"word","Other Option: the Marker as a Word","Each card's tag says it in words. The tag wraps to two or three lines beside Apply, at 1440 and at 1024, so each card grows, and the word repeats on every card."]];
+const ITEMS={1:["1. The Board When a Screen Is Unplugged","Laptop and portrait only. Which setup is on, and where its layout came from."],
+  2:["2. Where the Missing Screen's Windows Go","The ultrawide held seven of Default's windows. Three options; the owner can change it per setup in the strip."],
+  3:["3. See, Rename and Forget Monitors and Setups","Where the owner sees what Tile Windows remembers."],
+  4:["4. A Scene Card on This Setup","How a card shows that its layout for this setup follows another setup, or is its own."]};
+const V={s:"bd-new",w:"1440",t:"",labels:true,off:new Set()};
+function readHash(){const h=new URLSearchParams(location.hash.slice(1));
+  V.s=[...STATES.map(s=>s[0]),"all"].includes(h.get("s"))?h.get("s"):"bd-new";
+  V.w=["1440","1024"].includes(h.get("w"))?h.get("w"):"1440";
+  V.t=["light","dark"].includes(h.get("t"))?h.get("t"):"";
+  V.labels=h.get("labels")!=="0";
+  V.off=new Set((h.get("hide")||"").split(",").filter(o=>OPTS.includes(o)))}
+function writeHash(){const p=[`s=${V.s}`];if(V.w!=="1440")p.push(`w=${V.w}`);if(V.t)p.push(`t=${V.t}`);if(!V.labels)p.push("labels=0");if(V.off.size)p.push(`hide=${[...V.off].join(",")}`);history.replaceState(null,"","#"+p.join("&"))}
+
+/* ---------- Helpers ---------- */
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const css=b=>`left:${b.l.toFixed(1)}px;top:${b.t.toFixed(1)}px;width:${b.w.toFixed(1)}px;height:${b.h.toFixed(1)}px`;
+const ann=(b,text,o={})=>`<div class="ann${o.today?" today":""}${o.up?" up":""}${o.end?" end":""}" style="${css({l:b.l-3,t:b.t-3,w:b.w+6,h:b.h+6})}"><em>${o.today?"Today":"New"}: ${esc(text)}</em></div>`;
+const abox=(html,text,o={})=>`<div class="abox${o.today?" today":""}${o.inl?" inl":""}"${o.id?` id="${o.id}"`:""}><em>${o.today?"Today":"New"}: ${esc(text)}</em>${html}</div>`;
+// A small map of a setup's monitors; gone = monitors of another setup drawn dashed.
+function smap(setupKey,gone=[],W0=58,H0=30){const g={...GEO[setupKey]};const all=Object.entries(g);
+  const x0=Math.min(...all.map(([,r])=>r[0])),y0=Math.min(...all.map(([,r])=>r[1])),x1=Math.max(...all.map(([,r])=>r[0]+r[2])),y1=Math.max(...all.map(([,r])=>r[1]+r[3]));
+  const S=Math.min((W0-6)/(x1-x0),(H0-6)/(y1-y0)),ox=(W0-(x1-x0)*S)/2,oy=(H0-(y1-y0)*S)/2;
+  return `<span class="smap" style="width:${W0}px;height:${H0}px" aria-hidden="true">${all.map(([k,r])=>`<i class="${gone.includes(k)?"gone":""}" style="left:${(ox+(r[0]-x0)*S).toFixed(1)}px;top:${(oy+(r[1]-y0)*S).toFixed(1)}px;width:${Math.max(r[2]*S,3).toFixed(1)}px;height:${Math.max(r[3]*S,3).toFixed(1)}px"></i>`).join("")}</span>`}
+
+/* ---------- Layouts per state: grid per monitor and the windows on it ---------- */
+// A tile: [win, mon, c, r, cs, rs, behind[]]
+function layout(st){
+  const desk={geo:"desk",grids:{lap:[1,1],uw:[5,2],por:[1,2]},fills:"uw",
+    tiles:[["on","lap",0,0],["ca","uw",0,0],["cb","uw",1,0],["vs","uw",2,0],["ch","uw",3,0,2,1],["te","uw",0,1],["ex","uw",1,1],["fe","uw",4,1],["ou","por",0,0],["tm","por",0,1]]};
+  const foldLap={geo:"lp",grids:{lap:[2,2],por:[1,2]},fills:"lap",
+    tiles:[["on","lap",0,0],["ca","lap",1,0,1,1,["cb","vs","te"]],["ch","lap",0,1],["ex","lap",1,1,1,1,["fe"]],["ou","por",0,0],["tm","por",0,1]]};
+  if(st==="bd-today")return{geo:"lp",grids:{lap:[5,2],por:[1,2]},fills:"lap",names:{lap:"Ultrawide",por:"Portrait"},
+    tiles:[["ca","lap",0,0],["cb","lap",1,0],["vs","lap",2,0],["ch","lap",3,0,2,1],["te","lap",0,1],["ex","lap",1,1],["fe","lap",4,1],["ou","por",0,0],["tm","por",0,1]]};
+  if(st==="bd-back")return desk;
+  if(st==="fd-portrait")return{geo:"lp",grids:{lap:[1,1],por:[1,5]},fills:"por",
+    tiles:[["on","lap",0,0],["ou","por",0,0],["tm","por",0,1],["ca","por",0,2,1,1,["cb","vs","te"]],["ch","por",0,3],["ex","por",0,4,1,1,["fe"]]]};
+  if(st==="fd-stay")return{geo:"lp",grids:{lap:[1,1],por:[1,2]},fills:null,
+    tiles:[["on","lap",0,0],["ou","por",0,0],["tm","por",0,1]]};
+  if(st==="bd-noid")return{geo:"noid",grids:{lap:[1,1],m2:[2,2]},fills:"m2",
+    tiles:[["on","lap",0,0],["ca","m2",0,0,1,1,["cb","vs","te"]],["ch","m2",1,0],["ou","m2",0,1,1,1,["tm"]],["ex","m2",1,1,1,1,["fe"]]]};
+  if(st==="cd-own")return{geo:"lp",grids:{lap:[1,1],por:[1,2]},fills:"lap",
+    tiles:[["ca","lap",0,0,1,1,["cb"]],["ch","por",0,0],["tm","por",0,1]]};
+  return foldLap}
+
+/* ---------- Board ---------- */
+// Scales: each board fits the canvas at its artboard width with room left for the strip, the hint and the list.
+function scaleFor(geo,w){const g=Object.values(GEO[geo]),x0=Math.min(...g.map(r=>r[0])),y0=Math.min(...g.map(r=>r[1])),x1=Math.max(...g.map(r=>r[0]+r[2])),y1=Math.max(...g.map(r=>r[1]+r[3]));
+  const maxW=w==="1440"?880:700,maxH=w==="1440"?(geo==="desk"?380:400):(geo==="desk"?290:300);
+  return{S:Math.min(maxW/(x1-x0),maxH/(y1-y0)),x0,y0,bw:x1-x0,bh:y1-y0}}
+const TOP=22;
+function board(st,F,L,w){
+  const {S,x0,y0,bw,bh}=scaleFor(L.geo,w);
+  const mb=k=>{const r=GEO[L.geo][k];return{l:(r[0]-x0)*S+3,t:(r[1]-y0)*S+TOP,w:r[2]*S-6,h:r[3]*S}};
+  const cb=(k,c,r,cs=1,rs=1)=>{const b=mb(k),[gc,gr]=L.grids[k],iw=b.w-10,ih=b.h-10,cw=(iw-(gc-1)*2)/gc,ch=(ih-(gr-1)*2)/gr;
+    return{l:b.l+5+c*(cw+2),t:b.t+5+r*(ch+2),w:cs*cw+(cs-1)*2,h:rs*ch+(rs-1)*2}};
+  let mons="",tiles="",anns="";
+  const names=L.names||{};
+  for(const k of Object.keys(GEO[L.geo])){const b=mb(k),[gc,gr]=L.grids[k];let cells="";for(let i=0;i<gc*gr;i++)cells+=`<div class="cell"><i>${i+1}</i></div>`;
+    const nm=names[k]||HW[k].name,cur=k===(L.cur||"lap");
+    const tgt=(st==="fd-laptop"&&k==="lap")||(st==="fd-portrait"&&k==="por")?` id="${F}-target"`:"";
+    mons+=`<div class="mon${cur?" cur":""}"${tgt} style="${css(b)};grid-template-columns:repeat(${gc},minmax(0,1fr));grid-template-rows:repeat(${gr},minmax(0,1fr))">${cells}</div><div class="mlab" style="left:${b.l}px;top:${b.t}px"><button type="button" aria-pressed="${cur}">${esc(nm)}</button><span class="num">${gc}×${gr}${L.fills===k?" · fills":""}</span></div>`}
+  for(const [id,k,c,r,cs=1,rs=1,beh=[]] of L.tiles){const x=W[id],b0=cb(k,c,r,cs,rs),b={l:b0.l+1,t:b0.t+1,w:b0.w-2,h:b0.h-2},nar=b.w<84,stk=beh.length>0;
+    const tb=stk?{l:b.l,t:b.t+3,w:b.w-3,h:b.h-3}:b;
+    if(stk)tiles+=`<div class="stkedge cat-${x.cat}" style="${css({l:b.l+3,t:b.t,w:b.w-3,h:b.h-3})}"></div>`;
+    const badge=stk?`<button type="button" class="stk" title="Behind it: ${esc(beh.map(q=>W[q].app).join(", "))}">${tb.w>=140?I.behind:""}<span>${esc(W[beh[0]].app)}</span>${beh.length>1?`<span class="n"> +${beh.length-1}</span>`:""}</button>`:"";
+    tiles+=`<div class="tile cat-${x.cat} pin${stk?" stacked":""}${nar?" narrow":""}" style="${css(tb)}" tabindex="0" aria-label="${esc(x.title)}, ${esc(x.app)}, pinned${stk?`, ${beh.length} behind`:""}"><b>${esc(x.app)}</b><span>${esc(x.title)}</span>${I.pin}${badge}</div>`}
+  // Labels
+  if(st==="bd-today"){const b=mb("lap");anns+=ann(b,"Laptop Called Ultrawide, Gets Its 5×2 Grid",{today:true,up:false})}
+  if(st==="bd-new"||st==="fd-laptop"){const b=mb("lap");anns+=ann(b,st==="fd-laptop"?"Grows to 2×2; One Cell per Category":"Laptop Keeps Its Name",{})}
+  if(st==="fd-portrait"){const b=mb("por");anns+=ann(b,"Grows to 1×5",{end:true})}
+  if(st==="fd-stay"){const b=mb("lap");anns+=ann(b,"Laptop Keeps 1×1",{})}
+  if(st==="bd-noid"){const b=mb("m2");anns+=ann(b,"No ID: Named by Order",{end:true})}
+  if(st==="bd-back"){const b=mb("uw");anns+=ann(b,"Desk Layout Comes Back Untouched",{})}
+  return `<div class="stage" style="width:${(bw*S).toFixed(0)}px;height:${(bh*S+TOP).toFixed(0)}px">${mons}${tiles}${anns}</div>`}
+
+/* ---------- The setup strip ---------- */
+function setbar(st,F){
+  const fold=sel=>`<label class="sfold">Ultrawide's windows go to <select aria-label="Where the Ultrawide's windows go on this setup"><option${sel==="lap"?" selected":""}>Laptop</option><option${sel==="por"?" selected":""}>Portrait</option><option${sel==="stay"?" selected":""}>Windows That Stay Put</option></select></label>`;
+  const mgBtn=`<button type="button" class="btn mg" title="Monitors and Setups">${I.screens}<span class="t">Monitors and Setups</span></button>`;
+  let id,sub,extra="",cls="setbar",map;
+  const sceneName=st==="cd-own"?"Focus":"Default";
+  if(st==="bd-back"){map=smap("desk");id="Desk";sub=`<strong>${sceneName}</strong> has its own layout here. Setups that follow Desk get your changes.`}
+  else if(st==="bd-noid"){cls+=" warn";map=smap("noid");id="Laptop + Monitor 2";sub=`Monitor 2 gave Windows no ID, so this setup is not remembered. <strong>${sceneName}</strong> follows Desk; changes last until it is unplugged.`;
+    extra=`<label class="sfold">Ultrawide's and Portrait's windows go to <select aria-label="Where the missing monitors' windows go"><option selected>Monitor 2</option><option>Laptop</option><option>Windows That Stay Put</option></select></label><div class="sbtns"><button type="button" class="btn">Remember It by Its Size</button></div>`}
+  else if(st==="cd-own"){map=smap("lp",[]);id="Laptop + Portrait";sub=`<strong>Focus</strong> has its own layout here, saved today at 14:40. Desk's changes no longer reach it.`;extra=`<div class="sbtns"><button type="button" class="btn">Follow Desk Again</button></div>`}
+  else{map=smap("lp");id="Laptop + Portrait";sub=`New setup, first seen today at 14:31. <strong>${sceneName}</strong> follows Desk until you change it and Save.`;
+    extra=fold(st==="fd-portrait"?"por":st==="fd-stay"?"stay":"lap")}
+  const html=`<div class="${cls}" id="${F}-setbar">${map}<div class="sid"><b>${esc(id)}</b><span>${sub}</span></div>${extra}<div class="sbtns">${mgBtn}</div></div>`;
+  return abox(html,st==="bd-noid"?"Setup Strip: No ID Warning":"Setup Strip")}
+
+/* ---------- Rail ---------- */
+function miniFor(scene,follow,w){
+  // app.html miniHTML(): the plugged-in monitors to scale in a 196×28 box (here the card's own width), each scene's windows on them.
+  const g=GEO.lp,x0=0,y0=0,x1=2736,y1=1872,BW=w==="1024"?150:182,BH=28,S=Math.min(BW/(x1-x0),BH/(y1-y0)),ox=(BW-(x1-x0)*S)/2+3,oy=(BH-(y1-y0)*S)/2+2;
+  const box=k=>({l:ox+(g[k][0]-x0)*S,t:oy+(g[k][1]-y0)*S,w:g[k][2]*S,h:g[k][3]*S});
+  const blk=(k,c,r,gc,gr,cat,cs=1,rs=1)=>{const m=box(k),cw=m.w/gc,ch=m.h/gr;return `<b class="cat-${cat}" style="left:${(m.l+c*cw+1).toFixed(1)}px;top:${(m.t+r*ch+1).toFixed(1)}px;width:${Math.max(cs*cw-2,2).toFixed(1)}px;height:${Math.max(rs*ch-2,2).toFixed(1)}px"></b>`};
+  const S2={default:[["lap",0,0,2,2,"comms"],["lap",1,0,2,2,"code"],["lap",0,1,2,2,"browse"],["lap",1,1,2,2,"other"],["por",0,0,1,2,"comms"],["por",0,1,1,2,"comms"]],
+    focus:[["lap",0,0,1,1,"code"],["por",0,0,1,2,"browse"],["por",0,1,1,2,"comms"]],
+    meetings:[["lap",0,0,2,2,"comms",2,1],["lap",0,1,2,2,"code"],["lap",1,1,2,2,"browse"],["por",0,0,1,1,"comms"]]}[scene];
+  const scr=["lap","por"].map(k=>{const m=box(k);return `<i style="left:${m.l.toFixed(1)}px;top:${m.t.toFixed(1)}px;width:${(m.w-1).toFixed(1)}px;height:${(m.h-1).toFixed(1)}px"></i>`}).join("");
+  return `<span class="mini${follow?" follow":""}" aria-hidden="true">${scr}${S2.map(a=>blk(...a)).join("")}</span>`}
+function rail(st,F,w){
+  const wordOpt=st==="cd-word";
+  const own=id=>id==="focus";
+  const selId=st==="cd-own"?"focus":"default";
+  const showMark=st.startsWith("cd-")||st.startsWith("fd-")||st==="bd-new"||st==="mg-rail";
+  const mark=id=>{if(!showMark)return"";if(wordOpt)return"";const o=own(id);const t=o?"Own layout for Laptop + Portrait":"Follows Desk on Laptop + Portrait";
+    return `<span class="lay${o?" own":""}" title="${t}" role="img" aria-label="${t}">${o?I.own:I.link}</span>`};
+  const tagTxt=id=>wordOpt?`Built-in · ${own(id)?"own layout":"follows Desk"}`:"Built-in";
+  const card=(id,name,blurb)=>{const sel=id===selId,on=id==="default";const follow=showMark&&!own(id);
+    return `<article class="card${sel?" sel":""}"${id==="focus"&&st==="cd-own"?` id="${F}-card"`:""}><button type="button" class="pick" aria-pressed="${sel}">${miniFor(id,follow,w)}<strong>${name}${on?'<span class="live">On screen</span>':""}</strong><small>${blurb}</small></button><div class="crow"><span class="tag">${mark(id)}${tagTxt(id)}</span><button type="button" class="btn">Apply</button></div></article>`};
+  let cards=card("default","Default","Claude and Chrome fill the big screen.")+card("focus","Focus","Claude only, three wide.")+card("meetings","Meetings","Teams big, mail beside it.");
+  if(st.startsWith("cd-"))cards=abox(`<div class="cards" id="${F}-cards">${cards}</div>`,wordOpt?"Marker as a Word":"Link or Screen Mark");
+  else cards=`<div class="cards">${cards}</div>`;
+  const setups=st==="mg-rail"?abox(`<section id="${F}-setups"><h2>Setups</h2><div class="slist">${["lp","desk","solo","home"].map(k=>`<button type="button" class="srow"${k==="lp"?' aria-current="true"':""}>${smap(k,[],44,24)}<b>${esc(SETUP[k].name)}</b><small>${k==="lp"?"Plugged in now":esc(SETUP[k].when)}</small></button>`).join("")}</div></section>`,"Setups Section"):"";
+  return `<aside class="rail" aria-label="Scenes and categories"><section><h2>Scenes</h2>${cards}</section>${setups}
+    <section><h2>Categories</h2><div class="legend">${[["code","Code",4],["browse","Browse",1],["comms","Comms",3],["other","Other",2]].map(([c,l,n])=>`<button type="button" class="lg cat-${c}" aria-pressed="true"><i class="sw"></i>${l}<span class="ct">${n}</span></button>`).join("")}</div><p class="note">Click a category to fade it on the board.</p></section></aside>`}
+
+/* ---------- Inspector ---------- */
+const stepper=(lbl,val)=>`<span class="step"><button type="button" aria-label="Fewer ${lbl}">−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" aria-label="More ${lbl}">+</button></span>`;
+function insp(st,F,L){
+  const today=st==="bd-today";
+  const sname=st==="cd-own"?"Focus":"Default";
+  const scene=`<section class="isec" aria-label="Scene"><h2>Scene</h2><div class="field stack"><label>Name</label><input type="text" value="${sname}" disabled title="Built-in scenes keep their name."></div><p class="note">Triggers, extras, Save and Revert sit here as today.</p></section>`;
+  const mons=Object.keys(GEO[L.geo]),cur=L.cur||"lap",names=L.names||{};
+  const seg=`<div class="seg" role="group" aria-label="Monitor">${mons.map(k=>`<button type="button" aria-pressed="${k===cur}">${esc(names[k]||HW[k].name)}</button>`).join("")}</div>`;
+  const [gc,gr]=L.grids[cur];
+  const setsOf={lap:"In 4 setups",uw:"In 1 setup",por:"In 2 setups",m2:"Not remembered",h27:"In 1 setup"};
+  const nameF=today?"":abox(`<div class="mname"><div class="field stack"><label for="${F}-mn">Name</label><input type="text" id="${F}-mn" value="${esc(HW[cur].name)}" maxlength="24" autocomplete="off"></div><p class="note"><b>${esc(HW[cur].det)}.</b> ${setsOf[cur]}.</p></div>`,"Monitor Name");
+  const mon=`<section class="isec"><h2>Monitor</h2>${seg}${nameF}<div class="field"><span>Columns</span>${stepper("columns",gc)}</div><div class="field"><span>Rows</span>${stepper("rows",gr)}</div></section>`;
+  return `${scene}${mon}<section class="isec"><h2>Window</h2><p class="note">Click a window on the board to change it here.</p></section>`}
+
+/* ---------- Monitors and Setups dialog ---------- */
+function dialog(st,F){
+  const first=st==="mg-first";
+  // Each row's state shows by shape: a green dot for plugged in or in use; a date for the rest. The words are in the section header and the dot's label, once.
+  const why=`${F}-whyforget`;
+  const mrow=(k,plugged,when)=>`<div class="lrow">${smapOne(k)}<div class="nm"><input type="text" value="${esc(HW[k].name)}" aria-label="Name of ${esc(HW[k].det)}" maxlength="24"><small>${esc(HW[k].det)}</small></div>
+    <div class="rt">${plugged?`<span class="st now" role="img" aria-label="Plugged in" title="Plugged in"></span>`:`<span class="st" title="Last seen">${esc(when)}</span>`}<button type="button" class="btn"${plugged?` disabled aria-describedby="${why}" title="Plugged in now. Unplug it to forget it."`:""}>Forget</button></div>
+    ${k==="uw"?`<details><summary>What Windows calls it</summary><code>${esc(HW[k].id)}</code></details>`:""}</div>`;
+  const srow=(k,now)=>`<div class="lrow">${smap(k,[],62,30)}<div class="nm"><input type="text" value="${esc(SETUP[k].name)}" aria-label="Name of the setup" maxlength="32"><small>${SETUP[k].mons.map(m=>HW[m].name).join(", ")}</small></div>
+    <div class="rt">${now?`<span class="st now" role="img" aria-label="In use" title="In use"></span>`:`<span class="st" title="Last used">${esc(SETUP[k].when.replace(/^Last used /,""))}</span>`}<button type="button" class="btn"${now?` disabled aria-describedby="${why}" title="In use now. Plug in other monitors to forget it."`:""}>Forget</button></div></div>`;
+  let body;
+  if(first){
+    body=`<section class="dsec"><h3>Monitors <span>All 3 plugged in</span></h3>${mrow("lap",true)}${mrow("uw",true)}${mrow("por",true)}</section>
+      <section class="dsec" id="${F}-setups"><h3>Setups <span>1 so far, in use</span></h3>${srow("desk",true)}<p class="dempty">Plug in a different set of monitors and it is added here, with a layout built from Desk.</p></section>`}
+  else{
+    body=`<section class="dsec"><h3>Monitors <span>4 known. A dot marks the 2 plugged in; the rest show when last seen.</span></h3>${mrow("lap",true)}${mrow("por",true)}${mrow("uw",false,"Today 14:30")}${mrow("h27",false,"Nov 9")}</section>
+      <section class="dsec"><h3>Setups <span>4 known. A dot marks the one in use; the rest show when last used.</span></h3>${srow("lp",true)}${srow("desk",false)}${srow("solo",false)}${srow("home",false)}</section>`}
+  const dlg=`<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="${F}-dh" id="${F}-dlg"><h2 id="${F}-dh">Monitors and Setups</h2><p class="note">Tile Windows knows each monitor by its hardware, and keeps a layout per scene for each set of monitors it has seen. Forget removes that setup's layouts from every scene.</p>${body}<p class="why" id="${why}">Forget is off for a monitor that is plugged in and for the setup in use.</p><div class="row"><button type="button" class="btn pri">Done</button></div></div>`;
+  return `<div class="backdrop">${dlg}</div>`}
+// One monitor drawn alone, its shape to scale.
+function smapOne(k){const r=Object.values(GEO).find(g=>g[k])[k],S=Math.min(56/r[2],24/r[3]),w=r[2]*S,h=r[3]*S;
+  return `<span class="smap" style="width:62px;height:30px" aria-hidden="true"><i style="left:${((62-w)/2).toFixed(1)}px;top:${((30-h)/2).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px"></i></span>`}
+
+/* ---------- Whole app frame ---------- */
+function frame(st,w){const F=st,L=layout(st),opt=STATES.find(s=>s[0]===st)[2],today=opt==="today";
+  const toastBox="";
+  const strip=today?"":setbar(st,F);
+  const hint=`<p class="hint">Drag to a cell to pin, or to the list to keep put.</p>`;
+  const stayList=st==="fd-stay";
+  const chips=stayList?["ca","cb","vs","te","ch","ex","fe"]:[];
+  const bayItems=[...chips.map(id=>({...W[id],why:"Its screen is unplugged"})),{app:"Paint",cat:"other",title:"sketch.png - Paint",why:"You kept it here"}];
+  const per=w==="1024"?2:4;let more=0;
+  const groups=["code","browse","comms","other"].map(c=>{const l=bayItems.filter(b=>b.cat===c);if(!l.length)return"";
+    return `<div class="bgrp"><h3><i class="sw cat-${c}"></i>${CATN[c]}</h3><ul>${l.map((b,k)=>{if(k>=per){more++;return""}return `<li><button type="button" class="chip cat-${b.cat}"><b>${esc(b.app)}</b><span>${esc(b.title)}</span><small>${esc(b.why)}</small></button></li>`}).join("")}</ul></div>`}).join("");
+  let bay=`<section class="bay" aria-label="Windows That Stay Put"${stayList?` id="${F}-list"`:""}><h2>Windows That Stay Put <span class="note">${bayItems.length===1?"1 window":bayItems.length+" windows"}. Apply leaves them where they are.</span></h2><div class="bgrps">${groups}</div><div class="bfoot">${more?`<button type="button" class="btn ghost">Show ${more} More</button>`:""}<div class="dropslot">Drag a window here to keep it where it is</div></div></section>`;
+  if(stayList)bay=abox(bay,"Reason: Its Screen Is Unplugged");
+  const msg=st==="bd-today"?"Outlook (new): no laptop monitor, so it was skipped."
+    :st==="bd-back"?"Read 10 windows on Desk."
+    :st==="fd-stay"?"Read 10 windows. 7 wait in Windows That Stay Put until the Ultrawide is back."
+    :st==="bd-noid"?"Read 10 windows on Laptop + Monitor 2."
+    :"Read 10 windows on Laptop + Portrait.";
+  const msgBox=today?`<span class="abox inl today msg" role="status">${esc(msg)}</span>`:`<span class="msg" role="status">${esc(msg)}</span>`;
+  const dlg=st==="mg-dialog"||st==="mg-first"?abox(dialog(st,F),st==="mg-first"?"First Run":"Monitors and Setups Dialog",{inl:true}).replace('class="abox inl"','class="abox inl dlgbox"'):"";
+  return `<div class="art w${w}${V.labels?"":" nolabels"}" data-state="${st}"><div class="app">
+    <header class="top"><p class="brand">${I.logo}Tile Windows</p><span class="crumb">Scene: <b>${st==="cd-own"?"Focus":"Default"}</b></span>
+      <div class="tools"><label class="switch"><input type="checkbox" checked>Grid Lines</label><label class="switch">Theme <select class="themesel"><option value="">Match Windows</option><option value="light"${V.t==="light"?" selected":""}>Light</option><option value="dark"${V.t==="dark"?" selected":""}>Dark</option></select></label><button class="btn" type="button" disabled title="Nothing to undo yet.">Undo</button><button class="btn pri" type="button">Apply</button></div>${toastBox}</header>
+    ${rail(st,F,w)}
+    <main class="canvas">${strip}${board(st,F,L,w)}<div class="boardbar">${hint}<button type="button" class="btn">Draw Zone</button><button type="button" class="btn">Clear Board</button></div>${bay}</main>
+    <aside class="insp" aria-label="Inspector">${insp(st,F,L)}</aside>
+    <footer class="status">${msgBox}</footer>${dlg}</div></div>`}
+
+/* ---------- Render ---------- */
+function visible(){return STATES.filter(s=>s[2]==="today"||!V.off.has(s[2]))}
+function render(){
+  if(V.t)document.documentElement.dataset.theme=V.t;else delete document.documentElement.dataset.theme;
+  const vis=visible();if(V.s!=="all"&&!vis.some(s=>s[0]===V.s))V.s=vis[0][0];
+  const segs=[["segState",[...vis.map(s=>[s[0],s[3]]),["all","All"]],"s"],["segW",[["1440","1440"],["1024","1024"]],"w"],["segT",[["","Match Windows"],["light","Light"],["dark","Dark"]],"t"]];
+  for(const [id,opts,k] of segs)document.getElementById(id).innerHTML=opts.map(([v,l])=>`<button type="button" data-k="${k}" data-v="${v}" aria-pressed="${V[k]===v}">${l}</button>`).join("");
+  for(const cb of document.querySelectorAll("[data-o]"))cb.checked=!V.off.has(cb.dataset.o);
+  document.getElementById("oLabels").checked=V.labels;
+  const list=V.s==="all"?vis:vis.filter(s=>s[0]===V.s);
+  let html="",cur=0;
+  for(const [k,item,o,name,cap] of list){
+    if(item!==cur){if(cur)html+="</section>";cur=item;html+=`<section class="item" aria-labelledby="i-${item}"><h2 id="i-${item}">${ITEMS[item][0]}</h2><p>${ITEMS[item][1]}</p>`}
+    html+=`<section class="shot" id="f-${k}" aria-labelledby="h-${k}"><h3 class="cap" id="h-${k}">${name}<span class="kind${o==="today"?" today":""}">${o==="today"?"Today":"Option"}</span> <span class="note">at ${V.w}</span></h3><p class="capn">${cap}</p><div class="scroll">${frame(k,V.w)}</div></section>`}
+  if(cur)html+="</section>";
+  document.getElementById("frames").innerHTML=html;
+  writeHash()}
+document.addEventListener("click",e=>{const b=e.target.closest(".mkseg button");if(!b)return;V[b.dataset.k]=b.dataset.v;render()});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.classList.contains("themesel")){V.t=t.value;render();return}
+  if(t.dataset.o){if(t.checked)V.off.delete(t.dataset.o);else V.off.add(t.dataset.o);render();return}
+  if(t.id==="oLabels"){V.labels=t.checked;render()}});
+addEventListener("hashchange",()=>{readHash();render()});
+readHash();render();
+</script>
+</body>
+</html>
