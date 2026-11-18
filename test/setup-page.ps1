@@ -20,6 +20,11 @@
 #   Autosave: a board edit's POST /layout keeps the Windows That Stay Put and held entries of closed windows as the server had them.
 #   Failed read: a re-read whose GET /config or GET /layouts fails leaves the strip amber, with a message.
 #   Delete: deleting a scene whose save was refused, or still in flight, leaves the strip clear, and a late refusal does not bring it back.
+#   Card menu (Follow Again, decision monitor-setups item 7; mockup cd-own): a scene with its own layout on the plugged setup offers
+#     "Follow <closest setup> Again" in its card's menu, opened by the card's More button. A scene that follows another setup offers none.
+#     Choosing it sends one POST /layout/remove for the plugged key, and the card then says it follows that setup. Undo sends one POST
+#     /layout with the own layout as it was, and the card says own layout again. The offline page shows no such item and sends no POST.
+#     The Meetings menu check and the offline item check are guards: they hold on the page as it stands.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, and delete cases. The setup change, Apply, autosave and failed-read cases are red on the page as it stands.
 $ErrorActionPreference = 'Stop'
@@ -88,6 +93,20 @@ function Canon($o) {
 # The layouts the page is shown: focus has its own layout on the plugged setup; meetings has one only on Laptop + Ultrawide.
 $focusOwn = '{"grids":{"P1":{"c":1,"r":2},"U1":{"c":3,"r":1}},"pins":[{"app":"claude","match":"Refactor the grid solver","mon":"GONE","slots":[0]}],"zones":[],"fill":{"mon":"U1","apps":[],"skip":[],"sort":"app"},"bay":[]}'
 $meetLayout = '{"grids":{"U1":{"c":4,"r":2}},"pins":[],"zones":[],"fill":{"mon":"U1","apps":["*"],"skip":[],"sort":"app"},"bay":[]}'
+# Follow Again: Focus has its own layout on the plugged setup and a layout on Laptop + Ultrawide, the closest known setup, and so does Meetings,
+# which therefore follows it (its card carries the mark). The menu item is named for that setup.
+$lapUltraFocus = '{"grids":{"U1":{"c":2,"r":2}},"pins":[],"zones":[],"fill":{"mon":"U1","apps":[],"skip":[],"sort":"app"},"bay":[]}'
+$followLabel = 'Follow Laptop + Ultrawide Again'
+# The list in a reply, with no null entry: a reply of nothing (an empty JSON array) is an empty list, so a count of it is 0.
+function Reply-List($x) { @($x | ? { $null -ne $_ }) }
+function New-FollowConfig {
+  $cfg = New-Config
+  Add-Member -InputObject $cfg.setups -NotePropertyName 'L1|U1' -NotePropertyValue ([pscustomobject]@{ name = 'Laptop + Ultrawide'; ids = @('L1', 'U1'); lastUsed = '2026-11-16T09:00:00' })
+  Add-Layout $cfg 'focus' 'L1|U1' $lapUltraFocus
+  Add-Layout $cfg 'meetings' 'L1|U1' $meetLayout
+  Add-Layout $cfg 'focus' $plugKey $focusOwn
+  $cfg
+}
 
 # A child powershell, with the run's profile and TILE_HOME. Stdout is redirected so the caller can read the server's URL.
 function Start-Child([string]$argLine) {
@@ -147,6 +166,14 @@ if (!window.__h) {
   window.__posts = []; window.__pending = [];
   const f = window.fetch.bind(window);
   window.fetch = (u, o) => { const p = f(u, o); if (o && String(o.method || "").toUpperCase() === "POST") { window.__posts.push({ url: String(u), body: String(o.body || "") }); window.__pending.push(p.catch(() => {})) } return p };
+  // The card menu as a user meets it: a card's More button, the Follow items on screen, and a card. An item's label is its first bold text, or its aria-label.
+  window.__fa = {
+    card: s => { const b = [...document.querySelectorAll("[data-pick]")].find(x => x.dataset.pick === s); return b ? b.closest("article.card") : null },
+    more: s => { const c = window.__fa.card(s); return c ? ([...c.querySelectorAll("button:not([data-pick]):not([data-apply])")].find(x => /\bmore\b|\bmenu\b|⋯/i.test((x.getAttribute("aria-label") || "") + " " + (x.title || "") + " " + x.textContent.trim())) || null) : null },
+    label: x => (x.getAttribute("aria-label") || (x.querySelector("b") || x).textContent).replace(/\s+/g, " ").trim(),
+    items: () => [...document.querySelectorAll("button, [role=menuitem], a")].filter(x => x.getClientRects().length > 0 && /^Follow .+ Again$/.test(window.__fa.label(x))),
+    item: t => [...document.querySelectorAll("button, [role=menuitem], a")].find(x => x.getClientRects().length > 0 && window.__fa.label(x) === t) || null
+  };
   window.__h = {
     settle: async () => { for (let i = 0; i < 50; i++) { const n = window.__pending.length; await Promise.allSettled(window.__pending.slice()); await new Promise(r => setTimeout(r, 0)); if (window.__pending.length === n) return } },
     posts: u => window.__posts.filter(p => p.url === u)
@@ -411,6 +438,88 @@ try {
     [void](WaitFor $ws 'window.__h.posts("layout").length === 1 && svBusy["focus"] === false')
     $after = Js $ws $stripJs
     Check 'the late refusal leaves the strip clear' ($null -ne $after -and $after.warn -ne $true) "strip text: '$($after.text)'"
+  }
+
+  # Follow Again on the card menu. Each case opens its own page, and opens the menu as a user does, through the card's More button.
+  Case 'card menu: Focus, with its own layout on the plugged setup, offers "Follow Laptop + Ultrawide Again"; Meetings, which follows, offers none' {
+    Put-Config (New-FollowConfig)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    [void](Js $ws 'const m = window.__fa.more("focus"); if (m) m.click(); return true')
+    [void](WaitFor $ws 'window.__fa.items().length > 0' 15)
+    $focusMenu = Js $ws 'return { items: window.__fa.items().map(x => window.__fa.label(x)) }'
+    Check 'the Focus card menu offers "Follow Laptop + Ultrawide Again"' (@($focusMenu.items) -ccontains $followLabel) "items: $(@($focusMenu.items) -join ' | ')"
+    $openedMeet = Open-Page $ws $url 'meetings'
+    Check 'the page opens on Meetings (control)' $openedMeet 'the page did not open on Meetings in time'
+    if (-not $openedMeet) { return }
+    [void](Js $ws 'const m = window.__fa.more("meetings"); if (m) m.click(); return true')
+    $meetMenu = Js $ws 'return { items: window.__fa.items().map(x => window.__fa.label(x)) }'
+    Check 'the Meetings card menu offers no Follow item (it follows; it has no own layout on the plugged setup)' (@(@($meetMenu.items) | ? { $_ }).Count -eq 0) "items: $(@($meetMenu.items) -join ' | ')"
+  }
+
+  Case 'choosing the Follow item sends one request to the remove route for the plugged setup, and the card then says it follows' {
+    Put-Config (New-FollowConfig)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $cardBefore = Js $ws 'const c = window.__fa.card("focus"); return c ? c.textContent.replace(/\s+/g, " ") : null'
+    Check 'the Focus card says own layout before the choice (control)' ([string]$cardBefore -match 'own layout') "card text: '$cardBefore'"
+    [void](Js $ws 'const m = window.__fa.more("focus"); if (m) m.click(); return true')
+    [void](WaitFor $ws ('window.__fa.item("' + $followLabel + '") !== null') 15)
+    $has = Js $ws ('return window.__fa.item("' + $followLabel + '") !== null')
+    Check 'the Focus card menu has the Follow item (scope)' ($has -eq $true) 'no Follow item on the Focus card menu'
+    if ($has -ne $true) { return }
+    [void](Js $ws ('window.__fa.item("' + $followLabel + '").click(); await window.__h.settle(); return true'))
+    [void](WaitFor $ws 'window.__fa.card("focus") && /follows Laptop \+ Ultrawide/i.test(window.__fa.card("focus").textContent)' 20)
+    $rmBodies = Reply-List (Js $ws 'return window.__posts.filter(p => /(^|\/)layout\/remove$/.test(p.url)).map(p => p.body)')
+    $urls = Reply-List (Js $ws 'return window.__posts.map(p => p.url)')
+    Check 'the follow sends one request to the remove route' ($rmBodies.Count -eq 1) "requests to the remove route: $($rmBodies.Count); POST urls: $($urls -join ', ')"
+    $body = if ($rmBodies.Count -eq 1) { ConvertFrom-Json $rmBodies[0] }
+    Check 'that request names the plugged-in key and Focus' ($null -ne $body -and $body.key -ceq $plugKey -and $body.scene -ceq 'focus') "sent: $(if ($body) { "scene $($body.scene), key $($body.key)" } else { 'no request' })"
+    Check 'the follow writes no layout through POST /layout' (@($urls | ? { $_ -match '(^|/)layout$' }).Count -eq 0) "POST urls: $($urls -join ', ')"
+    $card = Js $ws 'const c = window.__fa.card("focus"); return c ? c.textContent.replace(/\s+/g, " ") : null'
+    Check 'the Focus card says it follows Laptop + Ultrawide' ([string]$card -match 'follows Laptop \+ Ultrawide') "card text: '$card'"
+    Check 'the Focus card no longer says own layout' ([string]$card -notmatch 'own layout') "card text: '$card'"
+  }
+
+  Case 'Undo after the follow writes the own layout back with one POST /layout, and the card says own layout again' {
+    Put-Config (New-FollowConfig)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $pre = Canon (Js $ws 'return layoutOf(work.focus)')
+    [void](Js $ws 'const m = window.__fa.more("focus"); if (m) m.click(); return true')
+    [void](WaitFor $ws ('window.__fa.item("' + $followLabel + '") !== null') 15)
+    $has = Js $ws ('return window.__fa.item("' + $followLabel + '") !== null')
+    Check 'the Focus card menu has the Follow item (scope)' ($has -eq $true) 'no Follow item on the Focus card menu'
+    if ($has -ne $true) { return }
+    [void](Js $ws ('window.__fa.item("' + $followLabel + '").click(); await window.__h.settle(); return true'))
+    [void](WaitFor $ws 'window.__fa.card("focus") && /follows Laptop \+ Ultrawide/i.test(window.__fa.card("focus").textContent)' 20)
+    $n0 = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws 'document.getElementById("undo").click(); await window.__h.settle(); return true')
+    $undoBodies = Reply-List (Js $ws ('return window.__h.posts("layout").slice(' + $n0 + ').map(p => p.body)'))
+    Check 'Undo sends one POST /layout' ($undoBodies.Count -eq 1) "POST /layout sent by Undo: $($undoBodies.Count)"
+    if ($undoBodies.Count -eq 1) {
+      $ub = ConvertFrom-Json $undoBodies[0]
+      Check 'that POST /layout names the plugged-in key and Focus' ($ub.key -ceq $plugKey -and $ub.scene -ceq 'focus') "sent: scene $($ub.scene), key $($ub.key)"
+      Check 'Undo writes the own layout back as it was before the follow' ((Canon $ub.layout) -ceq $pre) 'the layout Undo sent is not the own layout'
+    }
+    [void](WaitFor $ws 'window.__fa.card("focus") && /own layout/i.test(window.__fa.card("focus").textContent)' 20)
+    $card = Js $ws 'const c = window.__fa.card("focus"); return c ? c.textContent.replace(/\s+/g, " ") : null'
+    Check 'the Focus card says own layout again' ([string]$card -match 'own layout') "card text: '$card'"
+  }
+
+  Case 'the offline page shows no Follow item on any card and sends no POST' {
+    $fileUrl = ([Uri]$appHtml).AbsoluteUri
+    $loaded = Go $ws $fileUrl 'typeof snap !== "undefined" && !!snap && /^Offline/.test(document.getElementById("msg").textContent)'
+    Check 'the offline page loads its sample (scope)' $loaded 'the offline sample did not load in time'
+    if (-not $loaded) { return }
+    [void](Js $ws $installJs)
+    [void](Js $ws 'for (const s of ["default", "focus", "meetings", "review"]) { const m = window.__fa.more(s); if (m) m.click(); } return true')
+    $off = Js $ws 'return { items: window.__fa.items().map(x => window.__fa.label(x)), posts: window.__posts.length }'
+    Check 'the offline page shows no Follow item' (@(@($off.items) | ? { $_ }).Count -eq 0) "items: $(@($off.items) -join ' | ')"
+    Check 'the offline page sends no POST' ($off.posts -eq 0) "POSTs sent: $($off.posts)"
   }
 
   Case 'the offline page loads its sample and a board edit sends no POST' {
