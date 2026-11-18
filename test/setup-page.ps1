@@ -1251,9 +1251,9 @@ return { cards: cardsOf().length, heights, cut, soloRow };
   # and a fill on U1 that places nothing. $fillOver merges into the fill (held entries, off).
   function Split-Json([int]$c, [int]$r, $pins, $mult = $null, $unit = $null, $zones = @(), $fillOver = @{}) {
     $g = [ordered]@{ c = $c; r = $r }
-    if ($mult) { $g['mult'] = @($mult) }
+    if ($mult) { $g['mult'] = @(@($mult) -split ',' | % { [int]$_ }) }
     $f = [ordered]@{ mon = 'U1'; apps = @(); skip = @(); sort = 'app' }
-    if ($unit) { $f['unit'] = @($unit) }
+    if ($unit) { $f['unit'] = @(@($unit) -split ',' | % { [int]$_ }) }
     foreach ($k in $fillOver.Keys) { $f[$k] = $fillOver[$k] }
     ConvertTo-Json -Depth 12 -Compress -InputObject ([ordered]@{ grids = [ordered]@{ U1 = $g }; pins = @($pins); zones = @($zones); fill = $f; bay = @() })
   }
@@ -1357,7 +1357,8 @@ return { disabled: disabled, why: why };
     if ($null -eq $info) { return }
     $out.info = $info
     [void](WaitFor $sock ('window.__h.posts("layout").length > ' + $before) $postWait)
-    $out.sent = @(Js $sock ('await window.__h.settle(); return window.__h.posts("layout").slice(' + $before + ')') | ? { $_ })
+    $a = Js $sock ('await window.__h.settle(); return window.__h.posts("layout").slice(' + $before + ')')
+    $out.sent = @($a | ? { $_ })
   }
   # tile.ps1 -Scene -From -Json, in process, as golden-layouts.ps1 runs it. Its slots come back 1-based (tile.ps1, the -Json line).
   function Split-Engine([string]$scene, [string]$snapJson) {
@@ -1452,7 +1453,8 @@ return { disabled: disabled, why: why };
     [void](Js $ws 'await window.__h.settle(); return true')
     $menu = Js $ws $splitMenuJs
     Check 'split: S with no selection opens no split menu' ($menu -ne $true) 'a split menu opened'
-    $sent = @(Js $ws 'return window.__h.posts("layout")' | ? { $_ })
+    $a = Js $ws 'return window.__h.posts("layout")'
+    $sent = @($a | ? { $_ })
     Check 'split: S with no selection sends no POST /layout' ($sent.Count -eq 0) "POST /layout count: $($sent.Count)"
   }
 
@@ -1468,7 +1470,8 @@ return { disabled: disabled, why: why };
     $before = [int](Js $ws 'return window.__h.posts("layout").length')
     Press-Key $ws 'j' 74 'j'
     [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
-    $sent = @(Js $ws ('await window.__h.settle(); return window.__h.posts("layout").slice(' + $before + ')') | ? { $_ })
+    $a = Js $ws ('await window.__h.settle(); return window.__h.posts("layout").slice(' + $before + ')')
+    $sent = @($a | ? { $_ })
     Check 'split: J sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
     $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
     if (-not $lay) { return }   # the count check above names the cause: J sent no POST /layout
@@ -1527,7 +1530,8 @@ return { disabled: disabled, why: why };
     $u = Js $ws 'const u = document.getElementById("undo"); if (!u || u.disabled) return false; u.click(); return true'
     Check 'split: Undo is enabled after the split (scope)' ($u -eq $true) 'Undo is missing or disabled'
     [void](WaitFor $ws 'window.__h.posts("layout").length > 1' 10)
-    $all = @(Js $ws 'await window.__h.settle(); return window.__h.posts("layout")' | ? { $_ })
+    $a = Js $ws 'await window.__h.settle(); return window.__h.posts("layout")'   # one JSON array: assign it before @() (ConvertFrom-Json does not unroll it)
+    $all = @($a | ? { $_ })
     Check 'split: Undo sends one more POST /layout (two in all)' ($all.Count -eq 2) "POST /layout count: $($all.Count)"
     $restored = ($all.Count -eq 2) -and ((Canon (ConvertFrom-Json $all[1].body).layout) -ceq (Canon $pre))
     Check 'split: Undo writes the layout back as it was before the split' $restored 'the layout Undo sent is not the one from before the split'
