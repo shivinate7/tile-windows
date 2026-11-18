@@ -141,7 +141,7 @@ function Rename-Known($b) {
   }
 }
 # POST /forget: the answer's status code. $mons is the plugged-in monitors (read before the lock, as for /layout). A setup goes with its layout in every
-# scene; a monitor goes with each setup it is in. A scene's setupKey is left alone: the setup is added again, under the same key, when it is plugged in.
+# scene; a monitor goes with each setup it is in. A scene aimed at a forgotten setup is switched off and loses its setupKey.
 function Forget-Known($b, $mons) {
   $kind = [string]$b.kind; $id = [string]$b.id
   if ($kind -ne 'monitor' -and $kind -ne 'setup') { return 404 }
@@ -155,7 +155,10 @@ function Forget-Known($b, $mons) {
       $drop = @($cfg.setups.PSObject.Properties | ? { @($_.Value.ids) -ccontains $id } | % { $_.Name })
     } else {
       if (-not $cfg.setups -or -not $cfg.setups.PSObject.Properties[$id]) { return 404 }
-      if ($inUse -and $id -ceq $inUse) { return 409 }
+      # The setup in use; or, when a plugged-in monitor has no id and the key cannot be computed, any setup that holds a plugged-in monitor.
+      $held = @($cfg.setups.PSObject.Properties[$id].Value.ids)
+      if ($inUse) { if ($id -ceq $inUse) { return 409 } }
+      elseif (@($mons | ? { $_ -and $_.id } | % { [string]$_.id } | ? { $held -ccontains $_ }).Count) { return 409 }
       $drop = @($id)
     }
     foreach ($k in $drop) {
@@ -163,6 +166,9 @@ function Forget-Known($b, $mons) {
       foreach ($sc in @($cfg.scenes)) { if ($sc.layouts -and $sc.layouts.PSObject.Properties[$k]) { $sc.layouts.PSObject.Properties.Remove($k) } }
     }
     if ($kind -eq 'monitor') { $cfg.monitors.PSObject.Properties.Remove($id) }
+    # A scene aimed at a forgotten setup has its switch off, and a note asks for a pick (as Update-TileSetupSwitch does). Note first, then save.
+    $gone = @(Clear-TileSetupTriggers $cfg $drop)
+    if ($gone.Count) { Add-TileNote "A setup you forgot was the one $($gone -join ', ') used, so Use This Scene on This Setup is off for it. $(Get-TilePickSetupAsk)" }
     Save-TileConfigObject $cfg
     return 200
   }
