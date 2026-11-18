@@ -301,7 +301,7 @@ try {
     Check 'scope: the snapshot holds the laptop and the portrait, with Chrome and Claude open' (((@($pObj.monitors.id) | Sort-Object) -join ',') -ceq $wantPort -and @($pObj.windows).Count -eq 2) (@($pObj.monitors.id) -join ',')
     $r = Invoke-SceneFrom $wideScene $snapWidePort
     Check 'wide, laptop and portrait: Chrome is not placed on the laptop (wide does not fall back to the built-in)' (-not (PlacedOf $r 4101)) (Desc $r 4101)
-    Check 'wide, laptop and portrait: Chrome is listed in left' ((LeftWhy $r 4101) -ne '') (Desc $r 4101)
+    Check 'wide, laptop and portrait: Chrome is listed in left as "Its screen is unplugged"' ((LeftWhy $r 4101) -ceq 'Its screen is unplugged') (Desc $r 4101)
     Check 'control: wide, laptop and portrait: Claude takes the portrait tall cell 1' (OnCell $r 4102 1 (CellRect $tallB 1 2 0)) (Desc $r 4102)
   }
   Case 'control: wide, laptop and ultrawide: the ultrawide takes wide, and Chrome is in its first wide cell' {
@@ -358,6 +358,29 @@ try {
     $env:TILE_SCREENS_FILE = Write-Seam @($lapDesk)
     try { $txt = (& $tile -Proc chrome -DryRun 3>$null) | Out-String } finally { $env:TILE_SCREENS_FILE = $null }
     Check 'control: seam laptop alone, -Proc chrome -DryRun, default -Monitor wide, prints its grid' ($txt -match 'Grid \d+x\d+') "output: $($txt.Trim())"
+  }
+  # -Proc with -Monitor wide on a laptop and a portrait: no monitor takes wide, since a built-in never does with two or more monitors (decision
+  # monitor-setups item 14). The direct path falls back to the widest screen, the laptop (its bounds width 1920 beats the portrait's 1080), as
+  # main did (coordinator ruling 2026-11-17 19:03 CST), and does not throw. These runs read a -From snapshot, whose builtin flags Pick reads.
+  # The TILE_SCREENS_FILE seam, without -Json or -Monitors, reads no builtin flag, so its laptop is a wide candidate and the seam never shows the no-wide case.
+  $snapWidePortX = Write-Snap 'wide-portrait-x.json' @($lapDesk, $tallB) @((Win 4103 'x' 'Doc X' 0))
+  Case 'wide, laptop and portrait: -Proc x with the default -Monitor wide does not throw, and lands on the laptop' {
+    $pObj = Get-Content -Raw -LiteralPath $snapWidePortX | ConvertFrom-Json
+    $wantPort = (@($LAP, $TAL) | Sort-Object) -join ','
+    Check 'scope: the snapshot holds the laptop and the portrait' (((@($pObj.monitors.id) | Sort-Object) -join ',') -ceq $wantPort) (@($pObj.monitors.id) -join ',')
+    $wideNamed = Pick-From $snapWidePortX
+    Check 'scope: no monitor takes wide on that snapshot' ($wideNamed -ceq '') "Pick names $(Named $wideNamed)"
+    $threw = ''; $txt = ''
+    try { $txt = (& $tile -From $snapWidePortX -Proc x -DryRun 3>$null) | Out-String } catch { $threw = $_.Exception.Message }
+    Check 'wide, laptop and portrait, -Proc x, default -Monitor wide: does not throw' ($threw -eq '') "threw: $threw"
+    Check 'wide, laptop and portrait, -Proc x, default -Monitor wide: window x lands on the laptop (x=0 y=0 384x520)' ($txt -match 'x=0 y=0 384x520') "output: $($txt.Trim())"
+  }
+  Case 'wide, laptop and portrait: -Proc x with -Monitor wide given explicitly does not throw, and lands on the laptop' {
+    Check 'scope: no monitor takes wide on that snapshot' ((Pick-From $snapWidePortX) -ceq '') "Pick names $(Named (Pick-From $snapWidePortX))"
+    $threw = ''; $txt = ''
+    try { $txt = (& $tile -From $snapWidePortX -Proc x -Monitor wide -DryRun 3>$null) | Out-String } catch { $threw = $_.Exception.Message }
+    Check 'wide, laptop and portrait, -Proc x, explicit -Monitor wide: does not throw' ($threw -eq '') "threw: $threw"
+    Check 'wide, laptop and portrait, -Proc x, explicit -Monitor wide: window x lands on the laptop (x=0 y=0 384x520)' ($txt -match 'x=0 y=0 384x520') "output: $($txt.Trim())"
   }
   Case 'solo: a laptop alone places Chrome and Claude on the laptop, whichever role the starter pins Chrome to' {
     $solo = @(([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json).scenes | ? { $_.id -eq 'solo' })[0]
