@@ -472,8 +472,8 @@ try {
     if ($has -ne $true) { return }
     [void](Js $ws ('window.__fa.item("' + $followLabel + '").click(); await window.__h.settle(); return true'))
     [void](WaitFor $ws 'window.__fa.card("focus") && /follows Laptop \+ Ultrawide/i.test(window.__fa.card("focus").textContent)' 20)
-    $rmBodies = Reply-List (Js $ws 'return window.__posts.filter(p => /(^|\/)layout\/remove$/.test(p.url)).map(p => p.body)')
-    $urls = Reply-List (Js $ws 'return window.__posts.map(p => p.url)')
+    $rmBodies = @(Reply-List (Js $ws 'return window.__posts.filter(p => /(^|\/)layout\/remove$/.test(p.url)).map(p => p.body)'))
+    $urls = @(Reply-List (Js $ws 'return window.__posts.map(p => p.url)'))
     Check 'the follow sends one request to the remove route' ($rmBodies.Count -eq 1) "requests to the remove route: $($rmBodies.Count); POST urls: $($urls -join ', ')"
     $body = if ($rmBodies.Count -eq 1) { ConvertFrom-Json $rmBodies[0] }
     Check 'that request names the plugged-in key and Focus' ($null -ne $body -and $body.key -ceq $plugKey -and $body.scene -ceq 'focus') "sent: $(if ($body) { "scene $($body.scene), key $($body.key)" } else { 'no request' })"
@@ -498,7 +498,7 @@ try {
     [void](WaitFor $ws 'window.__fa.card("focus") && /follows Laptop \+ Ultrawide/i.test(window.__fa.card("focus").textContent)' 20)
     $n0 = [int](Js $ws 'return window.__h.posts("layout").length')
     [void](Js $ws 'document.getElementById("undo").click(); await window.__h.settle(); return true')
-    $undoBodies = Reply-List (Js $ws ('return window.__h.posts("layout").slice(' + $n0 + ').map(p => p.body)'))
+    $undoBodies = @(Reply-List (Js $ws ('return window.__h.posts("layout").slice(' + $n0 + ').map(p => p.body)')))
     Check 'Undo sends one POST /layout' ($undoBodies.Count -eq 1) "POST /layout sent by Undo: $($undoBodies.Count)"
     if ($undoBodies.Count -eq 1) {
       $ub = ConvertFrom-Json $undoBodies[0]
