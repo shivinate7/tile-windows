@@ -42,8 +42,15 @@ function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $
 $form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray = $null
 
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
-$saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME }
+# The run marks its children as the suite (TILE_TEST_SUITE): tile.ps1 refuses a live move under it unless TILE_TEST_ALLOW_LIVE is set.
+# test\safe-moves.ps1 holds those checks.
+$saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME; TILE_TEST_SUITE = $env:TILE_TEST_SUITE; TILE_TEST_ALLOW_LIVE = $env:TILE_TEST_ALLOW_LIVE; CLAUDECODE = $env:CLAUDECODE }
 $env:USERPROFILE = Profile 'run'; $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'; $env:TILE_HOME = $null
+$env:TILE_TEST_SUITE = '1'
+# Claude Code sets CLAUDECODE=1 in an agent's shell. Clear it, so no child of this run inherits it; a case that needs it sets it itself.
+$env:CLAUDECODE = $null
+# An opt-in inherited from the caller's shell must not reach the children either. Clear it; a case that needs it sets it itself.
+$env:TILE_TEST_ALLOW_LIVE = $null
 try {
   . (Join-Path $root 'config.ps1')
   Check 'the run and its children use a temp profile' ($env:USERPROFILE.StartsWith($tmp) -and $env:APPDATA.StartsWith($tmp) -and $TileHome.StartsWith($tmp)) "$env:USERPROFILE | $TileHome"
@@ -329,6 +336,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # Fresh screens (tile.ps1 reads the monitor list on every call): its own file, in a child powershell (its FAIL lines count here).
   $fsOut = @(Child (Join-Path $PSScriptRoot 'fresh-screens.ps1')); $fsOut | % { "$_" }
   $script:fail += [Math]::Max(@($fsOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # The live-move guard for tile.ps1 under the suite (TILE_TEST_SUITE): its own file, in a child powershell (its FAIL lines count here).
+  $smOut = @(Child (Join-Path $PSScriptRoot 'safe-moves.ps1')); $smOut | % { "$_" }
+  $script:fail += [Math]::Max(@($smOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Config v4 (decision monitor-setups): the v3 -> v4 migration, setup keys, setup registration and the layout a setup resolves to. Its own file, in a child powershell (its FAIL lines count here).
   $suOut = @(Child (Join-Path $PSScriptRoot 'setup-config.ps1')); $suOut | % { "$_" }
   $script:fail += [Math]::Max(@($suOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
