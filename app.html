@@ -1265,6 +1265,8 @@ const KBUILT='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-
   KDRAFT='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.6 1.33" aria-hidden="true"><circle cx="7" cy="7" r="5"/></svg>';
 const MOREI='<svg viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><circle cx="3" cy="7" r="1.25"/><circle cx="7" cy="7" r="1.25"/><circle cx="11" cy="7" r="1.25"/></svg>';
 const CLOCK='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="6" cy="6" r="4.8"/><path d="M6 3.4V6l1.8 1.2"/></svg>';
+// One home for the kind word and the edited rule: the card's icon and the inspector's Scene line both read them. A Not saved scene never says edited.
+const kindWord=id=>work[id].builtIn?"Built-in":saved(id)?"Custom":"Not saved",kindEdited=id=>!!(edited(id)&&saved(id));
 function renderRail(){
   if(LIVE){
     const ids=railIds(),nOn=ids.filter(id=>hasAny(work[id])).length;
@@ -1278,7 +1280,7 @@ function renderRail(){
       // The mark sits beside the tag. Its words are its title and label (and hidden text, so a reader that skips the label still has them): the strip says them once, in words, for the selected scene.
       lmark=lt?`<span class="lay${l.own?" own":""}" role="img" title="${esc(lt)}" aria-label="${esc(lt)}">${l.own?OWNI:LINKI}<span class="vh">${esc(lt)}</span></span>`:"",
       // The kind is an icon with its word as title and label, as the layout mark has. An edited saved scene also gets the amber dot.
-      ed=edited(id)&&saved(id),kw=s.builtIn?"Built-in":saved(id)?"Custom":"Not saved",kmark=`<span class="kd" role="img" title="${kw}" aria-label="${kw}">${s.builtIn?KBUILT:saved(id)?KCUST:KDRAFT}<span class="vh">${kw}${ed?", edited":""}</span></span>`,
+      ed=kindEdited(id),kw=kindWord(id),kmark=`<span class="kd" role="img" title="${kw}" aria-label="${kw}">${s.builtIn?KBUILT:saved(id)?KCUST:KDRAFT}<span class="vh">${kw}${ed?", edited":""}</span></span>`,
       kedit=ed?`<span class="ked" role="img" title="Edited" aria-label="Edited"></span>`:"";return `<article class="card${id===selId?" sel":""}">
       <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini${fol?" follow":""}" aria-hidden="true">${miniHTML(prevs[id])}</span>
       <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
@@ -1311,6 +1313,7 @@ function renderInsp(V){
     const fk=focusKey(document.activeElement);
     $("scenebox").innerHTML=`<h2>Scene</h2>
     <div class="field stack"><label for="sceneName">Name</label><input type="text" id="sceneName" name="sceneName" autocomplete="off" value="${esc(s.name)}" ${s.builtIn?"disabled title=\"Built-in scenes keep their name.\"":""} maxlength="40"></div>
+    <p class="note" id="skind">${kindWord(selId)}${kindEdited(selId)?" · edited":""}</p>
     <h2>Triggers</h2>
     <p class="callout${hasAny(s)?" warn":""}"><span${hasAny(s)?"":` class="off"`}><b>Triggers that are on move your windows without asking.</b> They run once you Save, and only while the tray agent runs. Applying by hand always works.</span><span${hasAny(s)?` class="off"`:""}>No trigger is on, so this scene changes your windows only when you apply it.</span></p>
     <fieldset class="trig"><legend>Main Trigger (Pick One)</legend>${TRIG.map(([v,l])=>`<div class="ropt"><label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}><span>${l}<small>${TRIGH[v]}</small></span></label>${t.type===v?trigFields(s,t):""}</div>`).join("")}</fieldset>
