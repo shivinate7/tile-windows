@@ -20,6 +20,7 @@
 #                     monitor-setups, item 7). A route the server lacks answers 404, and the case's first check says so.
 #     POST /config    a whole config. The server keeps its monitors, setups and its layouts for every key, plugged in or not, whatever
 #                     the body carries: POST /config writes no layout. Layouts are written only by POST /layout (409 for a key not plugged in).
+#     POST /layout/remove for an unknown scene answers 404; a scene whose last key is removed stays valid and still saves.
 #   A route the server lacks answers 404. On 31ea7c1 the /layout and /layouts cases are red for that reason: the route is not built.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
@@ -395,6 +396,41 @@ try {
         $refused = Send-Post "$($s.url)layout/remove" ('{"scene":"focus","key":"' + $keyOffice + '"}')
         Check 'remove: a key not plugged in (Office) answers 409' ($refused.code -eq 409) "status $($refused.code)"
         Check 'remove: the refused remove leaves the config as it was' ((Config-Shape (Get-Reply "$($s.url)config").text) -ceq $beforeRefused) 'the config changed'
+      }
+    } finally { Stop-Server $s }
+  }
+
+  # Guard, holds on the server as it stands: an unknown scene answers 404, and a scene whose only layout is the plugged-in key stays a valid
+  # scene once that layout is removed, and still saves. A mutant that answers 200 for an unknown scene turns the 404 check red.
+  Case 'remove: an unknown scene answers 404, and removing a scene''s last key leaves a valid scene that still saves' {
+    $home6 = Join-Path $runDir 'home-remove-last'
+    [void](Write-SeedConfig $home6 $layoutBody)
+    $c6 = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $home6 'config.json'), $utf8))
+    $f6 = @($c6.scenes | ? { $_.id -eq 'focus' })[0]
+    [void]$f6.layouts.PSObject.Properties.Remove($keyOffice)   # focus keeps only the plugged-in key
+    [IO.File]::WriteAllText((Join-Path $home6 'config.json'), (ConvertTo-Json -Depth 20 -Compress -InputObject $c6), $utf8)
+    $s = Start-Server $home6 $snapFile
+    try {
+      $wrongKey = Send-Post "$($s.url)layout/remove" ('{"scene":"focus","key":"' + $keyOffice + '"}')
+      Check 'remove: the route is on the server (scope: a key not plugged in answers 409)' ($wrongKey.code -eq 409) "status $($wrongKey.code)"
+      $unknown = Send-Post "$($s.url)layout/remove" ('{"scene":"no-such-scene","key":"' + $keyDesk + '"}')
+      Check 'remove: an unknown scene answers 404' ($unknown.code -eq 404) "status $($unknown.code)"
+      $last = Send-Post "$($s.url)layout/remove" ('{"scene":"focus","key":"' + $keyDesk + '"}')
+      Check 'remove: the last key of a scene is removed (control: 200)' ($last.code -eq 200) "status $($last.code)"
+      if ($last.code -eq 200) {
+        $cfgAfter = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+        $fa = @($cfgAfter.scenes | ? { $_.id -eq 'focus' })[0]
+        $left = if ($fa.layouts) { @($fa.layouts.PSObject.Properties).Count } else { 0 }
+        Check 'remove: the scene is still in the config with its name and grids' ($null -ne $fa -and [bool]$fa.name -and $null -ne $fa.grids) "scene: $(if ($fa) { $fa.name } else { 'missing' })"
+        Check 'remove: the scene has no layout left' ($left -eq 0) "layouts left: $left"
+        $lay = ConvertFrom-Json (Get-Reply "$($s.url)layouts").text
+        Check 'remove: GET /layouts still gives the scene a layout, and nothing to follow' ($null -ne $lay.focus -and $null -ne $lay.focus.layout -and [string]$lay.focus.follows -eq '') "layout: $(if ($lay.focus) { 'present' } else { 'missing' }); follows: '$($lay.focus.follows)'"
+        $saved = Send-Post "$($s.url)layout" ('{"scene":"focus","key":"' + $keyDesk + '","layout":' + $layoutBody + '}')
+        Check 'save: the scene saves its layout again after its last key was removed' ($saved.code -eq 200) "status $($saved.code)"
+        $back = ConvertFrom-Json (Get-Reply "$($s.url)config").text
+        $fb = @($back.scenes | ? { $_.id -eq 'focus' })[0]
+        $readBack = if ($null -ne $fb.layouts -and $null -ne $fb.layouts.PSObject.Properties[$keyDesk]) { Canon $fb.layouts.PSObject.Properties[$keyDesk].Value } else { 'none' }
+        Check 'save: the saved layout reads back as it was sent' ($readBack -ceq (Canon (ConvertFrom-Json $layoutBody))) "layout read back: $readBack"
       }
     } finally { Stop-Server $s }
   }
