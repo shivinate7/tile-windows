@@ -221,6 +221,9 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
 23. **The offline page** (`sv-offline`). Opened from disk, it has no scenes and no setups, so it
     draws no strip and claims no saving. Its edits stay in the page, and Apply downloads a place
     file, as today. Unchanged from main.
+24. **The card's menu opens above when there is no room below** (`cd-own`). Ruled (coordinator,
+    2026-11-17 23:03 CST): the scene card's ⋯ menu opens below its button when it fits, else above.
+    Departs from: the mockup's `cd-own`, which always opens below.
 
 ## Open questions for the owner
 
