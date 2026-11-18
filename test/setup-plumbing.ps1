@@ -22,8 +22,8 @@
 #     POST /forget    body {kind, id}. 200 and the entry is removed from config. A forgotten setup's layouts go from every scene, and a scene aimed
 #                     at it (auto.setup, setupKey) has its switch off and no setup, with a note (X-Tile-Note) that asks the owner to pick a setup.
 #                     Forgetting a monitor also forgets each setup it is in (decision monitor-setups, item 13). 409 and no change when the monitor
-#                     is plugged in, or the setup holds any plugged-in monitor, whatever the ids of the plugged-in monitors are (coordinator ruling
-#                     2026-11-17 21:04 CST). 404 for an unknown kind or id.
+#                     is plugged in, or the setup is the one in use. When the in-use key cannot be computed (a plugged-in monitor has no id), 409
+#                     for any setup that holds a plugged-in monitor (coordinator rulings 2026-11-17 21:04 and 21:33 CST). 404 for an unknown kind or id.
 #     Lock: the rename and the forget run under the config lock (Use-TileLock). The lock case holds that lock, writes a scene under it and
 #     checks both changes survive. It cannot by itself show a missing lock: an unlocked rename passes when its read comes after the write.
 #   A route the server lacks answers 404.
@@ -197,19 +197,6 @@ try {
     }
     [IO.File]::WriteAllText((Join-Path $tileHome 'config.json'), (ConvertTo-Json -Depth 20 -Compress $c), $utf8)
     $c
-  }
-
-  # A setup of two monitors that are not plugged in (H27 and H28, named Remote), with Office's layout on each scene in $scenes. None of it is
-  # plugged in, so forgetting it is never refused for a plugged-in monitor. One home for the case that needs it: each case passes its scenes.
-  $keyRemote = 'H27|H28'
-  function Add-RemoteSetup($c, [string[]]$scenes) {
-    foreach ($m in 'H27', 'H28') { $c.monitors | Add-Member -NotePropertyName $m -NotePropertyValue ([pscustomobject]@{ name = "Home $($m.Substring(1))"; builtin = $false; lastSeen = '2026-11-09T09:00:00'; bw = 2560; bh = 1440 }) }
-    $c.setups | Add-Member -NotePropertyName $keyRemote -NotePropertyValue ([pscustomobject]@{ name = 'Remote'; ids = @('H27', 'H28'); lastUsed = '2026-11-09T09:00:00' })
-    foreach ($id in $scenes) {
-      $sc = @($c.scenes | ? { $_.id -eq $id })[0]
-      if (-not $sc.PSObject.Properties['layouts'] -or $null -eq $sc.layouts) { $sc | Add-Member -Force -NotePropertyName layouts -NotePropertyValue ([pscustomobject]@{}) }
-      $sc.layouts | Add-Member -NotePropertyName $keyRemote -NotePropertyValue (ConvertFrom-Json $officeLayout)
-    }
   }
 
   # Control: the snapshot ids reach tile.ps1 -Monitors as written, so the setup key is built from the ids the test wrote.
@@ -456,24 +443,23 @@ try {
     } finally { Stop-Server $s }
   }
 
-  # The setup of unplugged monitors (Remote) has a layout on three scenes (focus, meetings, review). Forgetting it removes all three, and the
-  # layout the setup in use has on focus stays.
-  Case 'forget: POST /forget removes a setup of unplugged monitors from config, and its layouts from every scene' {
-    $hdir = Join-Path $runDir 'home-forget-setup'; $c = Write-SeedConfig $hdir $layoutBody
-    Add-RemoteSetup $c @('focus', 'meetings', 'review')
-    [IO.File]::WriteAllText((Join-Path $hdir 'config.json'), (ConvertTo-Json -Depth 20 -Compress -InputObject $c), $utf8)
+  # The setup not in use has an Office layout on three scenes (focus, meetings, review). Forgetting it removes all three, and the
+  # layout the setup in use has on focus stays. Office holds the plugged-in ultrawide and tall monitors, which does not matter: only the
+  # setup in use is refused (coordinator ruling 21:33 CST).
+  Case 'forget: POST /forget removes a setup not in use from config, and its layouts from every scene' {
+    $hdir = Join-Path $runDir 'home-forget-setup'; [void](Write-SeedConfig $hdir $layoutBody @('meetings', 'review'))
     $s = Start-Server $hdir $snapFile
     try {
       $before = Cfg-Of $s
-      $heldBefore = @($before.scenes | ? { $_.PSObject.Properties['layouts'] -and $_.layouts.PSObject.Properties[$keyRemote] } | % { $_.id })
-      Check 'forget setup: the setup of unplugged monitors has layouts on three scenes before the forget (scope)' ($heldBefore.Count -eq 3) "held on: $($heldBefore -join ',')"
+      $heldBefore = @($before.scenes | ? { $_.PSObject.Properties['layouts'] -and $_.layouts.PSObject.Properties[$keyOffice] } | % { $_.id })
+      Check 'forget setup: the setup not in use has layouts on three scenes before the forget (scope)' ($heldBefore.Count -eq 3) "held on: $($heldBefore -join ',')"
       if ($heldBefore.Count -eq 3) {
-        $r = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyRemote + '"}')
+        $r = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyOffice + '"}')
         Check 'forget setup: POST /forget answers 200' ($r.code -eq 200) (Note-Status $r 'forget' 200)
         if ($r.code -eq 200) {
           $after = Cfg-Of $s
-          Check 'forget setup: the setup is gone from config' ($null -eq (Setup-Of $after $keyRemote)) 'the setup is still in config'
-          $heldAfter = @($after.scenes | ? { $_.PSObject.Properties['layouts'] -and $_.layouts.PSObject.Properties[$keyRemote] } | % { $_.id })
+          Check 'forget setup: the setup is gone from config' ($null -eq (Setup-Of $after $keyOffice)) 'the setup is still in config'
+          $heldAfter = @($after.scenes | ? { $_.PSObject.Properties['layouts'] -and $_.layouts.PSObject.Properties[$keyOffice] } | % { $_.id })
           Check 'forget setup: no scene keeps a layout for it' ($heldAfter.Count -eq 0) "still on: $($heldAfter -join ',')"
           Check 'forget setup: the setup in use keeps its own Focus layout (control)' ($null -ne (Setup-Of $after $keyDesk) -and (Canon (Layout-Of $after 'focus' $keyDesk)) -ceq (Canon (ConvertFrom-Json $layoutBody))) 'the Desk setup or its Focus layout changed'
         }
@@ -481,57 +467,57 @@ try {
     } finally { Stop-Server $s }
   }
 
-  # Office's two monitors (AUO1 and DEL2) are plugged in, so Office holds plugged-in monitors and cannot be forgotten (coordinator ruling 21:04 CST).
-  Case 'forget: POST /forget refuses a setup whose monitors are plugged in, with 409 and no change' {
-    [void](Write-SeedConfig (Join-Path $runDir 'home-forget-office'))
-    $s = Start-Server (Join-Path $runDir 'home-forget-office') $snapFile
-    try {
-      $before = Canon (Cfg-Of $s)
-      $fo = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyOffice + '"}')
-      Check 'forget setup: Office, whose monitors are plugged in, is refused with 409' ($fo.code -eq 409) (Note-Status $fo 'forget' 409)
-      if ($fo.code -eq 409) { Check 'forget setup: the refused forget of Office leaves the config as it was' ((Canon (Cfg-Of $s)) -ceq $before) 'the config changed' }
-    } finally { Stop-Server $s }
-  }
-
-  # A plugged-in monitor with no id. The server reads the setup in use as '' (serve.ps1 Forget-Known, Get-TileKnownSetupKey), so the in-use
-  # check alone does not refuse. Desk holds LEN3 and DEL2, both plugged in, so it is refused whatever the third monitor's id is.
-  Case 'forget: a setup holding plugged-in monitors is refused with 409 when a plugged-in monitor has no id' {
+  # A plugged-in monitor with no id: the in-use key cannot be computed (serve.ps1 Forget-Known reads '' from Get-TileKnownSetupKey). Then any
+  # setup that holds a plugged-in monitor is refused with 409, and a setup that holds none is still forgotten (coordinator ruling 21:33 CST).
+  # Desk and Office both hold DEL2, which is plugged in. Remote (H27 and H28, not plugged in) is the control.
+  Case 'forget: with a plugged-in monitor that has no id, a setup holding a plugged-in monitor is refused, and one holding none is forgotten' {
     $noId = ConvertFrom-Json (ConvertTo-Json -Depth 8 -Compress -InputObject $snapObj)
     [void]$noId.monitors[1].PSObject.Properties.Remove('id')   # AUO1, the wide monitor, reports no id
     $noIdFile = Join-Path $runDir 'snap-no-id.json'
     [IO.File]::WriteAllText($noIdFile, (ConvertTo-Json -Depth 8 -Compress -InputObject $noId), $utf8)
-    $hdir = Join-Path $runDir 'home-forget-no-id'; [void](Write-SeedConfig $hdir)
+    $hdir = Join-Path $runDir 'home-forget-no-id'; $c = Write-SeedConfig $hdir
+    foreach ($m in 'H27', 'H28') { $c.monitors | Add-Member -NotePropertyName $m -NotePropertyValue ([pscustomobject]@{ name = "Home $($m.Substring(1))"; builtin = $false; lastSeen = '2026-11-09T09:00:00'; bw = 2560; bh = 1440 }) }
+    $c.setups | Add-Member -NotePropertyName 'H27|H28' -NotePropertyValue ([pscustomobject]@{ name = 'Remote'; ids = @('H27', 'H28'); lastUsed = '2026-11-09T09:00:00' })
+    [IO.File]::WriteAllText((Join-Path $hdir 'config.json'), (ConvertTo-Json -Depth 20 -Compress -InputObject $c), $utf8)
     $s = Start-Server $hdir $noIdFile
     try {
       $sn = ConvertFrom-Json (Get-Reply "$($s.url)snapshot").text
       Check 'forget, no id: the snapshot gives the plugged-in setup no key (scope)' ([string]$sn.setup.key -ceq '') "setup key: '$($sn.setup.key)'"
       $before = Canon (Cfg-Of $s)
       $fd = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyDesk + '"}')
-      Check 'forget, no id: the setup holding plugged-in monitors (Desk) is refused with 409' ($fd.code -eq 409) (Note-Status $fd 'forget' 409)
+      Check 'forget, no id: Desk, which holds plugged-in monitors, is refused with 409' ($fd.code -eq 409) (Note-Status $fd 'forget' 409)
       if ($fd.code -eq 409) { Check 'forget, no id: the refused forget of Desk leaves the config as it was' ((Canon (Cfg-Of $s)) -ceq $before) 'the config changed' }
+      $fo = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyOffice + '"}')
+      Check 'forget, no id: Office, which holds a plugged-in monitor (DEL2), is refused with 409' ($fo.code -eq 409) (Note-Status $fo 'forget' 409)
+      $fr = Send-Post "$($s.url)forget" '{"kind":"setup","id":"H27|H28"}'
+      Check 'forget, no id: Remote, which holds no plugged-in monitor, is forgotten (control, 200)' ($fr.code -eq 200) (Note-Status $fr 'forget' 200)
     } finally { Stop-Server $s }
   }
 
-  # A plugged-in monitor whose id is a size (tile.ps1 Get-MonitorIdentity gives size-WxH to a monitor with no device). The snapshot names the
-  # setup it makes as the one in use, AUO1|LEN3|size-1200x1920: refusing that is the control. Desk holds LEN3 and AUO1, both plugged in, so it is
-  # refused too.
-  Case 'forget: a setup holding plugged-in monitors is refused with 409 when a plugged-in monitor has a size id' {
+  # A plugged-in monitor whose id is a size (tile.ps1 Get-MonitorIdentity gives size-WxH to a monitor with no device). The in-use key is
+  # computable here, so the only refusal is the setup in use: Desk, remembered by the size id, is refused with 409 for that reason alone. Office
+  # holds AUO1, which is plugged in, but is not in use, so it is forgotten (200).
+  Case 'forget: with a plugged-in monitor that has a size id, only the setup in use is refused with 409' {
     $sz = ConvertFrom-Json (ConvertTo-Json -Depth 8 -Compress -InputObject $snapObj)
     $sz.monitors[2].id = 'size-1200x1920'   # DEL2, the tall monitor, reports its size as its id
     $szFile = Join-Path $runDir 'snap-size-id.json'
     [IO.File]::WriteAllText($szFile, (ConvertTo-Json -Depth 8 -Compress -InputObject $sz), $utf8)
-    $hdir = Join-Path $runDir 'home-forget-size-id'; [void](Write-SeedConfig $hdir)
+    $sizeKey = 'AUO1|LEN3|size-1200x1920'
+    $hdir = Join-Path $runDir 'home-forget-size-id'; $c = Write-SeedConfig $hdir
+    $c.setups.PSObject.Properties.Remove($keyDesk)
+    $c.setups | Add-Member -NotePropertyName $sizeKey -NotePropertyValue ([pscustomobject]@{ name = 'Desk'; ids = @('AUO1', 'LEN3', 'size-1200x1920'); lastUsed = '2026-11-09T09:00:00' })
+    [IO.File]::WriteAllText((Join-Path $hdir 'config.json'), (ConvertTo-Json -Depth 20 -Compress -InputObject $c), $utf8)
     $s = Start-Server $hdir $szFile
     try {
       $sn = ConvertFrom-Json (Get-Reply "$($s.url)snapshot").text
       $inUse = [string]$sn.setup.key
-      Check 'forget, size id: the snapshot names the setup in use by its ids (scope)' ($inUse -ceq 'AUO1|LEN3|size-1200x1920') "setup key: '$inUse'"
+      Check 'forget, size id: the snapshot names the setup in use by its ids (scope)' ($inUse -ceq $sizeKey) "setup key: '$inUse'"
       $before = Canon (Cfg-Of $s)
       $ctl = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $inUse + '"}')
-      Check 'forget, size id: the setup in use is refused with 409 (control)' ($ctl.code -eq 409) (Note-Status $ctl 'forget' 409)
-      $fd = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyDesk + '"}')
-      Check 'forget, size id: the setup holding plugged-in monitors (Desk) is refused with 409' ($fd.code -eq 409) (Note-Status $fd 'forget' 409)
-      if ($fd.code -eq 409) { Check 'forget, size id: the refused forget of Desk leaves the config as it was' ((Canon (Cfg-Of $s)) -ceq $before) 'the config changed' }
+      Check 'forget, size id: the setup in use, Desk, is refused with 409' ($ctl.code -eq 409) (Note-Status $ctl 'forget' 409)
+      if ($ctl.code -eq 409) { Check 'forget, size id: the refused forget of Desk leaves the config as it was' ((Canon (Cfg-Of $s)) -ceq $before) 'the config changed' }
+      $fo = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyOffice + '"}')
+      Check 'forget, size id: Office, plugged-in AUO1 but not in use, is forgotten (200)' ($fo.code -eq 200) (Note-Status $fo 'forget' 200)
     } finally { Stop-Server $s }
   }
 
@@ -540,18 +526,17 @@ try {
   # switch and its setup (control).
   Case 'forget: a scene aimed at the forgotten setup has its switch off and no setup, and a note asks for a pick' {
     $hdir = Join-Path $runDir 'home-forget-trigger'; $c = Write-SeedConfig $hdir
-    Add-RemoteSetup $c @('focus', 'meetings')
-    foreach ($id in 'focus', 'meetings') { $sc = @($c.scenes | ? { $_.id -eq $id })[0]; $sc.auto.setup = $true; $sc | Add-Member -Force -NotePropertyName setupKey -NotePropertyValue $keyRemote }
+    foreach ($id in 'focus', 'meetings') { $sc = @($c.scenes | ? { $_.id -eq $id })[0]; $sc.auto.setup = $true; $sc | Add-Member -Force -NotePropertyName setupKey -NotePropertyValue $keyOffice }
     $rv = @($c.scenes | ? { $_.id -eq 'review' })[0]; $rv.auto.setup = $true; $rv | Add-Member -Force -NotePropertyName setupKey -NotePropertyValue $keyDesk
     [IO.File]::WriteAllText((Join-Path $hdir 'config.json'), (ConvertTo-Json -Depth 20 -Compress -InputObject $c), $utf8)
     $s = Start-Server $hdir $snapFile
     try {
       $before = Cfg-Of $s
-      $aimed = @($before.scenes | ? { $_.auto.setup -eq $true -and $_.setupKey -ceq $keyRemote } | % { $_.id })
-      Check 'forget trigger: focus and meetings are aimed at Remote with the switch on (scope)' ($aimed.Count -eq 2) "aimed: $($aimed -join ',')"
+      $aimed = @($before.scenes | ? { $_.auto.setup -eq $true -and $_.setupKey -ceq $keyOffice } | % { $_.id })
+      Check 'forget trigger: focus and meetings are aimed at Office with the switch on (scope)' ($aimed.Count -eq 2) "aimed: $($aimed -join ',')"
       Check 'forget trigger: no note before the forget (scope)' ((Get-Reply "$($s.url)config").note -eq '') "note: '$((Get-Reply "$($s.url)config").note)'"
-      $r = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyRemote + '"}')
-      Check 'forget trigger: POST /forget answers 200 for Remote, a setup of unplugged monitors' ($r.code -eq 200) (Note-Status $r 'forget' 200)
+      $r = Send-Post "$($s.url)forget" ('{"kind":"setup","id":"' + $keyOffice + '"}')
+      Check 'forget trigger: POST /forget answers 200 for Office, a setup not in use' ($r.code -eq 200) (Note-Status $r 'forget' 200)
       if ($r.code -eq 200) {
         $after = Cfg-Of $s
         foreach ($id in 'focus', 'meetings') {
