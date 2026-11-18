@@ -224,8 +224,41 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
 24. **The card's menu opens above when there is no room below** (`cd-own`). Ruled (coordinator,
     2026-11-17 23:03 CST): the scene card's ⋯ menu opens below its button when it fits, else above.
     Departs from: the mockup's `cd-own`, which always opens below.
+25. **The card's kind is an icon** (mockup `card-kind-icon.html`, beside this file). Ruled (owner,
+    2026-11-18 11:08 CST): the kind switches to an icon, because "Custom" cuts to "CU…" at 1024 and
+    "CUST…" at 1440 (debt `custom-kind-word-cuts`). Options:
+    - All Three as Icons (`#all3`, pick, coordinator, reversible): Built-in, Custom and Not saved
+      each become an icon, so the row reads the same on every card. Gain: no word left to cut; at
+      1024 and 1440, with Apply or Preview, the measured row fits on every card. Loss: the owner
+      learns three more small marks.
+    - Custom Only as an Icon (`#custom1`): Built-in and Not saved stay words. Gain: one new mark.
+      Loss: a row of mixed icons and words, and words still cut. Measured on the mockup at 1024:
+      "Built-in · edited" cuts, and with Preview "Not saved" cuts on a card with a layout mark.
+    The icons, drawn like the layout mark (`lmark` and `.lay` in `renderRail`): a 13px drawing in a
+    16px box, on a 14-unit grid, stroke 1.5, `--muted`, with `role="img"`, a title, an aria-label
+    and a `.vh` span. They differ by outline shape, never by colour:
+    - Built-in: a box (a hexagon outline with its top edges). It came in the box with the app.
+    - Custom: a person (head over shoulders). You made it.
+    - Not saved: a dashed ring. Not solid yet, only in this page. Dashes already mean not yet set
+      in the app (a disabled button's edge, a borrowed window in the mini map).
+    No shape repeats one in `app.html` (the lock, pin, check, swap, stay, behind, grip, warning,
+    monitor, link, own-layout screen, ⋯, clock or the brand mark). Not taken: the brand mark for
+    Built-in (it already means the app, and reads as a tiny grid at 13px); a pencil for Custom (it
+    reads as Edit); a disk with a slash for Not saved (its lines merge at 13px).
+    Edited: the crumb's amber dot (`.edited::before`), 7px, beside the kind mark, with a 1px ink
+    ring so it holds 3:1 on a white card; CanvasText in forced colours. The mark's title and label
+    read "Custom, edited". Not saved never shows it, as today.
+    Order: layout mark first, then the kind mark, as main draws the word.
+    Loss: the kind word is now only in a hover title and the label. The mark takes no keyboard
+    focus, as the layout mark takes none, so a sighted keyboard user cannot read the word.
+    Option, not drawn: say the kind once in words in the inspector's Scene section. Owner grant:
+    yes.
+    Departs from: main `renderRail` `tagt`, which shows the word, and " · edited" in words.
 
 ## Open questions for the owner
+
+- Item 25: say the scene's kind once, in words, in the inspector's Scene section? Not drawn, not
+  blocking. The card's icons do not wait on it.
 
 - Item 4: should "When the Monitors Change" fire when the same monitors are only rearranged?
   Coordinator default, owner may change: no (decision `monitor-setups`).
