@@ -782,10 +782,17 @@ function gridOf(m){if(LIVE){const k=mk(m);return k&&scene()?(scene().grids||{})[
   if(!offGrids[m.name])offGrids[m.name]=m.role==="wide"?{c:5,r:2}:m.h>m.w?{c:1,r:2}:{c:1,r:1};return offGrids[m.name]}
 // Round as tile.ps1's [int] does: to the nearest whole number, halves to even.
 function bround(x){const f=Math.floor(x),d=x-f;return d>0.5||(d===0.5&&f%2!==0)?f+1:f}
-function cellRect(m,g,c0,r0,cs,rs){const cw=bround(m.w/g.c),ch=bround(m.h/g.r);return{x:m.x+c0*cw,y:m.y+r0*ch,w:cs*cw,h:rs*ch}}
-function bbox(slots,g){const cs=slots.map(s=>s%g.c),rs=slots.map(s=>Math.floor(s/g.c));
+// A grid's mult (split cells): each base cell is divided mx by my. It reads as tile.ps1's Get-CellPair does: two whole numbers, 1 or more each, else [1,1].
+// Slots count cells of the finished grid: GC(g) fine columns, GR(g) fine rows. With no mult they are g.c and g.r.
+function MXY(g){const a=g&&g.mult;if(!Array.isArray(a)||a.length!==2)return[1,1];const x=Math.trunc(+a[0]),y=Math.trunc(+a[1]);return x>=1&&y>=1?[x,y]:[1,1]}
+const GC=g=>g.c*MXY(g)[0],GR=g=>g.r*MXY(g)[1];
+// The left (top) edge of fine cell i along a side of len px: whole base cells, then whole sub cells, as EdgeX and EdgeY in tile.ps1's Pass do. The last sub cell takes the remainder.
+function fineEdge(len,n,mu,i){const base=bround(len/n);return Math.floor(i/mu)*base+(i%mu)*bround(base/mu)}
+function cellRect(m,g,c0,r0,cs,rs){const[mx,my]=MXY(g),x0=fineEdge(m.w,g.c,mx,c0),y0=fineEdge(m.h,g.r,my,r0);
+  return{x:m.x+x0,y:m.y+y0,w:fineEdge(m.w,g.c,mx,c0+cs)-x0,h:fineEdge(m.h,g.r,my,r0+rs)-y0}}
+function bbox(slots,g){const cs=slots.map(s=>s%GC(g)),rs=slots.map(s=>Math.floor(s/GC(g)));
   const c0=Math.min(...cs),c1=Math.max(...cs),r0=Math.min(...rs),r1=Math.max(...rs),cells=[];
-  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)cells.push(r*g.c+c);return{c:c0,r:r0,cs:c1-c0+1,rs:r1-r0+1,cells}}
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)cells.push(r*GC(g)+c);return{c:c0,r:r0,cs:c1-c0+1,rs:r1-r0+1,cells}}
 function monAt(x,y){return snap.monitors.find(m=>x>=m.x&&x<m.x+m.w&&y>=m.y&&y<m.y+m.h)}
 const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
 
@@ -1140,14 +1147,14 @@ function render(){
   }
   for(const m of snap.monitors){
     const g=gridOf(m),e=m.el;e.classList.toggle("cur",m===curMon);
-    const want=g?`${g.c}x${g.r}`:"";
+    const want=g?`${GC(g)}x${GR(g)}`:"";
     if(e.dataset.g!==want){e.dataset.g=want;e.innerHTML="";
-      if(g){e.style.gridTemplateColumns=`repeat(${g.c},minmax(0,1fr))`;e.style.gridTemplateRows=`repeat(${g.r},minmax(0,1fr))`;
-        for(let i=0;i<g.c*g.r;i++){const c=document.createElement("div");c.className="cell";c.innerHTML=`<i>${i+1}</i>`;e.appendChild(c)}}
+      if(g){e.style.gridTemplateColumns=`repeat(${GC(g)},minmax(0,1fr))`;e.style.gridTemplateRows=`repeat(${GR(g)},minmax(0,1fr))`;
+        for(let i=0;i<GC(g)*GR(g);i++){const c=document.createElement("div");c.className="cell";c.innerHTML=`<i>${i+1}</i>`;e.appendChild(c)}}
       const em=document.createElement("div");em.className="empty";e.appendChild(em)}
     e.querySelector(".empty").textContent=used.has(m)?"":g?"Empty. Drag a window here.":"Empty. Not in this scene.";
     const fills=s&&s.fill&&s.fill.mon===mk(m);
-    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${g.c}×${g.r}`:""}${fills?s.fill.off?" · fill off":" · fills":""}</span>`;
+    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${GC(g)}×${GR(g)}`:""}${fills?s.fill.off?" · fill off":" · fills":""}</span>`;
     m.lab.title=`${monName(m)}: ${m.w}×${m.h}`;
   }
   // Header
@@ -1178,7 +1185,7 @@ function renderZones(){
   for(const z of [...$("stage").querySelectorAll(".zone")])z.remove();
   const s=LIVE?scene():null;if(!s)return;
   (s.zones||[]).forEach((z,i)=>{const m=snap.monitors.find(q=>mk(q)===z.mon),g=m&&s.grids[z.mon];if(!g)return;
-    const sl=z.slots.filter(v=>v<g.c*g.r);if(!sl.length)return;const b=bbox(sl,g),e=document.createElement("div");
+    const sl=z.slots.filter(v=>v<GC(g)*GR(g));if(!sl.length)return;const b=bbox(sl,g),e=document.createElement("div");
     e.className=`zone cat-${z.app?catOf(z.app):z.cat}${selZone===i?" sel":""}`;Object.assign(e.style,px(cellRect(m,g,b.c,b.r,b.cs,b.rs)));
     const n=prev()?prev().placed.filter(p=>p.zone===i).length:0;
     e.innerHTML=`<button type="button" data-zone="${i}" aria-pressed="${selZone===i}" title="Edit this zone" aria-label="${esc(zoneName(z))} zone, ${n} of ${sl.length} cells filled. Edit it in the inspector.">${esc(zoneName(z))} zone · ${n} of ${sl.length} filled</button><button type="button" class="zx" data-zdel="${i}" title="Remove this zone" aria-label="Remove the ${esc(zoneName(z))} zone">✕</button>`;$("stage").appendChild(e)})}
@@ -1354,10 +1361,10 @@ function renderInsp(V){
     if(onBoard)wh+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="lockSw" ${lockd?"checked":""}><span class="xt"><b>Lock</b><small>${lockd?"It moves only after a warning.":"It never moves."} Swaps, zones and fill go around it.</small></span></label>`;
     if(stk.length)wh+=`<div class="bstack"><h3 class="grp">Behind This Window <span class="ct2">${stk.length}</span></h3><ul>${stk.map(e=>{const bw=e.id&&winById(e.id);
       return `<li class="bw cat-${catOf(e.b.app)}"><div class="bwt"><i class="sw"></i><b>${esc(appName(e.b.app))}</b><span>${esc(bw?bw.title:(e.b.match||"Not open"))}</span></div><div class="row2"><button type="button" class="btn" data-bf="${e.k}" ${bw?"":"disabled"} title="${esc(appName(e.b.app))} comes to the front. ${esc(appName(w.app))} goes behind it.">Bring to Front</button><button type="button" class="btn" data-bo="${e.k}" title="${esc(appName(e.b.app))} leaves this cell and goes to Windows That Stay Put.">Take Out</button></div></li>`}).join("")}</ul><p class="note">Take Out moves it to Windows That Stay Put.</p></div>`;
-    if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,s.grids[pin.mon].c,lockd)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,s.grids[pin.mon].r,lockd)}</div>
+    if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,GC(s.grids[pin.mon]),lockd)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,GR(s.grids[pin.mon]),lockd)}</div>
       <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" name="match" autocomplete="off" ${lockd?'disabled title="Locked. Unlock it first."':""} placeholder="Any ${esc(appName(w.app))} window…" spellcheck="false"></div>`;
     const mm=LIVE?snap.monitors.filter(q=>mk(q)&&s.grids[mk(q)]):snap.monitors;
-    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto" ${lockd?"disabled":""}><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(gg.c*gg.r).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
+    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto" ${lockd?"disabled":""}><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(GC(gg)*GR(gg)).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
     if(pin)wh+=`<button type="button" class="btn" id="unpin" ${lockd?'disabled title="Locked. Unlock it first."':""}>Unpin and Let It Fill</button>`;
     if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay" ${lockd?'disabled title="Locked. Unlock it first."':""}>Keep Where It Is</button>`;
     $("win").innerHTML=wh+"</div>";
@@ -1382,7 +1389,7 @@ $("toastMore").onclick=()=>{$("results").hidden=false;$("results").scrollIntoVie
 function holding(x,P){if(!P)return 0;const h=[];
   const shut=new Set(P.missing.map(m=>m.pin).filter(i=>!P.placed.some(p=>p.pin===i&&!p.behind)));
   for(const p of P.placed){if(p.pin>=0||p.behind)continue;const g=x.grids[p.mon],w=winById(p.id);if(!g||!w)continue;
-    const sl=p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r);if(!sl.length)continue;const b=bbox(sl,g);
+    const sl=p.slots.map(v=>v-1).filter(v=>v>=0&&v<GC(g)*GR(g));if(!sl.length)continue;const b=bbox(sl,g);
     if(lockedHit(x,p.mon,b.cells,null,shut))continue;
     h.push({id:w.id,app:w.app,title:w.title,mon:p.mon,slots:b.cells})}
   x.fill=x.fill||{};if(h.length)x.fill.held=h;else delete x.fill.held;
@@ -1485,25 +1492,25 @@ const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
 // force: the owner confirmed moving a locked tile (askMove); every other caller still refuses it.
 function pinWin(id,mon,slot,cs=1,rs=1,force=false){
   const w=winById(id);
-  if(!LIVE){const i=snap.windows.indexOf(w),g=gridOf(mon);cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
-    const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),t=cellRect(mon,g,c0,r0,cs,rs);
-    if(same(t,offRects[i]))return render();hist.push({k:"rects",r:offRects.map(rect)});offRects[i]=t;selWin=id;render();status(`Moved ${w.title} to ${monName(mon)} cell ${r0*g.c+c0+1}.`);return}
-  const g=scene().grids[mk(mon)];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
-  const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),pp=pinOf(id);
+  if(!LIVE){const i=snap.windows.indexOf(w),g=gridOf(mon);cs=Math.min(cs,GC(g));rs=Math.min(rs,GR(g));
+    const c0=Math.min(slot%GC(g),GC(g)-cs),r0=Math.min(Math.floor(slot/GC(g)),GR(g)-rs),t=cellRect(mon,g,c0,r0,cs,rs);
+    if(same(t,offRects[i]))return render();hist.push({k:"rects",r:offRects.map(rect)});offRects[i]=t;selWin=id;render();status(`Moved ${w.title} to ${monName(mon)} cell ${r0*GC(g)+c0+1}.`);return}
+  const g=scene().grids[mk(mon)];cs=Math.min(cs,GC(g));rs=Math.min(rs,GR(g));
+  const c0=Math.min(slot%GC(g),GC(g)-cs),r0=Math.min(Math.floor(slot/GC(g)),GR(g)-rs),pp=pinOf(id);
   if(pp&&pp.pin.lock&&!force){status(`${w.title} is locked. Unlock it first.`);render();return}
   if(lockedHit(scene(),mk(mon),cellsOf(c0,r0,cs,rs,g),pp&&pp.pin)){status("A locked tile is in the way. Nothing changed.");render();return}
   optim={id,r:cellRect(mon,g,c0,r0,cs,rs)};selWin=id;let sl=[];
-  edit(x=>{sl=pinEdit(x,id,mon,slot,cs,rs)},`Pinned ${w.title} to ${monName(mon)} ${cs*rs>1?"cells":"cell"} ${(r0*g.c+c0)+1}${cs*rs>1?"+":""}.`);
+  edit(x=>{sl=pinEdit(x,id,mon,slot,cs,rs)},`Pinned ${w.title} to ${monName(mon)} ${cs*rs>1?"cells":"cell"} ${(r0*GC(g)+c0)+1}${cs*rs>1?"+":""}.`);
 }
 // Pin a window in scene x: it leaves the bay, and any pin on its new cells (or that held it) goes.
 // The pin that holds a window now, as an object in scene x, so later edits in the same change do not shift it.
 function pinNow(x,id){const P=prev(),cur=P&&P.placed.find(p=>p.id===id);return cur&&cur.pin>=0&&!cur.behind?x.pins[cur.pin]:null}
 function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id),opt={}){
-  const w=winById(id),g=x.grids[mk(mon)];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
-  const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),slots=[];
-  for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*g.c+c);
+  const w=winById(id),g=x.grids[mk(mon)];cs=Math.min(cs,GC(g));rs=Math.min(rs,GR(g));
+  const c0=Math.min(slot%GC(g),GC(g)-cs),r0=Math.min(Math.floor(slot/GC(g)),GR(g)-rs),slots=[];
+  for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*GC(g)+c);
   const match=grab?grab.match||"":w.min?w.title:matchFor(w),cells=new Set(slots);
-  const covers=q=>{const qs=q.slots.filter(v=>v<g.c*g.r);return q.mon===mk(mon)&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
+  const covers=q=>{const qs=q.slots.filter(v=>v<GC(g)*GR(g));return q.mon===mk(mon)&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
   x.pins=x.pins.filter(q=>q!==grab&&!(q.app===w.app&&(q.match||"")===match)&&!covers(q));
   // The new pin goes first in the list (callers read it as x.pins[0]). It keeps its own stack and lock.
   const np={app:w.app,match,mon:mk(mon),slots},behind=opt.behind||(grab&&grab.behind);
@@ -1525,21 +1532,21 @@ function swapInto(aId,bId,mon,slot,fromBay){
   const P=prev(),pa=P.placed.find(p=>p.id===aId),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),gA=pinNow(s,aId),gB=pinNow(s,bId),
     g=s.grids[mk(mon)],bb=pbox(pb,g),ga=pa&&s.grids[pa.mon],ba=pa&&pbox(pa,ga);
   curMon=mon;selWin=aId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)};
-  return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>mk(q)===pa.mon),ba.r*ga.c+ba.c,ba.cs,ba.rs,gB);
-    pinEdit(x,aId,mon,bb.r*g.c+bb.c,bb.cs,bb.rs,gA,fromBay&&gB?{behind:gB.behind}:{})},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${pairNames(A,B).join(" and ")}.`)}
+  return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>mk(q)===pa.mon),ba.r*GC(ga)+ba.c,ba.cs,ba.rs,gB);
+    pinEdit(x,aId,mon,bb.r*GC(g)+bb.c,bb.cs,bb.rs,gA,fromBay&&gB?{behind:gB.behind}:{})},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${pairNames(A,B).join(" and ")}.`)}
 // The cells of a placed window's block (a span is its whole block), on its monitor's grid g.
-const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r),g);
-const cellsOf=(c0,r0,cs,rs,g)=>{const a=[];for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)a.push(r*g.c+c);return a};
+const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<GC(g)*GR(g)),g);
+const cellsOf=(c0,r0,cs,rs,g)=>{const a=[];for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)a.push(r*GC(g)+c);return a};
 const lockOfPlaced=p=>!!(LIVE&&p&&p.pin>=0&&!p.behind&&(scene().pins[p.pin]||{}).lock);
 const isLockedId=id=>{const pp=LIVE&&pinOf(id);return !!(pp&&pp.pin&&pp.pin.lock)};
 // Is a locked pin (other than `except`) on any of these cells of the role's grid? A pin whose index is in `shut` counts too, locked or not.
 function lockedHit(s,role,cells,except,shut){const g=s.grids[role];
-  return s.pins.some((q,i)=>{if(!(q.lock||shut&&shut.has(i))||q===except||q.mon!==role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>cells.includes(c))})}
+  return s.pins.some((q,i)=>{if(!(q.lock||shut&&shut.has(i))||q===except||q.mon!==role)return false;const qs=q.slots.filter(v=>v<GC(g)*GR(g));return qs.length>0&&bbox(qs,g).cells.some(c=>cells.includes(c))})}
 // The window in front on a drop target (the whole block of a span): a swap or a Put Behind, never a Place here over it.
 // A one-cell window's target is one cell. A spanned window's target is its block: the window on the block's first cell, else the first window it covers.
 function occupant(d,t){const P=LIVE&&prev();if(!P||!t)return null;const pa=P.placed.find(p=>p.id===d.id),one=d.cs===1&&d.rs===1;
   if(!d.fromBay&&!(pa&&(!one||pa.slots.length===1)))return null;
-  const blk=cellsOf(t.slot%t.g.c,Math.floor(t.slot/t.g.c),t.cs,t.rs,t.g);
+  const blk=cellsOf(t.slot%GC(t.g),Math.floor(t.slot/GC(t.g)),t.cs,t.rs,t.g);
   const hit=P.placed.filter(p=>!p.behind&&p.id!==d.id&&p.mon===mk(t.m)&&pbox(p,t.g).cells.some(c=>blk.includes(c)));
   return hit.find(p=>pbox(p,t.g).cells.includes(t.slot))||hit.sort((a,b)=>Math.min(...a.slots)-Math.min(...b.slots))[0]||null}
 // The Swap circle on a taken block: half the block's short side, rounded down, from 28 to 64 px.
@@ -1569,7 +1576,7 @@ function putBehind(aId,bId){
   // The new stack's cues (the strip and the badge) wear a blue ring for about 1.5 seconds.
   flashId=bId;clearTimeout(flashT);flashT=setTimeout(()=>{flashId=null;for(const q of stage.querySelectorAll(".peek.flash,.stk.ring"))q.classList.remove("flash","ring")},1500);
   const ok=edit(x=>{
-    let fb=pinNow(x,bId);if(!fb){pinEdit(x,bId,mon,bb.r*g.c+bb.c,bb.cs,bb.rs,null);fb=x.pins[0]}
+    let fb=pinNow(x,bId);if(!fb){pinEdit(x,bId,mon,bb.r*GC(g)+bb.c,bb.cs,bb.rs,null);fb=x.pins[0]}
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
@@ -1606,12 +1613,12 @@ function toggleLock(id){const w=winById(id),pp=pinOf(id);selWin=id;
   if(pp){const on=!pp.pin.lock;edit(x=>{const q=x.pins[pp.p.pin];if(on)q.lock=true;else delete q.lock},on?`Locked ${w.title}. It moves only after a warning.`:`Unlocked ${w.title}. It can move again.`);return}
   const P=prev(),p=P&&P.placed.find(q=>q.id===id&&!q.behind);if(!p){status(`${w.title} has no cell to lock. Place it first.`);return}
   const mon=snap.monitors.find(q=>mk(q)===p.mon),g=scene().grids[p.mon],b=pbox(p,g);
-  edit(x=>{pinEdit(x,id,mon,b.r*g.c+b.c,b.cs,b.rs,null);x.pins[0].lock=true},`Locked ${w.title}. It moves only after a warning. It stays in ${monName(mon)} cell${b.cs*b.rs>1?"s":""} ${p.slots.join("+")}.`)}
+  edit(x=>{pinEdit(x,id,mon,b.r*GC(g)+b.c,b.cs,b.rs,null);x.pins[0].lock=true},`Locked ${w.title}. It moves only after a warning. It stays in ${monName(mon)} cell${b.cs*b.rs>1?"s":""} ${p.slots.join("+")}.`)}
 /* ---------- Resize by a handle, the corner grip, or the keys ---------- */
 // What a span over `cells` covers, apart from window selfId and its pin: each covered pin with its windows (front first, then those behind it),
 // and each window the fill or a zone placed there. `list` is every window that goes to Windows That Stay Put (decision stack-and-lock).
 function coverOf(role,g,cells,selfId,self){const s=scene(),P=prev(),covered=[];
-  s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<g.c*g.r);
+  s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<GC(g)*GR(g));
     if(!qs.length||!bbox(qs,g).cells.some(c=>cells.has(c)))return;
     const all=P?P.placed.filter(p=>p.pin===i):[];covered.push({q,i,wins:[...all.filter(p=>!p.behind),...all.filter(p=>p.behind)].map(p=>p.id)})});
   covered.sort((a,b)=>Math.min(...a.q.slots)-Math.min(...b.q.slots));
@@ -1645,7 +1652,7 @@ function coverNote(r,ids,entry,actor,closed=[]){bayFlash=new Set(ids);clearTimeo
 // dir: the edges that move, as in HDIR. With dir.l or dir.t the left or top edge moves, so the right or bottom edge stays put when a lock cuts the span short.
 function planResize(id,mon,c0,r0,cs,rs,dir=HDIR.br){
   const s=scene(),role=mk(mon),g=s.grids[role],self=pinNow(s,id),info=[],fromL=!!dir.l,fromT=!!dir.t,edge=Object.keys(dir).length===1;
-  s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<g.c*g.r);if(qs.length){const b=bbox(qs,g);info.push({q,i,b,cells:new Set(b.cells)})}});
+  s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<GC(g)*GR(g));if(qs.length){const b=bbox(qs,g);info.push({q,i,b,cells:new Set(b.cells)})}});
   const box=(a,b)=>cellsOf(fromL?c0+cs-a:c0,fromT?r0+rs-b:r0,a,b,g);
   const hitLock=(a,b)=>{const cc=box(a,b);return info.some(o=>o.q.lock&&cc.some(c=>o.cells.has(c)))};
   let stopped=false;
@@ -1665,7 +1672,7 @@ function rzBase(p){const g=scene().grids[p.mon];return{id:p.id,m:snap.monitors.f
 // A step onto a locked tile is refused, so the block stays as it is; the grip instead keeps the largest span short of the lock.
 function resizeStep(p,dc,dr,fromL=false,fromT=false){const r=rzBase(p),w=winById(p.id),b=r.b,g=r.gr;curMon=r.m;
   if(lockOfPlaced(p)){status(`${w.title} is locked. Unlock it first.`);render();return}
-  let c0=b.c,cs=clamp(b.cs+dc,1,g.c-b.c),r0=b.r,rs=clamp(b.rs+dr,1,g.r-b.r);
+  let c0=b.c,cs=clamp(b.cs+dc,1,GC(g)-b.c),r0=b.r,rs=clamp(b.rs+dr,1,GR(g)-b.r);
   if(fromL){c0=clamp(b.c+dc,0,b.c+b.cs-1);cs=b.c+b.cs-c0}
   if(fromT){r0=clamp(b.r+dr,0,b.r+b.rs-1);rs=b.r+b.rs-r0}
   const pl=planResize(p.id,r.m,c0,r0,cs,rs,{[fromL?"l":"r"]:1,[fromT?"t":"b"]:1});
@@ -1673,11 +1680,11 @@ function resizeStep(p,dc,dr,fromL=false,fromT=false){const r=rzBase(p),w=winById
   commitResize(r,pl)}
 // Where a handle's drag leaves the block: each edge the handle holds moves to the nearest cell line, and the opposite edge stays.
 const HDIR={tl:{l:1,t:1},tr:{r:1,t:1},bl:{l:1,b:1},br:{r:1,b:1},n:{t:1},s:{b:1},w:{l:1},ea:{r:1}};
-function rzTarget(r){const m=r.m,g=r.gr,b=r.b,d=r.dir,cw=m.w/g.c,ch=m.h/g.r,dx=(r.px-r.sx)/G.S,dy=(r.py-r.sy)/G.S;
+function rzTarget(r){const m=r.m,g=r.gr,b=r.b,d=r.dir,cw=m.w/GC(g),ch=m.h/GR(g),dx=(r.px-r.sx)/G.S,dy=(r.py-r.sy)/G.S;
   let c0=b.c,cs=b.cs,r0=b.r,rs=b.rs;
-  if(d.r)cs=clamp(Math.round((r.start.x+r.start.w+dx-m.x)/cw),c0+1,g.c)-c0;
+  if(d.r)cs=clamp(Math.round((r.start.x+r.start.w+dx-m.x)/cw),c0+1,GC(g))-c0;
   if(d.l){c0=clamp(Math.round((r.start.x+dx-m.x)/cw),0,b.c+b.cs-1);cs=b.c+b.cs-c0}
-  if(d.b)rs=clamp(Math.round((r.start.y+r.start.h+dy-m.y)/ch),r0+1,g.r)-r0;
+  if(d.b)rs=clamp(Math.round((r.start.y+r.start.h+dy-m.y)/ch),r0+1,GR(g))-r0;
   if(d.t){r0=clamp(Math.round((r.start.y+dy-m.y)/ch),0,b.r+b.rs-1);rs=b.r+b.rs-r0}
   return planResize(r.id,m,c0,r0,cs,rs,d)}
 function commitResize(r,pl){
@@ -1688,7 +1695,7 @@ function commitResize(r,pl){
   const ok=edit(x=>{
     for(const o of pl.covered)x.pins=x.pins.filter(q=>q!==o.q);
     for(const wid of pl.list)bayEdit(x,wid,null,true,COVERED);
-    optimCover(pl.list);pinEdit(x,r.id,mon,pl.r0*g.c+pl.c0,pl.cs,pl.rs,self)},
+    optimCover(pl.list);pinEdit(x,r.id,mon,pl.r0*GC(g)+pl.c0,pl.cs,pl.rs,self)},
     `${actorName(w,pl.list)} now spans ${pl.cs}×${pl.rs}.${n||pl.closed.length?` ${coverSay(pl.list,pl.closed,w).join(". ")}.`:""}${pl.stopped?" It stopped at a locked tile.":""}`);
   if(ok&&(n||pl.closed.length))coverNote(px(cellRect(mon,g,pl.c0,pl.r0,pl.cs,pl.rs)),pl.list,hist[hist.length-1],w,pl.closed)}
 // Zones: a rectangle of cells, filled with one app's or category's windows.
@@ -1696,19 +1703,19 @@ function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort(
   return `<optgroup label="Category">${cfg.categories.map(([c,l])=>`<option value="cat:${c}"${cur==="cat:"+c?" selected":""}>${esc(l)}</option>`).join("")}</optgroup><optgroup label="App">${apps.map(a=>`<option value="app:${esc(a)}"${cur==="app:"+a?" selected":""}>${esc(appName(a))}</option>`).join("")}</optgroup>`}
 const zoneFill=v=>v.startsWith("app:")?{app:v.slice(4)}:{cat:v.slice(4)};
 async function drawZoneDialog(){const m=curMon,g=gridOf(m);if(!g)return;
-  const cellOpts=sel=>[...Array(g.c*g.r).keys()].map(i=>`<option value="${i}"${i===sel?" selected":""}>Column ${i%g.c+1}, Row ${Math.floor(i/g.c)+1}</option>`).join("");
+  const cellOpts=sel=>[...Array(GC(g)*GR(g)).keys()].map(i=>`<option value="${i}"${i===sel?" selected":""}>Column ${i%GC(g)+1}, Row ${Math.floor(i/GC(g))+1}</option>`).join("");
   const f=await ask(`Draw a Zone on ${onMon(m)}`,`<p class="note">Pick two corner cells. The zone fills with these windows in fill order; a pin inside it keeps its cell; windows that do not fit stay put.</p>
-    <label class="field stack"><span>From</span><select name="za">${cellOpts(0)}</select></label><label class="field stack"><span>To</span><select name="zb">${cellOpts(g.c*g.r-1)}</select></label>
+    <label class="field stack"><span>From</span><select name="za">${cellOpts(0)}</select></label><label class="field stack"><span>To</span><select name="zb">${cellOpts(GC(g)*GR(g)-1)}</select></label>
     <label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts("cat:code")}</select></label>`,"Add Zone");
-  if(!f)return;const a=+f.za.value,b=+f.zb.value;addZone(m,g,a%g.c,Math.floor(a/g.c),b%g.c,Math.floor(b/g.c),zoneFill(f.zf.value))}
+  if(!f)return;const a=+f.za.value,b=+f.zb.value;addZone(m,g,a%GC(g),Math.floor(a/GC(g)),b%GC(g),Math.floor(b/GC(g)),zoneFill(f.zf.value))}
 function addZone(m,g,c0,r0,c1,r1,fill){const a=Math.min(c0,c1),b=Math.min(r0,r1),cs=Math.abs(c1-c0)+1,rs=Math.abs(r1-r0)+1,slots=[];
-  for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*g.c+c);
+  for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*GC(g)+c);
   return edit(x=>{x.zones=(x.zones||[]).filter(z=>!(z.mon===mk(m)&&z.slots.some(v=>slots.includes(v))));x.zones.push({mon:mk(m),slots,...fill});selZone=x.zones.length-1},
     `Added a ${fill.app?appName(fill.app):catName(fill.cat)} zone on ${onMon(m)}: ${cellsText(slots,g)}.`)}
 async function newZone(m,g,c0,r0,c1,r1){
   const a=Math.min(c0,c1),b=Math.min(r0,r1),cs=Math.abs(c1-c0)+1,rs=Math.abs(r1-r0)+1,slots=[];
-  for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*g.c+c);
-  const under=snap.windows.find(w=>{const d=drawn[w.id];return d&&monAt(d.x+d.w/2,d.y+d.h/2)===m&&slots.includes(clamp(Math.floor((d.y+d.h/2-m.y)/(m.h/g.r)),0,g.r-1)*g.c+clamp(Math.floor((d.x+d.w/2-m.x)/(m.w/g.c)),0,g.c-1))});
+  for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*GC(g)+c);
+  const under=snap.windows.find(w=>{const d=drawn[w.id];return d&&monAt(d.x+d.w/2,d.y+d.h/2)===m&&slots.includes(clamp(Math.floor((d.y+d.h/2-m.y)/(m.h/GR(g))),0,GR(g)-1)*GC(g)+clamp(Math.floor((d.x+d.w/2-m.x)/(m.w/GC(g))),0,GC(g)-1))});
   const f=await ask(`New Zone: ${plural(cs,"Column")} × ${plural(rs,"Row")} on ${onMon(m)}`,`<p class="note">The zone fills with these windows in fill order. A pin inside it keeps its cell. Windows that do not fit stay put.</p><label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts(under?"app:"+under.app:"cat:code")}</select></label>`,"Add Zone");
   if(!f)return;addZone(m,g,c0,r0,c1,r1,zoneFill(f.zf.value))}
 function setGrid(k,d){const m=curMon;
@@ -1731,18 +1738,18 @@ const stage=$("stage"),dropEl=$("drop");
 function target(d){
   const sr=stage.getBoundingClientRect(),sx=(d.px-sr.left)/G.S+G.x0,sy=(d.py-sr.top)/G.S+G.y0,m=monAt(sx,sy),g=m&&gridOf(m);
   if(!g)return null;
-  const cw=m.w/g.c,ch=m.h/g.r,cs=Math.min(d.cs,g.c),rs=Math.min(d.rs,g.r);
+  const cw=m.w/GC(g),ch=m.h/GR(g),cs=Math.min(d.cs,GC(g)),rs=Math.min(d.rs,GR(g));
   let c,r;
   if(cs===1&&rs===1){c=Math.floor((sx-m.x)/cw);r=Math.floor((sy-m.y)/ch)}
   else{const tx=d.start.x+(d.px-d.sx)/G.S,ty=d.start.y+(d.py-d.sy)/G.S;c=Math.round((tx-m.x)/cw);r=Math.round((ty-m.y)/ch)}
-  c=clamp(c,0,g.c-cs);r=clamp(r,0,g.r-rs);return{m,g,slot:r*g.c+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)}}
+  c=clamp(c,0,GC(g)-cs);r=clamp(r,0,GR(g)-rs);return{m,g,slot:r*GC(g)+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)}}
 function spanOf(id,start){const pp=LIVE&&pinOf(id);if(pp){const b=bbox(pp.pin.slots,scene().grids[pp.pin.mon]);return[b.cs,b.rs,pp.pin.mon]}
-  if(!LIVE){const m=monAt(start.x+start.w/2,start.y+start.h/2),g=m&&gridOf(m);if(g)return[clamp(Math.round(start.w/(m.w/g.c)),1,g.c),clamp(Math.round(start.h/(m.h/g.r)),1,g.r),null]}
+  if(!LIVE){const m=monAt(start.x+start.w/2,start.y+start.h/2),g=m&&gridOf(m);if(g)return[clamp(Math.round(start.w/(m.w/GC(g))),1,GC(g)),clamp(Math.round(start.h/(m.h/GR(g))),1,GR(g)),null]}
   return[1,1,null]}
 const overEl=(el,x,y)=>{const r=el.getBoundingClientRect();return x>=r.left&&x<r.right&&y>=r.top&&y<r.bottom};
 const overBay=(x,y)=>{const b=$("bay");return !b.hidden&&overEl(b,x,y)};
 function cellAt(x,y){const sr=stage.getBoundingClientRect(),sx=(x-sr.left)/G.S+G.x0,sy=(y-sr.top)/G.S+G.y0,m=monAt(sx,sy),g=m&&gridOf(m);
-  return g?{m,g,c:clamp(Math.floor((sx-m.x)/(m.w/g.c)),0,g.c-1),r:clamp(Math.floor((sy-m.y)/(m.h/g.r)),0,g.r-1)}:null}
+  return g?{m,g,c:clamp(Math.floor((sx-m.x)/(m.w/GC(g))),0,GC(g)-1),r:clamp(Math.floor((sy-m.y)/(m.h/GR(g))),0,GR(g)-1)}:null}
 // Measured width of a drop label in the drop chip's font, for choosing the form that fits a cell.
 let measureCtx=null;
 function textW(t,sz=12){if(!measureCtx){measureCtx=document.createElement("canvas").getContext("2d")}
@@ -1814,7 +1821,7 @@ function frame(){raf=0;
       if(gh.style.display==="block"){const sr=stage.getBoundingClientRect();gh.style.left=Math.max(0,sr.left+parseFloat(pr.left))+"px";gh.style.top=Math.max(0,sr.top+parseFloat(pr.top)-gh.offsetHeight-4)+"px"}
       if(zone==="swap"){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=big?`${o} moves here`:o}}}
     else{Object.assign(dropEl.style,px(t.r));dropEl.className="";dropEl.style.display="block";
-      const nar=parseFloat(px(t.r).width)<110,blocked=(d.cs>1||d.rs>1)&&lockedHit(scene(),mk(t.m),cellsOf(t.slot%t.g.c,Math.floor(t.slot/t.g.c),t.cs,t.rs,t.g),pinNow(scene(),d.id));
+      const nar=parseFloat(px(t.r).width)<110,blocked=(d.cs>1||d.rs>1)&&lockedHit(scene(),mk(t.m),cellsOf(t.slot%GC(t.g),Math.floor(t.slot/GC(t.g)),t.cs,t.rs,t.g),pinNow(scene(),d.id));
       dropEl.innerHTML=`<span>${blocked?"Locked tile in the way":nar?"Here":"Place here"}</span>`}}
   else dropEl.style.display="none"}
 // The front tile's button under a press on its strip. The Put Behind flash lifts the strip over the tile's top edge, lock included.
@@ -1892,7 +1899,7 @@ function endDrag(ev){
   // Keep a pinned window's size when it moves within its monitor; a new monitor starts at one cell.
   const keep=!LIVE||d.pmon===mk(t.m);
   if(d.locked){const pp=pinOf(d.id),b=pp&&bbox(pp.pin.slots,scene().grids[pp.pin.mon]);
-    if(b&&pp.pin.mon===mk(t.m)&&t.slot===b.r*t.g.c+b.c&&t.cs===b.cs&&t.rs===b.rs){render();return}
+    if(b&&pp.pin.mon===mk(t.m)&&t.slot===b.r*GC(t.g)+b.c&&t.cs===b.cs&&t.rs===b.rs){render();return}
     askMove(d,{kind:"pin",t,keep});return}
   curMon=t.m;pinWin(d.id,t.m,t.slot,keep?t.cs:1,keep?t.rs:1);
 }
@@ -1914,23 +1921,23 @@ stage.addEventListener("keydown",ev=>{
   const d=drawn[id];if(!d)return;
   const pp=LIVE&&pinOf(id);let m,g,b;
   if(pp){m=snap.monitors.find(q=>mk(q)===pp.pin.mon);g=gridOf(m);b=bbox(pp.pin.slots,g)}
-  else{m=monAt(d.x+d.w/2,d.y+d.h/2);g=m&&gridOf(m);if(!g)return;const cw=m.w/g.c,ch=m.h/g.r;
-    b={c:clamp(Math.floor((d.x+d.w/2-m.x)/cw),0,g.c-1),r:clamp(Math.floor((d.y+d.h/2-m.y)/ch),0,g.r-1),cs:1,rs:1};
-    if(!LIVE){const[cs,rs]=spanOf(id,d);b.cs=cs;b.rs=rs;b.c=clamp(Math.round((d.x-m.x)/cw),0,g.c-cs);b.r=clamp(Math.round((d.y-m.y)/ch),0,g.r-rs)}}
+  else{m=monAt(d.x+d.w/2,d.y+d.h/2);g=m&&gridOf(m);if(!g)return;const cw=m.w/GC(g),ch=m.h/GR(g);
+    b={c:clamp(Math.floor((d.x+d.w/2-m.x)/cw),0,GC(g)-1),r:clamp(Math.floor((d.y+d.h/2-m.y)/ch),0,GR(g)-1),cs:1,rs:1};
+    if(!LIVE){const[cs,rs]=spanOf(id,d);b.cs=cs;b.rs=rs;b.c=clamp(Math.round((d.x-m.x)/cw),0,GC(g)-cs);b.r=clamp(Math.round((d.y-m.y)/ch),0,GR(g)-rs)}}
   let{c,r,cs,rs}=b;
-  if(ev.shiftKey){cs=clamp(cs+k[0],1,g.c-c);rs=clamp(rs+k[1],1,g.r-r)}else{c=clamp(c+k[0],0,g.c-cs);r=clamp(r+k[1],0,g.r-rs)}
+  if(ev.shiftKey){cs=clamp(cs+k[0],1,GC(g)-c);rs=clamp(rs+k[1],1,GR(g)-r)}else{c=clamp(c+k[0],0,GC(g)-cs);r=clamp(r+k[1],0,GR(g)-rs)}
   // A move into cells a pinned window holds is a swap with it, so its pin and its stack stay. A locked one blocks the move.
   const P=LIVE&&!ev.shiftKey&&prev(),pa=P&&P.placed.find(q=>q.id===id&&!q.behind);
   if(pa){const blk=cellsOf(c,r,cs,rs,g),hit=P.placed.filter(q=>q.pin>=0&&!q.behind&&q.id!==id&&q.mon===mk(m)&&pbox(q,g).cells.some(v=>blk.includes(v)));
     if(pp&&pp.pin.lock&&!ev.shiftKey){
       if(c===b.c&&r===b.r){render();requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
       if(hit.some(lockOfPlaced)||hit.length>1){status(hit.some(lockOfPlaced)?"A locked tile is in the way. Nothing changed.":"More than one pinned window is in the way. Nothing changed.");render();requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
-      const t={m,g,slot:r*g.c+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)};
+      const t={m,g,slot:r*GC(g)+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)};
       askMove({id,locked:true,pmon:pp.pin.mon,px:0,py:0},hit.length?{kind:"swap",occ:hit[0],t}:{kind:"pin",t,keep:true});return}
     if(hit.length){
       if(hit.some(lockOfPlaced)||hit.length>1){status(hit.some(lockOfPlaced)?"A locked tile is in the way. Nothing changed.":"More than one pinned window is in the way. Nothing changed.");render();requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
-      swapInto(id,hit[0].id,m,r*g.c+c,false);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}}
-  curMon=m;pinWin(id,m,r*g.c+c,cs,rs);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));
+      swapInto(id,hit[0].id,m,r*GC(g)+c,false);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}}
+  curMon=m;pinWin(id,m,r*GC(g)+c,cs,rs);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));
 });
 function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.");return}
   if(pp.pin.lock){status(`${winById(id).title} is locked. Unlock it first.`);return}
@@ -1974,7 +1981,7 @@ function ctrlPick(ev){const P=prev();ev.preventDefault();
     // A selected tile on this monitor counts as the first pick.
     const sp=selWin&&P.placed.find(q=>q.id===selWin&&!q.behind&&q.mon===role);if(sp)picks.order.push(...pbox(sp,g).cells);
     if(other)status(`Started a new pick on the ${monName(c.m)}.`)}
-  const hit=blockAt(P,role,g,c.r*g.c+c.c).cells,have=hit.every(x=>picks.order.includes(x));
+  const hit=blockAt(P,role,g,c.r*GC(g)+c.c).cells,have=hit.every(x=>picks.order.includes(x));
   picks.order=have?picks.order.filter(x=>!hit.includes(x)):[...picks.order,...hit.filter(x=>!picks.order.includes(x))];
   if(!picks.order.length)picks=null;
   render()}
@@ -1985,7 +1992,7 @@ function pickInfo(){const k=picks,P=prev(),s=LIVE&&scene();if(!k||!P||!s)return 
   const b=bbox(k.order,g),missing=b.cells.filter(x=>!set.has(x));
   // A locked pin on any picked cell stops a Merge, a closed window's pin too (a resize stops at it the same way).
   const keeper=wins[0]||null,self=keeper&&pinNow(s,keeper.id),
-    lockedPin=s.pins.find(q=>{if(!q.lock||q===self||q.mon!==k.role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>set.has(c))})||null;
+    lockedPin=s.pins.find(q=>{if(!q.lock||q===self||q.mon!==k.role)return false;const qs=q.slots.filter(v=>v<GC(g)*GR(g));return qs.length>0&&bbox(qs,g).cells.some(c=>set.has(c))})||null;
   return{k,g,b,set,wins,missing,rect:!missing.length,lockedW:wins.find(lockOfPlaced),lockedPin,keeper,m:monOfKey(k.role),
     one:wins.length===1&&pbox(wins[0],g).cells.length===set.size}}
 // The bar's words and whether Merge and Fill to Rectangle are on. The reason for a disabled Merge is text in the bar (aria-describedby on the button).
@@ -1999,7 +2006,7 @@ function mergeWords(i){const P=prev();
 // The picks, the block they make and the Merge bar, drawn on the stage after every render.
 function renderPicks(){for(const e of stage.querySelectorAll(".pk,.miss,.mbox,.mbar"))e.remove();
   const i=pickInfo();if(!i)return;const m=i.m,g=i.g;
-  const bx=r=>`left:${r.left};top:${r.top};width:${r.width};height:${r.height}`,cell=c=>px(cellRect(m,g,c%g.c,Math.floor(c/g.c),1,1));
+  const bx=r=>`left:${r.left};top:${r.top};width:${r.width};height:${r.height}`,cell=c=>px(cellRect(m,g,c%GC(g),Math.floor(c/GC(g)),1,1));
   let h="";
   for(const c of i.k.order)h+=`<div class="pk" style="${bx(cell(c))}"><i>${CHECK}</i></div>`;
   for(const c of i.missing)h+=`<div class="miss" style="${bx(cell(c))}"></div>`;
@@ -2022,7 +2029,7 @@ function fillRect(){const i=pickInfo();if(!i||i.rect)return;const P=prev(),o=[..
 function mergePicks(){const i=pickInfo();if(!i||!i.rect||i.lockedW||i.lockedPin||!i.keeper)return;
   const {g,b,m,keeper:k}=i,s=scene(),self=pinNow(s,k.id),cv=coverOf(i.k.role,g,i.set,k.id,self),A=winById(k.id),r=cellRect(m,g,b.c,b.r,b.cs,b.rs);
   optim={id:k.id,r};selWin=k.id;curMon=m;
-  const ok=edit(x=>{for(const o of cv.covered)x.pins=x.pins.filter(q=>q!==o.q);for(const id of cv.list)bayEdit(x,id,null,true,MERGED);optimCover(cv.list,MERGED);pinEdit(x,k.id,m,b.r*g.c+b.c,b.cs,b.rs,self)},
+  const ok=edit(x=>{for(const o of cv.covered)x.pins=x.pins.filter(q=>q!==o.q);for(const id of cv.list)bayEdit(x,id,null,true,MERGED);optimCover(cv.list,MERGED);pinEdit(x,k.id,m,b.r*GC(g)+b.c,b.cs,b.rs,self)},
     `${actorName(A,cv.list)} now spans ${b.cs}×${b.rs}.${cv.list.length||cv.closed.length?` ${coverSay(cv.list,cv.closed,A).join(". ")}.`:""}`);
   if(ok&&(cv.list.length||cv.closed.length))coverNote(px(r),cv.list,hist[hist.length-1],A,cv.closed)}
 
