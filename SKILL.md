@@ -100,8 +100,9 @@ A scene is a whole-desk layout: one grid per monitor role (`wide`, `tall`, `lapt
 
 `serve.ps1` serves `app.html`: the monitors as a board, scenes on the left rail, and an inspector on the right. The installed copy sits in `%USERPROFILE%\.tile-windows\app`. The Start menu shortcut and the tray icon both open it.
 
-**Live (default).** Say in one line that a browser tab will open. Then start the server in the background:
-`powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/.claude/skills/tile-windows/serve.ps1)"`
+**Live (default).** Say in one line that a browser tab will open. Then start the server in the background. The owner asked for live Apply, so the live-move guard (decision: live-move-guard) gets the opt-in for that server process only:
+`TILE_TEST_ALLOW_LIVE=1 powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/.claude/skills/tile-windows/serve.ps1)"`
+In PowerShell, set `$env:TILE_TEST_ALLOW_LIVE='1'` in the same command that starts the server, then `Remove-Item Env:TILE_TEST_ALLOW_LIVE`.
 
 - It prints its URL (127.0.0.1, a free port, a random token) and opens the browser.
 - Dragging a window onto a cell pins it in the selected scene. `tile.ps1` lays out every preview, so the board shows what Apply will do.
