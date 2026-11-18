@@ -31,6 +31,9 @@
 #     re-read fails says it was forgotten, shows the failed read, and never says Could not forget; a rename that landed whose re-read fails
 #     shows the failed read; the Monitor picker shows a renamed monitor once its inspector Name field is left; the built-in monitor reads
 #     Built-in screen, with no maker or product code (dialog and inspector).
+#   Monitors and Setups, a forget of a scene's setup: the forget turns that scene's setup switch off on the server, and the page takes it. The
+#     card of the scene shows its switch off with no reload, a Save of another scene writes the switch off to config.json, and the pick-a-setup note
+#     the forget answered shows on the page.
 #   Offline, dialog: the offline page shows no Monitors and Setups button and sends no request. A guard: green on the old commit, and a
 #     mutant with the button turns it red (run on a scratch copy).
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
@@ -91,6 +94,17 @@ function Add-Layout($cfg, [string]$scene, [string]$key, [string]$json) {
   $sc.layouts | Add-Member -Force -NotePropertyName $key -NotePropertyValue (ConvertFrom-Json $json)
 }
 function Put-Config($cfg) { [IO.File]::WriteAllText((Join-Path $tileHome 'config.json'), (ConvertTo-Json -Depth 20 -Compress -InputObject $cfg), $utf8) }
+# The config as it is on disk, read after the server has written it.
+function Read-Config { [IO.File]::ReadAllText((Join-Path $tileHome 'config.json'), $utf8) | ConvertFrom-Json }
+# The setup Office: one unplugged monitor (O9) in a setup of its own. Focus is aimed at it with its setup switch on. The Office cases forget it.
+function Office-Config {
+  $cfg = New-Config
+  $cfg.monitors | Add-Member -NotePropertyName 'O9' -NotePropertyValue ([pscustomobject]@{ name = 'Office 24'; builtin = $false; lastSeen = $stamp; bw = 1920; bh = 1080 })
+  $cfg.setups | Add-Member -NotePropertyName 'O9' -NotePropertyValue ([pscustomobject]@{ name = 'Office'; ids = @('O9'); lastUsed = $stamp })
+  $sc = @($cfg.scenes | ? { $_.id -eq 'focus' })[0]
+  $sc.auto.setup = $true; $sc | Add-Member -Force -NotePropertyName setupKey -NotePropertyValue 'O9'
+  $cfg
+}
 # A layout as the server keeps it: keys sorted at every depth, so two layouts compare by their content.
 function Canon($o) {
   if ($null -eq $o) { return 'null' }
@@ -228,6 +242,20 @@ function Open-Dialog($sock) {
 # The named rows of the open dialog: whether each is listed, whether its Forget is off, and the text its Forget names as its reason.
 function Dlg-Rows($sock, [string[]]$names) {
   Js $sock ($dlgHelpers + 'const names = ' + (ConvertTo-Json -Compress -InputObject @($names)) + '; return names.map(n => ({ n: n, row: !!rowOf(n), off: offOf(n), reason: reasonOf(n) }))')
+}
+# The server's note (POST /note clears it). A forget leaves one in the run's TILE_HOME, and every later page load shows it, so a case clears it first.
+function Dismiss-Note([string]$url) { try { [void](Invoke-WebRequest -UseBasicParsing "$($url)note" -Method Post -Body 'dismiss') } catch { } }
+# Forgets the setup Office from the Monitors and Setups dialog, as a user does: its Forget, OK on the confirm, then the dialog says it was
+# forgotten, and Done closes the dialog. Answers 'forgot', or the step that did not happen.
+function Forget-Office($sock) {
+  $st = Open-Dialog $sock
+  if ($st -ne 'open') { return $st }
+  if ((Js $sock 'const b = document.querySelector("#mgdlg button[data-fk=setup][data-fid=O9]"); if (!b) return false; b.click(); return true') -ne $true) { return 'norow' }
+  Confirm-Ask $sock
+  if (-not (WaitFor $sock '/Forgot Office/.test((document.getElementById("mgsay") || {}).textContent || "")' 30)) { return 'nosay' }
+  [void](Js $sock 'document.getElementById("mgdone").click(); return true')
+  if (-not (WaitFor $sock '!document.getElementById("mgdlg").open' 10)) { return 'noclose' }
+  'forgot'
 }
 # A snapshot whose monitors carry size ids (size-WxH, as tile.ps1 gives a monitor with no device): every one of them, and only the ultrawide.
 $sizeAllObj = ConvertFrom-Json $snapAText
@@ -647,6 +675,69 @@ try {
       Check 'the inspector line says Built-in screen' ([string]$line[0] -match '(?i)built-in screen') "inspector: '$($line[0])'"
       Check 'the inspector line gives no maker or product code' ([string]$line[0] -notmatch 'BOE|0A1F') "inspector: '$($line[0])'"
     }
+  }
+
+  # A forget of the setup Focus is aimed at turns Focus's setup switch off on the server. The page's copy of Focus still holds the switch on, so a
+  # Save of another scene posts Focus back as the page has it, and the switch and the forgotten setup come back on disk.
+  Case 'Monitors and Setups: after a forget of the setup Focus is aimed at, a Save of another scene leaves Focus with its setup switch off on disk' {
+    Put-Config (Office-Config); Dismiss-Note $url
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    $pre = Js $ws 'return { on: work.focus.auto.setup === true, key: work.focus.setupKey || null }'
+    Check 'Focus is aimed at Office with its setup switch on before the forget (scope)' ($pre.on -eq $true -and $pre.key -ceq 'O9') "auto.setup: $($pre.on), setupKey: $($pre.key)"
+    $res = Forget-Office $ws
+    Check 'Office is forgotten from the dialog (control)' ($res -eq 'forgot') "forget: $res"
+    if ($res -ne 'forgot') { return }
+    $fd = @((Read-Config).scenes | ? { $_.id -eq 'focus' })[0]
+    Check 'the forget turned Focus setup switch off on disk (control)' ($fd.auto.setup -ne $true -and -not $fd.setupKey) "Focus on disk: auto.setup $($fd.auto.setup), setupKey '$($fd.setupKey)'"
+    [void](Js $ws 'document.querySelector("[data-pick=meetings]").click(); return true')
+    $picked = WaitFor $ws 'selId === "meetings"' 20
+    Check 'Meetings is open in the inspector (scope)' $picked 'Meetings did not open after its card was clicked'
+    if (-not $picked) { return }
+    [void](Js $ws 'const n = document.getElementById("sceneName"); n.value = "Meetings Renamed"; n.dispatchEvent(new Event("change", { bubbles: true })); return true')
+    $canSave = WaitFor $ws '!document.getElementById("save").disabled' 20
+    Check 'Save is on after the rename of Meetings (scope)' $canSave 'Save stays off after the rename of Meetings'
+    if (-not $canSave) { return }
+    $sent = Js $ws 'document.getElementById("save").click(); await window.__h.settle(); return window.__h.posts("config").length'
+    Check 'the Save sent one POST /config (control)' ($sent -eq 1) "POST /config count: $sent"
+    $disk = Read-Config
+    $md = @($disk.scenes | ? { $_.id -eq 'meetings' })[0]
+    $fa = @($disk.scenes | ? { $_.id -eq 'focus' })[0]
+    Check 'the Save wrote the new name of Meetings to config.json (control)' ($md.name -ceq 'Meetings Renamed') "Meetings on disk: '$($md.name)'"
+    Check 'after the Save, Focus on disk has its setup switch off' ($fa.auto.setup -ne $true) "Focus on disk: auto.setup $($fa.auto.setup)"
+    Check 'after the Save, Focus on disk names no setup' (-not $fa.setupKey) "Focus on disk: setupKey '$($fa.setupKey)'"
+  }
+
+  # The card of Focus shows the trigger chips that are on; the setup one reads Setup. After a forget, with no reload, it must read off.
+  Case 'Monitors and Setups: after a forget of the setup Focus is aimed at, the card of Focus shows its setup switch off, with no reload' {
+    Put-Config (Office-Config); Dismiss-Note $url
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    $chips = 'return [...document.querySelector("[data-pick=focus]").closest("article.card").querySelectorAll(".chips i")].map(i => i.textContent.trim())'
+    [void](WaitFor $ws '[...document.querySelectorAll(".chips i")].some(i => i.textContent.trim() === "Setup")' 20)
+    $before = Js $ws $chips
+    Check 'the card of Focus shows its Setup switch on before the forget (scope)' (@($before) -ccontains 'Setup') "chips: $(@($before) -join ', ')"
+    $res = Forget-Office $ws
+    Check 'Office is forgotten from the dialog (control)' ($res -eq 'forgot') "forget: $res"
+    if ($res -ne 'forgot') { return }
+    $after = Js $ws $chips
+    Check 'right after the forget, the card of Focus shows its setup switch off' (@($after) -cnotcontains 'Setup') "chips on the card of Focus: $(@($after) -join ', ')"
+  }
+
+  # The forget answer carries the server's note: "A setup you forgot was the one Focus used ... Pick a setup for each of them ...". The page
+  # shows it right after the forget. Matched on the note's own words: "pick a setup" alone also sits in the page's setup picker.
+  Case 'Monitors and Setups: after a forget of the setup Focus is aimed at, the pick-a-setup note shows on the page' {
+    Put-Config (Office-Config); Dismiss-Note $url
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    $note = 'const t = document.body.innerText.replace(/\s+/g, " "); return /A setup you forgot/.test(t) && /pick a setup/i.test(t)'
+    $before = Js $ws $note
+    Check 'no note shows before the forget (scope)' ($before -ne $true) 'the note shows before any forget'
+    $res = Forget-Office $ws
+    Check 'Office is forgotten from the dialog (control)' ($res -eq 'forgot') "forget: $res"
+    if ($res -ne 'forgot') { return }
+    $shown = Js $ws $note
+    Check 'right after the forget, the pick-a-setup note shows on the page' ($shown -eq $true) 'the forget answered with the note, and the page does not show it'
   }
 
   Case 'the offline page loads its sample and a board edit sends no POST' {
