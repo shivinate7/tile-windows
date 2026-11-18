@@ -1,0 +1,154 @@
+{
+  "set": "1080x1872",
+  "scenes": {
+    "default": {
+      "grids": {"wide":{"c":5,"r":2},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [
+        {"id":1001,"mon":"wide","slots":[1],"x":0,"y":0,"w":216,"h":936},
+        {"id":1002,"mon":"wide","slots":[2],"x":216,"y":0,"w":216,"h":936},
+        {"id":1003,"mon":"wide","slots":[3],"x":432,"y":0,"w":216,"h":936},
+        {"id":1005,"mon":"wide","slots":[5],"x":864,"y":0,"w":216,"h":936},
+        {"id":1006,"mon":"wide","slots":[4],"x":648,"y":0,"w":216,"h":936},
+        {"id":1007,"mon":"wide","slots":[6],"x":0,"y":936,"w":216,"h":936},
+        {"id":1008,"mon":"wide","slots":[10],"x":864,"y":936,"w":216,"h":936},
+        {"id":1010,"mon":"wide","slots":[8],"x":432,"y":936,"w":216,"h":936},
+        {"id":1015,"mon":"wide","slots":[9],"x":648,"y":936,"w":216,"h":936},
+        {"id":1016,"mon":"wide","slots":[7],"x":216,"y":936,"w":216,"h":936}
+      ],
+      "left": [
+        {"id":1009,"app":"WindowsTerminal","why":"no free cell"},
+        {"id":1011,"app":"explorer","why":"no free cell"},
+        {"id":1012,"app":"ms-teams","why":"Its screen is unplugged"},
+        {"id":1013,"app":"outlook","why":"Its screen is unplugged"},
+        {"id":1014,"app":"notepad","why":"no free cell"}
+      ],
+      "missing": [
+        {"pin":2,"app":"olk","match":"","why":"no open window"}
+      ]
+    },
+    "focus": {
+      "grids": {"wide":{"c":3,"r":1},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [
+        {"id":1001,"mon":"wide","slots":[2],"x":360,"y":0,"w":360,"h":1872},
+        {"id":1002,"mon":"wide","slots":[3],"x":720,"y":0,"w":360,"h":1872},
+        {"id":1007,"mon":"wide","slots":[1],"x":0,"y":0,"w":360,"h":1872}
+      ],
+      "left": [
+        {"id":1003,"app":"claude","why":"no free cell"},
+        {"id":1012,"app":"ms-teams","why":"Its screen is unplugged"},
+        {"id":1013,"app":"outlook","why":"Its screen is unplugged"}
+      ],
+      "missing": [
+        {"pin":3,"app":"olk","match":"","why":"no open window"}
+      ]
+    },
+    "meetings": {
+      "grids": {"wide":{"c":4,"r":2},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [
+        {"id":1001,"mon":"wide","slots":[3],"x":540,"y":0,"w":270,"h":936},
+        {"id":1002,"mon":"wide","slots":[4],"x":810,"y":0,"w":270,"h":936},
+        {"id":1003,"mon":"wide","slots":[7],"x":540,"y":936,"w":270,"h":936},
+        {"id":1008,"mon":"wide","slots":[8],"x":810,"y":936,"w":270,"h":936},
+        {"id":1012,"mon":"wide","slots":[1,2,5,6],"x":0,"y":0,"w":540,"h":1872}
+      ],
+      "left": [
+        {"id":1005,"app":"chrome","why":"no free cell"},
+        {"id":1006,"app":"chrome","why":"no free cell"},
+        {"id":1007,"app":"chrome","why":"no free cell"},
+        {"id":1009,"app":"WindowsTerminal","why":"no free cell"},
+        {"id":1010,"app":"explorer","why":"no free cell"},
+        {"id":1011,"app":"explorer","why":"no free cell"},
+        {"id":1013,"app":"outlook","why":"Its screen is unplugged"},
+        {"id":1014,"app":"notepad","why":"no free cell"},
+        {"id":1015,"app":"Spotify","why":"no free cell"},
+        {"id":1016,"app":"POWERPNT","why":"no free cell"}
+      ],
+      "missing": [
+        {"pin":2,"app":"olk","match":"","why":"no open window"}
+      ]
+    },
+    "review": {
+      "grids": {"wide":{"c":4,"r":2},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [
+        {"id":1002,"mon":"wide","slots":[8],"x":810,"y":936,"w":270,"h":936},
+        {"id":1003,"mon":"wide","slots":[7],"x":540,"y":936,"w":270,"h":936},
+        {"id":1007,"mon":"wide","slots":[1,2,5,6],"x":0,"y":0,"w":540,"h":1872},
+        {"id":1011,"mon":"wide","slots":[4],"x":810,"y":0,"w":270,"h":936},
+        {"id":1016,"mon":"wide","slots":[3],"x":540,"y":0,"w":270,"h":936}
+      ],
+      "left": [
+        {"id":1001,"app":"claude","why":"no free cell"},
+        {"id":1008,"app":"WindowsTerminal","why":"no free cell"},
+        {"id":1009,"app":"WindowsTerminal","why":"no free cell"},
+        {"id":1010,"app":"explorer","why":"no free cell"},
+        {"id":1012,"app":"ms-teams","why":"Its screen is unplugged"},
+        {"id":1013,"app":"outlook","why":"Its screen is unplugged"},
+        {"id":1014,"app":"notepad","why":"no free cell"},
+        {"id":1015,"app":"Spotify","why":"no free cell"}
+      ],
+      "missing": [
+        {"pin":3,"app":"olk","match":"","why":"no open window"}
+      ]
+    },
+    "listen": {
+      "grids": {"wide":{"c":4,"r":1},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [
+        {"id":1001,"mon":"wide","slots":[2],"x":270,"y":0,"w":270,"h":1872},
+        {"id":1002,"mon":"wide","slots":[3],"x":540,"y":0,"w":270,"h":1872},
+        {"id":1003,"mon":"wide","slots":[4],"x":810,"y":0,"w":270,"h":1872},
+        {"id":1012,"mon":"wide","slots":[1],"x":0,"y":0,"w":270,"h":1872}
+      ],
+      "left": [
+        {"id":1005,"app":"chrome","why":"no free cell"},
+        {"id":1006,"app":"chrome","why":"no free cell"},
+        {"id":1007,"app":"chrome","why":"no free cell"},
+        {"id":1008,"app":"WindowsTerminal","why":"no free cell"},
+        {"id":1009,"app":"WindowsTerminal","why":"no free cell"},
+        {"id":1010,"app":"explorer","why":"no free cell"},
+        {"id":1011,"app":"explorer","why":"no free cell"},
+        {"id":1013,"app":"outlook","why":"Its screen is unplugged"},
+        {"id":1014,"app":"notepad","why":"no free cell"},
+        {"id":1015,"app":"Spotify","why":"no free cell"},
+        {"id":1016,"app":"POWERPNT","why":"no free cell"}
+      ],
+      "missing": [
+        {"pin":2,"app":"olk","match":"","why":"no open window"}
+      ]
+    },
+    "solo": {
+      "grids": {"wide":{"c":2,"r":1},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [
+        {"id":1001,"mon":"wide","slots":[2],"x":540,"y":0,"w":540,"h":1872},
+        {"id":1007,"mon":"wide","slots":[1],"x":0,"y":0,"w":540,"h":1872}
+      ],
+      "left": [
+        {"id":1002,"app":"claude","why":"no free cell"},
+        {"id":1003,"app":"claude","why":"no free cell"}
+      ],
+      "missing": []
+    },
+    "thursday-prep": {
+      "grids": {"wide":{"c":4,"r":2},"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1}},
+      "placed": [
+        {"id":1001,"mon":"wide","slots":[8],"x":810,"y":936,"w":270,"h":936},
+        {"id":1002,"mon":"wide","slots":[4],"x":810,"y":0,"w":270,"h":936},
+        {"id":1003,"mon":"wide","slots":[3],"x":540,"y":0,"w":270,"h":936},
+        {"id":1008,"mon":"wide","slots":[7],"x":540,"y":936,"w":270,"h":936},
+        {"id":1009,"mon":"wide","slots":[6],"x":270,"y":936,"w":270,"h":936},
+        {"id":1010,"mon":"wide","slots":[5],"x":0,"y":936,"w":270,"h":936},
+        {"id":1011,"mon":"wide","slots":[2],"x":270,"y":0,"w":270,"h":936},
+        {"id":1016,"mon":"wide","slots":[1],"x":0,"y":0,"w":270,"h":936}
+      ],
+      "left": [
+        {"id":1012,"app":"ms-teams","why":"Its screen is unplugged"},
+        {"id":1013,"app":"outlook","why":"Its screen is unplugged"},
+        {"id":1014,"app":"notepad","why":"no free cell"},
+        {"id":1015,"app":"Spotify","why":"no free cell"}
+      ],
+      "missing": [
+        {"pin":3,"app":"olk","match":"","why":"no open window"},
+        {"pin":0,"app":"chrome","match":"Procore","why":"no open window"}
+      ]
+    }
+  }
+}
