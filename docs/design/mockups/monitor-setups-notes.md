@@ -10,7 +10,7 @@ portrait, Setups in the rail) are no longer drawn; git keeps them.
 
 Deep links: `#s=<state>`, plus `w=1024`, `t=light|dark`, `labels=0` and `hide=<option,...>`. With
 no `t`, the page follows the system theme. `#s=all` shows every state.
-States: `bd-today`, `bd-new`, `bd-own`, `bd-back`, `bd-noid`, `sv-scene`, `sv-failed`,
+States: `bd-today`, `bd-new`, `bd-own`, `bd-back`, `bd-noid` (dropped, see item 3), `sv-scene`, `sv-failed`,
 `sv-offline`, `mg-dialog`, `mg-first`, `cd-follow`, `cd-own`, `cd-word`.
 Option keys for `hide`: `icon`, `word` (item 16, still open).
 
@@ -50,13 +50,12 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
    Gain: the owner's three names stay, so nothing reads new on day one. Loss: a second same-shape
    monitor reads "Monitor N" until renamed. The owner renames in the inspector's Monitor section
    (`Name`, every state but `bd-today`) or in Monitors and Setups.
-3. **A monitor with no ID** (`bd-noid`). Options: say so and offer Remember It by Its Size
-   (pick); or remember it by size with no question. The strip turns amber; the scene follows the
-   closest setup, and changes last until it is unplugged: autosave has no key to save them under.
-   Monitor 2 is in no known setup, so it starts as an empty 1×1, and the windows of the missing
-   monitors wait in Windows That Stay Put.
-   Gain: the owner knows why it will not be remembered, and one control leads on. Loss of the other
-   option: two hotel monitors of one size become one monitor.
+3. **A monitor with no ID** (`bd-noid`). **Dropped** (coordinator ruling, 2026-11-17, recorded
+   23:10 CST). A monitor with no EDID is already identified by its size (size-WxH), so it is
+   remembered by size. No amber strip and no Remember It by Its Size button. The state still drawn
+   in `monitor-setups.html` is not the design. Loss: two hotel monitors of one size become one
+   monitor.
+   Departs from: plan lane H and this state.
 
 ## 2. Setups and their layouts
 
