@@ -5,6 +5,9 @@
 # test\run.ps1 dot-sources this file. test\redproof.ps1 runs it against scratch copies of tray.ps1, each with one guard broken.
 param([string]$Tray = (Join-Path (Split-Path $PSScriptRoot) 'tray.ps1'))
 $root = Split-Path $PSScriptRoot
+# Run folder (test-temp-standard), as setup-plumbing.ps1 keeps it: <TEMP>\tile-windows-test-runs\<pid>-<UUID>, removed at the end.
+$runRoot = Join-Path $env:TEMP 'tile-windows-test-runs'; New-Item -ItemType Directory -Force $runRoot | Out-Null
+$runDir = Join-Path $runRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item -ItemType Directory $runDir | Out-Null
 $standalone = -not (Get-Command Check -ErrorAction SilentlyContinue)
 if ($standalone) {
   $ErrorActionPreference = 'Stop'; $script:fail = 0
@@ -32,12 +35,14 @@ function Cfg($scenes) {
 }
 function StdScenes($over = @{}) {
   $a = @{ default = @{ desk = $true }; focus = @{ desk = $true; window = $true }; review = @{ activity = $true }
-    meetings = @{ size = $true; offer = $true }; listen = @{ size = $true; offer = $true }; solo = @{ monitors = $true; noext = $true }; plain = @{} }
+    meetings = @{ size = $true; offer = $true }; listen = @{ size = $true; offer = $true }; solo = @{ setup = $true; noext = $true }; plain = @{} }
   foreach ($k in $over.Keys) { $a[$k] = $over[$k] }
-  @($a.Keys | % { if ($_ -eq 'solo') { Scene $_ $a[$_] @{ screens = 1 } } else { Scene $_ $a[$_] } })
+  @($a.Keys | % { if ($_ -eq 'solo') { Scene $_ $a[$_] @{ setupKey = $k1 } } else { Scene $_ $a[$_] } })
 }
 # A config in which one scene carries threshold values of its own.
 function WithOpt($id, $optJson, $over = @{}) { $c = Cfg (StdScenes $over); @($c.scenes | ? { $_.id -eq $id })[0] | Add-Member -Force opt (ConvertFrom-Json $optJson); $c }
+# Setup keys (decision monitor-setups): the plugged-in monitor ids, sorted and joined with '|'. A scene made on a setup carries its key as setupKey.
+$k1 = 'LEN3'; $k2 = 'AUO1|LEN3'; $k3 = 'AUO1|DEL2|LEN3'
 $cfg = Cfg (StdScenes)
 $cfgG = Cfg (StdScenes @{ focus = @{ desk = $true; window = $true; gaps = $true } })  # Focus in gaps on: it would answer any agenda, so only its own checks use it
 $t0 = [datetime]'2026-10-21 10:00:00'  # a Wednesday; no scene is scheduled
@@ -174,28 +179,28 @@ Check 'threshold: a value over its cap is held at the cap, so a huge offer lead 
 Check 'agenda: an event that ends before it starts is dropped' (@(OfferTick (Agenda @(Ev '11:00' '10:30' 30)) 0).Count -eq 0)
 
 
-# ---- A scene per monitor set; no external monitor for 30 s ----
+# ---- A scene per monitor set: "Use This Scene on This Setup" (owner ruling Q4 A, 2026-11-17 09:47 CST, replaces the count switch) ----
+# No external monitor for 30 s is below. The setup key of the plugged-in monitors is the key the tray reads; a rearrange of the same ids keeps it (setup-plumbing.ps1).
 function KeyRun($s, $key, $cfg = $cfg, $secs = 0) { Run $s $t0.AddSeconds($secs) $cfg (Sig) 'plain' $key }
-$k1 = 'A=1x1@0,0'; $k2 = 'A=1x1@0,0;B=2x2@1,0'
 $s = New-TrayState; $x = @((KeyRun $s $k2), (KeyRun $s $k1 $cfg 5), (KeyRun $s $k1 $cfg 10))
-Check 'monitors: going to one screen applies the scene made for one screen, once' ((Joined $x) -eq '/solo/') (Joined $x)
+Check 'setup: a scene made on a setup applies when that setup is plugged in, once' ((Joined $x) -eq '/solo/') (Joined $x)
 $s = New-TrayState; $x = @((KeyRun $s $k1), (KeyRun $s $k2 $cfg 5))
-Check 'monitors: a set no scene is made for applies nothing' ((Joined $x) -eq '/') (Joined $x)
+Check 'setup: a setup no scene is made on applies nothing' ((Joined $x) -eq '/') (Joined $x)
 $s = New-TrayState; $c2 = Cfg (StdScenes @{ solo = @{ noext = $true } }); $x = @((KeyRun $s $k2 $c2), (KeyRun $s $k1 $c2 5))
-Check 'monitors: with the switch off it applies nothing' ((Joined $x) -eq '/') (Joined $x)
+Check 'setup: with the switch off it applies nothing' ((Joined $x) -eq '/') (Joined $x)
 function ScrRun($s, $secs, $n, $cfg = $cfg, $active = 'plain', $o = @{}) { $o.screens = $n; Run $s $t0.AddSeconds($secs) $cfg (Sig $o) $active }
 $s = New-TrayState; $x = @((ScrRun $s 0 2), (ScrRun $s 10 1), (ScrRun $s 39 1), (ScrRun $s 40 1), (ScrRun $s 100 1), (ScrRun $s 110 2), (ScrRun $s 120 1), (ScrRun $s 150 1))
 Check 'no external: 30 s with one screen applies the laptop scene, once per absence' ((Joined $x) -eq '///solo////solo') (Joined $x)
 $s = New-TrayState; $x = @((ScrRun $s 0 1), (ScrRun $s 60 1))
 Check 'no external: starting the agent on one screen applies nothing' ((Joined $x) -eq '/') (Joined $x)
-$s = New-TrayState; $c2 = Cfg (StdScenes @{ solo = @{ monitors = $true } }); $x = @((ScrRun $s 0 2 $c2), (ScrRun $s 10 1 $c2), (ScrRun $s 50 1 $c2))
+$s = New-TrayState; $c2 = Cfg (StdScenes @{ solo = @{ setup = $true } }); $x = @((ScrRun $s 0 2 $c2), (ScrRun $s 10 1 $c2), (ScrRun $s 50 1 $c2))
 Check 'no external: with the switch off it applies nothing' ((Joined $x) -eq '//') (Joined $x)
 $s = New-TrayState; $x = @((ScrRun $s 0 2), (ScrRun $s 10 1 $cfg 'plain' @{ locked = $true }), (ScrRun $s 50 1 $cfg 'plain' @{ locked = $true }), (ScrRun $s 60 1), (ScrRun $s 100 1))
 Check 'no external: a locked PC does not count (a monitor that sleeps drops out)' ((Joined $x) -eq '////solo') (Joined $x)
 $s = New-TrayState; $x = @((ScrRun $s 0 2), (ScrRun $s 10 1 $cfg 'plain' @{ idleSec = 300 }), (ScrRun $s 50 1 $cfg 'plain' @{ idleSec = 340 }), (ScrRun $s 60 1), (ScrRun $s 100 1))
 Check 'no external: an idle PC does not count' ((Joined $x) -eq '////solo') (Joined $x)
 $s = New-TrayState; $c2 = Cfg (StdScenes); $x = @((Run $s $t0 $c2 (Sig @{ screens = 2 }) 'plain' $k2), (Run $s $t0.AddSeconds(10) $c2 (Sig @{ screens = 1 }) 'plain' $k1), (Run $s $t0.AddSeconds(40) $c2 (Sig @{ screens = 1 }) 'plain' $k1), (Run $s $t0.AddSeconds(100) $c2 (Sig @{ screens = 1 }) 'plain' $k1))
-Check 'no external: a monitor-set scene applied a moment ago is the same event, so it does not apply again' ((Joined $x) -eq '/solo//') (Joined $x)
+Check 'no external: a setup scene applied a moment ago is the same event, so it does not apply again' ((Joined $x) -eq '/solo//') (Joined $x)
 $s = New-TrayState; $x = @((ScrRun $s 0 2 (WithOpt 'solo' '{"noext":{"sec":10}}')), (ScrRun $s 5 1 (WithOpt 'solo' '{"noext":{"sec":10}}')), (ScrRun $s 15 1 (WithOpt 'solo' '{"noext":{"sec":10}}')))
 Check 'threshold: how long the monitors must be gone comes from the scene' ((Joined $x) -eq '//solo') (Joined $x)
 
@@ -214,6 +219,12 @@ $page = [IO.File]::ReadAllText((Join-Path $root 'app.html'))
 $off = $page -match '(?s)const AUTO=\[(.*?)\n\];'
 $names = if ($off) { @([regex]::Matches($matches[1], '(?m)^\["(\w+)"') | % { $_.Groups[1].Value }) }
 Check 'starters: the page edits the same trigger switches as the tray' ($off -and (($names | sort) -join ',') -eq (($TileAutoFlags | sort) -join ',')) ($names -join ',')
+# The setup switch replaces the count switch (owner ruling Q4 A, 2026-11-17 09:47 CST): both lists name setup, neither names monitors.
+Check 'starters: the tray names the setup switch, not the monitors switch' ($TileAutoFlags -contains 'setup' -and $TileAutoFlags -notcontains 'monitors') ($TileAutoFlags -join ',')
+Check 'starters: the page AUTO list names the setup switch, not the monitors switch' (@($names) -contains 'setup' -and @($names) -notcontains 'monitors') ($names -join ',')
+Check 'starters: the page labels the setup switch "Use This Scene on This Setup"' ([regex]::IsMatch($page, 'Use This Scene on This Setup') -and -not [regex]::IsMatch($page, 'Use This Scene for This Many Screens')) ''
+# Control, green on the old code: the laptop-only switch is not part of the setup change. ([regex]::IsMatch, so $matches of the checks above stays.)
+Check 'starters: the laptop-only switch stays: noext in the tray and "Laptop Only" on the page' ($TileAutoFlags -contains 'noext' -and [regex]::IsMatch($page, 'Laptop Only')) ''
 $optNames = @([regex]::Matches($page, '\{k:"(\w+)",l:') | % { $_.Groups[1].Value }); $defNames = @($st.optDefaults.PSObject.Properties | % { $_.Value.PSObject.Properties.Name })
 Check 'starters: the page edits the same thresholds as the tray reads' (@($defNames | ? { $optNames -notcontains $_ }).Count -eq 0) (($optNames -join ',') + ' vs ' + ($defNames -join ','))
 $pageMax = @(if ($off) { $matches[1] -split "`n" | % { if ($_ -match '^\["(\w+)"') { $f = $matches[1]; [regex]::Matches($_, '\{k:"(\w+)",l:[^}]*?max:(\d+)') | % { "$f.$($_.Groups[1].Value)=$($_.Groups[2].Value)" } } } }) | sort
@@ -221,11 +232,11 @@ $trayMax = @($TileOptMax.Keys | % { "$_=$($TileOptMax[$_])" }) | sort
 Check 'starters: the page caps each threshold box at the same value as the tray' ($pageMax.Count -gt 0 -and ($pageMax -join ',') -eq ($trayMax -join ',')) (($pageMax -join ',') + ' vs ' + ($trayMax -join ','))
 
 # Solo on a one-monitor desk: the only screen is the wide role, so both Claude and Chrome land.
-$one = Join-Path $env:TEMP "tile-solo-$PID.json"
+$one = Join-Path $runDir 'solo.json'
 [IO.File]::WriteAllText($one, '{"monitors":[{"name":"D1","role":"wide","x":0,"y":0,"w":1536,"h":912,"bw":1536,"bh":960}],"windows":[{"id":1,"app":"claude","title":"C","x":0,"y":0,"w":800,"h":600},{"id":2,"app":"chrome","title":"G","x":10,"y":10,"w":800,"h":600},{"id":3,"app":"ms-teams","title":"T","x":20,"y":20,"w":800,"h":600}]}')
 $solo = @($st.scenes | ? { $_.id -eq 'solo' })[0]; $solo | Add-Member cats $st.cats; $solo | Add-Member categories $st.categories
-$sj = Join-Path $env:TEMP "tile-solo-scene-$PID.json"; [IO.File]::WriteAllText($sj, (ConvertTo-Json -Depth 8 $solo))
-$real = $env:TILE_HOME; $env:TILE_HOME = Join-Path $env:TEMP "tile-solo-home-$PID"
+$sj = Join-Path $runDir 'solo-scene.json'; [IO.File]::WriteAllText($sj, (ConvertTo-Json -Depth 8 $solo))
+$real = $env:TILE_HOME; $env:TILE_HOME = Join-Path $runDir 'solo-home'
 try { $pl = (& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tile.ps1') -Scene $sj -From $one -Json 3>$null) -join '' | ConvertFrom-Json } finally { if ($null -eq $real) { Remove-Item env:TILE_HOME } else { $env:TILE_HOME = $real }; Remove-Item $one, $sj -ErrorAction SilentlyContinue }
 $mv = @($pl.placed | ? { $_.note -match 'moved|dry' } | % { $_.app }) -join ','
 Check 'Solo on one monitor places Chrome and Claude, and leaves Teams' ($pl -and $mv -match 'chrome' -and $mv -match 'claude' -and $mv -notmatch 'teams') (($pl | ConvertTo-Json -Depth 4 -Compress))
@@ -240,6 +251,24 @@ Check 'grid: with the switch off the scene keeps its own grid' ($null -eq (Get-C
 $gsc = $st.scenes | ? { $_.id -eq 'default' }; $gsc | Add-Member -Force cats $st.cats; $gsc | Add-Member -Force categories $st.categories
 $gj = ConvertFrom-Json (Get-GridSceneJson $gsc $gsc.claudeGrid.dense)
 Check 'grid: the scene JSON the tray hands tile.ps1 keeps its arrays and categories and swaps only the ultrawide grid' ($gj.grids.wide.c -eq 6 -and $gj.grids.tall.r -eq 2 -and $gj.pins[0].slots -is [array] -and $gj.pins[0].slots[0] -eq 0 -and $gj.categories[0] -is [array] -and $gj.categories[0][1] -eq 'Code' -and $gj.cats.claude -eq 'code' -and $gj.fill.apps.Count -eq 3)
+
+# The grid trigger swaps the ultrawide grid on the wide-role monitor, by id, not on the widest screen (coordinator ruling, 2026-11-17 13:28 CST).
+# Seam: the laptop is the widest screen by rank but is the built-in panel, so the wide role goes to the ultrawide (decision monitor-setups item 14).
+# The scene JSON is the one the grid trigger builds (Get-GridSceneJson); tile.ps1 runs it on the snapshot as a dry run.
+$gsnap = Join-Path $runDir 'grid-snap.json'
+[IO.File]::WriteAllText($gsnap, (ConvertTo-Json -Depth 6 -Compress ([ordered]@{
+  monitors = @([ordered]@{ name = '\\.\DISPLAY1'; id = 'LEN3'; builtin = $true; x = 0; y = 0; w = 2560; h = 1560; bw = 2560; bh = 1600 },
+    [ordered]@{ name = '\\.\DISPLAY2'; id = 'DEL2'; builtin = $false; x = 2560; y = 0; w = 1920; h = 1040; bw = 1920; bh = 1080 })
+  windows = @([ordered]@{ id = 1; app = 'claude'; title = 'Claude 1'; x = 0; y = 0; w = 800; h = 600 }, [ordered]@{ id = 2; app = 'claude'; title = 'Claude 2'; x = 0; y = 0; w = 800; h = 600 })
+})))
+$gscene = Join-Path $runDir 'grid-scene.json'; [IO.File]::WriteAllText($gscene, (Get-GridSceneJson $gsc $gsc.claudeGrid.dense))
+$realHome = $env:TILE_HOME; $realSeam = $env:TILE_SCREENS_FILE
+$env:TILE_HOME = Join-Path $runDir 'grid-home'; $env:TILE_SCREENS_FILE = $null
+try { $gp = (((& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tile.ps1') -Scene $gscene -From $gsnap -Json 3>$null) | ? { "$_" -notmatch '^WARNING:' }) -join '') | ConvertFrom-Json }
+finally { $env:TILE_HOME = $realHome; $env:TILE_SCREENS_FILE = $realSeam }
+$gcl = @($gp.placed | ? { $_.app -eq 'claude' })
+Check 'grid: the scene run places the two Claude windows (scope)' ($gcl.Count -eq 2) "placed Claude windows: $($gcl.Count)"
+Check 'grid: the ultrawide grid lands on the wide-role monitor, by id, not on the widest screen' (@($gcl | ? { $_.x -ge 2560 }).Count -eq $gcl.Count) ("x of the Claude windows: " + (($gcl | % { $_.x }) -join ','))
 
 # ---- Global guards ----
 $sched = Scene 'sched' @{} @{ trigger = @{ type = 'time'; days = @(0, 1, 2, 3, 4, 5, 6); time = '10:07' } }
@@ -274,7 +303,7 @@ $s = New-TrayState; $x = @((Run $s $tS $gc (Sig) 'plain'), (Run $s $tS.AddSecond
 Check 'guard: without live signals only the schedule, display and call triggers run, and a schedule fires once' ((Joined $x) -eq 'sched/') (Joined $x)
 
 # ---- An older config gains the new starters and the trigger fields, and nothing else changes ----
-$mig = Join-Path $env:TEMP "tile-mig-$PID"; New-Item -ItemType Directory $mig | Out-Null
+$mig = Join-Path $runDir 'mig'; New-Item -ItemType Directory $mig | Out-Null
 function Migrate($json) {
   [IO.File]::WriteAllText((Join-Path $mig 'config.json'), $json)
   $real = $env:TILE_HOME; $env:TILE_HOME = $mig
@@ -283,7 +312,8 @@ function Migrate($json) {
     & powershell -NoProfile -ExecutionPolicy Bypass -Command $cmd 2>&1 | Out-Null
     $m1 = [IO.File]::ReadAllText((Join-Path $mig 'config.json')); $w1 = (Get-Item (Join-Path $mig 'config.json')).LastWriteTimeUtc
     & powershell -NoProfile -ExecutionPolicy Bypass -Command $cmd 2>&1 | Out-Null
-    [pscustomobject]@{ text = $m1; again = [IO.File]::ReadAllText((Join-Path $mig 'config.json')); same = ((Get-Item (Join-Path $mig 'config.json')).LastWriteTimeUtc -eq $w1) }
+    $note = Join-Path $mig 'note.txt'
+    [pscustomobject]@{ text = $m1; again = [IO.File]::ReadAllText((Join-Path $mig 'config.json')); same = ((Get-Item (Join-Path $mig 'config.json')).LastWriteTimeUtc -eq $w1); note = $(if (Test-Path -LiteralPath $note) { [IO.File]::ReadAllText($note) } else { '' }) }
   } finally { if ($null -eq $real) { Remove-Item env:TILE_HOME } else { $env:TILE_HOME = $real } }
 }
 $cat = '"categories":[["code","Code"],["browse","Browse"],["comms","Comms"],["other","Other"]],"cats":{"claude":"code"}'
@@ -292,14 +322,27 @@ $def = '{"id":"default","name":"Default","builtIn":true,"trigger":{"type":"manua
 $mine = '{"id":"mine","name":"Mine","trigger":{"type":"manual"},"grids":{"wide":{"c":2,"r":1}},"pins":[],"fill":{"mon":"wide","apps":["*"],"skip":[],"sort":"app"}}'
 $mg = Migrate ('{"version":1,' + $cat + ',"scenes":[' + $fri + ',' + $def + ',' + $mine + ']}')
 $mc = ConvertFrom-Json $mg.text; $md = @($mc.scenes | ? { $_.id -eq 'default' })[0]; $mf = @($mc.scenes | ? { $_.id -eq 'fri' })[0]; $mm = @($mc.scenes | ? { $_.id -eq 'mine' })[0]
-Check 'migration: an older config gains Listen, Solo, Thursday Prep, the activity map, the meeting-size rule and the threshold defaults, and its own scenes stay' ($mc.version -eq 3 -and (@($mc.scenes.id) -join ',') -eq 'fri,default,mine,listen,solo,thursday-prep' -and $mc.activity.Count -ge 5 -and $mc.meetingSize.at -eq 25 -and $mc.optDefaults.desk.lockMin -eq 5) $mg.text.Substring(0, 200)
+# The starter config is version 4 (config v4, monitor setups lane C, 2026-11-17).
+Check 'migration: an older config gains Listen, Solo, Thursday Prep, the activity map, the meeting-size rule and the threshold defaults, and its own scenes stay' ($mc.version -eq 4 -and (@($mc.scenes.id) -join ',') -eq 'fri,default,mine,listen,solo,thursday-prep' -and $mc.activity.Count -ge 5 -and $mc.meetingSize.at -eq 25 -and $mc.optDefaults.desk.lockMin -eq 5) $mg.text.Substring(0, 200)
 Check 'migration: a built-in Default gains screens, claudeGrid and an auto block with every switch off' ($md.screens -eq 3 -and $md.claudeGrid.at -eq 4 -and (@($md.auto.PSObject.Properties | ? { $_.Value -ne $false }).Count -eq 0) -and @($md.auto.PSObject.Properties).Count -eq 9)
 Check 'migration: a custom scene gains an auto block with every switch off' ((@($mm.auto.PSObject.Properties).Count -eq 9) -and (@($mf.auto.PSObject.Properties | ? { $_.Value -ne $false }).Count -eq 0))
 Check 'migration: nested and one-item arrays survive the rewrite (categories, days)' ($mc.categories.Count -eq 4 -and $mc.categories[0] -is [array] -and $mc.categories[0][1] -eq 'Code' -and $mf.trigger.days -is [array] -and $mf.trigger.days[0] -eq 5 -and $mc.cats.claude -eq 'code' -and $md.pins[0].slots -is [array] -and $md.pins[0].slots[0] -eq 0 -and $mg.text -notmatch '"Count":|"value":')
 Check 'migration: a second read changes nothing' ($mg.text -ceq $mg.again -and $mg.same)
 $m2 = Migrate ('{"version":2,' + $cat + ',"scenes":[' + $def + ',' + $mine + ']}')
 $mc2 = ConvertFrom-Json $m2.text
-Check 'migration: a version 2 config gets the trigger fields but no starter scene it does not already have' ($mc2.version -eq 3 -and (@($mc2.scenes.id) -join ',') -eq 'default,mine' -and $mc2.scenes[0].claudeGrid.at -eq 4 -and $mc2.optDefaults.noext.sec -eq 30)
-Remove-Item -Recurse -Force $mig -ErrorAction SilentlyContinue
+# The starter config is version 4 (config v4, monitor setups lane C, 2026-11-17).
+Check 'migration: a version 2 config gets the trigger fields but no starter scene it does not already have' ($mc2.version -eq 4 -and (@($mc2.scenes.id) -join ',') -eq 'default,mine' -and $mc2.scenes[0].claudeGrid.at -eq 4 -and $mc2.optDefaults.noext.sec -eq 30)
+# The count switch an older config carries (owner ruling Q4 A, 2026-11-17 09:47 CST): the scene loads with it off, nothing else in it changes,
+# and a note asks the owner to pick a setup for it.
+$cnt = '{"id":"stack","name":"Stack","trigger":{"type":"manual"},"screens":2,"grids":{"wide":{"c":2,"r":1}},"pins":[],"fill":{"mon":"wide","apps":["*"],"skip":[],"sort":"app"},"auto":{"desk":false,"window":false,"activity":false,"size":false,"gaps":false,"offer":false,"monitors":true,"noext":false,"grid":false}}'
+$cm = Migrate ('{"version":3,' + $cat + ',"scenes":[' + $cnt + ']}')
+$cc = ConvertFrom-Json $cm.text; $cs = @($cc.scenes | ? { $_.id -eq 'stack' })[0]; $co = ConvertFrom-Json $cnt
+Check 'migration: the scene with the count switch is still in the config (scope)' ($null -ne $cs) (@($cc.scenes.id) -join ',')
+Check 'migration: the count switch loads off' ($null -ne $cs -and -not [bool]$cs.auto.monitors) "monitors: $(if ($cs) { $cs.auto.monitors })"
+Check 'migration: a note asks the owner to pick a setup for that scene' ([regex]::IsMatch(($cm.text + "`n" + $cm.note), '(?i)(pick|choose)[^"\r\n]{0,40}setup')) "note: $($cm.note)"
+$moved = @($co.PSObject.Properties | ? { $_.Name -ne 'auto' } | ? { (ConvertTo-Json -Depth 10 -Compress $_.Value) -ne (ConvertTo-Json -Depth 10 -Compress $cs.($_.Name)) } | % { $_.Name })
+$moved += @($co.auto.PSObject.Properties | ? { $_.Name -ne 'monitors' -and [bool]$_.Value -ne [bool]$cs.auto.($_.Name) } | % { "auto.$($_.Name)" })
+Check 'migration: nothing else in that scene changes' ($null -ne $cs -and $moved.Count -eq 0) ("changed: " + ($moved -join ','))
+Remove-Item -Recurse -Force $runDir -ErrorAction SilentlyContinue
 
 if ($standalone) { if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { 'All trigger checks passed.' } }

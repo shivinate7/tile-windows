@@ -13,4 +13,8 @@ Plan: docs/design/mockups/run-undo-notes.md#notification (windows)
 
 **Open.** Settled by the coordinator, 2026-11-12 15:16 CST: Undo restores the moved windows' places and the scene the run changed (not a scene it left as it was). Undo is offered until the next run or a tray restart, with no timer. Undo counts as the owner's own move. A tray-menu Apply Scene gets the same toast and Undo. No Apply Again. A stale Undo says so: a later run replaced it, or the tray restarted since.
 
+**Coordinator picks (2026-11-12 16:07 CST).** App names come from the shared map (`scenes.json` appNames). The notification is a toast only when the Start shortcut with the AppUserModelID exists; otherwise it is the tray balloon.
+
 **Check.** `test/run-undo.ps1` (the run toast, Undo's places and guards, the protocol keys); `test/run.ps1` runs it.
+
+Open owner review: the Tile Windows Choices page

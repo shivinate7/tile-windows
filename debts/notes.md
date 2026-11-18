@@ -116,3 +116,32 @@ Low findings. Each becomes a debt only after a real incident.
 - Undo moves windows one `-Place` call at a time, a stopgap for a test fake. Once the fake is fixed, go back to one batched call.
 - The board opened as a plain file (`file://`) cannot read `/appnames` and shows capitalised process names.
 - When no window goes back, the Undo toast still says 'partly undone' with 'Put back 0 of N windows'; the mockup says 'not undone'.
+
+## From PR 19 (stack-tweaks) reviews (2026-11-16)
+
+- Test teardown can leave headless Edge running after a test-author run (9 found once).
+- `app.html` The Swap circle has no 3px edge buffer (hysteresis); a drag on the circle's edge can flip between Swap and Put Behind (decision stack-and-lock, Stack and lock).
+- `app.html` The swap-from-list status line ("A takes cell N. B stays where it is.") uses plain app names, so two windows of one app read alike (decision stack-and-lock, Stack and lock).
+- `app.html` Closed-pin names are not deduped: two closed pins of one app read "Excel and Excel" (decision stack-and-lock, Stack and lock).
+- `app.html` During the locked-move warning over a taken cell, the opaque waiting tile sits in front even when the outcome is Put Behind (decision stack-and-lock, Stack and lock).
+- `app.html` At 1024, after Put Behind + Move It, the selected stacked tile shows no title, only a tooltip (main's stacked-tile look) (decision stack-and-lock, Stack and lock).
+- `app.html` In forced colours, the missing-cell stripes run over the neighbouring tile's title (decision stack-and-lock, Stack and lock).
+- `app.html` At 1024 the list group heading cuts to "Moved by a mer…" (decision stack-and-lock, Stack and lock).
+- `app.html` At 1024 on a top-row cell the locked-move warning fits neither below nor above; it opens below and covers the board hint and Windows That Stay Put (decision stack-and-lock, Stack and lock).
+
+## From PR 21 (label-fallback) reviews (2026-11-16)
+
+- `app.html` In forced colours, the icon-only chip at its 8px minimum leaves a glyph about 4px (border plus padding). Design reviewer's pick: `padding:0` on that chip in forced colours, so the glyph matches light (width minus 2) (decision stack-and-lock, Stack and lock).
+- `app.html` In forced colours at 1440, a 2x1 span's 2px border costs 1px, so "Put Behind Chrome" drops to "Behind" beside the circle (decision stack-and-lock, Stack and lock).
+- `app.html` In forced colours at 1024, on a 2x1 span the icon chip moves from beside the circle (Swap half) to the corner (Put Behind half) in one drag, since the 3px border takes 1px of room (decision stack-and-lock, Stack and lock).
+- `app.html` A narrow tall block (37px wide or less; 39px in forced colours) clips the icon chip under the circle. main had the same clip before PR 21 (label-fallback) (decision stack-and-lock, Stack and lock).
+- `app.html` A block about 30px tall can let the shrunk chip poke out 1px. The 28px circle already overflows such a block (decision stack-and-lock, Stack and lock).
+- Decision wording: "the block's solid border" holds only on the Put Behind half; the Swap half's border is dashed (decision stack-and-lock, Stack and lock).
+- `install.ps1` On 2026-11-17 09:48 CST the install swap failed at the app-folder rename ("being used by another process") and rolled back. The agent frees its mutex before its process exits. Fix: the agent writes tray.pid and the install waits up to 10 s for that process, then retries the rename for about 15 s and, on final failure, says the app folder is in use (task fb-0948-1). The first upgrade from an agent that predates tray.pid relies on the retry alone.
+
+## From PR 24 (install-swap-retry) reviews (2026-11-17)
+
+- `install.ps1` ~30-40 vs `tray.ps1` ~641: a gracefully quitting tray deletes `tray.pid` before it releases its mutex, so the installer's 10 s process-exit wait is skipped on a normal upgrade. The 15 s rename retry covers the gap. The comment at `install.ps1:30-31` no longer describes that path.
+- `install.ps1` ~60-63: the second rename (`app.new` to `app`) has no retry. A brief antivirus handle fails the install and rolls back, and a failed rollback leaves `app.new` with no `app`. No test covers it.
+- Test runs killed mid-way (a turn ending while a background run goes) leave `%TEMP%\tile-test-*` and `%TEMP%\tile-windows-test-runs\*` folders whose paths can exceed 260 characters and break later suite runs. Delete them with a `\\?\` long-path prefix.
+- `test/install-swap.ps1` case 4 (the tray.pid cases, margin about 5 s) failed once under load on 2026-11-17 and passed on rerun. A flake to watch; find the cause before widening the margin.

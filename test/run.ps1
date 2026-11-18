@@ -42,8 +42,15 @@ function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $
 $form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray = $null
 
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
-$saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME }
+# The run marks its children as the suite (TILE_TEST_SUITE): tile.ps1 refuses a live move under it unless TILE_TEST_ALLOW_LIVE is set.
+# test\safe-moves.ps1 holds those checks.
+$saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME; TILE_TEST_SUITE = $env:TILE_TEST_SUITE; TILE_TEST_ALLOW_LIVE = $env:TILE_TEST_ALLOW_LIVE; CLAUDECODE = $env:CLAUDECODE }
 $env:USERPROFILE = Profile 'run'; $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'; $env:TILE_HOME = $null
+$env:TILE_TEST_SUITE = '1'
+# Claude Code sets CLAUDECODE=1 in an agent's shell. Clear it, so no child of this run inherits it; a case that needs it sets it itself.
+$env:CLAUDECODE = $null
+# An opt-in inherited from the caller's shell must not reach the children either. Clear it; a case that needs it sets it itself.
+$env:TILE_TEST_ALLOW_LIVE = $null
 try {
   . (Join-Path $root 'config.ps1')
   Check 'the run and its children use a temp profile' ($env:USERPROFILE.StartsWith($tmp) -and $env:APPDATA.StartsWith($tmp) -and $TileHome.StartsWith($tmp)) "$env:USERPROFILE | $TileHome"
@@ -281,6 +288,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $mon9 = [datetime]'2026-10-19 09:00:30'  # a Monday
   Check 'tray: a scheduled scene is due on its day and minute only' ((@(Get-DueScenes $tc $mon9 @{}).id -join ',') -eq 'a' -and @(Get-DueScenes $tc $mon9.AddMinutes(1) @{}).Count -eq 0 -and (@(Get-DueScenes $tc ([datetime]'2026-10-24 09:00') @{}).id -join ',') -eq 'b')
   Check 'tray: a scheduled scene fires once per minute' (@(Get-DueScenes $tc $mon9 @{ a = '2026-10-19 09:00' }).Count -eq 0)
+  # A monitor list with no ids (a Windows screen list) keys by DeviceName and bounds: a move changes the key. Get-MonitorKey's fallback.
   Check 'tray: display scenes and the monitor key' ((@(Get-DisplayScenes $tc).id -join ',') -eq 'c' -and (Get-MonitorKey @([pscustomobject]@{ DeviceName = 'B'; Bounds = [Drawing.Rectangle]::new(0, 0, 10, 20) }, [pscustomobject]@{ DeviceName = 'A'; Bounds = [Drawing.Rectangle]::new(-5, 1, 3, 4) })) -eq 'A=3x4@-5,1;B=10x20@0,0')
   $cases = @(ConvertFrom-Json (Get-Content -Raw (Join-Path $PSScriptRoot 'teams-call.json')) | % { $_ })
   $bad = @($cases | ? { (Test-TeamsCall $_.mic $_.wins) -ne $_.call } | % { $_.case })
@@ -325,6 +333,24 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   # The Windows That Stay Put list (decision bay-list): its own file, run in a child powershell like stack-lock.ps1.
   $bayOut = @(Child (Join-Path $PSScriptRoot 'bay.ps1')); $bayOut | % { "$_" }
   $script:fail += [Math]::Max(@($bayOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Fresh screens (tile.ps1 reads the monitor list on every call): its own file, in a child powershell (its FAIL lines count here).
+  $fsOut = @(Child (Join-Path $PSScriptRoot 'fresh-screens.ps1')); $fsOut | % { "$_" }
+  $script:fail += [Math]::Max(@($fsOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # The live-move guard for tile.ps1 under the suite (TILE_TEST_SUITE): its own file, in a child powershell (its FAIL lines count here).
+  $smOut = @(Child (Join-Path $PSScriptRoot 'safe-moves.ps1')); $smOut | % { "$_" }
+  $script:fail += [Math]::Max(@($smOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Config v4 (decision monitor-setups): the v3 -> v4 migration, setup keys, setup registration and the layout a setup resolves to. Its own file, in a child powershell (its FAIL lines count here).
+  $suOut = @(Child (Join-Path $PSScriptRoot 'setup-config.ps1')); $suOut | % { "$_" }
+  $script:fail += [Math]::Max(@($suOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Engine layouts (decision monitor-setups, items 5 and 9): tile.ps1 places a scene by monitor id. Its own file, in a child powershell (its FAIL lines count here).
+  $elOut = @(Child (Join-Path $PSScriptRoot 'engine-layouts.ps1')); $elOut | % { "$_" }
+  $script:fail += [Math]::Max(@($elOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Monitor setups, the tray's display key (decision monitor-setups): its own file, in a child powershell (its FAIL lines count here).
+  $spOut = @(Child (Join-Path $PSScriptRoot 'setup-plumbing.ps1')); $spOut | % { "$_" }
+  $script:fail += [Math]::Max(@($spOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
+  # Monitor setups, the page (decision monitor-setups): the board autosaves, Undo, the unplugged window, the inspector and the cards. Its own file, in a child powershell (its FAIL lines count here).
+  $spgOut = @(Child (Join-Path $PSScriptRoot 'setup-page.ps1')); $spgOut | % { "$_" }
+  $script:fail += [Math]::Max(@($spgOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
   $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }
@@ -382,6 +408,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $ins4 = Start-Child $iprof "-File `"$(Join-Path $root 'install.ps1')`" -NoLaunch" @{ TILE_SOURCE = $root; TILE_NO_REGISTRY = '1' }; [void]$ins4.StandardOutput.ReadToEnd(); [void]$ins4.StandardError.ReadToEnd(); $ins4.WaitForExit()
   $un2 = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`" -Purge" @{ TILE_NO_REGISTRY = '1' }; $u2 = $un2.StandardOutput.ReadToEnd() + $un2.StandardError.ReadToEnd(); $un2.WaitForExit()
   Check 'uninstall -Purge removes the scenes too' ($un2.ExitCode -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $iprof '.tile-windows')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk'))) $u2
+
+  # Install swap with a busy app folder (install.ps1's rename): its own file, dot-sourced in a child scope like move.ps1 (its checks count here).
+  & { . (Join-Path $PSScriptRoot 'install-swap.ps1') }
 
   # 10. -Default places windows as main's tile.ps1 does, on the fixture (a fixed snapshot, so windows cannot
   #     change between the two runs). It runs main's whole tree: tile.ps1 reads config.ps1 and scenes.json beside it.
