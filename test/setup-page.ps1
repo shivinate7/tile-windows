@@ -30,6 +30,9 @@
 #     offered after the setup changed, nor is its toast Undo; a failed GET /layouts after the remove leaves the board not showing the removed
 #     layout as saved; Enter on the item leaves focus on a control on the card; Tab from the open menu never leaves it open with focus outside.
 #     The autosave flush before the remove is a guard: a mutant with the flush removed turns it red.
+#   Card menu placement (debt card-menu-clamped-over-button): at 1440 wide, a menu opened from a More button with no room below opens above
+#     it and covers neither More nor Preview. With room below it opens below and covers neither (control).
+#   Undo after a follow (debt follow-undo-footer-stale): the footer stops saying the scene follows a setup; the strip and card show its own layout.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, and delete cases. The setup change, Apply, autosave and failed-read cases are red on the page as it stands.
 $ErrorActionPreference = 'Stop'
@@ -491,7 +494,7 @@ try {
     Check 'the Focus card no longer says own layout' ([string]$card -notmatch 'own layout') "card text: '$card'"
   }
 
-  Case 'Undo after the follow writes the own layout back with one POST /layout, and the card says own layout again' {
+  Case 'Undo after the follow writes the own layout back with one POST /layout, the card says own layout again, and the footer stops saying it follows' {
     Put-Config (New-FollowConfig)
     $opened = Open-Page $ws $url 'focus'
     Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
@@ -504,6 +507,9 @@ try {
     if ($has -ne $true) { return }
     [void](Js $ws ('window.__fa.item("' + $followLabel + '").click(); await window.__h.settle(); return true'))
     [void](WaitFor $ws 'window.__fa.card("focus") && /follows Laptop \+ Ultrawide/i.test(window.__fa.card("focus").textContent)' 20)
+    [void](WaitFor $ws '!inflight.focus && /follows Laptop \+ Ultrawide until you change it/.test(document.getElementById("msg").textContent)' 20)
+    $msgFollowed = [string](Js $ws 'return document.getElementById("msg").textContent.replace(/\s+/g, " ").trim()')
+    Check 'the footer says the scene follows Laptop + Ultrawide after the follow (control)' ($msgFollowed -match 'follows Laptop \+ Ultrawide until you change it') "footer: '$msgFollowed'"
     $n0 = [int](Js $ws 'return window.__h.posts("layout").length')
     [void](Js $ws 'document.getElementById("undo").click(); await window.__h.settle(); return true')
     $undoBodies = @(Reply-List (Js $ws ('return window.__h.posts("layout").slice(' + $n0 + ').map(p => p.body)')))
@@ -516,6 +522,11 @@ try {
     [void](WaitFor $ws 'window.__fa.card("focus") && /own layout/i.test(window.__fa.card("focus").textContent)' 20)
     $card = Js $ws 'const c = window.__fa.card("focus"); return c ? c.textContent.replace(/\s+/g, " ") : null'
     Check 'the Focus card says own layout again' ([string]$card -match 'own layout') "card text: '$card'"
+    [void](WaitFor $ws '!inflight.focus' 20)
+    $strip = Js $ws $stripJs
+    Check 'the strip says Focus has its own layout (control)' ([string]$strip.text -match 'own layout') "strip text: '$($strip.text)'"
+    $footer = [string](Js $ws 'return document.getElementById("msg").textContent.replace(/\s+/g, " ").trim()')
+    Check 'the footer no longer says the scene follows a setup until you change it' ($footer -notmatch 'follows .+ until you change it') "footer: '$footer'"
   }
 
   # ---- Follow Again in flight. Each case holds one request or one answer in the page, then acts while it waits. ----
@@ -545,6 +556,39 @@ try {
     [void](WaitFor $sock 'window.__fa.items().length > 0' 15)
     [bool](Js $sock ('return window.__fa.item("' + $followLabel + '") !== null'))
   }
+  # Card menu placement (debt card-menu-clamped-over-button). The Focus card's menu is opened in a 1440-wide window of the given height. Its rect is
+  # checked against the card's More button and its Preview button, read once the menu is open. At 520 high Focus's More button sits near the
+  # bottom edge, with no room below for its menu; at 900 high there is room.
+  function Menu-Geometry($sock) {
+    Js $sock 'const R = e => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom } }; const c = document.getElementById("cmenu"); const m = window.__fa.more("focus"); const a = document.querySelector("[data-apply=focus]"); return { menu: c ? Object.assign(R(c), { h: c.offsetHeight }) : null, more: m ? R(m) : null, apply: a ? R(a) : null, ih: innerHeight, iw: innerWidth }'
+  }
+  # Two rects share some area. A touching edge is not an overlap.
+  function Overlaps($a, $b) { return (($a.l -lt $b.r) -and ($b.l -lt $a.r) -and ($a.t -lt $b.b) -and ($b.t -lt $a.b)) }
+  function Check-Menu-Placement([int]$height, [bool]$roomBelow, [string]$tag) {
+    [void](Cdp $ws 'Emulation.setDeviceMetricsOverride' @{ width = 1440; height = $height; deviceScaleFactor = 1; mobile = $false })
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check "${tag}: the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $has = Open-Follow-Menu $ws
+      Check "${tag}: the Focus card menu is open with its Follow item (control)" $has 'no Follow item on the Focus card menu'
+      if (-not $has) { return }
+      $g = Menu-Geometry $ws
+      $below = (($g.more.b + $g.menu.h + 12) -le $g.ih)
+      Check "${tag}: the More button has $(if ($roomBelow) { 'room' } else { 'no room' }) below for its menu (scope)" ($below -eq $roomBelow) "More bottom $($g.more.b), menu height $($g.menu.h), window height $($g.ih)"
+      Check "${tag}: the menu lies inside the window (control)" ($g.menu.t -ge 0 -and $g.menu.b -le $g.ih) "menu top $($g.menu.t), bottom $($g.menu.b), window height $($g.ih)"
+      Check "${tag}: the menu does not cover its own More button" (-not (Overlaps $g.menu $g.more)) "menu $($g.menu.t) to $($g.menu.b); More $($g.more.t) to $($g.more.b)"
+      Check "${tag}: the menu does not cover the card's Preview button" (-not (Overlaps $g.menu $g.apply)) "menu $($g.menu.t) to $($g.menu.b); Preview $($g.apply.t) to $($g.apply.b)"
+    } finally { [void](Cdp $ws 'Emulation.clearDeviceMetricsOverride') }
+  }
+  # The red case: no room below the More button, so the menu must open above it. Its control, in the same card at 900 high, has room below.
+  Case 'card menu at 1440: with no room below its More button, the menu opens above and covers neither More nor Preview' {
+    Check-Menu-Placement 520 $false 'no room below'
+  }
+  Case 'card menu at 1440: with room below its More button, the menu opens below and covers neither (control)' {
+    Check-Menu-Placement 900 $true 'room below'
+  }
+
   # The follow has finished: its message is set, and the preview it started has rendered (its in-flight entry is gone).
   $followedJs = '!inflight.focus && /follows Laptop \+ Ultrawide until you change it/.test(document.getElementById("msg").textContent)'
   $followEndJs = '!inflight.focus && /follows Laptop \+ Ultrawide until you change it|Could not follow again/.test(document.getElementById("msg").textContent)'
