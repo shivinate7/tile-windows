@@ -7,7 +7,7 @@ Plan: docs/plans/live-move-guard.md#live-move-guard (windows)
 
 **Ruling.** `tile.ps1` refuses any run that could move windows when `TILE_TEST_SUITE` (set by `test/run.ps1`) or `CLAUDECODE` (set in every Claude Code agent shell) is set. The run goes ahead only with `TILE_TEST_ALLOW_LIVE=1`. Exempt: `-DryRun`, bare `-Json` (no `-Scene`, `-Default`, `-Place` or `-PlaceFile`), `-Monitors`, `-From`, `-Lib` and `-List`.
 
-**Date.** 2026-11-17. Coordinator ruling 17:55 CST added `CLAUDECODE`. Coordinator ruling 18:22 CST kept a tray and a server started from an agent shell guarded.
+**Date.** 2026-11-17. Coordinator ruling 17:55 CST added `CLAUDECODE`. Coordinator ruling 18:22 CST kept a tray and a server started from an agent shell guarded. SKILL.md opt-in rulings, 18:44 and 18:46 CST: when the owner asks Claude to tile windows or open the live app, the skill sets `TILE_TEST_ALLOW_LIVE=1` for that one command or server process.
 
 **Recorded.** 2026-11-17 18:35 CST.
 
