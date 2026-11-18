@@ -22,9 +22,9 @@
 #   Delete: deleting a scene whose save was refused, or still in flight, leaves the strip clear, and a late refusal does not bring it back.
 #   Monitors and Setups (decision monitor-setups, item 13): the strip has a Monitors and Setups button, and it opens a dialog that lists each
 #     monitor and each setup in a name field. Forget is off for the monitor plugged in and for the setup in use, and each off Forget's reason
-#     is the text its aria-describedby names. An unplugged monitor and its setup have Forget on. Two states: plugged-in only (empty), and
-#     with an unplugged monitor and its setup (full).
-#     The Forget of a setup that holds a plugged-in monitor is refused by the server (409, setup-plumbing.ps1), not checked here.
+#     is the text its aria-describedby names. Nothing else is greyed (coordinator ruling 21:33 CST). Two
+#     states: plugged-in only (empty), and with an unplugged monitor and its setup (full).
+#     The server's refusals (409, setup-plumbing.ps1) are not checked here.
 #   Size id (item 3, coordinator ruling 21:04 CST): a monitor whose id is size-WxH is remembered by that id. The strip is the normal one, and
 #     no Remember It by Its Size button is on the page. Two shapes: every monitor with a size id, and only the ultrawide.
 #   Monitors and Setups, reads and names: a rename that returns keeps the text typed in another name field; a forget answered 200 whose config
@@ -491,26 +491,25 @@ try {
     }
   }
 
-  # Full state: an unplugged monitor (Home 27) and the setup Home, made of two monitors that are not plugged in (Home 27 and Home 28). Forget is
-  # on for both; the plugged-in rows stay off. (Home holds no plugged-in monitor: a setup that holds one cannot be forgotten, ruling 21:04 CST.)
+  # Full state: an unplugged monitor (Home 27) and the setup Home, which holds it. Forget is on for both; the plugged-in rows stay off.
+  # Home also holds the plugged-in laptop, but it is not the setup in use, so its Forget is on (coordinator ruling 21:33 CST).
   Case 'Monitors and Setups: an unplugged monitor and its setup are listed, with Forget on for them' {
     $cfg = New-Config
     $cfg.monitors | Add-Member -NotePropertyName 'H27' -NotePropertyValue ([pscustomobject]@{ name = 'Home 27'; builtin = $false; lastSeen = $stamp; bw = 2560; bh = 1440 })
-    $cfg.monitors | Add-Member -NotePropertyName 'H28' -NotePropertyValue ([pscustomobject]@{ name = 'Home 28'; builtin = $false; lastSeen = $stamp; bw = 2560; bh = 1440 })
-    $cfg.setups | Add-Member -NotePropertyName 'H27|H28' -NotePropertyValue ([pscustomobject]@{ name = 'Home'; ids = @('H27', 'H28'); lastUsed = $stamp })
+    $cfg.setups | Add-Member -NotePropertyName 'H27|L1' -NotePropertyValue ([pscustomobject]@{ name = 'Home'; ids = @('H27', 'L1'); lastUsed = $stamp })
     Put-Config $cfg
     $opened = Open-Page $ws $url 'focus'
-    Check 'the page opens on Focus with the unplugged monitors known (control)' $opened 'the page did not open on Focus in time'
+    Check 'the page opens on Focus with the unplugged monitor known (control)' $opened 'the page did not open on Focus in time'
     $st = Open-Dialog $ws
     Check 'the strip has a Monitors and Setups button that opens a dialog (scope)' ($st -eq 'open') $(if ($st -eq 'nobutton') { 'no Monitors and Setups button in the strip' } else { 'no Monitors and Setups dialog after the click' })
     if ($st -eq 'open') {
-      $r = Dlg-Rows $ws @('Laptop', 'Portrait', 'Ultrawide', 'Desk', 'Home 27', 'Home 28', 'Home')
+      $r = Dlg-Rows $ws @('Laptop', 'Portrait', 'Ultrawide', 'Desk', 'Home 27', 'Home')
       $unlisted = @($r | ? { -not $_.row } | % { $_.n })
-      Check 'the dialog lists the unplugged Home 27 and Home 28 and the setup Home, each in a name field' ($unlisted.Count -eq 0) "not listed: $($unlisted -join ', ')"
+      Check 'the dialog lists the unplugged Home 27 and the setup Home, each in a name field' ($unlisted.Count -eq 0) "not listed: $($unlisted -join ', ')"
       $plugOn = @($r | ? { $_.n -in @('Laptop', 'Portrait', 'Ultrawide', 'Desk') -and $_.row -and -not $_.off } | % { $_.n })
       Check 'Forget stays off for each plugged-in monitor and for the setup in use' ($plugOn.Count -eq 0) "Forget on for: $($plugOn -join ', ')"
-      $unplugOff = @($r | ? { $_.n -in @('Home 27', 'Home 28', 'Home') -and $_.row -and $_.off } | % { $_.n })
-      Check 'Forget is on for Home 27, Home 28 and the setup Home, which are not plugged in or in use' ($unplugOff.Count -eq 0) "Forget off for: $($unplugOff -join ', ')"
+      $unplugOff = @($r | ? { $_.n -in @('Home 27', 'Home') -and $_.row -and $_.off } | % { $_.n })
+      Check 'Forget is on for Home 27 and for the setup Home, which are not plugged in or in use' ($unplugOff.Count -eq 0) "Forget off for: $($unplugOff -join ', ')"
     }
   }
 
