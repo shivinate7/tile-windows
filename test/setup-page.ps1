@@ -52,7 +52,7 @@
 #   Undo after a follow: the footer stops saying the scene follows a setup; the strip and card show its own layout.
 #   Kind icons (decision monitor-setups, item 25; mockup card-kind-icon.html): each card shows its kind as one svg icon titled and labelled
 #     Built-in, Custom or Not saved, and no kind word is on screen. An edited scene shows one amber dot in its bottom row, with a title or label
-#     that says edited. At 1024 and 1440 no card's bottom-row label is cut, and at 1024 every card has one height.
+#     that says edited. A Not saved scene shows neither. At 1024 and 1440 no card's bottom-row label is cut, and at 1024 every card has one height.
 #   Inspector kind (monitor-setups notes, item 25; the owner's yes): the Scene section shows the selected scene's kind once, in words
 #     (Built-in, Custom or Not saved), no other kind's word, and it changes when a scene of another kind is selected. An edited saved scene's
 #     section says edited once. Its reasons line does not count, and an unsaved scene's edited is not checked.
@@ -1129,7 +1129,7 @@ try {
   # Kind icons (decision monitor-setups, item 25; mockup card-kind-icon.html). A card's kind is Built-in for the built-in scene, Custom for a scene
   # in the config, and Not saved for a scene the page holds with no config entry. Each card shows its kind as one icon (an svg) titled and
   # labelled with the kind word, and no kind word is on screen. A failed Save As New keeps its copy in the work map with no config entry
-  # (saveAsNew in app.html), so a user can reach a Not saved card. The probe sets one in the work map the way the page's own self-test does.
+  # (saveAsNew in app.html), so a user can reach a Not saved card. The probe builds that state directly: a clone of Focus in the work map, no config entry.
   $kindWords = 'Built-in', 'Custom', 'Not saved'
   $kindJs = @'
 const words = ["Built-in", "Custom", "Not saved"];
@@ -1169,6 +1169,15 @@ return { cards: cardsOf().length, heights, cut, soloRow };
     [void](Js $sock 'const s = clone(work.focus); s.id = "kind-probe"; s.name = "Kind probe"; work["kind-probe"] = s; await preview("kind-probe"); render(); return true')
     WaitFor $sock '!!document.querySelector("[data-pick=kind-probe]") && !!document.querySelector("[data-pick=solo]")' 30
   }
+  # Waits until the Scene section shows the named scene, so a read is of the scene the page selected.
+  function Scene-Shows($sock, [string]$scene, [string]$name) {
+    WaitFor $sock ('selId === "' + $scene + '" && !!document.getElementById("sceneName") && document.getElementById("sceneName").value === "' + $name + '"') 30
+  }
+  # Selects a scene as a user does (its card's button), then waits until the Scene section shows it.
+  function Select-Scene($sock, [string]$scene, [string]$name) {
+    [void](Js $sock ('document.querySelector("[data-pick=' + $scene + ']").click(); return true'))
+    Scene-Shows $sock $scene $name
+  }
   # Each scene the rail shows, with the kind it must show: the built-in scene, a saved scene, and the Not saved probe.
   $expectKind = @{ 'kind-probe' = 'Not saved' }
   foreach ($x in @((New-Config).scenes)) { $expectKind[[string]$x.id] = $(if ($x.builtIn) { 'Built-in' } else { 'Custom' }) }
@@ -1196,7 +1205,7 @@ return { cards: cardsOf().length, heights, cut, soloRow };
     }
   }
 
-  Case 'an edited scene shows one amber edited dot in its bottom row, with a title or label that says edited' {
+  Case 'an edited scene shows one amber dot with a title or label that says edited, and a Not saved scene shows neither' {
     $opened = Open-Kind-Rail $ws
     Check 'the kind rail opens on Focus (control)' $opened 'the page did not draw the rail in time'
     if (-not $opened) { return }
@@ -1209,6 +1218,27 @@ return { cards: cardsOf().length, heights, cut, soloRow };
     Check 'the Solo card, not edited, shows no edited dot or label (control)' ($d.soloDots -eq 0 -and $d.soloLabels -eq 0) "amber dots $($d.soloDots), edited labels $($d.soloLabels)"
     Check 'the edited Focus card has a title or label that says edited' ($d.focusLabels -gt 0) 'no title or label on the Focus card says edited'
     Check 'the edited Focus card shows one amber dot in its bottom row' ($d.focusDots -eq 1) "amber dots in its bottom row: $($d.focusDots)"
+    # The Not saved probe has no config entry, so the page counts it edited (its crumb reads Edited). Its card still shows no amber dot and
+    # no edited title or label: the card marks only a saved scene that is edited (kindEdited in app.html). Read as added, then after a rename.
+    $probeOn = Select-Scene $ws 'kind-probe' 'Kind probe'
+    Check 'Kind probe is selected (scope)' $probeOn 'the Scene section did not show Kind probe in time'
+    if (-not $probeOn) { return }
+    $crumb = Js $ws 'const c = document.getElementById("sedit"); return !!c && !c.hidden'
+    Check 'Kind probe, as added: the crumb reads Edited, so the page counts it edited (control)' ($crumb -eq $true) 'the crumb does not read Edited'
+    $probeJs = $kindJs + $dotJs + 'const p = cardsOf().find(c => c.id === "kind-probe").card; return { kind: p.querySelector(".kd").getAttribute("title"), dots: dotsIn(p), labels: editedLabels(p) }'
+    $asAdded = Js $ws $probeJs
+    Check 'Kind probe, as added: its card is Not saved (scope)' ($asAdded.kind -ceq 'Not saved') "kind title: '$($asAdded.kind)'"
+    Check 'Kind probe, as added: its card shows no amber dot' ($asAdded.dots -eq 0) "amber dots in its bottom row: $($asAdded.dots)"
+    Check 'Kind probe, as added: no title or label on its card says edited' ($asAdded.labels -eq 0) "titles or labels that say edited: $($asAdded.labels)"
+    # The name is changed and committed, as a user does. The change stays in the work map, so the card is still Not saved.
+    [void](Js $ws 'const f = document.getElementById("sceneName"); f.value = "Probe renamed"; f.dispatchEvent(new Event("change", { bubbles: true })); return true')
+    $renamed = WaitFor $ws '(() => { const b = document.querySelector("[data-pick=kind-probe]"); return !!b && b.closest("article.card").textContent.includes("Probe renamed") })()' 30
+    Check 'Kind probe, renamed: its card shows the new name (scope)' $renamed 'its card does not show the new name'
+    if (-not $renamed) { return }
+    $afterRename = Js $ws $probeJs
+    Check 'Kind probe, renamed: its card is still Not saved (scope)' ($afterRename.kind -ceq 'Not saved') "kind title: '$($afterRename.kind)'"
+    Check 'Kind probe, renamed: its card shows no amber dot' ($afterRename.dots -eq 0) "amber dots in its bottom row: $($afterRename.dots)"
+    Check 'Kind probe, renamed: no title or label on its card says edited' ($afterRename.labels -eq 0) "titles or labels that say edited: $($afterRename.labels)"
   }
 
   Case 'at 1024 and 1440 no card bottom-row label is cut, and at 1024 every card has one height' {
@@ -1252,16 +1282,6 @@ const sceneKind = () => {
   return { name: name ? name.value : null, text: t, line: line ? line.textContent.replace(/\s+/g, " ").trim() : null, crumb: !!crumb && !crumb.hidden, builtIn: n(/\bBuilt-in\b/g), custom: n(/\bCustom\b/g), notSaved: n(/\bNot saved\b/g), edited: (all.match(/\bedited\b/gi) || []).length };
 };
 '@
-  # Waits until the Scene section shows the named scene, so a read is of the scene the page selected.
-  function Scene-Shows($sock, [string]$scene, [string]$name) {
-    WaitFor $sock ('selId === "' + $scene + '" && !!document.getElementById("sceneName") && document.getElementById("sceneName").value === "' + $name + '"') 30
-  }
-  # Selects a scene as a user does (its card's button), then waits until the Scene section shows it.
-  function Select-Scene($sock, [string]$scene, [string]$name) {
-    [void](Js $sock ('document.querySelector("[data-pick=' + $scene + ']").click(); return true'))
-    Scene-Shows $sock $scene $name
-  }
-
   Case 'the Scene section shows the kind of each scene once, in words, and no other kind word, as the page changes scene' {
     $opened = Open-Kind-Rail $ws
     Check 'the kind rail opens on Focus, with the Not saved probe (control)' $opened 'the page did not draw the rail in time'
