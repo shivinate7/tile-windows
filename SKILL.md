@@ -11,8 +11,9 @@ description: Use when the user asks to tile, sort, grid, arrange, or snap their 
 
 1. Turn the user's words into flags (see "Translate a request" below). If an app or window is unclear, run `-List` first. It moves nothing.
 2. Run with `-DryRun` and check that each line matches the request. If a line does not match, fix the flags.
-3. Say in one line that windows will move on the user's screen. Then run the same flags without `-DryRun`:
-   `powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/.claude/skills/tile-windows/tile.ps1)" <flags>`
+3. Say in one line that windows will move on the user's screen. Then run the same flags without `-DryRun`, with `TILE_TEST_ALLOW_LIVE=1` set for that one command only. Without it, the live-move guard (decision: live-move-guard) refuses the run:
+   `TILE_TEST_ALLOW_LIVE=1 powershell -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/.claude/skills/tile-windows/tile.ps1)" <flags>`
+   In PowerShell: `$env:TILE_TEST_ALLOW_LIVE='1'; & .\tile.ps1 <flags>; Remove-Item Env:TILE_TEST_ALLOW_LIVE`
 4. Report the last line (grid, pinned, tiled), plus the windows left out, if any. Give the command as a `bash` block so the user can re-run it.
 
 ## Default setup
@@ -90,7 +91,7 @@ Windows that are not pinned fill the open slots row by row. They sort by app (in
 
 A scene is a whole-desk layout: one grid per monitor role (`wide`, `tall`, `laptop`), pins by app and title text, and one fill monitor with its app list and fill order. Scenes live in `%USERPROFILE%\.tile-windows\config.json`. The first read copies the starters from `scenes.json`: Default, Focus, Meetings, Review.
 
-- To apply a saved scene: `-Scene Focus -DryRun`, check the lines, then run it without `-DryRun`. The name is the scene's name or id.
+- To apply a saved scene: `-Scene Focus -DryRun`, check the lines, then run it without `-DryRun`, with `TILE_TEST_ALLOW_LIVE=1` for that one command (see step 3). The name is the scene's name or id.
 - `-Scene ... -Json` prints `{placed, missing, left}`. Each placed window has its `from` and `to` rect, so the windows can go back through `-Place`.
 - With one or two monitors, a role with no screen of its own is skipped, with a warning.
 - To change a scene for good, edit it in the app, or edit `config.json` and keep it valid JSON. The app and the tray read it each time.
@@ -115,7 +116,7 @@ A scene is a whole-desk layout: one grid per monitor role (`wide`, `tall`, `lapt
 2. The user pastes the JSON under "Load a snapshot by hand", then drags windows onto cells.
 3. Apply downloads `last-place.json` (changed windows only) and shows the command:
    `powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\.tile-windows\app\tile.ps1" -PlaceFile "$env:USERPROFILE\Downloads\last-place.json"`
-   That is the installed path. When Claude runs it, use `tile.ps1` in this folder instead.
+   That is the installed path. When Claude runs it, use `tile.ps1` in this folder instead, with `TILE_TEST_ALLOW_LIVE=1` for that one command (see step 3).
 
 **The place format.** Entries are `{app,title,x,y,w,h}` in screen pixels, plus `id` (the window handle from `-Json`) when known. Each entry matches an open window by `id`, else app plus exact title, else title contains. `-Place '<json>'` takes the array inline, but prefer `-PlaceFile`: titles carry quotes and apostrophes. `-DryRun` prints each move and moves nothing. `-Json` prints one result per entry instead of text. Claude runs `-DryRun` first.
 
