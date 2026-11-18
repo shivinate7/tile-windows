@@ -226,7 +226,7 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
     Departs from: the mockup's `cd-own`, which always opens below.
 25. **The card's kind is an icon** (mockup `card-kind-icon.html`, beside this file). Ruled (owner,
     2026-11-18 11:08 CST): the kind switches to an icon, because "Custom" cuts to "CU…" at 1024 and
-    "CUST…" at 1440 (debt `custom-kind-word-cuts`). Options:
+    "CUST…" at 1440 (its debt, `custom-kind-word-cuts`, is deleted; PR 41 (card kind icon) removes its cause). Options:
     - All Three as Icons (`#all3`, pick, coordinator, reversible): Built-in, Custom and Not saved
       each become an icon, so the row reads the same on every card. Gain: no word left to cut; at
       1024 and 1440, with Apply or Preview, the measured row fits on every card. Loss: the owner
@@ -245,9 +245,12 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
     monitor, link, own-layout screen, ⋯, clock or the brand mark). Not taken: the brand mark for
     Built-in (it already means the app, and reads as a tiny grid at 13px); a pencil for Custom (it
     reads as Edit); a disk with a slash for Not saved (its lines merge at 13px).
-    Edited: the crumb's amber dot (`.edited::before`), 7px, beside the kind mark, with a 1px ink
-    ring so it holds 3:1 on a white card; CanvasText in forced colours. The mark's title and label
-    read "Custom, edited". Not saved never shows it, as today.
+    Edited: a separate amber dot (`.edited::before`), 7px, beside the kind mark, with a 1px ink
+    ring so it holds 3:1 on a white card; CanvasText in forced colours. The dot has its own title
+    and label, "Edited". The kind mark's title and label are the bare kind word ("Built-in",
+    "Custom", "Not saved"). Not saved never shows the dot, as today.
+    Mockup gap: `card-kind-icon.html` still draws the old ", edited" label and aria-hides the dot;
+    the built page (`app.html`) is the reference.
     Order: layout mark first, then the kind mark, as main draws the word.
     Loss: the kind word is now only in a hover title and the label. The mark takes no keyboard
     focus, as the layout mark takes none, so a sighted keyboard user cannot read the word.
