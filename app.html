@@ -1401,7 +1401,9 @@ function placeMenu(){
     m=document.createElement("div");m.id="cmenu";m.className="menu";m.setAttribute("role","menu");m.dataset.for=menuId;m.dataset.name=name;
     m.innerHTML=`<button type="button" role="menuitem" data-fol="${esc(menuId)}"><b>Follow ${esc(name)} Again</b><small>Drops ${esc(work[menuId].name)}'s layout for ${esc(plugName())}. Undo brings it back.</small></button>`;
     document.body.appendChild(m);b.setAttribute("aria-expanded","true");m.querySelector("button").focus()}
-  const r=b.getBoundingClientRect();m.style.top=Math.min(r.bottom+4,innerHeight-m.offsetHeight-8)+"px";m.style.left=Math.max(8,Math.min(r.right-236,innerWidth-244))+"px"}
+  const r=b.getBoundingClientRect(),h=m.offsetHeight,below=r.bottom+4;
+  // With no room under the button the menu opens above it, so it never covers its own button or the card's Preview. It stays on the page at the top edge.
+  m.style.top=Math.max(8,below+h+8<=innerHeight?below:r.top-4-h)+"px";m.style.left=Math.max(8,Math.min(r.right-236,innerWidth-244))+"px"}
 function toggleMenu(id){if(menuId===id)return closeMenu(true);closeMenu();menuId=id;placeMenu()}
 // A save of scene id that is waiting or in flight is written first, so it cannot land after the remove and bring the layout back. False when it did not go through.
 async function flushSave(id){
@@ -2055,7 +2057,7 @@ $("apply").onclick=async()=>{
 $("undo").onclick=async()=>{if(isBusy)return;const e=hist.pop();if(!e)return;removeNote();
   if(e.k==="rects"){offRects=e.r;render();toast("Undid the last move.");return}
   if(e.k==="edit"){selId=e.id;work[e.id]=e.s;optim=null;layoutEdited(e.id,true);render();preview(selId);toast("Undid the last change.");return}
-  if(e.k==="follow"){selId=e.id;work[e.id]=e.s;optim=null;lq[e.id]=null;layoutEdited(e.id,true);render();preview(selId);toast("Undid the last change.");return}
+  if(e.k==="follow"){status("");selId=e.id;work[e.id]=e.s;optim=null;lq[e.id]=null;layoutEdited(e.id,true);render();preview(selId);toast("Undid the last change.");return}
   if(e.k==="apply"){if(e.back.length)await placeBack(e.back);else toast("That Apply moved nothing.")}};
 $("refresh").onclick=()=>refresh();
 $("closeres").onclick=()=>{$("results").hidden=true};
