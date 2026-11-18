@@ -66,7 +66,7 @@ Status: built in PR 50 (free areas), merged at commit 74f87cb.
 - Tests: areas built from a grid give L0 exactly, so switching on moves nothing. Item G's cases below.
 
 **Item G. Who takes a closed or minimized window's space** (in L3; used by L5a and Close Gap)
-- A side qualifies when its neighbours exactly cover the gone window's edge: none sticks out past it, none is locked, and they leave no hole. A side qualifies only if its share leaves no overlap with a live area.
+- A side qualifies when its neighbours exactly cover the gone window's edge: none sticks out past it, none is locked, and they leave no hole. A side also needs a share that leaves no overlap with a live area.
 - If left and right both qualify, they meet at the midpoint. Otherwise, if above and below both qualify, they meet at the midpoint.
 - Otherwise the first single side that qualifies takes it all, in the order of notes item 17 (left, above, right, below). When one side cannot take the region, the next side in that order does.
 - If a midpoint share would leave a window under 400×300, or would overlap a live area, the whole space goes to the first side that qualifies.

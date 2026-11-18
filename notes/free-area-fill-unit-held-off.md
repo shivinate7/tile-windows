@@ -1,4 +1,4 @@
-# Free areas turn off fill unit and held entries
+# Free areas disable fill unit and held entries
 
 Decision: layout free (`layout-free`). Recorded 2026-11-18 16:29 CST. Line numbers are at 74f87cb.
 
