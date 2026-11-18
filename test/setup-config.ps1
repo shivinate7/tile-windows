@@ -473,12 +473,40 @@ try {
     $sc = SceneOf $cfg 'default'
     Check 'resolve lone laptop: scope, the default scene is read' ($null -ne $sc) 'no default scene'
     if ($null -eq $sc) { return }
+    Check 'resolve lone laptop: scope, the default scene has a wide cell (5,2) and a laptop cell (1,1)' ((Cell $sc.grids 'wide') -ceq '5,2' -and (Cell $sc.grids 'laptop') -ceq '1,1') "wide $(Cell $sc.grids 'wide'), laptop $(Cell $sc.grids 'laptop')"
     $k = Register-TileSetup $cfg @($Lap15)
     $r = Resolve-TileLayout $cfg $sc $k
-    Check 'resolve lone laptop: the laptop takes the laptop cell' ((Cell $r.grids 'laptop') -ceq '1,1') "laptop: $(Cell $r.grids 'laptop')"
+    # A monitor that holds several roles seeds its grid in tile.ps1's Roles order: wide, then tall, then laptop (coordinator ruling 2026-11-17 18:07 CST).
+    Check 'resolve lone laptop: the laptop takes the wide cell, which the wide role seeds first' ((Cell $r.grids 'laptop') -ceq (Cell $sc.grids 'wide')) "laptop: $(Cell $r.grids 'laptop'), scene wide: $(Cell $sc.grids 'wide')"
     Check 'resolve lone laptop: scope, the built-in is registered as a monitor' ($null -ne $cfg.monitors.PSObject.Properties['laptop']) 'no laptop monitor in the config'
     $wideRole = (Get-TileRoles $cfg.monitors @('laptop'))['wide']
     Check 'resolve lone laptop: the lone built-in holds the wide role too' ([string]$wideRole -ceq 'laptop') "wide role: '$([string]$wideRole)'"
+  }
+  Case 'resolve seed: a lone portrait takes the wide cell of the scene, not its tall cell' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'resolve lone portrait: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    Check 'resolve lone portrait: scope, the default scene has a wide cell (5,2) and a tall cell (1,2)' ((Cell $sc.grids 'wide') -ceq '5,2' -and (Cell $sc.grids 'tall') -ceq '1,2') "wide $(Cell $sc.grids 'wide'), tall $(Cell $sc.grids 'tall')"
+    $k = Register-TileSetup $cfg @($Port)
+    $portWide = [string]((Get-TileRoles $cfg.monitors @('port'))['wide'])
+    Check 'resolve lone portrait: scope, the lone portrait holds the wide role' ($portWide -ceq 'port') "wide role: '$portWide'"
+    $r = Resolve-TileLayout $cfg $sc $k
+    Check 'resolve lone portrait: the portrait takes the wide cell of the scene' ((Cell $r.grids 'port') -ceq (Cell $sc.grids 'wide')) "port: $(Cell $r.grids 'port'), scene wide: $(Cell $sc.grids 'wide')"
+  }
+  # Control, green on the old code: a scene with no wide cell seeds the lone portrait's tall cell.
+  Case 'control: a lone portrait in a scene with no wide cell takes its tall cell' {
+    $cfg = ConvertFrom-Json $v4Text
+    $ok = IsV4 $cfg
+    Check 'control lone portrait: scope, the config has the v4 monitors and setups objects' $ok 'no monitors or setups object: the v3 -> v4 shape is missing'
+    if (-not $ok) { return }
+    $sc = SceneOf $cfg 'default'
+    $sc.grids = [pscustomobject]@{ tall = $sc.grids.tall; laptop = $sc.grids.laptop }
+    Check 'control lone portrait: scope, the scene has a tall cell (1,2) and no wide cell' ((Cell $sc.grids 'tall') -ceq '1,2' -and (Cell $sc.grids 'wide') -ceq 'none') "tall $(Cell $sc.grids 'tall'), wide $(Cell $sc.grids 'wide')"
+    $k = Register-TileSetup $cfg @($Port)
+    $r = Resolve-TileLayout $cfg $sc $k
+    Check 'control lone portrait: the portrait takes the tall cell' ((Cell $r.grids 'port') -ceq '1,2') "port: $(Cell $r.grids 'port')"
   }
   # A lone plugged monitor holds laptop and wide, and tall when it is portrait (as on main's Pick). Get-TileRoles keys by role; the ids are the
   # monitors' own (Lap15, Ext2, Port are the fixtures above).

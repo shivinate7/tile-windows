@@ -368,6 +368,27 @@ try {
     Check 'solo, laptop alone: Chrome is on the laptop left half' (OnCell $r 4101 1 (CellRect $lapDesk 2 1 0)) (Desc $r 4101)
     Check 'solo, laptop alone: Claude is on the laptop right half' (OnCell $r 4102 2 (CellRect $lapDesk 2 1 1)) (Desc $r 4102)
   }
+  # The Solo starter resolved for a lone built-in 1920x1080 (the key with no layout, as the caller resolves it) is posted by id. Its 2x1 laptop
+  # grid puts Chrome left and Claude right, the rects the raw Solo scene gives on the role path (coordinator ruling 2026-11-17 18:07 CST).
+  Case 'solo, resolved: the lone built-in resolves Solo to its 2x1 wide cell, and the posted layout puts Chrome left and Claude right' {
+    $solo = @(([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json).scenes | ? { $_.id -eq 'solo' })[0]
+    $wideCell = "$($solo.grids.wide.c),$($solo.grids.wide.r)"; $lapCell = "$($solo.grids.laptop.c),$($solo.grids.laptop.r)"
+    Check 'scope: the Solo starter has a 2x1 wide cell and a 1x1 laptop cell' ($wideCell -ceq '2,1' -and $lapCell -ceq '1,1') "wide $wideCell, laptop $lapCell"
+    $cfgSolo = [pscustomobject]@{}
+    $kSolo = Register-TileSetup $cfgSolo @($lapDesk)
+    $roleSolo = Get-TileRoles $cfgSolo.monitors @($LAP)
+    Check 'scope: the lone built-in holds the laptop and wide roles' ([string]$roleSolo['laptop'] -ceq $LAP -and [string]$roleSolo['wide'] -ceq $LAP) "laptop '$([string]$roleSolo['laptop'])', wide '$([string]$roleSolo['wide'])'"
+    $soloRaw = Write-Json 'solo-raw.json' $solo
+    $raw = Invoke-SceneFrom $soloRaw $snapSoloLap
+    Check 'control: the raw Solo scene on the role path puts Chrome left and Claude right' ((OnCell $raw 4101 1 (CellRect $lapDesk 2 1 0)) -and (OnCell $raw 4102 2 (CellRect $lapDesk 2 1 1))) "$(Desc $raw 4101) | $(Desc $raw 4102)"
+    $resSolo = Resolve-TileLayout $cfgSolo $solo $kSolo
+    $postSolo = Write-Json 'post-solo.json' ([pscustomobject]@{ id = 'post-solo'; name = 'Post solo'; grids = $resSolo.grids; pins = @($resSolo.pins); zones = @($resSolo.zones); fill = $resSolo.fill; bay = @($resSolo.bay) })
+    $r = Invoke-SceneFrom $postSolo $snapSoloLap
+    Check 'solo, resolved: Chrome is on the laptop left half (960 wide)' (OnCell $r 4101 1 (CellRect $lapDesk 2 1 0)) (Desc $r 4101)
+    Check 'solo, resolved: Claude is on the laptop right half' (OnCell $r 4102 2 (CellRect $lapDesk 2 1 1)) (Desc $r 4102)
+    $same = [bool](PlacedOf $r 4101) -and [bool](PlacedOf $r 4102) -and ((RectOf (PlacedOf $r 4101)) -ceq (RectOf (PlacedOf $raw 4101))) -and ((RectOf (PlacedOf $r 4102)) -ceq (RectOf (PlacedOf $raw 4102)))
+    Check 'solo, resolved: the rects match the raw Solo scene on the role path' $same "resolved: $(Desc $r 4101) | $(Desc $r 4102); raw: $(Desc $raw 4101) | $(Desc $raw 4102)"
+  }
 } finally {
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue
