@@ -121,11 +121,11 @@ and the key F.
 16. **How a drag works.** A grip sits on each line where windows meet. A line runs between two
     crossings where both sides have an edge, so every window that touches it lies inside its
     length. Dragging it moves those windows' edges together: one side grows, the other shrinks.
-    A plain drag moves the whole column edge (mockup state `tree-drag`). Holding Shift moves the
-    edge for the grabbed row only. Shift is the coordinator's pick, open to the owner's change
-    (decision `layout-free`, 2026-11-18 11:09 CST). Gain: no gap opens at any point; with Shift, one
-    window pair changes, not a column. Loss: two windows that share no line cannot change size
-    against each other in one drag.
+    A plain drag moves only the grabbed edge segment, that row (the mockup the owner approved at
+    14:12 CST, state `edges-drag`). Holding Shift moves the whole column line, the lower half too.
+    Shift is the coordinator's pick, open to the owner's change (decision `layout-free`, 2026-11-18
+    11:14 CST). Gain: no gap opens at any point; a plain drag changes one window pair, not a column.
+    Loss: two windows that share no line cannot change size against each other in one drag.
 17. **Gaps.** A drag cannot open a gap. When a tiled window closes or minimizes, its neighbours
     grow into its space at once (mockup state `tree-gap`). When a minimized window is restored, the
     layout makes room for it again (decision `layout-free`, 2026-11-18 11:08 CST). A window that
@@ -153,7 +153,8 @@ and the key F.
     grid of 3 rows or more can hold a pinwheel of spans that no tree can cut, so switch-on would
     have to move windows there. Any spans on a 2-row grid cut into a tree. Not picked as the model. The owner calls it a solid
     concept (2026-11-17 14:12 CST). Both parts join Shared Edges: `tree-gap` as the closed-window rule
-    and `tree-drag` as the plain drag (decision `layout-free`, 2026-11-18 11:08 CST).
+    and the whole-column `tree-drag` as the Shift drag (decision `layout-free`, 2026-11-18 11:08 CST;
+    drag key 11:14 CST).
 
 ### Option: Free Rects
 

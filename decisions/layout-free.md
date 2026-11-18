@@ -33,8 +33,8 @@ Plan: docs/design/mockups/layout-free-notes.md#free-layout (windows)
 **Ruling (owner asked 2026-11-18 11:08 CST, owner's words: "could it be both ways?"; reading recorded by the coordinator 2026-11-18 11:09 CST):**
 
 - The question: does dragging the edge between two columns resize the whole column, or only the row grabbed?
-- The reading: both. A plain drag moves the whole column edge (mockup state `tree-drag`). Holding Shift while dragging moves the edge for the grabbed row only.
-- Shift is the coordinator's pick, open to the owner's change.
+- The reading: both. A plain drag moves only the grabbed edge segment, that row. Holding Shift while dragging moves the whole column line. The plain drag is the mockup the owner approved at 14:12 CST ("yes, it looks fine do that", state `edges-drag`).
+- Shift is the coordinator's pick, open to the owner's change. The pick is the coordinator's, 2026-11-18 11:14 CST. Reason: it matches the `edges-drag` caption in layout-free.html, so the mockup needs no change.
 - This closes the drag half of question (b). Question (b) is closed.
 
 Not yet asked: (c) the fast action's trigger, direction and share. S stays with the menu, as drawn, until the owner rules on it.
@@ -43,4 +43,4 @@ Not yet asked: how a closed window's space divides when more than one neighbour 
 
 Notes item 8 (one level) was picked only while item 3 stood, so it has no ruling now.
 
-**Why.** The owner wants one action for the common split, and a menu when the split needs a choice. The owner wants "the gaps between items is immediately addressed" (notes item 23). Shared Edges is the only option that passes all six tests in the notes. Free Rects shows a gap during a drag, and its release guesses which neighbour changes. The six-test check predates the 11:08 CST drag reading, so its per-window row is unchecked against the plain drag's whole-column move.
+**Why.** The owner wants one action for the common split, and a menu when the split needs a choice. The owner wants "the gaps between items is immediately addressed" (notes item 23). Shared Edges is the only option that passes all six tests in the notes. Free Rects shows a gap during a drag, and its release guesses which neighbour changes.
