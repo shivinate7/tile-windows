@@ -807,6 +807,18 @@ try {
     }
   }
 
+  # Gap-fill order: a side whose share would overlap is not taken; the next qualifying side takes the region. Keys are found by the absent subset.
+  function GKey([string]$id, $sub, $absent) {
+    for ($k = 0; $k -lt @($sub).Count; $k++) { if ((GSet ($sub[$k].absent)) -eq (GSet $absent)) { return "$id|$k" } }
+    "$id|no-call"
+  }
+  # The 2x2 with {1,2} gone: area 0 takes the top line and area 3 the bottom line, with no gap and no overlap. The mirror {0,3}:
+  # area 1 takes the top line and area 2 the bottom line.
+  Case 'L3 item G: a side whose share would overlap is skipped for the next qualifying side, 2x2 absent {1,2} and its mirror {0,3}' {
+    GCheck 'L3 item G: 2x2 absent {1,2}: area 0 takes the top line, area 3 the bottom line, no gap and no overlap (1200 x 900)' (GKey 'G9' $gSub2 @(1, 2)) @(@(0, 0, 1, 0.5), $null, $null, @(0, 0.5, 1, 0.5))
+    GCheck 'L3 item G: 2x2 absent {0,3} (mirror): area 1 takes the top line, area 2 the bottom line (1200 x 900)' (GKey 'G9' $gSub2 @(0, 3)) @($null, @(0, 0, 1, 0.5), @(0, 0.5, 1, 0.5), $null)
+  }
+
 } finally {
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue
