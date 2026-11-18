@@ -42,7 +42,7 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - 18:07 CST: a lone monitor holding several roles seeds its grid in the role order wide, tall, laptop (`Get-TileRoleOrder`, `config.ps1`, the one home).
 - 18:05 CST: a save the server refuses after a setup change (409) shows an amber "setup changed" strip with Refresh, not Try Again.
 - 18:05 CST: Apply or Refresh onto a new setup clears Undo.
-- 18:05 CST: autosave never filters Windows That Stay Put or held entries; only an explicit Save does, as main.
+- 18:05 CST, closed 19:46 CST: autosave keeps every Windows That Stay Put and held entry. Save writes only a scene's name and triggers (POST /config never writes layouts, 16:18 CST), so no Save drops them either.
 - 18:05 CST: a failed GET /layouts or GET /config shows on the strip.
 - 18:05 CST: card marks follow the mockup, and show only while some scene follows another setup.
 - 18:05 CST: a monitor with no grid gets an "Add a Grid" button.
@@ -60,6 +60,5 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 
 **Open, not ruled.**
 - Item 7: the `Follow <setup> Again` control (`cd-own`) stays (coordinator default 2026-11-17 11:47 CST). What it links to is not ruled. The notes' items 11 and 16 still name Desk in their examples; rewording them is not ruled.
-- Save's reach. The Save default says Save covers a scene's name and triggers only. The 18:05 CST ruling says an explicit Save filters Windows That Stay Put and held entries, as main. Item 8 says layouts have no Save or Revert. Which holds is not ruled.
 
 **Why.** The owner's ask, 2026-11-16 14:46 CST: "just like how windows remembers monitors and their layouts depending on whats plugged in cant we store that in memory too but act more dynamically than that". The item 9 answer lets the owner make a new arrangement while the ultrawide is unplugged.
