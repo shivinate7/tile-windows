@@ -94,7 +94,7 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .when svg{width:12px;height:12px;flex:none}
 .live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
 .crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
-.tag{display:inline-flex;align-items:center;gap:5px;min-width:0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.tag{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden}
 .mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
 .mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
@@ -320,6 +320,9 @@ dialog form{display:grid;gap:10px}
 .bcol>li:has(>.bh.mid){padding-top:8px}
 .bh .why{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font:400 11px/var(--bhrow) var(--f);text-transform:none;letter-spacing:0}
 .bh .ct{margin-left:auto;font:12px/var(--bhrow) var(--f-mono);letter-spacing:0}
+/* A reason the owner ruled is read whole (Its screen is unplugged) is never cut: when it does not fit beside the name it takes a second row, and the count stays at the top right. */
+.bh.whole{position:relative;flex-wrap:wrap;padding-right:20px}
+.bh.whole .ct{position:absolute;top:0;right:0}
 .cont{height:3px;align-self:center;border-radius:2px;background:var(--cat)}
 @media (forced-colors:active){.cont{background:CanvasText}}
 .chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;touch-action:none;font-size:12px}
@@ -907,6 +910,8 @@ const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
 // A bay entry carries `why: COVERED` when a resize covered its window, or `why: MERGED` when a Merge moved it; tile.ps1 hands it back in left[].why, and BAYWHY words it.
 const COVERED="covered by a resize",MERGED="moved by a merge";
 const BAYWHY={"in the bay":"You kept it here",[COVERED]:"Covered by a resize",[MERGED]:"Moved by a merge","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","fill is off":"Fill is off","Its screen is unplugged":"Its screen is unplugged"};
+// The reason a heading shows whole, on a second row when it does not fit, never cut with an ellipsis (a heading with any other reason is one row).
+const BAYWHOLE=BAYWHY["Its screen is unplugged"];
 const BAYNOWHY="Not in this scene";
 const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized: it stays minimized":BAYNOWHY;
 // Cells as columns and rows, not numbers: "3 columns × 2 rows from column 1, row 1".
@@ -1016,7 +1021,7 @@ const bayChip=(w,c,V,sh)=>{const why=bayWhy(V[w.id]);
 // Reason Said Once: the reason more than half of a category's shown windows share shows once in its heading, and those windows drop their own line.
 // A window with no reason line ("Not in this scene") counts as not sharing.
 // The reason sits on the heading's own row after the name, so a heading is one row tall; a long one is cut with an ellipsis and its full text is the title.
-const bayHead=(g,mid)=>`<h3 class="bh cat-${g.c}${mid?" mid":""}"><i class="sw"></i>${esc(catName(g.c))}${g.sh?`<span class="why" title="${esc(g.sh)}">${esc(g.sh)}</span>`:""}<span class="ct">${g.n}</span></h3>`;
+const bayHead=(g,mid)=>`<h3 class="bh cat-${g.c}${mid?" mid":""}${g.sh===BAYWHOLE?" whole":""}"><i class="sw"></i>${esc(catName(g.c))}${g.sh?`<span class="why" title="${esc(g.sh)}">${esc(g.sh)}</span>`:""}<span class="ct">${g.n}</span></h3>`;
 // Packs the groups into columns no taller than H, or returns null when H is too short. A heading keeps its first two windows with it (all
 // three of three). A split never leaves one window of a category alone in a column. A column that opens partway through a category starts with a rule.
 function bayPack(gs,mid,cont,H){
