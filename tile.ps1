@@ -14,13 +14,17 @@
 #   left[].why says where a window without a cell came from: 'no free cell', 'zone full' or 'in the bay'. A bay entry's own why
 #   (the page sets it, such as when a resize covered the window) is passed through in place of 'in the bay'; the page words it.
 #   A pin's behind ([{app, match}]) stacks windows on its rect: each is placed with behind=true and the pin's index, never filled.
-#   A pin's lock (true) is read by the page, not here: a pin already beats zones and the fill for its cells.
+#   A pin's lock (true): the page reads it, a pin already beats zones and the fill for its cells, and -GapFill reads it too: a locked area never moves and never grows.
 #   A scene run reads monitor ids. If scene.layouts has an entry for this call's setup key (Get-TileSetupKey over the ids read: -From's
 #   snapshot, the TILE_SCREENS_FILE seam, or the live read), that layout replaces the scene's role template for the call: its grids, pins,
 #   zones and fill name monitors by id. A scene posted already resolved (grids, pins, zones, fill by id at the top level) runs by id too.
 #   No entry and no ids: the role path (wide, tall, laptop) runs, as before. The engine never picks the closest setup; the caller resolves.
 #   A window a layout places on a monitor that is not plugged in is claimed, never moved, and listed in left: 'Its screen is unplugged'.
 # -From <path|json>: use a -Json snapshot instead of the live desktop. Always a dry run.
+# -GapFill -Scene <..> -Absent <ids> -Last <json|path>: a gap-fill run on the scene's Free Layout monitors (item G). -Absent: handles of the windows that closed or
+#   minimized. -Last: [{id,x,y,w,h}], the rect the tray last gave each tiled window. A window moves only from its scene rect or its -Last rect; any other rect is a
+#   hand move, and that window's area counts as locked. Nothing is placed into a gap, and no saved layout is written. With -Json, prints {placed,missing,left}:
+#   placed lists only the windows the run moves. Honors -DryRun. Joins the live-move guard.
 # -Lib: define Move-Win and the Win32 reads and writes behind it, then return (tests dot-source it and swap those for fakes).
 # Slots number row by row from 1 (top-left).
 # -Cells n: grid with n cells (rows picked for you). Ultrawide default = 10 cells (5x2).
@@ -30,6 +34,7 @@ param([int]$Cols = 0, [int]$Rows = 0, [int]$Cells = 0, [string[]]$Proc = @('clau
   # -Sort app|category|title|position: fill order. app = -Proc order (then -Order, then where windows sit now).
   [string]$Sort = 'app',
   [string]$Scene = '', [string]$From = '', [switch]$Lib,
+  [switch]$GapFill, [string[]]$Absent = @(), [string]$Last = '',
   [string[]]$Skip = @('TextInputHost', 'PowerToys*', 'ShellExperienceHost', 'SearchHost', 'StartMenuExperienceHost', 'LockApp'))
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -333,14 +338,54 @@ function Get-CollapsedAreas($areas, $absent, $locked, $size) {
     if ($changed) { , [double[]]@($cur[$i][0], $cur[$i][1], ($cur[$i][2] - $cur[$i][0]), ($cur[$i][3] - $cur[$i][1])) } else { , $rc[$i] }
   }
 }
+# Gap fill on one Free Layout monitor: which windows move, and where. $px: the areas' pixel rects relative to the work area ([x, y, w, h], reading order);
+# $org: the work area's @(X, Y); $size: @(W, H). $wins: [{id, slot (an area's index), cur = [x, y, w, h]}], the windows that sit in an area (a pin's back
+# windows too), in screen pixels. $locked: area indexes whose pin is locked. $absentLast: the -Last rects of the windows that are gone. $last: id -> -Last rect.
+# A window may move when it sits at its area's own rect, or at its -Last rect when that rect holds the area's centre (so a window the run would pull into
+# another area never counts). Any other rect is a hand move: its area counts as locked, as a locked pin's does. An area with no window is locked too, unless a
+# gone window's -Last rect holds it: that area is gone. Each eligible window moves to its area's rect from Get-CollapsedAreas (the scene rect when nothing
+# is gone, so a neighbour shrinks back from its -Last rect). A locked area's window never moves. Returns [{id, slot, rect}], rects in screen pixels.
+function Get-GapMoves($px, $org, $size, $wins, $locked, $absentLast, $last) {
+  $n = @($px).Count; $sw = [int]@($size)[0]; $sh = [int]@($size)[1]
+  $abs = @(for ($i = 0; $i -lt $n; $i++) { , [int[]]@(($org[0] + $px[$i][0]), ($org[1] + $px[$i][1]), $px[$i][2], $px[$i][3]) })
+  function Test-SameRect($a, $b) { $a[0] -eq $b[0] -and $a[1] -eq $b[1] -and $a[2] -eq $b[2] -and $a[3] -eq $b[3] }
+  # $in lies inside $out, give or take one pixel.
+  function Test-Inside($in, $out) { $in[0] -ge $out[0] - 1 -and $in[1] -ge $out[1] - 1 -and $in[0] + $in[2] -le $out[0] + $out[2] + 1 -and $in[1] + $in[3] -le $out[1] + $out[3] + 1 }
+  $lockSet = @{}; foreach ($l in @($locked)) { if ($null -ne $l) { $lockSet[[int]$l] = 1 } }
+  $has = @{}; $elig = @{}
+  foreach ($w in @($wins)) {
+    $has[[int]$w.slot] = 1
+    $t = $abs[[int]$w.slot]; $c = [int[]]@($w.cur); $lr = $last["$($w.id)"]
+    $atLast = $false
+    if ($lr) { $cx = $t[0] + $t[2] / 2; $cy = $t[1] + $t[3] / 2; $atLast = (Test-SameRect $c $lr) -and $cx -ge $lr[0] -and $cx -le $lr[0] + $lr[2] -and $cy -ge $lr[1] -and $cy -le $lr[1] + $lr[3] }
+    $elig["$($w.id)"] = [bool]((Test-SameRect $c $t) -or $atLast)
+    if (-not $elig["$($w.id)"]) { $lockSet[[int]$w.slot] = 1 }
+  }
+  $gone = @{}
+  for ($i = 0; $i -lt $n; $i++) { if ($has.ContainsKey($i)) { continue }; foreach ($lr in @($absentLast)) { if (Test-Inside $abs[$i] $lr) { $gone[$i] = 1; break } } }
+  for ($i = 0; $i -lt $n; $i++) { if (-not $has.ContainsKey($i) -and -not $gone.ContainsKey($i)) { $lockSet[$i] = 1 } }
+  $areas = @(for ($i = 0; $i -lt $n; $i++) { [pscustomobject]@{ rect = [double[]]@(($px[$i][0] / $sw), ($px[$i][1] / $sh), ($px[$i][2] / $sw), ($px[$i][3] / $sh)) } })
+  $res = @(Get-CollapsedAreas $areas @($gone.Keys) @($lockSet.Keys) @($sw, $sh))
+  foreach ($w in @($wins)) {
+    $s = [int]$w.slot
+    if ($lockSet.ContainsKey($s) -or -not $elig["$($w.id)"] -or $null -eq $res[$s]) { continue }
+    $q = (Get-AreaPixelRects @(, $res[$s]) $sw $sh)[0]
+    $to = [int[]]@(($org[0] + $q[0]), ($org[1] + $q[1]), $q[2], $q[3])
+    if (-not (Test-SameRect ([int[]]@($w.cur)) $to)) { [pscustomobject]@{ id = $w.id; slot = $s; rect = $to } }
+  }
+}
 if ($Lib) { return }
 
 # Live-move guard: under the test suite (test/run.ps1 sets TILE_TEST_SUITE) or an agent shell (Claude Code sets CLAUDECODE), a run that can reach Move-Win is refused unless the caller sets
 # TILE_TEST_ALLOW_LIVE=1. Exempt: -DryRun, -From (always a dry run), -Monitors, -List (returns before any Move-Win), and -Json as the bare snapshot.
+# -GapFill moves windows, so it is never the bare snapshot.
 # Runs before any scene read, window read or pass. Outside the suite and an agent shell nothing changes.
-if (($env:TILE_TEST_SUITE -or $env:CLAUDECODE) -and $env:TILE_TEST_ALLOW_LIVE -ne '1' -and -not ($DryRun -or $From -or $Monitors -or $List -or ($Json -and -not ($Scene -or $Default -or $Place -or $PlaceFile)))) {
+if (($env:TILE_TEST_SUITE -or $env:CLAUDECODE) -and $env:TILE_TEST_ALLOW_LIVE -ne '1' -and -not ($DryRun -or $From -or $Monitors -or $List -or ($Json -and -not ($Scene -or $Default -or $Place -or $PlaceFile -or $GapFill)))) {
   throw 'Refused: this run would move windows, and TILE_TEST_SUITE or CLAUDECODE is set. Add -DryRun, or set TILE_TEST_ALLOW_LIVE=1 to allow a live run.'
 }
+
+if ($GapFill -and -not $Scene) { throw '-GapFill needs -Scene.' }
+$Absent = @($Absent -split ',' | ? { $_ } | % { [int64]$_ })
 
 function JsonText($s) { if ($s -match '^\s*[\[{]') { $s } else { [IO.File]::ReadAllText((Resolve-Path -LiteralPath $s), $TileUtf8) } }
 
@@ -502,6 +547,8 @@ if ($From) {
     if ($pname["$p"]) { [pscustomobject]@{ H = $_; Rank = $null; X = $r.L; Y = $r.T; Wd = $r.R - $r.L; Ht = $r.B - $r.T; App = $pname["$p"]; Title = "$sb" } }
   })
 }
+# A gap-fill run looks at the desktop without the windows that are gone (a minimized one is still listed), so no pin finds them.
+if ($GapFill) { $items = @($items | ? { $Absent -notcontains [int64]$_.H }) }
 $claimed = @{}  # windows a scene pass already placed
 # Rank = place of the window's app in the list; '*' = every other app not in -Skip.
 function Ranked($procs, $skip) {
@@ -807,6 +854,31 @@ foreach ($role in $passKeys) {
   if ($phantom) { $scr = [pscustomobject]@{ Name = "unplugged $role"; X = 0; Y = 0; W = 100 * $gc; H = 100 * $gr } }
   $passes += [pscustomobject]@{ Scr = $scr; Phantom = $phantom; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Held = $hs; Role = $role; Mult = $mult; Unit = $(if ($isFill -and -not $fr) { $sc.fill.unit }); AreaRects = $(if ($fr) { , $fr.Rects })
     Skip = $(if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }); Sort = $(if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }) }
+}
+# Gap fill: the pins phase finds each window's area (as a dry run, so Put moves nothing); item G then decides the moves (Get-GapMoves). Zones, held
+# windows and the fill pause, so nothing is placed into a gap. Only a Free Layout monitor takes part.
+if ($GapFill) {
+  $realDry = [bool]$DryRun; $realJson = [bool]$Json
+  $DryRun = [switch]$true; $Json = [switch]$true
+  $lastMap = @{}
+  if ($Last) { foreach ($e in @(ConvertFrom-Json (JsonText $Last) | % { $_ })) { if ($null -ne $e.id) { $lastMap["$([int64]$e.id)"] = [int[]]@([int]$e.x, [int]$e.y, [int]$e.w, [int]$e.h) } } }
+  $absentLast = @(); foreach ($a in $Absent) { if ($lastMap.ContainsKey("$a")) { $absentLast += , $lastMap["$a"] } }
+  $gp = @()
+  foreach ($q in $passes) {
+    if (-not $q.AreaRects -or $q.Phantom) { continue }
+    $found = @(Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones 'pins' $q.Held $q.Phantom $q.Mult $q.Unit $q.AreaRects | ? { $_ -and $_.id })
+    $locked = @(foreach ($pn in $q.Pins) { if ($pn.Index -ge 0 -and @($sc.pins)[$pn.Index].lock -eq $true) { @($pn.Slots)[0] } })
+    $wins = @(foreach ($o in $found) { [pscustomobject]@{ id = [int64]$o.id; slot = [int]@($o.slots)[0] - 1; cur = [int[]]@($o.from.x, $o.from.y, $o.from.w, $o.from.h) } })
+    foreach ($mv in @(Get-GapMoves $q.AreaRects @($q.Scr.X, $q.Scr.Y) @($q.Scr.W, $q.Scr.H) $wins $locked $absentLast $lastMap)) {
+      $o = @($found | ? { [int64]$_.id -eq $mv.id })[0]
+      $o.x = $mv.rect[0]; $o.y = $mv.rect[1]; $o.w = $mv.rect[2]; $o.h = $mv.rect[3]
+      if ($realDry) { $o.note = 'dry run' } else { $m = Move-Win @($items | ? { [int64]$_.H -eq $mv.id })[0].H $o.x $o.y $o.w $o.h; $o.note = if ($m) { "$m" } else { 'moved' } }
+      $gp += $o
+    }
+  }
+  if ($realJson) { ConvertTo-Json -Depth 6 -Compress ([pscustomobject]@{ placed = @($gp); missing = @($missing); left = @($left) }) }
+  else { foreach ($o in $gp) { "{0,-9} x={1} y={2} {3}x{4}  {5}" -f $o.app, $o.x, $o.y, $o.w, $o.h, $o.title }; "Gap fill: moved $($gp.Count) window(s)." }
+  return
 }
 foreach ($phase in 'pins', 'held', 'zones', 'fill') {
   foreach ($q in $passes) {
