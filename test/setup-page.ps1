@@ -293,6 +293,8 @@ function Forget-Office($sock) {
   if (-not (WaitFor $sock '!document.getElementById("mgdlg").open' 10)) { return 'noclose' }
   'forgot'
 }
+# The forget's note reaches the page through the dialog's close listener, a task after Done, so a read waits for it to show.
+function Wait-ForgetNote($sock) { [void](WaitFor $sock '/A setup you forgot/.test(document.body.innerText)' 30) }
 # A snapshot whose monitors carry size ids (size-WxH, as tile.ps1 gives a monitor with no device): every one of them, and only the ultrawide.
 $sizeAllObj = ConvertFrom-Json $snapAText
 foreach ($m in @($sizeAllObj.monitors)) { $m.id = "size-$($m.bw)x$($m.bh)" }
@@ -773,6 +775,7 @@ try {
     $res = Forget-Office $ws
     Check 'Office is forgotten from the dialog (control)' ($res -eq 'forgot') "forget: $res"
     if ($res -ne 'forgot') { return }
+    Wait-ForgetNote $ws
     $shown = Js $ws $note
     Check 'right after the forget, the pick-a-setup note shows on the page' ($shown -eq $true) 'the forget answered with the note, and the page does not show it'
   }
@@ -788,6 +791,7 @@ try {
     $res = Forget-Office $ws
     Check 'Office is forgotten from the dialog (control)' ($res -eq 'forgot') "forget: $res"
     if ($res -ne 'forgot') { return }
+    Wait-ForgetNote $ws
     $note = Js $ws 'const t = document.body.innerText.replace(/\s+/g, " "); const m = t.match(/A setup you forgot[^]*?pick a setup[^.]*\./i); return m ? m[0] : null'
     Check 'the pick-a-setup note shows after the forget (scope)' ([string]$note -match 'Pick a setup') "note: '$note'"
     Check 'the pick-a-setup note does not say each of them, with one scene aimed at the setup' ([string]$note -notmatch 'each of them') "note: '$note'"
