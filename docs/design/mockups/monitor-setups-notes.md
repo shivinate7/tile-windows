@@ -214,8 +214,9 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
     button stays in the card's bottom row, icon-only (28x32, label "More for <name>"); the row
     never wraps; the card label truncates with "…" and carries its full text in a title; every
     card keeps one height. Loss: a menu of one item for now. Not taken: the mini map's top right
-    corner, the first pick. The corner is empty and the map is drawn centred and hidden from
-    readers, but the row beside Apply had no room at 1024.
+    corner, the first pick. At 1024 every card's map drawing reaches that corner (measured
+    2026-11-17, design re-check). The map is drawn centred and hidden from readers, and the row
+    beside Apply had no room at 1024.
     Departs from: main `renderRail`, whose scene card has no menu.
 23. **The offline page** (`sv-offline`). Opened from disk, it has no scenes and no setups, so it
     draws no strip and claims no saving. Its edits stay in the page, and Apply downloads a place
