@@ -94,10 +94,16 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .when svg{width:12px;height:12px;flex:none}
 .live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
 .crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
-.tag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.tag{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden}
 .mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
 .mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
+/* A scene that follows another setup draws its windows as outlines: borrowed, not set here. */
+.mini.follow b{background:transparent;border:1.5px dashed color-mix(in srgb,var(--cat) 85%,var(--panel))}
+.lay{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:3px;flex:none;color:var(--muted)}
+.lay svg{width:13px;height:13px}
+.lay.own{background:var(--ink);color:var(--panel)}
+@media (forced-colors:active){.lay.own{border:1px solid CanvasText}.mini.follow b{border-color:CanvasText}}
 
 .cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
@@ -110,6 +116,21 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .recent{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:12px}
 .recent li{display:grid;gap:1px}
 .recent span{color:var(--muted);font:11px var(--f-mono)}
+
+/* The setup strip: the setup plugged in, and what the selected scene does on it. It sits above the board it describes. */
+.setbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.setbar.warn{background:var(--hi-bg);border-color:color-mix(in srgb,var(--hi) 60%,var(--line));border-left:3px solid var(--hi)}
+.smap{position:relative;flex:none;width:58px;height:30px;border-radius:4px;background:var(--canvas)}
+.smap i{position:absolute;background:var(--screen);border:1.5px solid color-mix(in srgb,var(--ink) 70%,var(--canvas));border-radius:2px}
+/* A remembered monitor of the source setup that is unplugged: dashed, no fill. */
+.smap i.gone{background:transparent;border:1.5px dashed var(--muted)}
+.sid{display:grid;gap:0;min-width:0;flex:1 1 260px}
+.sid b{font:700 14px var(--f-disp);letter-spacing:-.01em}
+.sid span{font-size:12px;color:var(--muted)}
+.sid span strong{color:var(--ink);font-weight:600}
+.sbtns{display:flex;gap:6px;flex-wrap:wrap}
+@media (max-width:1180px){.setbar{gap:6px 10px;padding:6px 8px}.sid{flex-basis:200px}}
+@media (forced-colors:active){.smap i{border-color:CanvasText}.setbar.warn{border-left-color:CanvasText}}
 
 /* Canvas */
 .canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;justify-content:safe center;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -299,6 +320,9 @@ dialog form{display:grid;gap:10px}
 .bcol>li:has(>.bh.mid){padding-top:8px}
 .bh .why{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font:400 11px/var(--bhrow) var(--f);text-transform:none;letter-spacing:0}
 .bh .ct{margin-left:auto;font:12px/var(--bhrow) var(--f-mono);letter-spacing:0}
+/* A reason the owner ruled is read whole (Its screen is unplugged) is never cut: when it does not fit beside the name it takes a second row, and the count stays at the top right. */
+.bh.whole{position:relative;flex-wrap:wrap;padding-right:20px}
+.bh.whole .ct{position:absolute;top:0;right:0}
 .cont{height:3px;align-self:center;border-radius:2px;background:var(--cat)}
 @media (forced-colors:active){.cont{background:CanvasText}}
 .chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;touch-action:none;font-size:12px}
@@ -529,6 +553,7 @@ dialog form{display:grid;gap:10px}
   </aside>
 
   <main class="canvas">
+    <div id="setbar" class="setbar" hidden></div>
     <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"></div><div id="dest"><span></span></div><div id="zdraw"><span></span></div><div id="rzdraw"><span></span></div><div id="rzdest" aria-hidden="true"></div></div><div id="ghost" aria-hidden="true"></div>
     <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" hidden>Draw Zone</button><button type="button" class="btn" id="clearbd" aria-describedby="whyclear" hidden>Clear Board</button><span class="vh" id="whyclear"></span>
     <details id="keys" class="keys"><summary>Keyboard</summary><ul>
@@ -620,7 +645,8 @@ const PIN='<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hid
 
 let snap=null,cfg={scenes:[],cats:LIVE?{}:OFFLINE_CATS,categories:CATS0},work={},selId=null,prevs={},pseq={},selWin=null,curMon=null,hist=[],isBusy=false,serverDry=false,
   st={active:"",log:[]},hidden=new Set(),showGrid=true,G={x0:0,y0:0,S:1},els=new Map(),drawn={},optim=null,drag=null,raf=0,
-  offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zanchor=null,selZone=null,xOpen=false,rz=null,hdl=null,noteEl=null,noteT=0,flashId=null,flashT=0,picks=null,lockAsk=null,bayFlash=new Set(),bayFlashT=0;
+  offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zanchor=null,selZone=null,xOpen=false,rz=null,hdl=null,noteEl=null,noteT=0,flashId=null,flashT=0,picks=null,lockAsk=null,bayFlash=new Set(),bayFlashT=0,
+  plug=null,layoutsOk=false,lays={},lsaved={},lq={},unsaved={},failed={},stale={},readErr="",svT={},svBusy={},svAgain={},lastKey="";
 const clone=o=>JSON.parse(JSON.stringify(o));
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
@@ -629,7 +655,8 @@ const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
 const status=t=>{$("msg").textContent=t};
 const scene=()=>work[selId];
 const saved=id=>cfg.scenes.find(s=>s.id===id);
-const edited=id=>!!work[id]&&JSON.stringify(work[id])!==JSON.stringify(saved(id));
+// Id mode: the layout autosaves, so only a name, trigger or extra that Save has not kept counts as an edit.
+const edited=id=>!!work[id]&&(idm()?JSON.stringify(metaOf(work[id]))!==JSON.stringify(metaOf(saved(id)||{})):JSON.stringify(work[id])!==JSON.stringify(saved(id)));
 // A built-in scene is read-only except its trigger switches (.auto): Default carries the first-unlock and grid switches.
 const autoOnly=(a,b)=>{if(!b)return false;const f=o=>{const x=clone(o);["auto","opt","trigger","screens","setupKey"].forEach(k=>delete x[k]);if(x.claudeGrid)delete x.claudeGrid.at;return JSON.stringify(x)};return f(a)===f(b)};
 const railIds=()=>[...cfg.scenes.map(s=>s.id),...Object.keys(work).filter(id=>!saved(id))];
@@ -678,11 +705,20 @@ function xSummary(s){const rows=autoRows(s),n=rows.filter(([k])=>(s.auto||{})[k]
 // The scene box is redrawn on every edit; this names the focused control so the redraw can put focus back (keyboard users keep their place).
 function focusKey(e){if(!e||!e.closest||!e.closest("#scenebox"))return "";if(e.id)return "#"+e.id;if(e.tagName==="SUMMARY")return "#xtras>summary";
   if(e.name==="trig")return `input[name=trig][value="${e.value}"]`;return ["data-auto","data-day","data-xf","data-xk"].filter(a=>e.hasAttribute(a)).map(a=>`[${a}="${e.getAttribute(a)}"]`).join("")}
-const withCats=s=>({...s,cats:cfg.cats,categories:cfg.categories});
+// What the engine is sent. In id mode the scene's layout is the one on the board, so the config's stored layouts (which the engine would prefer) go.
+const withCats=s=>{const o={...s,cats:cfg.cats,categories:cfg.categories};if(idm())delete o.layouts;return o};
 
 const catOf=app=>{const c=cfg.cats&&Object.keys(cfg.cats).find(k=>k.toLowerCase()===String(app).toLowerCase());return c?cfg.cats[c]:"other"};
 const catName=c=>(cfg.categories.find(x=>x[0]===c)||[c,c])[1];
-const monName=m=>m.role?ROLE[m.role]:`Monitor ${snap.monitors.indexOf(m)+1}`;
+// Id mode (a live page whose snapshot names a setup, and whose layouts were read): a layout keys its monitors by id, and a board label is the
+// name the config keeps for that id. Otherwise (no ids, or the offline page) the role names the monitor, as before.
+const idm=()=>LIVE&&!!plug&&!!plug.key&&layoutsOk;
+const mk=m=>idm()?m.id:m.role;
+const monOfKey=k=>snap.monitors.find(q=>mk(q)===k);
+const keyName=k=>{if(!idm())return ROLE[k]||String(k);const c=(cfg.monitors||{})[k];return c&&c.name?c.name:"A monitor that is unplugged"};
+const monName=m=>{if(idm()){const c=(cfg.monitors||{})[m.id];return c&&c.name?c.name:`Monitor ${snap.monitors.indexOf(m)+1}`}return m.role?ROLE[m.role]:`Monitor ${snap.monitors.indexOf(m)+1}`};
+// "on the Ultrawide" by role; "on Ultrawide" by name.
+const onMon=m=>(idm()?"":"the ")+monName(m);
 const winById=id=>snap.windows.find(w=>w.id===id);
 const prev=()=>prevs[selId];
 const ordinal=n=>n+(n%10===1&&n%100!==11?"st":n%10===2&&n%100!==12?"nd":n%10===3&&n%100!==13?"rd":"th");
@@ -694,7 +730,7 @@ const appList=ws=>{const n=new Map();for(const w of ws){const a=appName(w.app);n
 function noteFrom(r){const n=r.headers.get("X-Tile-Note");if(n){toast(decodeURIComponent(n),"warn",{sticky:true});noteUp=true}}
 
 /* ---------- Grids and cells (display and hit-testing only; the engine places windows) ---------- */
-function gridOf(m){if(LIVE)return m.role&&scene()?scene().grids[m.role]:null;
+function gridOf(m){if(LIVE){const k=mk(m);return k&&scene()?(scene().grids||{})[k]||null:null}
   if(!offGrids[m.name])offGrids[m.name]=m.role==="wide"?{c:5,r:2}:m.h>m.w?{c:1,r:2}:{c:1,r:1};return offGrids[m.name]}
 // Round as tile.ps1's [int] does: to the nearest whole number, halves to even.
 function bround(x){const f=Math.floor(x),d=x-f;return d>0.5||(d===0.5&&f%2!==0)?f+1:f}
@@ -714,14 +750,52 @@ async function loadAll(){
     step="read your scenes";const c=await fetch("config",{cache:"no-store"});if(!c.ok)throw new Error(await c.text());noteFrom(c);cfg=await c.json();
     step="read the app names";const an=await fetch("appnames",{cache:"no-store"});if(an.ok)APPN=await an.json();
     step="read the recent log";const t=await fetch("state",{cache:"no-store"});if(t.ok){noteFrom(t);st=await t.json()}
-    for(const x of cfg.scenes)if(!work[x.id])work[x.id]=clone(x);
+    step="read the layouts";await readLayouts(sj);
+    for(const x of cfg.scenes)if(!work[x.id])seed(x);
+    lastKey=plug?plug.key:"";
     if(!selId||!work[selId])selId=(cfg.scenes.find(x=>x.id===st.active)||cfg.scenes[0]).id;
     setSnap(sj);await previewAll();
   }catch(e){status(e instanceof TypeError?"Could not reach the server. Start Tile Windows again.":`Could not ${step}: ${e.message}`)}
 }
 async function refresh(){if(isBusy)return;status("Reading your windows…");
-  try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);hist=[];prevs={};setSnap(await r.json());await previewAll();status("Windows read again.")}
-  catch(e){status("Could not read windows: "+e.message)}}
+  try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);await resnap(await r.json());hist=[];prevs={};await previewAll();status("Windows read again.")}
+  catch(e){status("Could not read windows: "+e.message);
+    // A failed re-read leaves the old copy on screen, so the strip says it may be out of date (it is not shown as current).
+    readErr=e instanceof TypeError?"The app server stopped answering":String(e.message||e).replace(/\.\s*$/,"");render()}}
+// The setup the snapshot names, and for each scene {layout, follows}: the layout the server resolved for this setup, and the name of the setup it follows there ('' when it has its own or none to follow).
+// No ids, or a server without /layouts: the role board, as before.
+async function readLayouts(sj){
+  const p=LIVE&&sj.setup&&sj.setup.key?sj.setup:null;let l={},ok=false;
+  if(p){const r=await fetch("layouts",{cache:"no-store"});if(r.ok){l=await r.json();ok=true}else if(r.status!==404)throw new Error(await r.text())}
+  plug=p;lays=l;layoutsOk=ok}
+const LAYKEYS=["grids","pins","zones","fill","bay"];
+const layoutOf=s=>{const o={};for(const k of LAYKEYS)if(k in s)o[k]=s[k];return o};
+// A scene without its layout: what POST /config and Save compare (name, triggers, extras).
+const metaOf=s=>{const o=clone(s);for(const k of LAYKEYS)delete o[k];delete o.layouts;return o};
+// Scene x from the config into work: in id mode its layout is the resolved one for this setup, laid over the top-level fields (the config's role template stays in cfg).
+function seed(x){const w=clone(x);
+  if(idm()&&lays[x.id]){delete w.layouts;for(const k of LAYKEYS)delete w[k];Object.assign(w,clone(lays[x.id].layout));lsaved[x.id]=lq[x.id]=JSON.stringify(layoutOf(w))}
+  work[x.id]=w}
+// A re-read of the setup: a scene with board changes only in this page keeps them while the same setup is plugged in; every other scene shows what the server has.
+function reseed(){
+  for(const x of cfg.scenes){const w=work[x.id];if(!w){seed(x);continue}
+    if(!idm()){if(lastKey)work[x.id]=clone(x);continue}
+    if(!lays[x.id]||(unsaved[x.id]&&lastKey===plug.key))continue;
+    for(const k of LAYKEYS)delete w[k];delete w.layouts;Object.assign(w,clone(lays[x.id].layout));lsaved[x.id]=lq[x.id]=JSON.stringify(layoutOf(w));unsaved[x.id]=0;delete failed[x.id];delete stale[x.id]}
+  lastKey=plug?plug.key:""}
+// A setup or monitor the server met since the page loaded: names and layouts come from a fresh config. Scenes themselves are not replaced.
+// A failed read throws: the caller says so, and the page keeps the copy it has.
+async function readKnown(){
+  const r=await fetch("config",{cache:"no-store"});if(!r.ok)throw new Error(await r.text()||`The server said ${r.status}.`);const c=await r.json();cfg.monitors=c.monitors;cfg.setups=c.setups;
+  for(const x of c.scenes){const m=saved(x.id);if(m)m.layouts=x.layouts}}
+// A re-read of the windows and the setup. A board change made on one setup is not undone onto another, so Undo ends when the setup changes.
+// A save the server refused as "the setup changed" is dropped with the old setup, or sent again when the same setup is back.
+async function resnap(sj){const was=plug?plug.key:"";
+  if(LIVE)await readKnown();await readLayouts(sj);readErr="";
+  if((plug?plug.key:"")!==was)hist=[];
+  reseed();
+  for(const id of Object.keys(stale)){delete stale[id];if(unsaved[id]&&work[id])saveLayout(id);else delete failed[id]}
+  setSnap(sj)}
 function setSnap(d){
   if(!d||!Array.isArray(d.monitors)||!d.monitors.length||!Array.isArray(d.windows))throw new Error("need {monitors:[...], windows:[...]}");
   snap={monitors:d.monitors,windows:d.windows.map(w=>({...w}))};
@@ -741,6 +815,50 @@ async function previewRun(id){
   catch(e){status("Preview failed: "+e.message)}}
 async function previewAll(){await preview(selId);for(const s of cfg.scenes)if(s.id!==selId)await preview(s.id);
   for(const id in work)if(!saved(id)&&id!==selId)await preview(id)}
+
+/* ---------- The setup the board shows ---------- */
+const hasKey=(o,k)=>Object.prototype.hasOwnProperty.call(o,k);
+// Does scene id have its own layout on the plugged-in setup, or follow another? Own is read from the scene's saved layouts (a save writes that key at once).
+// The setup it follows is the server's answer (GET /layouts, follows), never a pick made here. {own:true}, {own:false,name} (follows that setup), or {own:false,name:""} (its starter layout).
+function layState(id){
+  if(!idm())return null;
+  if(hasKey((saved(id)||{}).layouts||{},plug.key))return{own:true};
+  return{own:false,name:(lays[id]||{}).follows||""}}
+const plugName=()=>((cfg.setups||{})[plug.key]||plug).name||"This setup";
+// Monitors the layouts still name (a pin, zone or fill on a screen of another setup) that are not plugged in, with the size config remembers for them.
+// They are drawn whichever scene is selected and whether or not it has its own layout here: they are what is missing from this setup.
+function goneIds(){
+  const have=new Set(snap.monitors.map(m=>m.id)),out=new Set(),add=k=>{if(k&&!have.has(k)&&((cfg.monitors||{})[k]||{}).bw)out.add(k)};
+  for(const id in lays){const L=lays[id].layout||{};[...(L.pins||[]),...(L.zones||[])].forEach(x=>add(x.mon));if(L.fill){add(L.fill.mon);(L.fill.held||[]).forEach(h=>add(h.mon))}}
+  return[...out].sort()}
+// The plugged-in monitors to scale in a w by h box (their own places), and each unplugged one as a dashed outline after them. Config keeps an unplugged monitor's size, not where it sat,
+// so it is drawn at the plugged monitors' scale (logical pixels per native pixel) beside the others, not in its old place.
+function smapHTML(gone,W0=58,H0=30){
+  const M=snap.monitors,x0=Math.min(...M.map(m=>m.x)),y0=Math.min(...M.map(m=>m.y));let x1=Math.max(...M.map(m=>m.x+m.w));const y1=Math.max(...M.map(m=>m.y+m.h));
+  const boxes=M.map(m=>({x:m.x,y:m.y,w:m.w,h:m.h,gone:false})),k=M.reduce((a,m)=>a+m.w/(m.bw||m.w),0)/M.length;
+  const gap=Math.round((x1-x0)*.04);
+  for(const id of gone){const c=cfg.monitors[id],w=c.bw*k;x1+=gap;boxes.push({x:x1,y:y0,w,h:c.bh*k,gone:true});x1+=w}
+  const yy1=Math.max(y1,...boxes.map(b=>b.y+b.h)),S=Math.min((W0-6)/(x1-x0),(H0-6)/(yy1-y0)),ox=(W0-(x1-x0)*S)/2,oy=(H0-(yy1-y0)*S)/2;
+  return `<span class="smap" style="width:${W0}px;height:${H0}px" aria-hidden="true">${boxes.map(b=>`<i${b.gone?' class="gone"':""} style="left:${(ox+(b.x-x0)*S).toFixed(1)}px;top:${(oy+(b.y-y0)*S).toFixed(1)}px;width:${Math.max(b.w*S,3).toFixed(1)}px;height:${Math.max(b.h*S,3).toFixed(1)}px"></i>`).join("")}</span>`}
+// A save that failed, or a re-read that failed, says so here, beside the board it is about, and stays until a save or a read lands (decision monitor-setups, item 19).
+// A save the server refused because the setup changed offers Refresh and no retry: sending it again would write this layout under the setup that is no longer plugged in.
+function renderSetbar(){
+  const el=$("setbar");
+  if(!idm()||!snap||!scene()){el.hidden=true;if(el.dataset.h){el.dataset.h="";el.innerHTML=""}return}
+  const s=scene(),L=layState(selId),n=unsavedCount(),bad=Object.keys(failed).filter(i=>unsaved[i]&&work[i]);
+  const sc=`<strong>${esc(s.name)}</strong>`,rbtn=`<div class="sbtns"><button type="button" class="btn" id="srefresh">Refresh</button></div>`;let sub,cls="setbar",extra="";
+  if(bad.length&&n&&bad.some(i=>stale[i])){cls+=" warn";
+    sub=`<strong>Not saved.</strong> The setup changed, so your last ${plural(n,"board change")} ${n===1?"is":"are"} only in this page. Refresh reads the setup that is plugged in now, and ${n===1?"it does":"they do"} not carry over.`;extra=rbtn}
+  else if(bad.length&&n){cls+=" warn";const why=String(failed[bad[0]]).replace(/\.$/,"");
+    sub=`<strong>Not saved.</strong> ${esc(why)}, so your last ${plural(n,"board change")} ${n===1?"is":"are"} only in this page. Undo still works.`;
+    extra=`<div class="sbtns"><button type="button" class="btn" id="retry">Try Again</button></div>`}
+  else if(readErr){cls+=" warn";sub=`<strong>Could not read again.</strong> ${esc(readErr)}, so this page may not show the setup that is plugged in now.`;extra=rbtn}
+  else if(L&&L.own)sub=`${sc} has its own layout here. Board changes save as you make them.`;
+  else if(L&&L.name)sub=`${sc} follows ${esc(L.name)} until you change it.`;
+  else sub=`${sc} starts from its starter layout here. Board changes save as you make them.`;
+  const html=`${smapHTML(goneIds())}<div class="sid"><b>${esc(plugName())}</b><span>${sub}</span></div>${extra}`;
+  if(el.dataset.h!==cls+html){el.dataset.h=cls+html;el.className=cls;el.innerHTML=html;if(cls.includes("warn"))el.setAttribute("role","status");else el.removeAttribute("role")}
+  el.hidden=false}
 
 /* ---------- Drawing ---------- */
 function build(){
@@ -769,8 +887,8 @@ function layout(){
   // When the text below the board does not fit, the board and its action bar still fit above the sticky list;
   // the notes scroll under it.
   // The list stays in view below the board unless that leaves the board under 240px; then it flows below.
-  const bay=$("bay"),fit=cv.clientHeight-62-bay.offsetHeight-$("bbar").offsetHeight;bay.classList.toggle("flow",fit<240);
-  const narrow=matchMedia("(max-width:760px)").matches,text=$("bbar").offsetHeight+$("over").offsetHeight+$("bay").offsetHeight+56;
+  const sb=$("setbar").hidden?0:$("setbar").offsetHeight+12,bay=$("bay"),fit=cv.clientHeight-62-sb-bay.offsetHeight-$("bbar").offsetHeight;bay.classList.toggle("flow",fit<240);
+  const narrow=matchMedia("(max-width:760px)").matches,text=sb+$("bbar").offsetHeight+$("over").offsetHeight+$("bay").offsetHeight+56;
   const top=22,W=cv.clientWidth-36,H=Math.max(240,narrow?innerHeight*.6:Math.max(cv.clientHeight-44-text,bay.classList.contains("flow")||bay.classList.contains("all")?0:fit)),S=Math.min(W/(x1-x0),(H-top)/(y1-y0));
   G={x0,y0:y0-top/S,S};
   stg.style.width=Math.round((x1-x0)*S)+"px";stg.style.height=Math.round((y1-y0)*S+top+4)+"px";
@@ -795,11 +913,15 @@ function view(){
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
 // A bay entry carries `why: COVERED` when a resize covered its window, or `why: MERGED` when a Merge moved it; tile.ps1 hands it back in left[].why, and BAYWHY words it.
 const COVERED="covered by a resize",MERGED="moved by a merge";
-const BAYWHY={"in the bay":"You kept it here",[COVERED]:"Covered by a resize",[MERGED]:"Moved by a merge","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","fill is off":"Fill is off"};
+const BAYWHY={"in the bay":"You kept it here",[COVERED]:"Covered by a resize",[MERGED]:"Moved by a merge","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","fill is off":"Fill is off","Its screen is unplugged":"Its screen is unplugged"};
+// The reason a heading shows whole, on a second row when it does not fit, never cut with an ellipsis (a heading with any other reason is one row).
+const BAYWHOLE=BAYWHY["Its screen is unplugged"];
 const BAYNOWHY="Not in this scene";
 const bayWhy=x=>x.why?BAYWHY[x.why]||x.why:x.w.min?"Minimized: it stays minimized":BAYNOWHY;
 // Cells as columns and rows, not numbers: "3 columns × 2 rows from column 1, row 1".
 function cellsText(slots,g){const b=bbox(slots,g);return `${plural(b.cs,"column")} × ${plural(b.rs,"row")} from column ${b.c+1}, row ${b.r+1}`}
+// A resolved layout carries an empty bay as {}; the board edits it as a list.
+const bayOf=x=>Array.isArray(x.bay)?x.bay:[];
 const sameWin=(b,w)=>b.id!=null?b.id===w.id:b.app===w.app&&b.title===w.title;
 const zoneName=z=>z.app?appName(z.app):catName(z.cat);
 function render(){
@@ -858,7 +980,7 @@ function render(){
         for(let i=0;i<g.c*g.r;i++){const c=document.createElement("div");c.className="cell";c.innerHTML=`<i>${i+1}</i>`;e.appendChild(c)}}
       const em=document.createElement("div");em.className="empty";e.appendChild(em)}
     e.querySelector(".empty").textContent=used.has(m)?"":g?"Empty. Drag a window here.":"Empty. Not in this scene.";
-    const fills=s&&s.fill&&s.fill.mon===m.role;
+    const fills=s&&s.fill&&s.fill.mon===mk(m);
     m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${g.c}×${g.r}`:""}${fills?s.fill.off?" · fill off":" · fills":""}</span>`;
     m.lab.title=`${monName(m)}: ${m.w}×${m.h}`;
   }
@@ -878,7 +1000,7 @@ function render(){
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
   $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
-  overText(V);renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);renderPicks();
+  overText(V);renderSetbar();renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);renderPicks();
 }
 // The eight handles go around the selected tile's whole cell block: a stacked tile's strip is inside the frame, so the handles never sit on the name of the window behind. A locked tile has none: it never resizes.
 function placeHandles(V){const e=selWin&&els.get(selWin),x=selWin&&V[selWin],P=prev();
@@ -889,7 +1011,7 @@ function placeHandles(V){const e=selWin&&els.get(selWin),x=selWin&&V[selWin],P=p
 function renderZones(){
   for(const z of [...$("stage").querySelectorAll(".zone")])z.remove();
   const s=LIVE?scene():null;if(!s)return;
-  (s.zones||[]).forEach((z,i)=>{const m=snap.monitors.find(q=>q.role===z.mon),g=m&&s.grids[z.mon];if(!g)return;
+  (s.zones||[]).forEach((z,i)=>{const m=snap.monitors.find(q=>mk(q)===z.mon),g=m&&s.grids[z.mon];if(!g)return;
     const sl=z.slots.filter(v=>v<g.c*g.r);if(!sl.length)return;const b=bbox(sl,g),e=document.createElement("div");
     e.className=`zone cat-${z.app?catOf(z.app):z.cat}${selZone===i?" sel":""}`;Object.assign(e.style,px(cellRect(m,g,b.c,b.r,b.cs,b.rs)));
     const n=prev()?prev().placed.filter(p=>p.zone===i).length:0;
@@ -903,7 +1025,7 @@ const bayChip=(w,c,V,sh)=>{const why=bayWhy(V[w.id]);
 // Reason Said Once: the reason more than half of a category's shown windows share shows once in its heading, and those windows drop their own line.
 // A window with no reason line ("Not in this scene") counts as not sharing.
 // The reason sits on the heading's own row after the name, so a heading is one row tall; a long one is cut with an ellipsis and its full text is the title.
-const bayHead=(g,mid)=>`<h3 class="bh cat-${g.c}${mid?" mid":""}"><i class="sw"></i>${esc(catName(g.c))}${g.sh?`<span class="why" title="${esc(g.sh)}">${esc(g.sh)}</span>`:""}<span class="ct">${g.n}</span></h3>`;
+const bayHead=(g,mid)=>`<h3 class="bh cat-${g.c}${mid?" mid":""}${g.sh===BAYWHOLE?" whole":""}"><i class="sw"></i>${esc(catName(g.c))}${g.sh?`<span class="why" title="${esc(g.sh)}">${esc(g.sh)}</span>`:""}<span class="ct">${g.n}</span></h3>`;
 // Packs the groups into columns no taller than H, or returns null when H is too short. A heading keeps its first two windows with it (all
 // three of three). A split never leaves one window of a category alone in a column. A column that opens partway through a category starts with a rule.
 function bayPack(gs,mid,cont,H){
@@ -954,7 +1076,7 @@ function renderBay(V){
 const dropText=(w,c)=>w?`Release to keep ${appName(w.app)}: ${w.title} here, under ${catName(c)}`:"Drag a window here to keep it where it is";
 function where(x){if(inBay(x))return`no cell (${bayWhy(x).toLowerCase()}), stays where it is`;if(!x.r)return"minimized, stays minimized";if(x.kind==="left")return"no free cell, stays where it is";
   if(x.kind==="stay")return LIVE?"not in this scene, stays where it is":"where it is now";
-  const p=x.p,m=p?snap.monitors.find(m=>m.role===p.mon):monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2);
+  const p=x.p,m=p?snap.monitors.find(m=>mk(m)===p.mon):monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2);
   if(x.kind==="behind")return `${m?monName(m):"?"} · behind the window in cell${p.slots.length>1?"s":""} ${p.slots.join("+")}`;
   const z=p&&p.zone>=0&&LIVE?(scene().zones||[])[p.zone]:null;
   return `${m?monName(m):"?"}${p?` · cell${p.slots.length>1?"s":""} ${p.slots.join("+")}`:""}${z?` · ${zoneName(z)} zone`:""}`}
@@ -969,17 +1091,25 @@ function miniHTML(P){const M=snap.monitors,x0=Math.min(...M.map(m=>m.x)),y0=Math
 function trigText(s){const t=s.trigger||{type:"manual"};if(t.type==="time"){const d=DAYORDER.filter(x=>(t.days||[]).includes(x));
   return `${d.length===5&&[1,2,3,4,5].every(x=>d.includes(x))?"Mon to Fri":d.length===7?"Every day":d.map(x=>DAYN[x]).join(", ")||"No days"} at ${t.time||"09:00"}`}
   return t.type==="display"?"When the monitors change":t.type==="call"?"When a Teams call starts":"By hand"}
+const LINKI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 8a2.4 2.4 0 0 0 3.4 0l2-2a2.4 2.4 0 0 0-3.4-3.4l-.6.6M8 6a2.4 2.4 0 0 0-3.4 0l-2 2a2.4 2.4 0 0 0 3.4 3.4l.6-.6"/></svg>',
+  OWNI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="2.5" width="10.4" height="7" rx="1"/><path d="M5 12h4M7 9.5V12"/></svg>';
 const CLOCK='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="6" cy="6" r="4.8"/><path d="M6 3.4V6l1.8 1.2"/></svg>';
 function renderRail(){
   if(LIVE){
     const ids=railIds(),nOn=ids.filter(id=>hasAny(work[id])).length;
     $("railsum").textContent=nOn?`${nOn} of ${ids.length} scenes have triggers on. The tray agent runs them.`:`No scene has a trigger on yet. Open a scene to switch one on.`;
-    $("cards").innerHTML=ids.map(id=>{const s=work[id],on=id===st.active;return `<article class="card${id===selId?" sel":""}">
-      <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini" aria-hidden="true">${miniHTML(prevs[id])}</span>
+    // The mark says whose layout a card shows. It says nothing while no scene follows another setup (every card would only say "own layout").
+    const lst=Object.fromEntries(ids.map(id=>[id,layState(id)])),marks=ids.some(id=>lst[id]&&lst[id].name);
+    $("cards").innerHTML=ids.map(id=>{const s=work[id],on=id===st.active,l=marks?lst[id]:null,fol=!!(l&&!l.own&&l.name),
+      lt=l&&(l.own?"Own layout":l.name?`Follows ${l.name}`:""),
+      // The mark sits beside the tag. Its words are its title and label (and hidden text, so a reader that skips the label still has them): the strip says them once, in words, for the selected scene.
+      lmark=lt?`<span class="lay${l.own?" own":""}" role="img" title="${esc(lt)}" aria-label="${esc(lt)}">${l.own?OWNI:LINKI}<span class="vh">${esc(lt)}</span></span>`:"";return `<article class="card${id===selId?" sel":""}">
+      <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini${fol?" follow":""}" aria-hidden="true">${miniHTML(prevs[id])}</span>
       <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
       ${(s.trigger||{}).type&&s.trigger.type!=="manual"?`<span class="when">${CLOCK}${esc(trigText(s))}</span>`:""}
-      ${chipsOf(s).length?`<span class="chips" aria-label="Extra triggers on">${chipsOf(s).map(c=>`<i>${esc(c)}</i>`).join("")}</span>`:""}</button>
-      <div class="crow"><span class="tag">${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}</span><button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></div></article>`}).join("");
+      ${chipsOf(s).length?`<span class="chips" aria-label="Extra triggers on">${chipsOf(s).map(c=>`<i>${esc(c)}</i>`).join("")}</span>`:""}
+      </button>
+      <div class="crow"><span class="tag">${lmark}${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}</span><button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></div></article>`}).join("");
   }else $("cards").innerHTML=`<p class="note">Scenes need the app server. Open Tile Windows from the Start menu, or run <code>serve.ps1</code>.</p>`;
   const counts={};for(const w of snap.windows){const c=catOf(w.app);counts[c]=(counts[c]||0)+1}
   $("legend").innerHTML=cfg.categories.map(([c,l])=>`<button type="button" class="lg cat-${c}" data-cat="${c}" aria-pressed="${!hidden.has(c)}"><i class="sw"></i>${esc(l)}<span class="ct">${counts[c]||0}</span></button>`).join("");
@@ -992,7 +1122,10 @@ function renderInsp(V){
   // Scene first: it is what Apply acts on.
   if(LIVE&&s){
     const t=s.trigger||(s.trigger={type:"manual",days:[1,2,3,4,5],time:"09:00"}),isSaved=!!saved(selId),ed=edited(selId);
-    const why={save:s.builtIn&&!autoOnly(s,saved(selId))?"Built-in scenes keep their layout. Use Save As New to change it.":isSaved&&!ed?"No changes to save.":"",
+    // Id mode: the layout saves as the board changes, so Save is for the name and triggers only and there is no Revert.
+    const im=idm(),
+      why=im?{save:s.builtIn&&!autoOnly(metaOf(s),metaOf(saved(selId)||s))?"Built-in scenes keep their name. Use Save As New to change it.":isSaved&&!ed?"No name or trigger changes to save.":"",revert:"",del:s.builtIn?"Built-in scenes cannot be deleted.":""}
+      :{save:s.builtIn&&!autoOnly(s,saved(selId))?"Built-in scenes keep their layout. Use Save As New to change it.":isSaved&&!ed?"No changes to save.":"",
       revert:!isSaved?"Not saved yet, so nothing to revert to.":!ed?"No changes to revert.":"",del:s.builtIn?"Built-in scenes cannot be deleted.":""};
     const fk=focusKey(document.activeElement);
     $("scenebox").innerHTML=`<h2>Scene</h2>
@@ -1002,10 +1135,10 @@ function renderInsp(V){
     <fieldset class="trig"><legend>Main Trigger (Pick One)</legend>${TRIG.map(([v,l])=>`<div class="ropt"><label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}><span>${l}<small>${TRIGH[v]}</small></span></label>${t.type===v?trigFields(s,t):""}</div>`).join("")}</fieldset>
     <details class="xtras" id="xtras"${xOpen?" open":""}><summary><b>Extra Triggers</b><span class="xsum">${xSummary(s)}</span></summary><p class="note">Any number, each with its own switch.</p>${autoUI(s)}</details>
 
-    ${s.builtIn?`<p class="note">This is a built-in scene. Save keeps your trigger settings; its layout stays as shipped. Use Save As New to change the layout.</p>`:""}
+    ${im?`<p class="note">Save keeps the name and triggers.</p>`:s.builtIn?`<p class="note">This is a built-in scene. Save keeps your trigger settings; its layout stays as shipped. Use Save As New to change the layout.</p>`:""}
     <div class="acts"><button type="button" class="btn pri" id="save" ${why.save?`disabled title="${why.save}" aria-describedby="whyoff"`:""}>Save</button>
       <button type="button" class="btn" id="saveas">Save As New</button>
-      <button type="button" class="btn" id="revert" ${why.revert?`disabled title="${why.revert}" aria-describedby="whyoff"`:""}>Revert</button>
+      ${im?"":`<button type="button" class="btn" id="revert" ${why.revert?`disabled title="${why.revert}" aria-describedby="whyoff"`:""}>Revert</button>`}
       <button type="button" class="btn danger" id="del" ${why.del?`disabled title="${why.del}" aria-describedby="whyoff"`:""}>Delete</button></div>
     <p class="note" id="smsg" role="status">${esc(sceneMsg)}</p>
     <p class="why" id="whyoff">${[...new Set([why.save,why.del,!why.save?why.revert:""].filter(Boolean))].map(x=>`<span>${esc(x)}</span>`).join("")}</p>`;
@@ -1013,20 +1146,20 @@ function renderInsp(V){
   else $("scenebox").innerHTML="";
   const z=LIVE&&s&&selZone!==null?(s.zones||[])[selZone]:null;
   if(z){const cnt=prev()?prev().placed.filter(p=>p.zone===selZone).length:0,over=prev()?prev().left.filter(l=>l.why==="zone full").length:0;
-    $("zonebox").innerHTML=`<h2>Zone</h2><p class="note">${esc(ROLE[z.mon])}: ${esc(cellsText(z.slots,s.grids[z.mon]))}. ${cnt} of ${z.slots.length} cells filled${over?`; ${over} more stay put`:""}.</p>
+    $("zonebox").innerHTML=`<h2>Zone</h2><p class="note">${esc(keyName(z.mon))}: ${esc(cellsText(z.slots,s.grids[z.mon]))}. ${cnt} of ${z.slots.length} cells filled${over?`; ${over} more stay put`:""}.</p>
       <div class="field stack"><label for="zfill">Fill With</label><select id="zfill" name="zfill">${zoneOpts(z.app?"app:"+z.app:"cat:"+z.cat)}</select></div>
       <div class="acts"><button type="button" class="btn" id="zdone">Done</button><button type="button" class="btn danger" id="zdel">Delete Zone</button></div>`}
   else $("zonebox").innerHTML="";
-  const mons=LIVE?snap.monitors.filter(x=>x.role):snap.monitors;
+  const mons=LIVE?snap.monitors.filter(x=>mk(x)):snap.monitors;
   let h=`<div class="seg" role="group" aria-label="Monitor">${mons.map(x=>`<button type="button" data-mon="${snap.monitors.indexOf(x)}" aria-pressed="${x===m}">${esc(monName(x))}</button>`).join("")}</div>
     <p class="note">${m.w}×${m.h} pixels.</p>`;
   if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
-    if(s&&s.fill&&s.fill.mon===m.role){const off=!!s.fill.off;
+    if(s&&s.fill&&s.fill.mon===mk(m)){const off=!!s.fill.off;
       h+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="fillSw" ${off?"":"checked"}><span class="xt"><b>Fill Empty Cells</b><small>${off?"Windows stay where they are. A new window waits in Windows That Stay Put.":"Windows that are not pinned fill the free cells."}</small></span></label>
       <div class="field stack"><label for="sort">Fill order</label><select id="sort" ${off?'disabled title="Fill is off, so the fill order does nothing. Turn on Fill Empty Cells to use it." aria-describedby="fillwhy"':""}>${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note" id="fillwhy">${off?"Fill is off, so the fill order does nothing.":`Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.`}</p></div>`}
     else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`;
 }
-  else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>`;
+  else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>${idm()&&s?`<button type="button" class="btn" id="addgrid">Add a Grid</button>`:""}`;
   $("mon").innerHTML=h;
   const w=selWin&&winById(selWin),x=w&&V[w.id];
   if(!w){inspKey="";$("win").innerHTML=`<p class="note">Click a window on the board to change it here.</p>`}
@@ -1040,7 +1173,7 @@ function renderInsp(V){
       return `<li class="bw cat-${catOf(e.b.app)}"><div class="bwt"><i class="sw"></i><b>${esc(appName(e.b.app))}</b><span>${esc(bw?bw.title:(e.b.match||"Not open"))}</span></div><div class="row2"><button type="button" class="btn" data-bf="${e.k}" ${bw?"":"disabled"} title="${esc(appName(e.b.app))} comes to the front. ${esc(appName(w.app))} goes behind it.">Bring to Front</button><button type="button" class="btn" data-bo="${e.k}" title="${esc(appName(e.b.app))} leaves this cell and goes to Windows That Stay Put.">Take Out</button></div></li>`}).join("")}</ul><p class="note">Take Out moves it to Windows That Stay Put.</p></div>`;
     if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,s.grids[pin.mon].c,lockd)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,s.grids[pin.mon].r,lockd)}</div>
       <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" name="match" autocomplete="off" ${lockd?'disabled title="Locked. Unlock it first."':""} placeholder="Any ${esc(appName(w.app))} window…" spellcheck="false"></div>`;
-    const mm=LIVE?snap.monitors.filter(q=>q.role&&s.grids[q.role]):snap.monitors;
+    const mm=LIVE?snap.monitors.filter(q=>mk(q)&&s.grids[mk(q)]):snap.monitors;
     wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto" ${lockd?"disabled":""}><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(gg.c*gg.r).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
     if(pin)wh+=`<button type="button" class="btn" id="unpin" ${lockd?'disabled title="Locked. Unlock it first."':""}>Unpin and Let It Fill</button>`;
     if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay" ${lockd?'disabled title="Locked. Unlock it first."':""}>Keep Where It Is</button>`;
@@ -1083,7 +1216,39 @@ function heldOff(x,w,mon,cells){const f=x.fill;if(!f||!f.held)return;
 function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
   edit(x=>{x.fill=x.fill||{};x.fill.off=true;delete x.fill.held},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
 // id: the scene to change, by default the selected one. A caller that waits first passes the scene it started on.
-function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";const s=work[id];hist.push({k:"edit",id,s:clone(s)});fn(s);if(msg)status(typeof msg==="function"?msg():msg);render();preview(id);return true}
+function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";const s=work[id];hist.push({k:"edit",id,s:clone(s)});fn(s);if(msg)status(typeof msg==="function"?msg():msg);layoutEdited(id);render();preview(id);return true}
+/* ---------- Autosave: a board change is written for the plugged-in setup (decision monitor-setups, item 8) ---------- */
+// Id mode only. An edit that changes the layout counts as one change only in this page until its POST /layout is answered. The write waits one task, so the edits of one
+// gesture are one POST. A longer wait is unproven: the page test settles on the POSTs in flight once the preview an edit starts answers, and a timer pending then is not seen.
+// Saves of one scene go one at a time (an edit that lands while one is in flight is one more), so the newest layout is the last one written.
+// A trigger or a name changes no layout and sends nothing.
+const SAVE_WAIT=0;
+function layoutEdited(id,now){
+  if(!idm()||!saved(id))return;
+  const cur=JSON.stringify(layoutOf(work[id]));if(cur===lq[id])return;
+  lq[id]=cur;unsaved[id]=(unsaved[id]||0)+1;
+  clearTimeout(svT[id]);if(now)saveLayout(id);else svT[id]=setTimeout(()=>saveLayout(id),SAVE_WAIT)}
+async function saveLayout(id){
+  clearTimeout(svT[id]);
+  if(svBusy[id]){svAgain[id]=true;return}
+  // A refused save waits for Refresh: the server said this page's setup is not the one plugged in, so it sends nothing more under that key.
+  if(!idm()||!work[id]||!saved(id)||stale[id])return;
+  svBusy[id]=true;
+  try{
+    do{svAgain[id]=false;
+      const key=plug.key,at=JSON.stringify(layoutOf(work[id])),lay=forSaveLayout(layoutOf(work[id])),n0=unsaved[id]||0;
+      const r=await post("layout",{scene:id,key,layout:lay});
+      // The scene was deleted while this save was in flight: its answer, a refusal too, is not about anything on the page any more.
+      if(!work[id]||!saved(id))return;
+      if(r.status===409){stale[id]=true;throw new Error("The setup changed")}
+      if(!r.ok)throw new Error((await r.text())||`The server said ${r.status}.`);
+      lsaved[id]=at;unsaved[id]=Math.max(0,(unsaved[id]||0)-n0);if(!unsaved[id])delete failed[id];
+      const sc=saved(id);if(sc){(sc.layouts||(sc.layouts={}))[key]=lay}
+    }while(svAgain[id]&&!stale[id])
+  }catch(e){if(work[id])failed[id]=e instanceof TypeError?"The app server stopped answering":String(e.message||e).replace(/\.\s*$/,"")}
+  finally{svBusy[id]=false;render()}}
+const unsavedCount=()=>Object.keys(unsaved).filter(i=>work[i]).reduce((n,i)=>n+unsaved[i],0);
+const retrySave=()=>{for(const id of Object.keys(failed))if(!stale[id])saveLayout(id)};
 const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
 // force: the owner confirmed moving a locked tile (askMove); every other caller still refuses it.
 function pinWin(id,mon,slot,cs=1,rs=1,force=false){
@@ -1091,10 +1256,10 @@ function pinWin(id,mon,slot,cs=1,rs=1,force=false){
   if(!LIVE){const i=snap.windows.indexOf(w),g=gridOf(mon);cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
     const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),t=cellRect(mon,g,c0,r0,cs,rs);
     if(same(t,offRects[i]))return render();hist.push({k:"rects",r:offRects.map(rect)});offRects[i]=t;selWin=id;render();status(`Moved ${w.title} to ${monName(mon)} cell ${r0*g.c+c0+1}.`);return}
-  const g=scene().grids[mon.role];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
+  const g=scene().grids[mk(mon)];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
   const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),pp=pinOf(id);
   if(pp&&pp.pin.lock&&!force){status(`${w.title} is locked. Unlock it first.`);render();return}
-  if(lockedHit(scene(),mon.role,cellsOf(c0,r0,cs,rs,g),pp&&pp.pin)){status("A locked tile is in the way. Nothing changed.");render();return}
+  if(lockedHit(scene(),mk(mon),cellsOf(c0,r0,cs,rs,g),pp&&pp.pin)){status("A locked tile is in the way. Nothing changed.");render();return}
   optim={id,r:cellRect(mon,g,c0,r0,cs,rs)};selWin=id;let sl=[];
   edit(x=>{sl=pinEdit(x,id,mon,slot,cs,rs)},`Pinned ${w.title} to ${monName(mon)} ${cs*rs>1?"cells":"cell"} ${(r0*g.c+c0)+1}${cs*rs>1?"+":""}.`);
 }
@@ -1102,18 +1267,18 @@ function pinWin(id,mon,slot,cs=1,rs=1,force=false){
 // The pin that holds a window now, as an object in scene x, so later edits in the same change do not shift it.
 function pinNow(x,id){const P=prev(),cur=P&&P.placed.find(p=>p.id===id);return cur&&cur.pin>=0&&!cur.behind?x.pins[cur.pin]:null}
 function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id),opt={}){
-  const w=winById(id),g=x.grids[mon.role];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
+  const w=winById(id),g=x.grids[mk(mon)];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
   const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),slots=[];
   for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*g.c+c);
   const match=grab?grab.match||"":w.min?w.title:matchFor(w),cells=new Set(slots);
-  const covers=q=>{const qs=q.slots.filter(v=>v<g.c*g.r);return q.mon===mon.role&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
+  const covers=q=>{const qs=q.slots.filter(v=>v<g.c*g.r);return q.mon===mk(mon)&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
   x.pins=x.pins.filter(q=>q!==grab&&!(q.app===w.app&&(q.match||"")===match)&&!covers(q));
   // The new pin goes first in the list (callers read it as x.pins[0]). It keeps its own stack and lock.
-  const np={app:w.app,match,mon:mon.role,slots},behind=opt.behind||(grab&&grab.behind);
+  const np={app:w.app,match,mon:mk(mon),slots},behind=opt.behind||(grab&&grab.behind);
   if(behind&&behind.length)np.behind=behind;if(grab&&grab.lock)np.lock=true;
   x.pins.unshift(np);
-  x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));if(!x.bay.length)delete x.bay;
-  heldOff(x,w,mon.role,cells);
+  x.bay=bayOf(x).filter(b=>!sameWin(b,w));if(!x.bay.length)delete x.bay;
+  heldOff(x,w,mk(mon),cells);
   return slots}
 // A front window leaves its pin: the window right behind it, if any, takes the cell. The lock goes with the window that left (ruling stack-and-lock), so the one behind is not locked.
 function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return;const b=pin.behind||[];
@@ -1121,14 +1286,14 @@ function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return;const b=pin.b
 // Into the bay: its pin goes, and the scene keeps it where it is. why: the entry's reason, when it is not "you kept it here".
 function bayEdit(x,id,grab=pinNow(x,id),promote=true,why){const w=winById(id);
   if(grab){if(promote)leavePin(x,grab);else x.pins=x.pins.filter(q=>q!==grab)}
-  x.bay=(x.bay||[]).filter(b=>!sameWin(b,w));x.bay.push(why?{id:w.id,app:w.app,title:w.title,why}:{id:w.id,app:w.app,title:w.title});heldOff(x,w)}
+  x.bay=bayOf(x).filter(b=>!sameWin(b,w));x.bay.push(why?{id:w.id,app:w.app,title:w.title,why}:{id:w.id,app:w.app,title:w.title});heldOff(x,w)}
 // A drops on B's cell. From the list below, B goes there; from a cell, the two trade cells. One edit.
 // The span stays with the place: A takes B's whole block, and B takes A's old block (one cell for a one-cell A).
 function swapInto(aId,bId,mon,slot,fromBay){
   const P=prev(),pa=P.placed.find(p=>p.id===aId),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),gA=pinNow(s,aId),gB=pinNow(s,bId),
-    g=s.grids[mon.role],bb=pbox(pb,g),ga=pa&&s.grids[pa.mon],ba=pa&&pbox(pa,ga);
+    g=s.grids[mk(mon)],bb=pbox(pb,g),ga=pa&&s.grids[pa.mon],ba=pa&&pbox(pa,ga);
   curMon=mon;selWin=aId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)};
-  return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>q.role===pa.mon),ba.r*ga.c+ba.c,ba.cs,ba.rs,gB);
+  return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>mk(q)===pa.mon),ba.r*ga.c+ba.c,ba.cs,ba.rs,gB);
     pinEdit(x,aId,mon,bb.r*g.c+bb.c,bb.cs,bb.rs,gA,fromBay&&gB?{behind:gB.behind}:{})},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${pairNames(A,B).join(" and ")}.`)}
 // The cells of a placed window's block (a span is its whole block), on its monitor's grid g.
 const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r),g);
@@ -1143,7 +1308,7 @@ function lockedHit(s,role,cells,except,shut){const g=s.grids[role];
 function occupant(d,t){const P=LIVE&&prev();if(!P||!t)return null;const pa=P.placed.find(p=>p.id===d.id),one=d.cs===1&&d.rs===1;
   if(!d.fromBay&&!(pa&&(!one||pa.slots.length===1)))return null;
   const blk=cellsOf(t.slot%t.g.c,Math.floor(t.slot/t.g.c),t.cs,t.rs,t.g);
-  const hit=P.placed.filter(p=>!p.behind&&p.id!==d.id&&p.mon===t.m.role&&pbox(p,t.g).cells.some(c=>blk.includes(c)));
+  const hit=P.placed.filter(p=>!p.behind&&p.id!==d.id&&p.mon===mk(t.m)&&pbox(p,t.g).cells.some(c=>blk.includes(c)));
   return hit.find(p=>pbox(p,t.g).cells.includes(t.slot))||hit.sort((a,b)=>Math.min(...a.slots)-Math.min(...b.slots))[0]||null}
 // The Swap circle on a taken block: half the block's short side, rounded down, from 28 to 64 px.
 const circD=(w,h)=>Math.max(28,Math.min(64,Math.floor(Math.min(w,h)/2)));
@@ -1166,7 +1331,7 @@ function stackOf(pi){const P=prev(),pin=scene().pins[pi];if(!P||!pin||!pin.behin
 const frontOfPin=pi=>{const P=prev();return P&&P.placed.find(p=>p.pin===pi&&!p.behind)};
 // A is dropped on B's lower band: A goes behind B, with any windows behind A.
 function putBehind(aId,bId){
-  const P=prev(),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),mon=snap.monitors.find(q=>q.role===pb.mon),g=s.grids[pb.mon],bb=pbox(pb,g),gA=pinNow(s,aId);
+  const P=prev(),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),mon=snap.monitors.find(q=>mk(q)===pb.mon),g=s.grids[pb.mon],bb=pbox(pb,g),gA=pinNow(s,aId);
   // A window from Windows That Stay Put has no placed entry yet, so the optimistic one stands in for it: what the engine will answer, on the front's cells.
   curMon=mon;selWin=bId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs),kind:"behind",front:bId,p:{...pb,id:aId,app:A.app,behind:true}};
   // The new stack's cues (the strip and the badge) wear a blue ring for about 1.5 seconds.
@@ -1176,7 +1341,7 @@ function putBehind(aId,bId){
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
-    x.bay=(x.bay||[]).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay;heldOff(x,A)},`${pairNames(A,B)[0]} is behind ${pairNames(A,B)[1]}.`);
+    x.bay=bayOf(x).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay;heldOff(x,A)},`${pairNames(A,B)[0]} is behind ${pairNames(A,B)[1]}.`);
   if(ok)dropNote(px(cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)),`<b>${esc(pairNames(A,B)[0])}</b> is behind <b>${esc(pairNames(A,B)[1])}</b>`,hist[hist.length-1]);
   return ok}
 // Drop Note: it names the stack under the tile that took the drop, with Undo. It goes after about 6 seconds, at the next press, or at the next edit.
@@ -1202,13 +1367,13 @@ function bringFront(pi,k){const e=stackEntry(pi,k);if(!e){status("Nothing is beh
 // Take Out: the window leaves the stack for Windows That Stay Put.
 function takeOut(pi,k){const e=stackEntry(pi,k);if(!e)return;const W=e.id&&winById(e.id);
   edit(x=>{const q=x.pins[pi];q.behind.splice(e.k,1);if(!q.behind.length)delete q.behind;
-    if(W){x.bay=(x.bay||[]).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title});heldOff(x,W)}},
+    if(W){x.bay=bayOf(x).filter(b=>!sameWin(b,W));x.bay.push({id:W.id,app:W.app,title:W.title});heldOff(x,W)}},
     W?`${appName(W.app)}: ${W.title} is out of the stack. ${verb()} leaves it where it is.`:"Removed a window that is not open from the stack.")}
 // Lock or unlock a window's tile. A window the fill places gets a pin on its cell first, because a lock is saved on a pin.
 function toggleLock(id){const w=winById(id),pp=pinOf(id);selWin=id;
   if(pp){const on=!pp.pin.lock;edit(x=>{const q=x.pins[pp.p.pin];if(on)q.lock=true;else delete q.lock},on?`Locked ${w.title}. It moves only after a warning.`:`Unlocked ${w.title}. It can move again.`);return}
   const P=prev(),p=P&&P.placed.find(q=>q.id===id&&!q.behind);if(!p){status(`${w.title} has no cell to lock. Place it first.`);return}
-  const mon=snap.monitors.find(q=>q.role===p.mon),g=scene().grids[p.mon],b=pbox(p,g);
+  const mon=snap.monitors.find(q=>mk(q)===p.mon),g=scene().grids[p.mon],b=pbox(p,g);
   edit(x=>{pinEdit(x,id,mon,b.r*g.c+b.c,b.cs,b.rs,null);x.pins[0].lock=true},`Locked ${w.title}. It moves only after a warning. It stays in ${monName(mon)} cell${b.cs*b.rs>1?"s":""} ${p.slots.join("+")}.`)}
 /* ---------- Resize by a handle, the corner grip, or the keys ---------- */
 // What a span over `cells` covers, apart from window selfId and its pin: each covered pin with its windows (front first, then those behind it),
@@ -1247,7 +1412,7 @@ function coverNote(r,ids,entry,actor,closed=[]){bayFlash=new Set(ids);clearTimeo
 // The span the pointer is over, in whole cells, stopped by a locked tile. Every window it covers goes to Windows That Stay Put, not to a free cell.
 // dir: the edges that move, as in HDIR. With dir.l or dir.t the left or top edge moves, so the right or bottom edge stays put when a lock cuts the span short.
 function planResize(id,mon,c0,r0,cs,rs,dir=HDIR.br){
-  const s=scene(),role=mon.role,g=s.grids[role],self=pinNow(s,id),info=[],fromL=!!dir.l,fromT=!!dir.t,edge=Object.keys(dir).length===1;
+  const s=scene(),role=mk(mon),g=s.grids[role],self=pinNow(s,id),info=[],fromL=!!dir.l,fromT=!!dir.t,edge=Object.keys(dir).length===1;
   s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<g.c*g.r);if(qs.length){const b=bbox(qs,g);info.push({q,i,b,cells:new Set(b.cells)})}});
   const box=(a,b)=>cellsOf(fromL?c0+cs-a:c0,fromT?r0+rs-b:r0,a,b,g);
   const hitLock=(a,b)=>{const cc=box(a,b);return info.some(o=>o.q.lock&&cc.some(c=>o.cells.has(c)))};
@@ -1262,7 +1427,7 @@ function planResize(id,mon,c0,r0,cs,rs,dir=HDIR.br){
     if(fromL)c0+=cs-na;if(fromT)r0+=rs-nb;cs=na;rs=nb}
   return{c0,r0,cs,rs,stopped,...coverOf(role,g,new Set(cellsOf(c0,r0,cs,rs,g)),id,self)}}
 // A resize's start for placed window p: its monitor, its grid and its block now.
-function rzBase(p){const g=scene().grids[p.mon];return{id:p.id,m:snap.monitors.find(q=>q.role===p.mon),gr:g,b:pbox(p,g)}}
+function rzBase(p){const g=scene().grids[p.mon];return{id:p.id,m:snap.monitors.find(q=>mk(q)===p.mon),gr:g,b:pbox(p,g)}}
 // Shift+arrows, Ctrl+Shift+arrows and the Width and Height steppers: the grip's resize, dc columns and dr rows from the block now.
 // With fromL or fromT the left or top edge moves (Ctrl+Shift+arrows): dc -1 grows it left, +1 shrinks it from the left.
 // A step onto a locked tile is refused, so the block stays as it is; the grip instead keeps the largest span short of the lock.
@@ -1300,33 +1465,33 @@ function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort(
 const zoneFill=v=>v.startsWith("app:")?{app:v.slice(4)}:{cat:v.slice(4)};
 async function drawZoneDialog(){const m=curMon,g=gridOf(m);if(!g)return;
   const cellOpts=sel=>[...Array(g.c*g.r).keys()].map(i=>`<option value="${i}"${i===sel?" selected":""}>Column ${i%g.c+1}, Row ${Math.floor(i/g.c)+1}</option>`).join("");
-  const f=await ask(`Draw a Zone on the ${ROLE[m.role]}`,`<p class="note">Pick two corner cells. The zone fills with these windows in fill order; a pin inside it keeps its cell; windows that do not fit stay put.</p>
+  const f=await ask(`Draw a Zone on ${onMon(m)}`,`<p class="note">Pick two corner cells. The zone fills with these windows in fill order; a pin inside it keeps its cell; windows that do not fit stay put.</p>
     <label class="field stack"><span>From</span><select name="za">${cellOpts(0)}</select></label><label class="field stack"><span>To</span><select name="zb">${cellOpts(g.c*g.r-1)}</select></label>
     <label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts("cat:code")}</select></label>`,"Add Zone");
   if(!f)return;const a=+f.za.value,b=+f.zb.value;addZone(m,g,a%g.c,Math.floor(a/g.c),b%g.c,Math.floor(b/g.c),zoneFill(f.zf.value))}
 function addZone(m,g,c0,r0,c1,r1,fill){const a=Math.min(c0,c1),b=Math.min(r0,r1),cs=Math.abs(c1-c0)+1,rs=Math.abs(r1-r0)+1,slots=[];
   for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*g.c+c);
-  return edit(x=>{x.zones=(x.zones||[]).filter(z=>!(z.mon===m.role&&z.slots.some(v=>slots.includes(v))));x.zones.push({mon:m.role,slots,...fill});selZone=x.zones.length-1},
-    `Added a ${fill.app?appName(fill.app):catName(fill.cat)} zone on the ${ROLE[m.role]}: ${cellsText(slots,g)}.`)}
+  return edit(x=>{x.zones=(x.zones||[]).filter(z=>!(z.mon===mk(m)&&z.slots.some(v=>slots.includes(v))));x.zones.push({mon:mk(m),slots,...fill});selZone=x.zones.length-1},
+    `Added a ${fill.app?appName(fill.app):catName(fill.cat)} zone on ${onMon(m)}: ${cellsText(slots,g)}.`)}
 async function newZone(m,g,c0,r0,c1,r1){
   const a=Math.min(c0,c1),b=Math.min(r0,r1),cs=Math.abs(c1-c0)+1,rs=Math.abs(r1-r0)+1,slots=[];
   for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*g.c+c);
   const under=snap.windows.find(w=>{const d=drawn[w.id];return d&&monAt(d.x+d.w/2,d.y+d.h/2)===m&&slots.includes(clamp(Math.floor((d.y+d.h/2-m.y)/(m.h/g.r)),0,g.r-1)*g.c+clamp(Math.floor((d.x+d.w/2-m.x)/(m.w/g.c)),0,g.c-1))});
-  const f=await ask(`New Zone: ${plural(cs,"Column")} × ${plural(rs,"Row")} on the ${ROLE[m.role]}`,`<p class="note">The zone fills with these windows in fill order. A pin inside it keeps its cell. Windows that do not fit stay put.</p><label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts(under?"app:"+under.app:"cat:code")}</select></label>`,"Add Zone");
+  const f=await ask(`New Zone: ${plural(cs,"Column")} × ${plural(rs,"Row")} on ${onMon(m)}`,`<p class="note">The zone fills with these windows in fill order. A pin inside it keeps its cell. Windows that do not fit stay put.</p><label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts(under?"app:"+under.app:"cat:code")}</select></label>`,"Add Zone");
   if(!f)return;addZone(m,g,c0,r0,c1,r1,zoneFill(f.zf.value))}
 function setGrid(k,d){const m=curMon;
   if(!LIVE){const g=gridOf(m);g[k]=clamp(g[k]+d,1,k==="c"?8:4);m.el.dataset.g="";render();return}
   // A grid that would cut off a locked tile's cells does not change: a locked tile never moves.
-  const cur=scene().grids[m.role],nxt={...cur,[k]:clamp(cur[k]+d,1,k==="c"?8:4)};
-  if(scene().pins.some(p=>p.lock&&p.mon===m.role&&p.slots.some(v=>v<cur.c*cur.r&&(v%cur.c>=nxt.c||Math.floor(v/cur.c)>=nxt.r)))){status("A locked tile is in the way. Nothing changed.");render();return}
-  edit(s=>{const g=s.grids[m.role],o={...g};g[k]=clamp(g[k]+d,1,k==="c"?8:4);
+  const cur=scene().grids[mk(m)],nxt={...cur,[k]:clamp(cur[k]+d,1,k==="c"?8:4)};
+  if(scene().pins.some(p=>p.lock&&p.mon===mk(m)&&p.slots.some(v=>v<cur.c*cur.r&&(v%cur.c>=nxt.c||Math.floor(v/cur.c)>=nxt.r)))){status("A locked tile is in the way. Nothing changed.");render();return}
+  edit(s=>{const g=s.grids[mk(m)],o={...g};g[k]=clamp(g[k]+d,1,k==="c"?8:4);
     // Keep each pin on the same column and row; drop cells past the new edge.
-    for(const p of s.pins)if(p.mon===m.role)p.slots=p.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+    for(const p of s.pins)if(p.mon===mk(m))p.slots=p.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
     s.pins=s.pins.filter(p=>p.slots.length);
-    if(s.fill&&s.fill.held){for(const h of s.fill.held)if(h.mon===m.role)h.slots=h.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+    if(s.fill&&s.fill.held){for(const h of s.fill.held)if(h.mon===mk(m))h.slots=h.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
       s.fill.held=s.fill.held.filter(h=>h.slots.length);if(!s.fill.held.length)delete s.fill.held}
-    for(const z of s.zones||[])if(z.mon===m.role)z.slots=z.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
-    if(s.zones){s.zones=s.zones.filter(z=>z.slots.length);selZone=null}},`${monName(m)} grid: ${scene().grids[m.role].c+(k==="c"?d:0)}×${scene().grids[m.role].r+(k==="r"?d:0)}.`)}
+    for(const z of s.zones||[])if(z.mon===mk(m))z.slots=z.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+    if(s.zones){s.zones=s.zones.filter(z=>z.slots.length);selZone=null}},`${monName(m)} grid: ${scene().grids[mk(m)].c+(k==="c"?d:0)}×${scene().grids[mk(m)].r+(k==="r"?d:0)}.`)}
 function pinOf(id){const P=prev(),p=P&&P.placed.find(q=>q.id===id);return p&&p.pin>=0&&!p.behind?{p,pin:scene().pins[p.pin]}:null}
 
 /* ---------- Drag: pointer capture, transform while moving, one rAF per frame ---------- */
@@ -1417,7 +1582,7 @@ function frame(){raf=0;
       if(gh.style.display==="block"){const sr=stage.getBoundingClientRect();gh.style.left=Math.max(0,sr.left+parseFloat(pr.left))+"px";gh.style.top=Math.max(0,sr.top+parseFloat(pr.top)-gh.offsetHeight-4)+"px"}
       if(zone==="swap"){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=big?`${o} moves here`:o}}}
     else{Object.assign(dropEl.style,px(t.r));dropEl.className="";dropEl.style.display="block";
-      const nar=parseFloat(px(t.r).width)<110,blocked=(d.cs>1||d.rs>1)&&lockedHit(scene(),t.m.role,cellsOf(t.slot%t.g.c,Math.floor(t.slot/t.g.c),t.cs,t.rs,t.g),pinNow(scene(),d.id));
+      const nar=parseFloat(px(t.r).width)<110,blocked=(d.cs>1||d.rs>1)&&lockedHit(scene(),mk(t.m),cellsOf(t.slot%t.g.c,Math.floor(t.slot/t.g.c),t.cs,t.rs,t.g),pinNow(scene(),d.id));
       dropEl.innerHTML=`<span>${blocked?"Locked tile in the way":nar?"Here":"Place here"}</span>`}}
   else dropEl.style.display="none"}
 // The front tile's button under a press on its strip. The Put Behind flash lifts the strip over the tile's top edge, lock included.
@@ -1493,9 +1658,9 @@ function endDrag(ev){
   // Onto a cell another window fills: inside the circle swaps, the rest of the block puts behind. A locked tile is first asked about.
   const occ=occupant(d,t);if(occ){const z=dropZone(d,occ,t);if(d.locked)askMove(d,{kind:z,occ,t});else if(z==="behind")putBehind(d.id,occ.id);else swapInto(d.id,occ.id,t.m,t.slot,d.fromBay);return}
   // Keep a pinned window's size when it moves within its monitor; a new monitor starts at one cell.
-  const keep=!LIVE||d.pmon===t.m.role;
+  const keep=!LIVE||d.pmon===mk(t.m);
   if(d.locked){const pp=pinOf(d.id),b=pp&&bbox(pp.pin.slots,scene().grids[pp.pin.mon]);
-    if(b&&pp.pin.mon===t.m.role&&t.slot===b.r*t.g.c+b.c&&t.cs===b.cs&&t.rs===b.rs){render();return}
+    if(b&&pp.pin.mon===mk(t.m)&&t.slot===b.r*t.g.c+b.c&&t.cs===b.cs&&t.rs===b.rs){render();return}
     askMove(d,{kind:"pin",t,keep});return}
   curMon=t.m;pinWin(d.id,t.m,t.slot,keep?t.cs:1,keep?t.rs:1);
 }
@@ -1516,7 +1681,7 @@ stage.addEventListener("keydown",ev=>{
   if(pz){resizeStep(pz,k[0],k[1],ev.ctrlKey,ev.ctrlKey);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
   const d=drawn[id];if(!d)return;
   const pp=LIVE&&pinOf(id);let m,g,b;
-  if(pp){m=snap.monitors.find(q=>q.role===pp.pin.mon);g=gridOf(m);b=bbox(pp.pin.slots,g)}
+  if(pp){m=snap.monitors.find(q=>mk(q)===pp.pin.mon);g=gridOf(m);b=bbox(pp.pin.slots,g)}
   else{m=monAt(d.x+d.w/2,d.y+d.h/2);g=m&&gridOf(m);if(!g)return;const cw=m.w/g.c,ch=m.h/g.r;
     b={c:clamp(Math.floor((d.x+d.w/2-m.x)/cw),0,g.c-1),r:clamp(Math.floor((d.y+d.h/2-m.y)/ch),0,g.r-1),cs:1,rs:1};
     if(!LIVE){const[cs,rs]=spanOf(id,d);b.cs=cs;b.rs=rs;b.c=clamp(Math.round((d.x-m.x)/cw),0,g.c-cs);b.r=clamp(Math.round((d.y-m.y)/ch),0,g.r-rs)}}
@@ -1524,7 +1689,7 @@ stage.addEventListener("keydown",ev=>{
   if(ev.shiftKey){cs=clamp(cs+k[0],1,g.c-c);rs=clamp(rs+k[1],1,g.r-r)}else{c=clamp(c+k[0],0,g.c-cs);r=clamp(r+k[1],0,g.r-rs)}
   // A move into cells a pinned window holds is a swap with it, so its pin and its stack stay. A locked one blocks the move.
   const P=LIVE&&!ev.shiftKey&&prev(),pa=P&&P.placed.find(q=>q.id===id&&!q.behind);
-  if(pa){const blk=cellsOf(c,r,cs,rs,g),hit=P.placed.filter(q=>q.pin>=0&&!q.behind&&q.id!==id&&q.mon===m.role&&pbox(q,g).cells.some(v=>blk.includes(v)));
+  if(pa){const blk=cellsOf(c,r,cs,rs,g),hit=P.placed.filter(q=>q.pin>=0&&!q.behind&&q.id!==id&&q.mon===mk(m)&&pbox(q,g).cells.some(v=>blk.includes(v)));
     if(pp&&pp.pin.lock&&!ev.shiftKey){
       if(c===b.c&&r===b.r){render();requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
       if(hit.some(lockOfPlaced)||hit.length>1){status(hit.some(lockOfPlaced)?"A locked tile is in the way. Nothing changed.":"More than one pinned window is in the way. Nothing changed.");render();requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
@@ -1548,7 +1713,7 @@ function askMove(d,m){const w=winById(d.id),A=appName(w.app),sr=stage.getBoundin
   if(m.kind==="list"){msg="Move it to Windows That Stay Put? Its lock goes.";go=()=>unplace(d.id,true);at={left:d.px-sr.left+"px",top:stage.offsetHeight+"px",width:"0px",height:"0px"}}
   else if(m.kind==="behind"){const B=pn[1];to=at=blk(m.occ,m.t);msg=`Put it behind ${B}? A window behind another has no lock, so its lock goes.`;go=()=>putBehind(d.id,m.occ.id)}
   else if(m.kind==="swap"){const B=pn[1],A=pn[0];to=at=blk(m.occ,m.t);msg=`Swap it with ${B}? ${B} moves to ${A}'s cell, and ${A} stays locked.`;go=()=>swapInto(d.id,m.occ.id,m.t.m,m.t.slot,false)}
-  else{to=at=px(m.t.r);msg=`Move it to ${m.t.m.role?"the ":""}${monName(m.t.m)}? It stays locked there.`;
+  else{to=at=px(m.t.r);msg=`Move it to ${mk(m.t.m)&&!idm()?"the ":""}${monName(m.t.m)}? It stays locked there.`;
     go=()=>{curMon=m.t.m;pinWin(d.id,m.t.m,m.t.slot,m.keep?m.t.cs:1,m.keep?m.t.rs:1,true)}}
   closeAsk(false);removeNote();
   const el=document.createElement("div");el.className="lconf";el.setAttribute("role","alertdialog");el.setAttribute("aria-labelledby","lch");el.setAttribute("aria-describedby","lcp");
@@ -1572,7 +1737,7 @@ document.addEventListener("pointerdown",ev=>{if(lockAsk&&!lockAsk.el.contains(ev
 // picks: {role, order}, the picked cells of one monitor's grid in the order they were picked. A tile picks its whole block.
 const blockAt=(P,role,g,slot)=>{const p=P&&P.placed.find(q=>!q.behind&&q.mon===role&&q.slots.includes(slot+1));return{p:p||null,cells:p?pbox(p,g).cells:[slot]}};
 function ctrlPick(ev){const P=prev();ev.preventDefault();
-  const c=cellAt(ev.clientX,ev.clientY);if(!c||!c.m.role)return;const role=c.m.role,g=c.g;
+  const c=cellAt(ev.clientX,ev.clientY);if(!c||!mk(c.m))return;const role=mk(c.m),g=c.g;
   if(!picks||picks.role!==role){const other=!!picks;picks={role,order:[]};
     // A selected tile on this monitor counts as the first pick.
     const sp=selWin&&P.placed.find(q=>q.id===selWin&&!q.behind&&q.mon===role);if(sp)picks.order.push(...pbox(sp,g).cells);
@@ -1589,7 +1754,7 @@ function pickInfo(){const k=picks,P=prev(),s=LIVE&&scene();if(!k||!P||!s)return 
   // A locked pin on any picked cell stops a Merge, a closed window's pin too (a resize stops at it the same way).
   const keeper=wins[0]||null,self=keeper&&pinNow(s,keeper.id),
     lockedPin=s.pins.find(q=>{if(!q.lock||q===self||q.mon!==k.role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>set.has(c))})||null;
-  return{k,g,b,set,wins,missing,rect:!missing.length,lockedW:wins.find(lockOfPlaced),lockedPin,keeper,m:snap.monitors.find(q=>q.role===k.role),
+  return{k,g,b,set,wins,missing,rect:!missing.length,lockedW:wins.find(lockOfPlaced),lockedPin,keeper,m:monOfKey(k.role),
     one:wins.length===1&&pbox(wins[0],g).cells.length===set.size}}
 // The bar's words and whether Merge and Fill to Rectangle are on. The reason for a disabled Merge is text in the bar (aria-describedby on the button).
 function mergeWords(i){const P=prev();
@@ -1649,7 +1814,7 @@ async function applyScene(){
     hist.push({k:"apply",back:moved.filter(p=>p.from.x>-20000).map(p=>({id:p.id,app:p.app,title:p.title,...p.from}))});
     toast(sum+(dry?" Nothing moved.":""),bad?"warn":"",{undo:!dry&&moved.length>0,more:true});
     if(!dry){st.active=selId;try{const t=await fetch("state",{cache:"no-store"});if(t.ok)st=await t.json()}catch(_){}
-      const sn=await fetch("snapshot",{cache:"no-store"});if(sn.ok){setSnap(await sn.json());prevs={};await previewAll()}}
+      const sn=await fetch("snapshot",{cache:"no-store"});if(sn.ok){await resnap(await sn.json());prevs={};await previewAll()}}
   }catch(e){showResults("Apply failed: "+e.message,[]);toast("Apply failed: "+e.message,"bad",{sticky:true,more:true})}
   finally{busy(false)}
 }
@@ -1658,7 +1823,7 @@ async function placeBack(back){
   try{const r=await post("apply",back);if(!r.ok)throw new Error(await r.text());const res=[].concat(await r.json());
     const dry=res.some(x=>/^dry run/.test(x.note)),sum=`${dry?"Preview: would put back":"Put back"} ${res.filter(x=>x.ok).length} of ${plural(res.length,"window")}.`;
     showResults(sum,res.map(x=>[x.ok&&!/^off size/.test(x.note)?"ok":"bad",`${appName(x.app)}: ${x.title} — ${x.note}`]));toast(sum,"",{more:true});
-    if(!dry){const sn=await fetch("snapshot",{cache:"no-store"});if(sn.ok){setSnap(await sn.json());prevs={};await previewAll()}}}
+    if(!dry){const sn=await fetch("snapshot",{cache:"no-store"});if(sn.ok){await resnap(await sn.json());prevs={};await previewAll()}}}
   catch(e){showResults("Undo failed: "+e.message,[]);toast("Undo failed: "+e.message,"bad",{sticky:true})}
   finally{busy(false)}}
 $("apply").onclick=async()=>{
@@ -1672,7 +1837,7 @@ $("apply").onclick=async()=>{
 };
 $("undo").onclick=async()=>{if(isBusy)return;const e=hist.pop();if(!e)return;removeNote();
   if(e.k==="rects"){offRects=e.r;render();toast("Undid the last move.");return}
-  if(e.k==="edit"){selId=e.id;work[e.id]=e.s;optim=null;render();preview(selId);toast("Undid the last change.");return}
+  if(e.k==="edit"){selId=e.id;work[e.id]=e.s;optim=null;layoutEdited(e.id,true);render();preview(selId);toast("Undid the last change.");return}
   if(e.k==="apply"){if(e.back.length)await placeBack(e.back);else toast("That Apply moved nothing.")}};
 $("refresh").onclick=()=>refresh();
 $("closeres").onclick=()=>{$("results").hidden=true};
@@ -1685,21 +1850,35 @@ $("copy").onclick=async()=>{try{await navigator.clipboard.writeText($("cmd").tex
   catch(e){const r=document.createRange();r.selectNodeContents($("cmd"));const s=getSelection();s.removeAllRanges();s.addRange(r);$("cmsg").textContent="Press Ctrl+C to copy."}};
 
 /* ---------- Saving scenes ---------- */
+// A layout never goes in this body: only POST /layout writes one, so the wire copy drops them (the page keeps its own in cfg).
 async function saveConfig(next,msg){
-  const r=await post("config",next);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
+  const wire=clone(next);for(const x of wire.scenes)delete x.layouts;
+  const r=await post("config",wire);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
   cfg=next;status(msg);sceneMsg=msg;render();return true}
-// A saved scene keeps only list entries that match an open window, by app and exact title: a window
-// handle means nothing in the next session.
-function forSave(s){s=clone(s);if(s.bay){s.bay=s.bay.filter(b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title))).map(b=>({app:b.app,title:(winById(b.id)||b).title,...(b.why?{why:b.why}:{})}));if(!s.bay.length)delete s.bay}
-  if(s.fill&&s.fill.held){const L=s.fill.held;s.fill.held=L.map(h=>({h,w:heldWin(h,L)})).filter(e=>e.w).map(({h,w})=>({app:h.app,title:w.title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
+// An explicit Save keeps only list entries that match an open window, by app and exact title: a window handle means nothing in the next session.
+// all: an autosave (a layout as the board holds it) keeps every entry, the closed windows' too, and only drops the handles; a layout with an empty list is left as it is.
+// Only a Save the owner presses forgets an entry (main's rule); an edit made for some other window must not cost the layout its Windows That Stay Put or held entries.
+function stripIds(s,all){const open=b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title));
+  if(Array.isArray(s.bay)&&!(all&&!s.bay.length)){s.bay=s.bay.filter(b=>all||open(b)).map(b=>({app:b.app,title:(winById(b.id)||b).title,...(b.why?{why:b.why}:{})}));if(!s.bay.length)delete s.bay}
+  if(s.fill&&Array.isArray(s.fill.held)&&!(all&&!s.fill.held.length)){const L=s.fill.held;s.fill.held=L.map(h=>({h,w:heldWin(h,L)})).filter(e=>all||e.w).map(({h,w})=>({app:h.app,title:w?w.title:h.title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
   return s}
-async function saveScene(){const s=scene();if(s.builtIn&&!autoOnly(s,saved(selId)))return;const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId);
-  if(i>=0)next.scenes[i]=forSave(s);else next.scenes.push(forSave(s));await saveConfig(next,`Saved ${s.name}.`)}
-async function saveAsNew(name){const s=forSave(scene()),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
+const forSave=s=>stripIds(clone(s));
+const forSaveLayout=L=>stripIds(clone(L),true);
+// The scene as POST /config takes it. In id mode that is the saved copy (its role template and its layouts) with this scene's name, triggers and extras: the board's layout saves apart, by POST /layout.
+function configScene(id){
+  if(!idm())return forSave(work[id]);
+  const base=clone(saved(id)||work[id]);Object.assign(base,metaOf(work[id]));return base}
+async function saveScene(){const s=scene(),sv=saved(selId);
+  if(s.builtIn&&!(idm()?autoOnly(metaOf(s),sv&&metaOf(sv)):autoOnly(s,sv)))return;
+  const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId),out=configScene(selId);
+  if(i>=0)next.scenes[i]=out;else next.scenes.push(out);await saveConfig(next,`Saved ${s.name}.`)}
+async function saveAsNew(name){const cur=scene(),s=idm()?Object.assign(clone(saved(selId)||cur),metaOf(cur),{layouts:{}}):forSave(cur),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
   Object.assign(s,{id,name:base.slice(0,40),builtIn:false});delete s.blurb;
   const next=clone(cfg);next.scenes.push(s);
-  if(saved(selId))work[selId]=clone(saved(selId));work[id]=clone(s);
-  if(await saveConfig(next,`Saved as ${s.name}.`)){selId=id;render();await preview(id)}}
+  // Id mode: the copy takes the layout on the board, and the scene it came from keeps the layout it has (a board change was saved to it already).
+  const mine=idm()?Object.assign(metaOf(s),layoutOf(clone(cur))):null;
+  if(saved(selId))work[selId]=idm()?Object.assign(metaOf(saved(selId)),layoutOf(work[selId])):clone(saved(selId));work[id]=idm()?mine:clone(s);
+  if(await saveConfig(next,`Saved as ${s.name}.`)){selId=id;if(idm()){unsaved[id]=1;lq[id]=JSON.stringify(layoutOf(work[id]));await saveLayout(id)}render();await preview(id)}}
 // A dialog. A destructive one starts on Cancel.
 function ask(title,body,ok,danger){return new Promise(res=>{const d=$("dlg"),f=$("dlgform");
   f.innerHTML=`<h2>${esc(title)}</h2>${body}<div class="row" style="justify-content:flex-end"><button class="btn" value="" id="dlgCancel">Cancel</button><button class="btn ${danger?"danger solid":"pri"}" value="ok">${esc(ok)}</button></div>`;
@@ -1725,6 +1904,9 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="tobay")unplace(selWin);
   else if(t.id==="zadd")drawZoneDialog();
   else if(t.id==="clearbd")clearBoard();
+  else if(t.id==="retry")retrySave();
+  else if(t.id==="srefresh")refresh();
+  else if(t.id==="addgrid"){const m=curMon;edit(x=>{(x.grids||(x.grids={}))[mk(m)]={c:1,r:1}},`${monName(m)} has a 1×1 grid. Drag windows onto it.`)}
   else if(t.dataset.pick){selId=t.dataset.pick;optim=null;selZone=null;zanchor=null;picks=null;closeAsk(false);render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}
   else if(t.dataset.apply){selId=t.dataset.apply;render();if(!prevs[selId])await preview(selId);applyScene()}
   else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
@@ -1737,7 +1919,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="revert"){edit(s=>{Object.keys(s).forEach(k=>delete s[k]);Object.assign(s,clone(saved(selId)))},"Reverted to the saved scene.");sceneMsg="Reverted to the saved scene.";render()}
   else if(t.id==="del"){const s=scene();if(s.builtIn)return;const f=await ask(`Delete ${s.name}?`,`<p class="note">The scene and its trigger go away. Your windows do not move.</p>`,"Delete",true);if(!f)return;
     const next=clone(cfg);next.scenes=next.scenes.filter(x=>x.id!==selId);
-    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){delete work[selId];delete prevs[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
+    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){clearTimeout(svT[selId]);delete svT[selId];delete svAgain[selId];delete work[selId];delete prevs[selId];delete unsaved[selId];delete failed[selId];delete stale[selId];delete lq[selId];delete lsaved[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
   else if(t.id==="editcats")editCats();
   else if(t.id==="quit"){if(!await ask("Stop the Tile Windows server?",`<p class="note">This page stops working until you open Tile Windows again. Your scenes are saved. Your windows do not move.</p>`,"Stop Server",true))return;try{await post("quit","quit")}catch(_){}document.body.innerHTML='<p style="padding:24px;font:15px system-ui">Server stopped. You can close this tab.</p>'}
 });
@@ -1785,7 +1967,7 @@ addEventListener("keydown",ev=>{if(ev.key==="Escape"&&picks&&!rz&&!zdraw&&!drag)
   if(ev.key==="Escape"&&(zdraw||zanchor)){zanchor=null;const z=zdraw;if(z){endZone({type:"cancel"});try{stage.releasePointerCapture(z.pid)}catch(_){}}status("Zone drawing canceled. Nothing changed.");return}if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
 // The board's size depends on the text and list below it, so lay out again when they change height.
 let rlay=0;const relay=()=>{if(snap&&!rlay)rlay=requestAnimationFrame(()=>{rlay=0;layout();render()})};addEventListener("resize",relay);
-{const ro=new ResizeObserver(relay);for(const id of ["bbar","over","bay"])ro.observe($(id))}
+{const ro=new ResizeObserver(relay);for(const id of ["setbar","bbar","over","bay"])ro.observe($(id))}
 
 /* ---------- Offline ---------- */
 function parse(t){const a=t.indexOf("{");if(a<0)throw new Error("no JSON object found");return JSON.parse(t.slice(a,t.lastIndexOf("}")+1))}

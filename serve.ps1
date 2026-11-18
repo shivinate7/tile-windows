@@ -5,7 +5,8 @@
 #                           setup's name while this one has no layout of its own, else ''. A snapshot whose monitors carry no ids has key ''.
 #   GET  /<token>/config    config.json (scenes and settings); created from scenes.json on first run
 #   POST /<token>/config    body = whole config; validated, then written. It always keeps the server's monitors, setups and each scene's layouts.
-#   GET  /<token>/layouts   {scene id: the layout Resolve-TileLayout gives that scene for the plugged-in setup}
+#   GET  /<token>/layouts   {scene id: {layout, follows}}. layout is what Resolve-TileLayout gives that scene for the plugged-in setup; follows is the
+#                           name of the setup it follows there (Get-TileFollows), '' when it has its own layout or none to follow.
 #   POST /<token>/layout    body = {scene, key, layout}; saves that scene's layout for key. 409 and no change when key is not the plugged-in setup.
 #   GET  /<token>/state     state.json (scene last applied, recent log)
 #   GET  /<token>/appnames  the display name of each app (appNames in scenes.json)
@@ -58,19 +59,14 @@ function Get-Plugged {
 }
 # Writes the config as the product's own text, nested deeper than ConvertTo-Json's default depth.
 function Save-TileConfigObject($cfg) { Save-TileConfigText (ConvertTo-Json -Depth 20 -Compress -InputObject $cfg) }
-# The name of the closest known setup other than $key, while $key has no layout of its own in any scene (Resolve-TileLayout's closest pick:
-# the most shared monitors that holds a layout, a tie to the one used last); '' when it has its own layout or none shares a monitor.
+# The name of the closest known setup other than $key, while $key has no layout of its own in any scene (Get-TileClosestSetup's pick, the one
+# Resolve-TileLayout makes, over the keys any scene holds a layout for); '' when it has its own layout or none shares a monitor.
 function Get-SetupFollows($cfg, [string]$key) {
   $held = @($cfg.scenes | ? { $_.layouts } | % { $_.layouts.PSObject.Properties.Name })
   if ($held -ccontains $key) { return '' }
   $mine = $cfg.setups.PSObject.Properties[$key]; if (-not $mine) { return '' }
-  $best = $null; $bestN = 0; $bestUsed = ''
-  foreach ($p in @($cfg.setups.PSObject.Properties | ? { $_.Name -cne $key -and $held -ccontains $_.Name })) {
-    $n = @($p.Value.ids | ? { @($mine.Value.ids) -ccontains $_ }).Count
-    $u = $p.Value.lastUsed; $used = if ($u -is [datetime]) { $u.ToString('s') } else { [string]$u }
-    if ($n -gt $bestN -or ($n -eq $bestN -and $n -and $used -gt $bestUsed)) { $best = $p.Value.name; $bestN = $n; $bestUsed = $used }
-  }
-  [string]$best
+  $pick = Get-TileClosestSetup $cfg @($mine.Value.ids) $held $key
+  if ($pick) { [string]$pick.Value.name } else { '' }
 }
 # $text (the snapshot) with setup {key, name, follows} added. The setup is registered in config under the lock. A snapshot with no
 # monitor ids (an older file) has no setup to register: key ''.
@@ -152,7 +148,7 @@ try {
         'GET layouts' {
           $key = Get-TileKnownSetupKey (Get-Plugged)
           $cfg = ConvertFrom-Json (Get-TileConfigText); $out = [ordered]@{}
-          if ($key) { foreach ($sc in @($cfg.scenes)) { $out[[string]$sc.id] = Resolve-TileLayout $cfg $sc $key } }
+          if ($key) { foreach ($sc in @($cfg.scenes)) { $out[[string]$sc.id] = [ordered]@{ layout = Resolve-TileLayout $cfg $sc $key; follows = Get-TileFollows $cfg $sc $key } } }
           Send $ctx 200 'application/json' (ConvertTo-Json -Depth 20 -Compress -InputObject $out)
         }
         'GET config' { Send $ctx 200 'application/json' (Get-TileConfigText) }
