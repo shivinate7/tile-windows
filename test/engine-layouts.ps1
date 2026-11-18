@@ -19,6 +19,8 @@
 #
 # Finer grid (L1, plan layout-free-build, items 2 to 5): the cases after the solo cases. One lone monitor, a 5x2 base, mult [2,1] or [1,2],
 # unit fill, zones and held windows on the doubled slots. Each runs tile.ps1 -Scene <json> -From <snapshot> -Json, a dry run.
+# Free Layout areas (L3, plan layout-free-build, items 24 to 26, and item G): the cases at the end. Areas sit in grids.wide.free.areas of a
+# role-keyed scene. Item G's Get-CollapsedAreas is read through tile.ps1 -Lib in a child powershell; its contract is in that section.
 # Red on 31ea7c1: the id cases (desk, rearranged, item 9, seam, setup B, full size) fail by an assert. The controls (empty layout,
 # -Monitor wide, role-keyed scene, a layout for another setup) pass there and must stay green.
 $ErrorActionPreference = 'Stop'
@@ -539,6 +541,284 @@ try {
     Check 'L1 stacked held: Held B takes slot 6' ([bool]($p -and (SlotKey $p) -ceq '6')) (Desc $r 5901)
     Check "L1 stacked held: Held B is the bottom half of the old cell (y above 0, ends at y $ch, x 0, w $cw)" ([bool]($p -and [int]$p.y -gt 0 -and [int]$p.y + [int]$p.h -eq $ch -and [int]$p.x -eq 0 -and [int]$p.w -eq $cw)) (Desc $r 5901)
   }
+  # ---- Free Layout areas (L3, plan layout-free-build, items 24 to 26). grids.wide = {c, r, free: {areas}}. An area is a rect of fractions of the
+  # work area (x, y, w, h) and holds a pin (an index into pins), an app and title, or nothing. A pinned or named area takes its window at the
+  # area's rect. The fill takes the first empty area in reading order. Zones pause while areas are on. Each line is rounded once, so neighbours
+  # share its pixel. Each run is a dry run (-From). Fractions are written so each line's pixel is known or sits within a pixel of a stated point.
+  function FreeArea($rect, $pin = $null, $app = $null, $title = $null) {
+    $a = [pscustomobject]@{ rect = @([double[]]$rect) }
+    if ($null -ne $pin) { $a | Add-Member -NotePropertyName pin -NotePropertyValue $pin }
+    if ($app) { $a | Add-Member -NotePropertyName app -NotePropertyValue $app; $a | Add-Member -NotePropertyName title -NotePropertyValue $title }
+    $a
+  }
+  function FreeGrid([int]$c, [int]$r, $areas) { [pscustomobject]@{ c = $c; r = $r; free = [pscustomobject]@{ areas = @($areas) } } }
+  $l3Sizes = @(@(1365, 1001), @(3440, 1392), @(1080, 1872), @(4096, 1680))
+
+  Case 'L3 pins: each area takes the window its pin names, at the area''s own rect, on each of the four work areas' {
+    foreach ($dim in $l3Sizes) {
+      $w = [int]$dim[0]; $h = [int]$dim[1]; $tag = "${w}x$h"; $m = FgMon $w $h
+      $px = [int][Math]::Floor($w * 0.4); $f = $px / $w
+      $areas = @((FreeArea @(0, 0, $f, 1) 0), (FreeArea @($f, 0, (1 - $f), 1) 1))
+      $sc = FgScene "L3-pins-$tag-scene.json" (FreeGrid 2 1 $areas) @((FgPin 'chrome' 'Left' @(0)), (FgPin 'claude' 'Right' @(1)))
+      $snap = Write-Snap "L3-pins-$tag.json" @($m) @((FgWin 6001 'chrome' 'Left side' 0), (FgWin 6002 'claude' 'Right side' 500))
+      $r = Invoke-SceneFrom $sc $snap
+      Check "L3 pins ${tag}: scope, no pin is missing" (@($r.missing).Count -eq 0) "missing: $(@($r.missing | % { $_.app }) -join ',')"
+      Check "L3 pins ${tag}: Left side takes the left area, 0,0 ${px}x$h" ((RectOf (PlacedOf $r 6001)) -ceq "0,0,$px,$h") (Desc $r 6001)
+      Check "L3 pins ${tag}: Right side takes the right area, $px,0 $($w - $px)x$h" ((RectOf (PlacedOf $r 6002)) -ceq "$px,0,$($w - $px),$h") (Desc $r 6002)
+    }
+  }
+  Case 'L3 areas: an area named by app and title takes that window, and an empty area takes nothing (four work areas)' {
+    foreach ($dim in $l3Sizes) {
+      $w = [int]$dim[0]; $h = [int]$dim[1]; $tag = "${w}x$h"; $m = FgMon $w $h
+      $px = [int][Math]::Floor($w * 0.4); $py = [int][Math]::Floor($h * 0.3); $fx = $px / $w; $fy = $py / $h
+      $areas = @((FreeArea @(0, 0, $fx, $fy) 0), (FreeArea @($fx, 0, (1 - $fx), $fy) $null 'claude' 'Notes'), (FreeArea @(0, $fy, $fx, (1 - $fy))), (FreeArea @($fx, $fy, (1 - $fx), (1 - $fy))))
+      $sc = FgScene "L3-named-$tag-scene.json" (FreeGrid 2 2 $areas) @((FgPin 'chrome' 'Top left' @(0)))
+      $snap = Write-Snap "L3-named-$tag.json" @($m) @((FgWin 6101 'chrome' 'Top left' 0), (FgWin 6102 'claude' 'Notes' 500), (FgWin 6103 'outlook' 'Spare' 1000))
+      $r = Invoke-SceneFrom $sc $snap
+      Check "L3 named ${tag}: scope, the pin is not missing" (@($r.missing).Count -eq 0) "missing: $(@($r.missing | % { $_.app }) -join ',')"
+      Check "L3 named ${tag}: the pinned window takes the top-left area, 0,0 ${px}x$py" ((RectOf (PlacedOf $r 6101)) -ceq "0,0,$px,$py") (Desc $r 6101)
+      Check "L3 named ${tag}: the window named by app and title takes the top-right area, $px,0 $($w - $px)x$py" ((RectOf (PlacedOf $r 6102)) -ceq "$px,0,$($w - $px),$py") (Desc $r 6102)
+      Check "L3 named ${tag}: a window no area names is not placed" (-not (PlacedOf $r 6103)) (Desc $r 6103)
+    }
+  }
+  Case 'L3 control: a free layout with no open window places nothing and lists nothing left or missing' {
+    $m = FgMon 1365 1001
+    $areas = @((FreeArea @(0, 0, 0.4, 0.3) $null 'claude' 'Notes'), (FreeArea @(0.4, 0, 0.6, 0.3) $null 'outlook' 'Inbox'), (FreeArea @(0, 0.3, 1, 0.7)))
+    $sc = FgScene 'L3-empty-scene.json' (FreeGrid 2 2 $areas)
+    $r = Invoke-SceneFrom $sc (Write-Snap 'L3-empty.json' @($m) @())
+    Check 'L3 control: nothing is placed' (@($r.placed).Count -eq 0) "placed: $(@($r.placed).Count)"
+    Check 'L3 control: nothing is left or missing' (@($r.left).Count -eq 0 -and @($r.missing).Count -eq 0) "left: $(@($r.left).Count) missing: $(@($r.missing).Count)"
+  }
+  Case 'L3 full size: ten areas, each named by one window, take the ten windows at their cell rects (1365x1001)' {
+    $m = FgMon 1365 1001; $cw = [int]($m.w / 5); $ch = [int]($m.h / 2)
+    $areas = @(0..9 | % { FreeArea @((($_ % 5) * $cw / $m.w), ([Math]::Floor($_ / 5) * $ch / $m.h), ($cw / $m.w), ($ch / $m.h)) $null 'claude' "Cell $($_ + 1)" })
+    $sc = FgScene 'L3-full-scene.json' (FreeGrid 5 2 $areas)
+    $wins = @(0..9 | % { FgWin (6201 + $_) 'claude' "Cell $($_ + 1)" (100 * $_) })
+    $r = Invoke-SceneFrom $sc (Write-Snap 'L3-full.json' @($m) $wins)
+    Check 'L3 full size: all ten windows are placed' (@($r.placed).Count -eq 10) "placed $(@($r.placed).Count), left $(@($r.left).Count), missing $(@($r.missing).Count)"
+    $bad = @(0..9 | ? { -not ((RectOf (PlacedOf $r (6201 + $_))) -ceq (CellRect $m 5 2 $_)) } | % { "Cell $($_ + 1): $(Desc $r (6201 + $_))" })
+    Check 'L3 full size: each window sits at its cell rect' ($bad.Count -eq 0) ($bad -join ' | ')
+  }
+  Case 'L3 odd width: neighbours share the pixel of their line, and the far edge lands on the right edge (1365 wide)' {
+    $m = FgMon 1365 1001
+    $areas = @((FreeArea @(0, 0, 0.3125, 1) 0), (FreeArea @(0.3125, 0, 0.1875, 1) 1), (FreeArea @(0.5, 0, 0.5, 1) 2))
+    $sc = FgScene 'L3-odd-scene.json' (FreeGrid 3 1 $areas) @((FgPin 'chrome' 'Col A' @(0)), (FgPin 'claude' 'Col B' @(1)), (FgPin 'ms-teams' 'Col C' @(2)))
+    $r = Invoke-SceneFrom $sc (Write-Snap 'L3-odd.json' @($m) @((FgWin 6301 'chrome' 'Col A' 0), (FgWin 6302 'claude' 'Col B' 500), (FgWin 6303 'ms-teams' 'Col C' 1000)))
+    $a = PlacedOf $r 6301; $b = PlacedOf $r 6302; $c3 = PlacedOf $r 6303
+    Check 'L3 odd width: scope, all three windows are placed' ([bool]($a -and $b -and $c3)) "$(Desc $r 6301) | $(Desc $r 6302) | $(Desc $r 6303)"
+    if (-not ($a -and $b -and $c3)) { return }
+    Check 'L3 odd width: the first line sits within a pixel of 5/16 of the width (426.56)' ([Math]::Abs(([double]$a.x + $a.w) - 426.5625) -lt 1) (Desc $r 6301)
+    Check 'L3 odd width: the second line sits within a pixel of half the width (682.5)' ([Math]::Abs(([double]$b.x + $b.w) - 682.5) -lt 1) (Desc $r 6302)
+    Check 'L3 odd width: the first area ends where the second starts (no gap, no overlap)' (([int]$a.x + [int]$a.w) -eq [int]$b.x) "$(Desc $r 6301) | $(Desc $r 6302)"
+    Check 'L3 odd width: the second area ends where the third starts (no gap, no overlap)' (([int]$b.x + [int]$b.w) -eq [int]$c3.x) "$(Desc $r 6302) | $(Desc $r 6303)"
+    Check 'L3 odd width: the third area ends on the right edge (1365)' (([int]$c3.x + [int]$c3.w) -eq 1365) (Desc $r 6303)
+    Check 'L3 odd width: every area starts at the top and is 1001 high' ([bool]($a.y -eq 0 -and $b.y -eq 0 -and $c3.y -eq 0 -and $a.h -eq 1001 -and $b.h -eq 1001 -and $c3.h -eq 1001)) "$(Desc $r 6301) | $(Desc $r 6302) | $(Desc $r 6303)"
+  }
+  Case 'L3 odd height: stacked neighbours share the pixel of their line, and the bottom lands on the bottom edge (1001 high)' {
+    $m = FgMon 1365 1001
+    $areas = @((FreeArea @(0, 0, 1, 0.3125) 0), (FreeArea @(0, 0.3125, 1, 0.1875) 1), (FreeArea @(0, 0.5, 1, 0.5) 2))
+    $sc = FgScene 'L3-oddh-scene.json' (FreeGrid 1 3 $areas) @((FgPin 'chrome' 'Row A' @(0)), (FgPin 'claude' 'Row B' @(1)), (FgPin 'ms-teams' 'Row C' @(2)))
+    $r = Invoke-SceneFrom $sc (Write-Snap 'L3-oddh.json' @($m) @((FgWin 6311 'chrome' 'Row A' 0), (FgWin 6312 'claude' 'Row B' 500), (FgWin 6313 'ms-teams' 'Row C' 1000)))
+    $a = PlacedOf $r 6311; $b = PlacedOf $r 6312; $c3 = PlacedOf $r 6313
+    Check 'L3 odd height: scope, all three windows are placed' ([bool]($a -and $b -and $c3)) "$(Desc $r 6311) | $(Desc $r 6312) | $(Desc $r 6313)"
+    if (-not ($a -and $b -and $c3)) { return }
+    Check 'L3 odd height: the first line sits within a pixel of 0.3125 of the height (312.81)' ([Math]::Abs(([double]$a.y + $a.h) - 312.8125) -lt 1) (Desc $r 6311)
+    Check 'L3 odd height: the second line sits within a pixel of half the height (500.5)' ([Math]::Abs(([double]$b.y + $b.h) - 500.5) -lt 1) (Desc $r 6312)
+    Check 'L3 odd height: the first area ends where the second starts (no gap, no overlap)' (([int]$a.y + [int]$a.h) -eq [int]$b.y) "$(Desc $r 6311) | $(Desc $r 6312)"
+    Check 'L3 odd height: the second area ends where the third starts (no gap, no overlap)' (([int]$b.y + [int]$b.h) -eq [int]$c3.y) "$(Desc $r 6312) | $(Desc $r 6313)"
+    Check 'L3 odd height: the third area ends on the bottom edge (1001)' (([int]$c3.y + [int]$c3.h) -eq 1001) (Desc $r 6313)
+    Check 'L3 odd height: every area spans the full width (1365) from x 0' ([bool]($a.x -eq 0 -and $b.x -eq 0 -and $c3.x -eq 0 -and $a.w -eq 1365 -and $b.w -eq 1365 -and $c3.w -eq 1365)) "$(Desc $r 6311) | $(Desc $r 6312) | $(Desc $r 6313)"
+  }
+  Case 'L3 control: even width, two halves share their line and reach both edges (1080 wide, green on the old code)' {
+    $m = FgMon 1080 1872
+    $areas = @((FreeArea @(0, 0, 0.5, 1) 0), (FreeArea @(0.5, 0, 0.5, 1) 1))
+    $sc = FgScene 'L3-even-scene.json' (FreeGrid 2 1 $areas) @((FgPin 'chrome' 'Left' @(0)), (FgPin 'claude' 'Right' @(1)))
+    $r = Invoke-SceneFrom $sc (Write-Snap 'L3-even.json' @($m) @((FgWin 6321 'chrome' 'Left' 0), (FgWin 6322 'claude' 'Right' 500)))
+    $a = PlacedOf $r 6321; $b = PlacedOf $r 6322
+    Check 'L3 control: scope, both halves are placed' ([bool]($a -and $b)) "$(Desc $r 6321) | $(Desc $r 6322)"
+    Check 'L3 control: the halves share their line (540) and the right half ends at 1080' ([bool]($a -and $b -and ([int]$a.x + [int]$a.w) -eq [int]$b.x -and ([int]$b.x + [int]$b.w) -eq 1080 -and [int]$a.x -eq 0)) "$(Desc $r 6321) | $(Desc $r 6322)"
+  }
+  Case 'L3 fill: an empty area takes the next window in reading order, and a window past the last empty area is not placed' {
+    $m = FgMon 1365 1001; $t = 3 / 7; $b = 4 / 7
+    # Listed out of reading order: bottom-right, top-right, the pinned top-left, bottom-left.
+    $areas = @((FreeArea @(0.4, $t, 0.6, $b)), (FreeArea @(0.4, 0, 0.6, $t)), (FreeArea @(0, 0, 0.4, $t) 0), (FreeArea @(0, $t, 0.4, $b)))
+    $fill = [pscustomobject]@{ mon = 'wide'; apps = @('claude'); skip = @(); sort = 'app' }
+    $sc = FgScene 'L3-fill-scene.json' (FreeGrid 2 2 $areas) @((FgPin 'chrome' 'Pinned' @(0))) $fill
+    $snap = Write-Snap 'L3-fill.json' @($m) @((FgWin 6401 'chrome' 'Pinned' 0), (FgWin 6402 'claude' 'Fill 1' 100), (FgWin 6403 'claude' 'Fill 2' 300), (FgWin 6404 'claude' 'Fill 3' 500), (FgWin 6405 'claude' 'Fill 4' 700))
+    $r = Invoke-SceneFrom $sc $snap
+    Check 'L3 fill: the pinned window takes the top-left area' ((RectOf (PlacedOf $r 6401)) -ceq '0,0,546,429') (Desc $r 6401)
+    Check 'L3 fill: Fill 1 takes the top-right area, the first empty one in reading order' ((RectOf (PlacedOf $r 6402)) -ceq '546,0,819,429') (Desc $r 6402)
+    Check 'L3 fill: Fill 2 takes the bottom-left area, the second in reading order' ((RectOf (PlacedOf $r 6403)) -ceq '0,429,546,572') (Desc $r 6403)
+    Check 'L3 fill: Fill 3 takes the bottom-right area, the last in reading order' ((RectOf (PlacedOf $r 6404)) -ceq '546,429,819,572') (Desc $r 6404)
+    Check 'L3 fill: Fill 4 is not placed, since no empty area is left' (-not (PlacedOf $r 6405)) (Desc $r 6405)
+  }
+  Case 'L3 zones: a zone places its window as today with no areas (control), and pauses while areas are on' {
+    $m = FgMon 1365 1001
+    $zone = [pscustomobject]@{ mon = 'wide'; slots = @(0, 1); app = 'chrome' }
+    $snap = Write-Snap 'L3-zone.json' @($m) @((FgWin 6501 'chrome' 'Zone A' 0))
+    $ctl = FgScene 'L3-zone-ctl-scene.json' ([pscustomobject]@{ c = 2; r = 1 }) @() $null @($zone)
+    $rc = Invoke-SceneFrom $ctl $snap
+    Check 'L3 zones control: with no areas, Zone A takes slot 1 (the zone runs as today)' (OnCell $rc 6501 1 (CellRect $m 2 1 0)) (Desc $rc 6501)
+    $areas = @((FreeArea @(0, 0, 0.5, 1)), (FreeArea @(0.5, 0, 0.5, 1)))
+    $sc = FgScene 'L3-zone-free-scene.json' (FreeGrid 2 1 $areas) @() $null @($zone)
+    $r = Invoke-SceneFrom $sc $snap
+    Check 'L3 zones: with areas on, the zone is paused, so Zone A is not placed' (-not (PlacedOf $r 6501)) (Desc $r 6501)
+  }
+
+  # ---- Item G (L3, plan layout-free-build, item G): Get-CollapsedAreas($areas, $absent, $locked, $size), defined in tile.ps1 before its -Lib
+  # return. A child powershell dot-sources tile.ps1 -Lib, so no variable of this file meets tile.ps1's param block. It runs each call of each
+  # case and prints one line per call: case, call index, and the result as JSON (or MISSING when the function is not defined).
+  # Contract: $areas = [{rect: [fx, fy, fw, fh]}] in fractions of the work area; $absent and $locked = 0-based indexes into $areas; $size = @(W, H)
+  # in pixels, for the 400 x 300 floor. Returns one entry per area, in order: its new rect in fractions, or $null for an area whose window is
+  # gone and whose space stays a gap. A locked area, or one the call does not touch, returns its rect as it was.
+  function GArea($rect) { [pscustomobject]@{ rect = @([double[]]$rect) } }
+  # Every subset of 0..n-1, as the calls of a case: absent = the subset, locked = none. The empty subset comes first, the full set last.
+  function GSubsets([int]$n) {
+    $calls = @()
+    for ($mask = 0; $mask -lt (1 -shl $n); $mask++) {
+      $s = @(); for ($b = 0; $b -lt $n; $b++) { if ($mask -band (1 -shl $b)) { $s += $b } }
+      $calls += [pscustomobject]@{ absent = @($s); locked = @() }
+    }
+    ,$calls
+  }
+  function GSet($a) { '{' + ((@($a) | % { $_ }) -join ',') + '}' }
+  # A 2x2 grid (areas 0 and 1 on top, 2 and 3 below) and a 3x1 grid of equal cells. Each absent subset of each is one call (G9, G10).
+  $gGrid2 = @((GArea @(0, 0, 0.5, 0.5)), (GArea @(0.5, 0, 0.5, 0.5)), (GArea @(0, 0.5, 0.5, 0.5)), (GArea @(0.5, 0.5, 0.5, 0.5)))
+  $gGrid3 = @((GArea @(0, 0, (1 / 3), 1)), (GArea @((1 / 3), 0, (1 / 3), 1)), (GArea @((2 / 3), 0, (1 / 3), 1)))
+  $gSub2 = GSubsets 4; $gSub3 = GSubsets 3
+  $g1 = @(0, 0, 0.25, 1), @(0.25, 0, 0.5, 1), @(0.75, 0, 0.25, 1)
+  $gCases = @(
+    [pscustomobject]@{ id = 'G1'; size = @(1200, 900); areas = @((GArea $g1[0]), (GArea $g1[1]), (GArea $g1[2])); calls = @([pscustomobject]@{ absent = @(1); locked = @() }) },
+    [pscustomobject]@{ id = 'G2'; size = @(1200, 900); areas = @((GArea @(0, 0, 0.5, 1)), (GArea @(0.5, 0, 0.5, 0.5)), (GArea @(0.5, 0.5, 0.5, 0.5))); calls = @([pscustomobject]@{ absent = @(0); locked = @() }) },
+    [pscustomobject]@{ id = 'G3'; size = @(1200, 900); areas = @((GArea $g1[0]), (GArea $g1[1]), (GArea $g1[2])); calls = @([pscustomobject]@{ absent = @(1); locked = @(0) }) },
+    [pscustomobject]@{ id = 'G4'; size = @(1200, 900); areas = @((GArea @(0, 0, 0.6, 0.4)), (GArea @(0.6, 0, 0.4, 0.6)), (GArea @(0.4, 0.6, 0.6, 0.4)), (GArea @(0, 0.4, 0.4, 0.6)), (GArea @(0.4, 0.4, 0.2, 0.2))); calls = @([pscustomobject]@{ absent = @(4); locked = @() }) },
+    [pscustomobject]@{ id = 'G5'; size = @(1000, 600); areas = @((GArea @(0, 0, 0.2, 1)), (GArea @(0.2, 0, 0.2, 1)), (GArea @(0.4, 0, 0.6, 1))); calls = @([pscustomobject]@{ absent = @(1); locked = @() }) },
+    [pscustomobject]@{ id = 'G6'; size = @(1200, 900); areas = @((GArea @(0, 0, 0.25, 1)), (GArea @(0.25, 0, 0.25, 1)), (GArea @(0.5, 0, 0.25, 1)), (GArea @(0.75, 0, 0.25, 1))); calls = @([pscustomobject]@{ absent = @(1, 2); locked = @() }, [pscustomobject]@{ absent = @(2, 1); locked = @() }) },
+    [pscustomobject]@{ id = 'G7'; size = @(1200, 900); areas = @((GArea $g1[0]), (GArea $g1[1]), (GArea $g1[2])); calls = @([pscustomobject]@{ absent = @(1); locked = @() }, [pscustomobject]@{ absent = @(); locked = @() }) },
+    [pscustomobject]@{ id = 'G8'; size = @(1200, 900); areas = @((GArea @(0, 0, 1, 0.25)), (GArea @(0, 0.25, 1, 0.5)), (GArea @(0, 0.75, 1, 0.25))); calls = @([pscustomobject]@{ absent = @(1); locked = @() }) },
+    [pscustomobject]@{ id = 'G9'; size = @(1200, 900); areas = $gGrid2; calls = $gSub2 },
+    [pscustomobject]@{ id = 'G10'; size = @(1200, 900); areas = $gGrid3; calls = $gSub3 }
+  )
+  $gOut = @(); $gRes = @{}
+  try {
+    $gCasesPath = Join-Path $run 'L3-g-cases.json'; [IO.File]::WriteAllText($gCasesPath, (ConvertTo-Json -InputObject @($gCases) -Depth 8 -Compress), $utf8)
+    $gProbe = Join-Path $run 'L3-g-probe.ps1'
+    $probeLines = @(
+      'param([string]$probeTile, [string]$probeCases)',
+      '. $probeTile -Lib',
+      '[Console]::Out.WriteLine(''MOVEWIN '' + [bool](Get-Command Move-Win -ErrorAction SilentlyContinue))',
+      '$has = [bool](Get-Command Get-CollapsedAreas -ErrorAction SilentlyContinue)',
+      '$cases = Get-Content -Raw -LiteralPath $probeCases | ConvertFrom-Json',
+      'foreach ($c in $cases) { $i = 0; foreach ($call in @($c.calls)) {',
+      '  if ($has) { $o = @(Get-CollapsedAreas @($c.areas) @($call.absent) @($call.locked) @($c.size)); $txt = ConvertTo-Json -InputObject @($o) -Depth 4 -Compress }',
+      '  else { $txt = ''MISSING'' }',
+      '  [Console]::Out.WriteLine($c.id + [char]9 + $i + [char]9 + $txt); $i++',
+      '} }'
+    )
+    [IO.File]::WriteAllText($gProbe, ($probeLines -join "`r`n"), $utf8)
+    $gOut = @(& powershell -NoProfile -ExecutionPolicy Bypass -File $gProbe -probeTile $tile -probeCases $gCasesPath)
+    foreach ($ln in $gOut) { $p = "$ln" -split "`t"; if ($p.Count -eq 3) { $gRes["$($p[0])|$($p[1])"] = $p[2] } }
+  } catch { $script:fail++; "FAIL  L3 item G probe stopped: $_" }
+  Case 'L3 control: tile.ps1 -Lib still loads and defines Move-Win, as the item G probe needs (green on the old code)' {
+    Check 'L3 control: the -Lib child runs and defines Move-Win' ([bool]($gOut | ? { $_ -eq 'MOVEWIN True' })) "probe output: $(@($gOut) -join ' / ')"
+  }
+  function GText($x) { (@($x) | % { if ($null -eq $_) { 'gap' } else { @($_) -join ',' } }) -join ' | ' }
+  function GSame($a, $b) {
+    if ($null -eq $a -or $null -eq $b) { return ($null -eq $a -and $null -eq $b) }
+    if (@($a).Count -ne 4 -or @($b).Count -ne 4) { return $false }
+    for ($k = 0; $k -lt 4; $k++) { if ([Math]::Abs([double]$a[$k] - [double]$b[$k]) -gt 1e-9) { return $false } }
+    $true
+  }
+  # One check per call: the result must match $want entry by entry. An undefined function is one FAIL line naming that cause.
+  function GCheck([string]$name, [string]$key, $want) {
+    $txt = $gRes[$key]
+    if ($null -eq $txt) { Check $name $false 'the probe printed no line for this call'; return }
+    if ($txt -eq 'MISSING') { Check $name $false 'Get-CollapsedAreas is not defined by tile.ps1 -Lib'; return }
+    $got = ConvertFrom-Json $txt  # assigned, not wrapped: PowerShell 5.1 emits a JSON array as one object
+    $ok = (@($got).Count -eq @($want).Count)
+    if ($ok) { for ($k = 0; $k -lt @($want).Count; $k++) { if (-not (GSame $got[$k] $want[$k])) { $ok = $false } } }
+    Check $name $ok "got $(GText $got); want $(GText $want)"
+  }
+  Case 'L3 item G: a closed middle column is split at the midpoint by its left and right neighbours (1200 x 900)' {
+    GCheck 'L3 item G: a closed middle column is split at the midpoint by its left and right neighbours (1200 x 900)' 'G1|0' @(@(0, 0, 0.5, 1), $null, @(0.5, 0, 0.5, 1))
+  }
+  Case 'L3 item G: restoring gives back the saved rects' {
+    GCheck 'L3 item G: the closed middle column of the restore case is split at the midpoint first (G7, first call)' 'G7|0' @(@(0, 0, 0.5, 1), $null, @(0.5, 0, 0.5, 1))
+    GCheck 'L3 item G: restoring (no gap) gives back the saved rects, with the same areas object (G7, second call)' 'G7|1' @(@(0, 0, 0.25, 1), @(0.25, 0, 0.5, 1), @(0.75, 0, 0.25, 1))
+  }
+  Case 'L3 item G: two stacked halves on one side both grow into a closed column' {
+    GCheck 'L3 item G: two stacked halves on the right both grow left into the closed left column (1200 x 900)' 'G2|0' @($null, @(0, 0, 1, 0.5), @(0, 0.5, 1, 0.5))
+  }
+  Case 'L3 item G: a locked left neighbour means the right side takes the whole space' {
+    GCheck 'L3 item G: with a locked left neighbour, the right side takes the whole space and the locked area stays put' 'G3|0' @(@(0, 0, 0.25, 1), $null, @(0.25, 0, 0.75, 1))
+  }
+  Case 'L3 item G: a pinwheel centre stays a gap' {
+    GCheck 'L3 item G: a pinwheel centre stays a gap, and its four neighbours keep their rects (1200 x 900)' 'G4|0' @(@(0, 0, 0.6, 0.4), @(0.6, 0, 0.4, 0.6), @(0.4, 0.6, 0.6, 0.4), @(0, 0.4, 0.4, 0.6), $null)
+  }
+  Case 'L3 item G: a midpoint share that leaves a window under 400 x 300 gives the whole space to the first side that qualifies' {
+    GCheck 'L3 item G: the midpoint share would leave the left window 300 px wide, so the left side takes the whole space (1000 x 600)' 'G5|0' @(@(0, 0, 0.4, 1), $null, @(0.4, 0, 0.6, 1))
+  }
+  Case 'L3 item G: two neighbours gone at once give the same result in either order' {
+    $want6 = @(@(0, 0, 0.5, 1), $null, $null, @(0.5, 0, 0.5, 1))
+    GCheck 'L3 item G: two neighbours gone, in the order 1 then 2, meet the outer neighbours at the midpoint (1200 x 900)' 'G6|0' $want6
+    GCheck 'L3 item G: two neighbours gone, in the order 2 then 1, give the same result' 'G6|1' $want6
+  }
+  Case 'L3 item G: an above and below pair meet at the midpoint when no left or right side qualifies' {
+    GCheck 'L3 item G: an above and below pair meet at the midpoint (1200 x 900)' 'G8|0' @(@(0, 0, 1, 0.5), $null, @(0, 0.5, 1, 0.5))
+  }
+
+  # Two returned rects overlap when each axis overlaps by more than 1e-9, so a shared edge is no overlap. A gap ($null) overlaps nothing.
+  function GRect($r) { if ($null -eq $r) { 'gap' } else { '[' + (@($r) -join ',') + ']' } }
+  function GOver($p, $q) {
+    if ($null -eq $p -or $null -eq $q) { return $false }
+    # [Math] on a mixed int and double picks the int overload, so 0 and 0.5 give 0. Cast first.
+    $p = [double[]]@($p); $q = [double[]]@($q)
+    $ox = [Math]::Min($p[0] + $p[2], $q[0] + $q[2]) - [Math]::Max($p[0], $q[0])
+    $oy = [Math]::Min($p[1] + $p[3], $q[1] + $q[3]) - [Math]::Max($p[1], $q[1])
+    ($ox -gt 1e-9) -and ($oy -gt 1e-9)
+  }
+  # One check per call. The result has $want entries (one per area), and no two returned non-null rects overlap. The FAIL line names the first pair.
+  function GNoOverlap([string]$name, [string]$key, [int]$want) {
+    $txt = $gRes[$key]
+    if ($null -eq $txt) { Check $name $false 'the probe printed no line for this call'; return }
+    if ($txt -eq 'MISSING') { Check $name $false 'Get-CollapsedAreas is not defined by tile.ps1 -Lib'; return }
+    $got = ConvertFrom-Json $txt  # assigned, not wrapped: PowerShell 5.1 emits a JSON array as one object
+    $n = @($got).Count
+    $pair = ''
+    for ($a = 0; $a -lt $n -and $pair -eq ''; $a++) {
+      for ($b = $a + 1; $b -lt $n -and $pair -eq ''; $b++) {
+        if (GOver ($got[$a]) ($got[$b])) { $pair = "area $a $(GRect ($got[$a])) overlaps area $b $(GRect ($got[$b]))" }
+      }
+    }
+    $why = $pair
+    if ($n -ne $want) { $why = "got $n entries, want $want" }
+    Check $name (($n -eq $want) -and ($pair -eq '')) "$why; the result is $(GText $got)"
+  }
+  # A neighbour that grows into two gaps at once overlaps the area past them: area 0 in the diagonal {1,2} grows right into one gap and down into the other, over area 3.
+  # The empty and full subsets are included: nothing gone, and everything gone.
+  Case 'L3 item G overlap: no two returned areas overlap, for every absent subset of a 2x2 grid' {
+    for ($k = 0; $k -lt @($gSub2).Count; $k++) {
+      GNoOverlap "L3 item G overlap: 2x2 grid, absent $(GSet ($gSub2[$k].absent)): no two returned areas overlap" "G9|$k" 4
+    }
+  }
+  Case 'L3 item G overlap: no two returned areas overlap, for every absent subset of a 3x1 grid' {
+    for ($k = 0; $k -lt @($gSub3).Count; $k++) {
+      GNoOverlap "L3 item G overlap: 3x1 grid, absent $(GSet ($gSub3[$k].absent)): no two returned areas overlap" "G10|$k" 3
+    }
+  }
+
+  # Gap-fill order: a side whose share would overlap is not taken; the next qualifying side takes the region. Keys are found by the absent subset.
+  function GKey([string]$id, $sub, $absent) {
+    for ($k = 0; $k -lt @($sub).Count; $k++) { if ((GSet ($sub[$k].absent)) -eq (GSet $absent)) { return "$id|$k" } }
+    "$id|no-call"
+  }
+  # The 2x2 with {1,2} gone: area 0 takes the top line and area 3 the bottom line, with no gap and no overlap. The mirror {0,3}:
+  # area 1 takes the top line and area 2 the bottom line.
+  Case 'L3 item G: a side whose share would overlap is skipped for the next qualifying side, 2x2 absent {1,2} and its mirror {0,3}' {
+    GCheck 'L3 item G: 2x2 absent {1,2}: area 0 takes the top line, area 3 the bottom line, no gap and no overlap (1200 x 900)' (GKey 'G9' $gSub2 @(1, 2)) @(@(0, 0, 1, 0.5), $null, $null, @(0, 0.5, 1, 0.5))
+    GCheck 'L3 item G: 2x2 absent {0,3} (mirror): area 1 takes the top line, area 2 the bottom line (1200 x 900)' (GKey 'G9' $gSub2 @(0, 3)) @($null, @(0, 0, 1, 0.5), @(0, 0.5, 1, 0.5), $null)
+  }
+
 } finally {
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue
