@@ -10,10 +10,10 @@ Plan: docs/design/mockups/layout-free-notes.md#free-layout (windows)
 
 > on splitting, I imagine there's like a fast mode where one click/action immediately splits it in two, but there's maybe another mode via right click or hitting a button that gives you options like split: choose how -- I also agree that it should result in a finer grid being created when the split occurs / on shared edges ... yes, it looks fine do that / free rects definitely not it / shared edges+splitter tree also a solid concept
 
-- Split Cell has two ways in. A fast action splits the selected cell in two at once. A right-click, or a button, opens a menu of split options: direction and share ("choose how"). The popover in the notes (notes item 1) is that menu.
+- Split Cell has two ways in, as the owner put them: "I imagine there's like a fast mode" (a fast action splits the selected cell in two at once), and "there's maybe another mode via right click or hitting a button" (a menu of split options: direction and share, "choose how"). The fast action's trigger, direction and share are open (question (c)). The mockup draws only the menu, the popover in the notes (notes item 1).
 - The owner agrees a split makes a finer grid on the shared edges. Its scope is set by the 19:09 CST ruling below.
 - Free Layout model: Shared Edges (notes item 23, the Shared Edges pick). Free Rects is rejected (notes item 22).
-- Splitter Tree is a solid concept. Which part joins Shared Edges is ruled at 2026-11-18 11:08 CST, below.
+- Splitter Tree is a solid concept. Question (b) asks which part of it joins Shared Edges. The owner's 11:08 CST answer closed the gap half (below). The drag half is closed by the owner's "could it be both ways?" (11:08 CST) and the coordinator's key pick (11:14 CST, below; notes item 16).
 
 **Ruling (owner, 2026-11-17 19:09 CST; owner's words, answers question (a)):**
 
@@ -28,14 +28,14 @@ Plan: docs/design/mockups/layout-free-notes.md#free-layout (windows)
 **Ruling (owner, 2026-11-18 11:08 CST; the answer chosen in the question box: "Closed and minimized"):**
 
 - Live gap-filling covers closed and minimized windows. When a tiled window closes or minimizes, its neighbours grow into the space at once. When a minimized window is restored, the layout makes room for it again.
-- This answers the 19:09 CST question and the gap half of question (b). Mockup state `tree-gap` joins Shared Edges (notes item 17).
+- This answers the 19:09 CST question. It closes the gap half of question (b). Mockup state `tree-gap` joins Shared Edges (notes item 17).
 
-**Ruling (owner asked 2026-11-18 11:08 CST, owner's words: "could it be both ways?"; reading recorded by the coordinator 2026-11-18 11:09 CST):**
+**Drag key (owner's question 2026-11-18 11:08 CST, "could it be both ways?"; reading by the coordinator 11:09 CST; key pick by the coordinator 11:14 CST):**
 
 - The question: does dragging the edge between two columns resize the whole column, or only the row grabbed?
-- The reading: both. A plain drag moves only the grabbed edge segment, that row. Holding Shift while dragging moves the whole column line. The plain drag is the mockup the owner approved at 14:12 CST ("yes, it looks fine do that", state `edges-drag`).
-- Shift is the coordinator's pick, open to the owner's change. The pick is the coordinator's, 2026-11-18 11:14 CST. Reason: it matches the `edges-drag` caption in layout-free.html, so the mockup needs no change.
-- This closes the drag half of question (b). Question (b) is closed.
+- The reading: both. A plain drag moves only the grabbed edge segment, that row. Holding Shift while dragging moves the whole column line. Notes item 16 records the drag. The plain drag is the mockup the owner approved at 14:12 CST ("yes, it looks fine do that", state `edges-drag`).
+- The Shift key is the coordinator's pick, 2026-11-18 11:14 CST, open to the owner's change. Reason: it matches the `edges-drag` caption in layout-free.html, so the mockup needs no change.
+- With the key pick above, the drag half of question (b) is closed.
 
 Not yet asked: (c) the fast action's trigger, direction and share. S stays with the menu, as drawn, until the owner rules on it.
 

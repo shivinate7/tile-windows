@@ -126,12 +126,12 @@ and the key F.
     Shift is the coordinator's pick, open to the owner's change (decision `layout-free`, 2026-11-18
     11:14 CST). Gain: no gap opens at any point; a plain drag changes one window pair, not a column.
     Loss: two windows that share no line cannot change size against each other in one drag.
-17. **Gaps.** A drag cannot open a gap. When a tiled window closes or minimizes, its neighbours
-    grow into its space at once (mockup state `tree-gap`). When a minimized window is restored, the
-    layout makes room for it again (decision `layout-free`, 2026-11-18 11:08 CST). A window that
-    leaves (Keep Where It Is) leaves empty space, drawn as a dashed box. With Fill Empty Cells on,
-    a new window fills it. Close Gap in the
-    inspector grows the neighbour that shares the whole edge (left, above, right, below, in that
+17. **Gaps.** A drag cannot open a gap. Live gap-filling covers windows that close or minimize: when
+    a tiled window closes or minimizes, its neighbours grow into its space at once (mockup state
+    `tree-gap`). When a minimized window is restored, the layout makes room for it again (decision
+    `layout-free`, 2026-11-18 11:08 CST). A window the owner moves out by hand (Keep Where It Is)
+    still leaves its space as is: empty space, drawn as a dashed box. With Fill Empty Cells on, a new
+    window fills it. Close Gap in the inspector grows the neighbour that shares the whole edge (left, above, right, below, in that
     order); with none, Close Gap is off and says why. Not yet ruled: how a closed window's space
     divides when more than one neighbour takes it.
 18. **Lock.** A line that touches a locked window is dotted, with no grip, and its tooltip says
@@ -153,8 +153,8 @@ and the key F.
     grid of 3 rows or more can hold a pinwheel of spans that no tree can cut, so switch-on would
     have to move windows there. Any spans on a 2-row grid cut into a tree. Not picked as the model. The owner calls it a solid
     concept (2026-11-17 14:12 CST). Both parts join Shared Edges: `tree-gap` as the closed-window rule
-    and the whole-column `tree-drag` as the Shift drag (decision `layout-free`, 2026-11-18 11:08 CST;
-    drag key 11:14 CST).
+    (owner, decision `layout-free`, 2026-11-18 11:08 CST), and the whole-column `tree-drag` as the
+    Shift drag (the coordinator's key pick, 2026-11-18 11:14 CST; notes item 16).
 
 ### Option: Free Rects
 
