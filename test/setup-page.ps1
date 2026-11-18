@@ -1733,7 +1733,7 @@ return { title: h ? h.textContent.replace(/\s+/g, " ").trim() : "", join: fill('
     } finally { Reset-Look $ws }
   }
 
-  Case 'split small: a 27px half at 1024 draws no window title, its tag is one initial, and a selected Stay Put stays inside the half' {
+  Case 'split small: a narrow half at 1024 (21px in this harness; the brief said 27px) draws no window title, its tag is one initial, and a selected Stay Put stays inside the half' {
     Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1')
     Set-View $ws 1024 900
     try {
