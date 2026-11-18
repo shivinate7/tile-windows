@@ -207,12 +207,16 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
     a built-in's layout, and its name stays locked.
     Departs from: main `why.save` ("Built-in scenes keep their layout. Use Save As New to change
     it.") and the note "its layout stays as shipped". Owner grant: yes.
-22. **Follow Desk Again on the card's menu** (`cd-own`). A "More" button (⋯) in the mini map's
-    top right corner opens a menu with Follow Desk Again, which drops the scene's layout for this
-    setup; Undo brings it back. Shown only for a scene with its own layout on a setup that follows
-    another (ux-control-earns-place). Gain: the corner is empty (the map is drawn centred and
-    hidden from readers), and the row beside Apply has no room at 1024. Loss: a menu of one item
-    for now.
+22. **Follow Desk Again on the card's menu** (`cd-own`). A "More" button (⋯) in the scene card's
+    bottom row, beside Apply, opens a menu with Follow Desk Again, which drops the scene's layout
+    for this setup; Undo brings it back. Shown only for a scene with its own layout on a setup that
+    follows another (ux-control-earns-place). Ruled (coordinator, 2026-11-17 21:36 CST): the ⋯
+    button stays in the card's bottom row, icon-only (28x32, label "More for <name>"); the row
+    never wraps; the card label truncates with "…" and carries its full text in a title; every
+    card keeps one height. Loss: a menu of one item for now. Not taken: the mini map's top right
+    corner, the first pick. At 1024 every card's map drawing reaches that corner (measured
+    2026-11-17, design re-check). The map is drawn centred and hidden from readers, and the row
+    beside Apply had no room at 1024.
     Departs from: main `renderRail`, whose scene card has no menu.
 23. **The offline page** (`sv-offline`). Opened from disk, it has no scenes and no setups, so it
     draws no strip and claims no saving. Its edits stay in the page, and Apply downloads a place
@@ -223,8 +227,8 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
 - Item 4: should "When the Monitors Change" fire when the same monitors are only rearranged?
   Coordinator default, owner may change: no (decision `monitor-setups`).
 - Item 7: ruled (owner, 2026-11-17 09:47 CST). Closest known setup and the Follow again control are
-  coordinator defaults (2026-11-17 11:47 CST, decision `monitor-setups`). What the control links to is
-  not ruled.
+  coordinator defaults (2026-11-17 11:47 CST, decision `monitor-setups`). What the control does is
+  ruled (coordinator, 2026-11-17 20:26 CST).
 - Item 8: ruled (owner, 2026-11-17 11:38 CST): autosave. Save, the offline page and the card's words
   are coordinator defaults (2026-11-17 11:47 CST, decision `monitor-setups`).
 - Item 9: ruled (owner, 2026-11-17 09:47 CST). The reason text is a coordinator default (2026-11-17
@@ -238,7 +242,7 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
 - Item 17: ruled (owner, 2026-11-17 09:47 CST): option a.
 - Item 21: may a board change edit a built-in scene's layout, now that it saves at once? Main keeps
   a built-in's layout as shipped. Drawn: yes, per setup. Not blocking.
-- Item 22: Follow Desk Again sits on a new card menu. Not blocking.
+- Item 22: ruled (coordinator, 2026-11-17 21:36 CST): the ⋯ button stays in the card's bottom row.
 - From the critique: does the owner want to edit a setup that is not plugged in (the rail option),
   or only the one in use? Coordinator default, owner may change: only the one in use (decision
   `monitor-setups`).

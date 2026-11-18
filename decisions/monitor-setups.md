@@ -48,7 +48,8 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - 18:05 CST: card marks follow the mockup, and show only while some scene follows another setup.
 - 18:05 CST: a monitor with no grid gets an "Add a Grid" button.
 - 18:09 CST: a card mark is an icon beside Built-In, with a title and aria-label, and no visible words. This answers item 16.
-- 18:28 CST: GET /layouts returns, per scene, {layout, follows}. `follows` comes from `Get-TileClosestSetup` (`config.ps1`), the one home for the closest-setup pick.
+- 18:28 CST: GET /layouts returns, per scene, {layout, follows, closest}. `follows` comes from `Get-TileFollows` and `closest` from `Get-TileClosestName` (`config.ps1`); both pick through `Get-TileClosestSetup`, the one home for the closest-setup pick.
+- 20:26 CST: "Follow Desk Again" removes a scene's own layout for the current setup, through POST /layout/remove {scene,key}. It takes the /layout lock, re-reads config under it, answers 409 for a setup not plugged in and 404 for an unknown scene. A repeat is a no-op.
 
 **Built.**
 - Identity, PR 27 (monitor ids): built and merged.
@@ -58,8 +59,9 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - Item 17, the count triggers, PR 31 (setup-trigger, open draft): built. "Use This Scene on This Setup" replaces the `monitors` extra ("For N screens"), with flag `setup` and `scene.setupKey`. The old `monitors` flag migrates off, with a note. The grid trigger uses the wide-role monitor by id.
 - Item 8, autosave and the setup strip, PR 33 (board setups, open draft): built.
   Departs from: the mockup. An unplugged monitor is drawn dashed beside the plugged ones, since config keeps only its size.
+- Item 7, Follow Desk Again, PR 35 (Follow Desk Again): built.
 
 **Open, not ruled.**
-- Item 7: the `Follow <setup> Again` control (`cd-own`) stays (coordinator default 2026-11-17 11:47 CST). What it links to is not ruled. The notes' items 11 and 16 still name Desk in their examples; rewording them is not ruled.
+- The notes' items 11 and 16 still name Desk in their examples; rewording them is not ruled.
 
 **Why.** The owner's ask, 2026-11-16 14:46 CST: "just like how windows remembers monitors and their layouts depending on whats plugged in cant we store that in memory too but act more dynamically than that". The item 9 answer lets the owner make a new arrangement while the ultrawide is unplugged.
