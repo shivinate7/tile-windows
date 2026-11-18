@@ -2,8 +2,8 @@
 
 Mockup: `layout-free.html`, beside this file. Owner asks of 2026-11-13 09:22 CST.
 Owner rulings of 2026-11-17 14:12 CST, 2026-11-17 19:09 CST and 2026-11-18 11:08 CST are in
-decision `layout-free`. Items 1, 3, 4, 16, 17, 22 and 23 are ruled there. Item 8 has no ruling now
-(item 3 is not chosen). Item 21's gap and drag parts join Shared Edges (items 16 and 17).
+decision `layout-free`. Items 1, 3, 4, 16, 17, 22 and 23 are ruled there. Item 8 waits on question S
+(shares). Item 21's gap and drag parts join Shared Edges (items 16 and 17).
 Deep links: `#s=<state>`, plus `w=1024`, `t=light|dark` and `hide=<option,...>`. With no `t`,
 the page follows the system theme. `#s=all` shows every state.
 States: `split-pick`, `split-cell`, `split-finer`, `edges-on`, `edges-drag`, `edges-gap`,
@@ -53,7 +53,10 @@ Each frame with a new scene shape shows "Saves in the scene as" under it.
    half. Enter splits, Esc cancels. Gain: one key, one choice, seen before it acts. Loss: a
    popover over the board at 1024 covers the row under it. Pick: the menu as drawn. The mockup draws no fast action. Owner, 2026-11-17 14:12 CST (decision
    `layout-free`): right-click also opens this menu, and a fast action splits the selected cell in
-   two at once. Its trigger, direction and share are open (question (c)).
+   two at once. Its trigger, direction and share are open (question (c), called question K in
+   `split-cell-notes.md`). While question S is
+   open, the menu offers halves only and has no share row; `split-cell.html` draws the menu as it
+   stands now (`split-cell-notes.md` items S1 and S2).
 2. **Empty cell.** Selecting an empty cell is new. Today only windows select, and Draw Zone picks
    cells. A click on an empty cell selects it; the Window section becomes "Empty Space" with Split
    Cell. Both halves are then empty. Not drawn. Owner grant: yes.
@@ -70,36 +73,86 @@ Each frame with a new scene shape shows "Saves in the scene as" under it.
    as wide unless the fill learns a fill unit (`fill.unit: [2,1]`); the Columns stepper must pass
    8; the board shows 20 drop targets of about 53px at 1440 and 28px at 1024; a 1/3 share needs
    a 15×2 grid. Gain: one slot kind.
-5. **The window keeps its half by a pin.** Split pins the window to its half, as a drop on a cell
-   pins it today (board hint "Drag a window to a cell to pin it"). Without the pin, the next fill
-   could move it out. Departs from: a window the fill placed becomes pinned.
-6. **The empty half fills last.** An open half joins the fill only after every whole cell is
-   taken. So a split never reflows the board: the fill does not pull the window from cell 7 into
-   2b. With every cell full, 2b stays empty, as the owner asked. With fill off, it stays empty.
-   Option: a "Keep This Half Empty" switch on a selected half (`keep: "empty"`), so the fill
-   never uses it. Not drawn. Owner grant: yes.
-7. **A span.** On a 2×1 span, Side by Side at 1/2 is the same as today's resize to 1×1, so Split
-   calls the resize edit (`resizeStep()`) for any share that lands on a cell line. It is one home,
-   not a second. Another share cuts the cell that the line falls in. Stacked on a span cuts each
-   cell under it at the same share.
-8. **One level.** A half cannot be split again. Split Cell on a half is off with "This cell is
-   split once already. Join the halves first." Gain: the slot address stays two parts. Loss: no
-   quarter-cell in two steps (drag the bar to 1/4 instead). No ruling now: it was picked only while item 3 stood, and item 3 is not chosen.
-9. **Join.** J on a selected half, or Join Halves in the inspector, makes the cell whole. If both
-   halves hold a window, the selected one keeps the cell and the other goes to a free cell in fill
-   order, else to Windows That Stay Put, as resize does (decision `stack-and-lock`).
-10. **Share after the split.** The bar between the halves drags to change the share; it snaps to
-    quarters and thirds. Pick: as drawn.
-11. **Cases.** A stacked tile: its back windows go with it into the kept half. A locked tile:
-    Split Cell is off with "Locked. Unlock it first." (today's lock reason). A cell in a zone: both
-    halves belong to the zone. A held cell with fill off (decision `fill-controls`): the held entry
-    gains `part`.
-12. **Small halves at 1024.** A half cell is about 27px wide at 1024. The tile shows its colour
-    and the first letter of its app only. The inspector names the window. Not fixable inside the
-    board's scale.
-13. **Drop Note.** After the split, a note under the tile says "Split cell 2. Claude keeps the
-    left half." with Undo, in the Drop Note look (decision `stack-and-lock`). The status bar keeps
-    the same words.
+Items 5-13 are written for Finer Grid (item 4). Mockup: `split-cell.html`, beside this file; its
+own drawing choices are in `split-cell-notes.md`. "The halves" of a split are the fine cells of
+one base cell, read from `grids[mon].mult` (the base grid is `c / mult`). No slot gains a `part`.
+Question S is the owner's open question on shares (halves only, or thirds and quarters too).
+
+5. **The window keeps its half by a pin.** Split pins the window to its fine cell, as a drop on a
+   cell pins it today (board hint "Drag a window to a cell to pin it"). Without the pin, the next
+   fill could move it out. Undo takes back the split and the pin together. Departs from: a window
+   the fill placed becomes pinned.
+6. **The open half fills last.** With `fill.unit [2,1]`, the fill gives each window one free,
+   aligned block of 2×1 fine cells. An open half is a free fine cell that is not part of a free
+   block. The fill uses an open half only after every block is taken, and the window there gets
+   half a cell's width (state `fill-last`). So a split never reflows the board: the fill does not
+   pull a window across the board into the half. A zone fills its own open halves last the same
+   way. With fill off, an open half stays empty. Option: a Keep This Half Empty switch on a
+   selected open half (state `fill-keep`), so the fill never uses it; a new window then waits in
+   Windows That Stay Put. Saved as a proposed `fill.keepEmpty: [{mon, slots}]`. Pick: fills last,
+   with the switch. Owner grant: yes.
+7. **When a split doubles nothing.** A split doubles the grid only when its cut does not fall on a
+   line the grid already has. On 5×2, Side by Side on a 2×1 span cuts on the line between its two
+   cells, so the grid stays 5×2: Split calls today's resize edit (`resizeStep()`), one home, not a
+   second. On a 10×2 grid, Side by Side on any whole cell cuts on a fine line, so it is a resize
+   too and the grid stays 10×2 (state `case-second`). An odd span, such as 3×1, doubles the grid.
+   Stacked works the same on rows. The open half of a resize-split is a whole block, so the fill
+   takes it at once like any free cell, unless Keep This Half Empty is on (item 6).
+8. **A second split of a half.** Splitting a half again in the same direction needs a 4× grid.
+   While question S is open, that direction is off in the menu with "This half is as narrow as a
+   split goes. Join it first, or split it stacked." The other direction stays on and doubles the
+   other axis (10×2 to 10×4; state `case-again`). The rows cap rises to a proposed 8 for this.
+   Gain: the grid never goes past ×2 on an axis until question S rules. Loss: no quarter cell in
+   two steps. Pick: as drawn.
+9. **Join.** J on a half, Join Halves in the inspector, or Join Halves in the split menu. The
+   selected window takes the whole base cell. If the other half holds a window, that window goes
+   to a free cell in fill order, else to Windows That Stay Put, as resize does (decision
+   `stack-and-lock`). Join Halves on a selected open half gives the cell to the window in the other
+   half. After the join, if no pin, zone, held entry or Keep This Half Empty entry on that monitor
+   sits off the base grid on that axis, the axis halves back (10×2 to 5×2), and `mult` and
+   `fill.unit` go (state `join`). Otherwise the grid stays and the window takes its 2-cell block.
+   On a cell that is not split, Join Halves is off with "This cell is not split." Gain: the board
+   goes back to today's grid and drop targets when the last split goes. Loss: a join can change
+   the Columns count the owner sees (10 to 5), which may surprise. Pick: halve back, said in the
+   Drop Note (item 13).
+10. **No share bar while question S is open.** With halves only, a bar between the halves could
+    snap to the middle only, so it would change nothing and is not drawn (`ux-control-earns-place`).
+    If question S allows thirds or quarters, the bar comes back and snaps to the lines the grid
+    holds. Gain: no control that does nothing. Loss: the share cannot change after a split without
+    a join and a new split. Pick: no bar.
+11. **Cases.** Every pin, zone and held entry on the monitor gets doubled slots, and nothing else
+    moves. Gain: each case keeps today's rule (stack, lock, zone, hold), so nothing new to learn.
+    Loss: a split of a held cell pins a window the owner had only held. Pick: as listed.
+    - A stacked tile: the back windows stay on the pin, so they go with the front window into the
+      kept half; the strip and the badge go too (state `case-stack`).
+    - A locked tile: every split item is off with "Locked. Unlock it first." (today's lock reason),
+      and the menu leads on with Unlock (L). The inspector's Split Cell is off with the same reason
+      (state `case-lock`).
+    - A cell in a zone: the zone's slots double, so both halves stay in the zone, and the zone fills
+      its open half last (item 6; state `case-zone`).
+    - A held cell with fill off (decision `fill-controls`): the split pins the window and drops its
+      hold, as `heldOff()` does today when a pin takes a window. The open half stays empty. The other
+      holds name doubled slots (state `case-held`).
+    - An empty cell: item 2. Both halves are open.
+12. **Small halves.** A half is about 47px wide at 1440, today's narrow tile. At 1024 it is about
+    27px, and the narrow tile's 20px grip, 18px Stay Put and 16px stack badge collide. Three
+    options, drawn on a board with a selected half and a stacked half:
+    - Initial Only (pick): under 40px wide, the tag shows the app's first letter, and the lock, Stay
+      Put, grip and badge give way to the inspector and to keys L, K and B; the eight resize handles
+      stay. The strip shows the back app's initial. Gain: no new layout. Loss: two Claude halves read
+      the same; the inspector names them.
+    - Vertical Name: the app name runs up the tile's side. Gain: the name reads on the board. Loss:
+      turned text is slower to read, and a long name is cut.
+    - Zoom to the Monitor: while a split cell is selected, the board shows only its monitor, so a
+      half is about 70px. Show All Monitors goes back. Gain: today's narrow tile, every control in
+      reach. Loss: a cross-monitor drag needs Show All Monitors first.
+13. **Drop Note.** After a split, a note under the tile says "Split cell 2. Claude keeps the left
+    half." with Undo, in the Drop Note look (decision `stack-and-lock`). It names the cell by its
+    number before the split, since the numbers change with the grid. The fast split uses the same
+    words: one act, one name. A join says "Joined cell 2." and adds "The grid is 5×2 again." when
+    the grid halves back. The status bar keeps the same words. Gain: the old number is the one the
+    owner just pointed at. Loss: the board's cell labels show the new numbers at once. Pick: as
+    drawn.
 
 ## Free Layout
 
@@ -220,13 +273,12 @@ and the key F.
 ## Input needed
 
 - Owner grant: yes. Empty-cell selection (item 2).
-- Owner grant: yes. Keep This Half Empty switch, or the empty half always fillable (item 6).
+- Owner grant: yes. Keep This Half Empty switch, or the open half always fillable last (item 6).
 - Owner grant: yes. The size floor, 400 × 300 px (item 20).
 - Owner grant: yes. Zones pause in Free Layout (item 26).
 - Open: should Free Layout's line drag reach across monitors? Drawn as no.
-- Open: at 1024, a half cell is 27px wide. Is the inspector enough there, or should the board
-  zoom to one monitor while Split or Free Layout is in use?
-- Open: items 5-13 describe halves and parts from Subdivide the Cell (`part`, `splits`). Rewrite
-  them for Finer Grid (item 4).
+- Open: at 1024, a half is 27px wide. Initial Only, Vertical Name or Zoom to the Monitor
+  (item 12)? Drawn in `split-cell.html`; pick: Initial Only.
+- Open: question S, halves only or thirds and quarters too (items 8 and 10).
 - Open: how a closed window's space divides when more than one neighbour takes it (item 17).
 - Open: the fast action's trigger, direction and share (decision `layout-free`, question (c)).
