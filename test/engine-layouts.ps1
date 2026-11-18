@@ -21,6 +21,7 @@
 # unit fill, zones and held windows on the doubled slots. Each runs tile.ps1 -Scene <json> -From <snapshot> -Json, a dry run.
 # Free Layout areas (L3, plan layout-free-build, items 24 to 26, and item G): the cases at the end. Areas sit in grids.wide.free.areas of a
 # role-keyed scene. Item G's Get-CollapsedAreas is read through tile.ps1 -Lib in a child powershell; its contract is in that section.
+# Gap fill (L5a, plan layout-free-build): the cases after item G. -GapFill runs on a Free Layout board; its contract is in that section.
 # Red on 31ea7c1: the id cases (desk, rearranged, item 9, seam, setup B, full size) fail by an assert. The controls (empty layout,
 # -Monitor wide, role-keyed scene, a layout for another setup) pass there and must stay green.
 $ErrorActionPreference = 'Stop'
@@ -433,7 +434,11 @@ try {
   # 5x2 base. mult [2,1] splits each cell in two along x; mult [1,2] along y. A base cell keeps CellRect's int cut, so a split cell's
   # halves must tile it exactly. Every run is a dry run (-From).
   function FgMon([int]$w, [int]$h) { Mon "FG-${w}x$h" 0 0 $w $h $w $h }
-  function FgWin([int]$id, $app, $title, [int]$x, [int]$y = 0) { [pscustomobject]@{ id = $id; app = $app; title = $title; x = $x; y = $y; w = 400; h = 300 } }
+  # -min: a minimized window as -From carries it (min true, at -32000). w and h give its rect for when it is restored.
+  function FgWin([int]$id, $app, $title, [int]$x, [int]$y = 0, [int]$w = 400, [int]$h = 300, [switch]$min) {
+    if ($min) { [pscustomobject]@{ id = $id; app = $app; title = $title; x = -32000; y = -32000; w = $w; h = $h; min = $true } }
+    else { [pscustomobject]@{ id = $id; app = $app; title = $title; x = $x; y = $y; w = $w; h = $h } }
+  }
   function FgPin($app, $match, [int[]]$slots) { [pscustomobject]@{ app = $app; match = $match; mon = 'wide'; slots = @($slots) } }
   function FgGrid([int]$mx, [int]$my) { [pscustomobject]@{ c = 5; r = 2; mult = @($mx, $my) } }
   function FgScene([string]$name, $grid, $pins = @(), $fill = $null, $zones = @()) { Write-Json $name ([pscustomobject]@{ id = $name; name = $name; grids = [pscustomobject]@{ wide = $grid }; pins = @($pins); zones = @($zones); fill = $fill }) }
@@ -817,6 +822,185 @@ try {
   Case 'L3 item G: a side whose share would overlap is skipped for the next qualifying side, 2x2 absent {1,2} and its mirror {0,3}' {
     GCheck 'L3 item G: 2x2 absent {1,2}: area 0 takes the top line, area 3 the bottom line, no gap and no overlap (1200 x 900)' (GKey 'G9' $gSub2 @(1, 2)) @(@(0, 0, 1, 0.5), $null, $null, @(0, 0.5, 1, 0.5))
     GCheck 'L3 item G: 2x2 absent {0,3} (mirror): area 1 takes the top line, area 2 the bottom line (1200 x 900)' (GKey 'G9' $gSub2 @(0, 3)) @($null, @(0, 0, 1, 0.5), @(0, 0.5, 1, 0.5), $null)
+  }
+
+  # ---- Gap fill (L5a, plan layout-free-build, L5a and item G; owner ruling 2026-11-18 11:08 CST: closed and minimized). ----
+  # Contract the builder meets. Every run here passes -From, so it is a dry run:
+  #   tile.ps1 -Scene <json> -From <snap> -GapFill -Absent <ids> -Last <json> -Json, printing {placed, missing, left}.
+  #   placed lists only the windows the run moves, each with its to-rect (x, y, w, h). A window it does not move is not listed.
+  #   -Absent: handle ids of the windows that closed or minimized. An absent window is not placed. Its area is a gone region for Get-CollapsedAreas.
+  #   -Last: [{id, x, y, w, h}], the rect the tray last gave each tiled window. It is read the way -Place is read (JsonText).
+  #   A window moves only from its scene rect or its -Last rect. Any other rect is a hand move: it stays put, and its area counts as locked.
+  #   A pin with lock true locks its area. tile.ps1's header says the page reads that lock; -GapFill reads it too. A locked area never moves.
+  #   Nothing is placed into a gap: no fill, no pin.
+  #   A minimized window is a -From window with min true, at x and y -32000 (FgWin's -min).
+  # On 74f87cb the flags are ignored, so each run is a plain scene run, and each case fails on the rect it expects there.
+  Case 'L5a scope: tile.ps1 declares -GapFill, -Absent and -Last' {
+    $tk = $null; $te = $null
+    $ast = [Management.Automation.Language.Parser]::ParseFile($tile, [ref]$tk, [ref]$te)
+    $declared = @($ast.ParamBlock.Parameters | % { [string]$_.Name.VariablePath.UserPath })
+    $notDeclared = @('GapFill', 'Absent', 'Last') | ? { $declared -notcontains $_ }
+    Check 'L5a scope: tile.ps1 declares -GapFill, -Absent and -Last' ($notDeclared.Count -eq 0) "not declared: $($notDeclared -join ', ')"
+  }
+  # A board: one area per window, pin index = area index. $fr: fractions of a 1200 x 900 work area (quarter lines are whole pixels).
+  # $who: [app, title] per area. $gone: areas whose window is gone. $locks: areas whose pin is locked. $cur: area -> snapshot rect (a hand move).
+  # $last: area -> -Last rect (default: the scene rect). $rev: the windows, -Absent and -Last listed in reverse (fixture order independence).
+  function GfPx($f) { @([int][Math]::Round($f[0] * 1200), [int][Math]::Round($f[1] * 900), [int][Math]::Round($f[2] * 1200), [int][Math]::Round($f[3] * 900)) }
+  function GfId([int]$i) { 6401 + $i }
+  function GfPin($app, $match, [bool]$lock = $false) { $p = FgPin $app $match @(0); if ($lock) { $p | Add-Member -NotePropertyName lock -NotePropertyValue $true }; $p }
+  function GfScenePath([string]$tag, $fr, $who, $locks) {
+    $areas = @(); $pins = @()
+    for ($i = 0; $i -lt @($fr).Count; $i++) { $areas += FreeArea $fr[$i] $i; $pins += GfPin $who[$i][0] $who[$i][1] ($locks -contains $i) }
+    FgScene "L5a-$tag-scene.json" (FreeGrid 1 1 $areas) $pins $null
+  }
+  function GfBoard([string]$tag, $fr, $who, $gone, $locks, [string]$closure, $cur = @{}, $last = @{}, [bool]$rev = $false) {
+    $sc = GfScenePath $tag $fr $who $locks
+    $wins = @(); $lastOut = @(); $absent = @()
+    for ($i = 0; $i -lt @($fr).Count; $i++) {
+      $id = GfId $i; $px = GfPx $fr[$i]
+      $lr = if ($last.ContainsKey($i)) { $last[$i] } else { $px }
+      $lastOut += [pscustomobject]@{ id = $id; x = $lr[0]; y = $lr[1]; w = $lr[2]; h = $lr[3] }
+      if ($gone -contains $i) {
+        $absent += $id
+        if ($closure -eq 'minimized') { $wins += FgWin $id $who[$i][0] $who[$i][1] 0 0 $px[2] $px[3] -min }
+        continue
+      }
+      $cr = if ($cur.ContainsKey($i)) { $cur[$i] } else { $px }
+      $wins += FgWin $id $who[$i][0] $who[$i][1] $cr[0] $cr[1] $cr[2] $cr[3]
+    }
+    if ($rev) { [array]::Reverse($wins); [array]::Reverse($absent); [array]::Reverse($lastOut) }
+    [pscustomobject]@{ scene = $sc; snap = (Write-Snap "L5a-$tag-$closure.json" @(FgMon 1200 900) $wins); wins = @($wins); absent = @($absent); last = (ConvertTo-Json -InputObject @($lastOut) -Depth 4 -Compress) }
+  }
+  function GfGo($b) { ConvertFrom-Json ((& $tile -Scene $b.scene -From $b.snap -GapFill -Absent @($b.absent) -Last $b.last -Json 3>$null) -join '') }
+  # Expected moves: area index -> 'x,y,w,h' for a move, or 'stay'. Returns the same table keyed by window id.
+  function GfExpect($exp) { $h = @{}; foreach ($k in $exp.Keys) { $h["$(GfId ([int]$k))"] = $exp[$k] }; $h }
+  # The run's moves against $expect (id string -> 'x,y,w,h' or 'stay'). A stay passes when the window is not placed, or is placed at its own snapshot
+  # rect. A placed window that $expect does not name fails too. The FAIL line names each window that is wrong.
+  function GfCheck([string]$name, $r, $wins, [hashtable]$expect) {
+    $bad = @()
+    foreach ($id in $expect.Keys) {
+      $p = PlacedOf $r ([int64]$id); $want = $expect[$id]
+      if ($want -eq 'stay') {
+        $w = @($wins | ? { "$($_.id)" -eq $id })[0]
+        if ($p -and $w -and (RectOf $p) -cne ('{0},{1},{2},{3}' -f [int]$w.x, [int]$w.y, [int]$w.w, [int]$w.h)) { $bad += "id $id moved to $(RectOf $p), should stay" }
+      } elseif (-not $p -or (RectOf $p) -cne $want) { $bad += "id $id $(Desc $r ([int64]$id)), want $want" }
+    }
+    foreach ($p in @($r.placed)) { if (-not $expect.ContainsKey("$($p.id)")) { $bad += "id $($p.id) moved to $(RectOf $p), should stay" } }
+    Check $name ($bad.Count -eq 0) ($bad -join ' | ')
+  }
+  # The shapes. Each is a board whose gone area is one window; the four single-side shapes give the one side that takes it, and the midpoint
+  # shapes give the two sides. 'lock' rows put a lock on the one side that would take it, so that side never moves.
+  $gfRows = @(
+    [pscustomobject]@{ name = 'left and right, midpoint'; fr = @(@(0, 0, 0.25, 1), @(0.25, 0, 0.5, 1), @(0.75, 0, 0.25, 1)); who = @(@('chrome', 'Left'), @('claude', 'Gone'), @('outlook', 'Right')); gone = @(1); locks = @(); exp = @{ 0 = '0,0,600,900'; 2 = '600,0,600,900' } },
+    [pscustomobject]@{ name = 'left and right, left locked'; fr = @(@(0, 0, 0.25, 1), @(0.25, 0, 0.5, 1), @(0.75, 0, 0.25, 1)); who = @(@('chrome', 'Left'), @('claude', 'Gone'), @('outlook', 'Right')); gone = @(1); locks = @(0); exp = @{ 0 = 'stay'; 2 = '300,0,900,900' } },
+    [pscustomobject]@{ name = 'left and right, right locked'; fr = @(@(0, 0, 0.25, 1), @(0.25, 0, 0.5, 1), @(0.75, 0, 0.25, 1)); who = @(@('chrome', 'Left'), @('claude', 'Gone'), @('outlook', 'Right')); gone = @(1); locks = @(2); exp = @{ 0 = '0,0,900,900'; 2 = 'stay' } },
+    [pscustomobject]@{ name = 'right side takes it (left edge gone)'; fr = @(@(0, 0, 0.25, 1), @(0.25, 0, 0.75, 1)); who = @(@('claude', 'Gone'), @('chrome', 'Right')); gone = @(0); locks = @(); exp = @{ 1 = '0,0,1200,900' } },
+    [pscustomobject]@{ name = 'right side locked, gap stays'; fr = @(@(0, 0, 0.25, 1), @(0.25, 0, 0.75, 1)); who = @(@('claude', 'Gone'), @('chrome', 'Right')); gone = @(0); locks = @(1); exp = @{ 1 = 'stay' } },
+    [pscustomobject]@{ name = 'left side takes it (right edge gone)'; fr = @(@(0, 0, 0.75, 1), @(0.75, 0, 0.25, 1)); who = @(@('chrome', 'Left'), @('claude', 'Gone')); gone = @(1); locks = @(); exp = @{ 0 = '0,0,1200,900' } },
+    [pscustomobject]@{ name = 'left side locked, gap stays'; fr = @(@(0, 0, 0.75, 1), @(0.75, 0, 0.25, 1)); who = @(@('chrome', 'Left'), @('claude', 'Gone')); gone = @(1); locks = @(0); exp = @{ 0 ='stay' } },
+    [pscustomobject]@{ name = 'above side takes it (bottom gone)'; fr = @(@(0, 0, 1, 0.5), @(0, 0.5, 1, 0.5)); who = @(@('chrome', 'Top'), @('claude', 'Gone')); gone = @(1); locks = @(); exp = @{ 0 = '0,0,1200,900' } },
+    [pscustomobject]@{ name = 'above side locked, gap stays'; fr = @(@(0, 0, 1, 0.5), @(0, 0.5, 1, 0.5)); who = @(@('chrome', 'Top'), @('claude', 'Gone')); gone = @(1); locks = @(0); exp = @{ 0 = 'stay' } },
+    [pscustomobject]@{ name = 'below side takes it (top gone)'; fr = @(@(0, 0, 1, 0.5), @(0, 0.5, 1, 0.5)); who = @(@('claude', 'Gone'), @('chrome', 'Bottom')); gone = @(0); locks = @(); exp = @{ 1 = '0,0,1200,900' } },
+    [pscustomobject]@{ name = 'below side locked, gap stays'; fr = @(@(0, 0, 1, 0.5), @(0, 0.5, 1, 0.5)); who = @(@('claude', 'Gone'), @('chrome', 'Bottom')); gone = @(0); locks = @(1); exp = @{ 1 = 'stay' } },
+    [pscustomobject]@{ name = 'above and below, midpoint'; fr = @(@(0, 0, 1, 0.25), @(0, 0.25, 1, 0.5), @(0, 0.75, 1, 0.25)); who = @(@('chrome', 'Top'), @('claude', 'Gone'), @('outlook', 'Bottom')); gone = @(1); locks = @(); exp = @{ 0 = '0,0,1200,450'; 2 = '0,450,1200,450' } },
+    [pscustomobject]@{ name = 'above and below, top locked'; fr = @(@(0, 0, 1, 0.25), @(0, 0.25, 1, 0.5), @(0, 0.75, 1, 0.25)); who = @(@('chrome', 'Top'), @('claude', 'Gone'), @('outlook', 'Bottom')); gone = @(1); locks = @(0); exp = @{ 0 = 'stay'; 2 = '0,225,1200,675' } },
+    [pscustomobject]@{ name = 'above and below, bottom locked'; fr = @(@(0, 0, 1, 0.25), @(0, 0.25, 1, 0.5), @(0, 0.75, 1, 0.25)); who = @(@('chrome', 'Top'), @('claude', 'Gone'), @('outlook', 'Bottom')); gone = @(1); locks = @(2); exp = @{ 0 = '0,0,1200,675'; 2 = 'stay' } }
+  )
+  foreach ($row in $gfRows) {
+    foreach ($closure in 'closed', 'minimized') {
+      Case "L5a gap, $($row.name) ($closure)" {
+        $b = GfBoard $row.name $row.fr $row.who $row.gone $row.locks $closure
+        $r = GfGo $b
+        GfCheck "L5a gap, $($row.name), ${closure}: each named window takes its rect, the rest stay" $r $b.wins (GfExpect $row.exp)
+      }
+    }
+  }
+  # Hand move: the left neighbour was moved by hand, to a rect that is neither its scene rect nor its -Last rect. It stays put, and no placed window
+  # lands on it.
+  foreach ($closure in 'closed', 'minimized') {
+    Case "L5a hand move, ${closure}: a neighbour moved by hand stays put, and no placed window overlaps it" {
+      $row = $gfRows[0]
+      $b = GfBoard 'hand' $row.fr $row.who $row.gone @() $closure @{ 0 = @(20, 20, 260, 860) }
+      $r = GfGo $b
+      $p0 = PlacedOf $r 6401
+      Check "L5a hand move, ${closure}: the hand-moved window is not placed, or stays at its own rect" ((-not $p0) -or ((RectOf $p0) -ceq '20,20,260,860')) (Desc $r 6401)
+      $hand = [pscustomobject]@{ x = 20; y = 20; w = 260; h = 860 }
+      $over = @($r.placed | ? { "$($_.id)" -ne '6401' -and ([Math]::Min($_.x + $_.w, $hand.x + $hand.w) - [Math]::Max($_.x, $hand.x) -gt 0) -and ([Math]::Min($_.y + $_.h, $hand.y + $hand.h) - [Math]::Max($_.y, $hand.y) -gt 0) } | % { "id $($_.id) at $(RectOf $_)" })
+      Check "L5a hand move, ${closure}: no placed window overlaps the hand-moved one" ($over.Count -eq 0) ($over -join ' | ')
+    }
+  }
+  # Restore: the gone window is back, at its scene rect, and the neighbours that grew into its space shrink back from their -Last rects. A locked
+  # neighbour stays at its -Last rect. 'new-id' is a window reopened under a new handle (no -Last entry for it).
+  $rowM = $gfRows[0]
+  foreach ($variant in 'same-id', 'new-id', 'locked') {
+    Case "L5a restore, ${variant}: the neighbours shrink from their -Last rects, and a locked one stays" {
+      $locks = if ($variant -eq 'locked') { @(0) } else { @() }
+      $sc = GfScenePath "restore-$variant" $rowM.fr $rowM.who $locks
+      $mid = if ($variant -eq 'new-id') { 6502 } else { 6402 }
+      $wins = @((FgWin 6401 'chrome' 'Left side' 0 0 600 900), (FgWin $mid 'claude' 'Gone' 300 0 600 900), (FgWin 6403 'outlook' 'Right side' 600 0 600 900))
+      $lastRects = @([pscustomobject]@{ id = 6401; x = 0; y = 0; w = 600; h = 900 }, [pscustomobject]@{ id = 6403; x = 600; y = 0; w = 600; h = 900 })
+      if ($variant -eq 'same-id') { $lastRects += [pscustomobject]@{ id = 6402; x = 300; y = 0; w = 600; h = 900 } }
+      $snap = Write-Snap "L5a-restore-$variant.json" @(FgMon 1200 900) $wins
+      $r = ConvertFrom-Json ((& $tile -Scene $sc -From $snap -GapFill -Absent @() -Last (ConvertTo-Json -InputObject @($lastRects) -Depth 4 -Compress) -Json 3>$null) -join '')
+      $exp = @{}; $exp['6401'] = $(if ($variant -eq 'locked') { 'stay' } else { '0,0,300,900' }); $exp['6403'] = '900,0,300,900'; $exp["$mid"] = 'stay'
+      GfCheck "L5a restore, ${variant}: the neighbours go back to their scene rects, the restored window stays" $r $wins $exp
+    }
+  }
+  # Two gone windows at once, the middle two of four. The outer neighbours take the midpoint, whichever order the ids come in.
+  $fr4 = @(@(0, 0, 0.25, 1), @(0.25, 0, 0.25, 1), @(0.5, 0, 0.25, 1), @(0.75, 0, 0.25, 1))
+  $who4 = @(@('chrome', 'L'), @('claude', 'M1'), @('claude', 'M2'), @('outlook', 'R'))
+  foreach ($closure in 'closed', 'minimized') {
+    foreach ($order in 'asc', 'desc') {
+      Case "L5a two gone, $closure, ids ${order}: the outer neighbours meet at the midpoint in either order" {
+        $b = GfBoard "order-$order" $fr4 $who4 @(1, 2) @() $closure @{} @{} ($order -eq 'desc')
+        $r = GfGo $b
+        GfCheck "L5a two gone, $closure, ids ${order}: the left window takes 0,0,600,900 and the right one 600,0,600,900" $r $b.wins (GfExpect @{ 0 = '0,0,600,900'; 3 = '600,0,600,900' })
+      }
+    }
+  }
+  # Fill: the gone area stays a gap, so the fill places no window into it. The spare outlook window would fill it on a plain run.
+  foreach ($closure in 'closed', 'minimized') {
+    Case "L5a fill, ${closure}: a gap takes no window, so the spare window the fill would place stays where it is" {
+      $fill = [pscustomobject]@{ mon = 'wide'; apps = @('outlook'); skip = @(); sort = 'app' }
+      $areas = @((FreeArea @(0, 0, 0.25, 1) 0), (FreeArea @(0.25, 0, 0.5, 1) 1), (FreeArea @(0.75, 0, 0.25, 1) 2))
+      $sc = FgScene "L5a-fill-$closure-scene.json" (FreeGrid 1 1 $areas) @((GfPin 'chrome' 'Left'), (GfPin 'claude' 'Gone'), (GfPin 'outlook' 'Right')) $fill
+      $wins = @((FgWin 6401 'chrome' 'Left side' 0 0 300 900), (FgWin 6403 'outlook' 'Right side' 900 0 300 900), (FgWin 6420 'outlook' 'Spare' 100 100 400 300))
+      if ($closure -eq 'minimized') { $wins += FgWin 6402 'claude' 'Gone' 0 0 300 900 -min }
+      $last = '[{"id":6401,"x":0,"y":0,"w":300,"h":900},{"id":6402,"x":300,"y":0,"w":600,"h":900},{"id":6403,"x":900,"y":0,"w":300,"h":900}]'
+      $snap = Write-Snap "L5a-fill-$closure.json" @(FgMon 1200 900) $wins
+      $r = ConvertFrom-Json ((& $tile -Scene $sc -From $snap -GapFill -Absent @(6402) -Last $last -Json 3>$null) -join '')
+      $exp = GfExpect @{ 0 = '0,0,600,900'; 2 = '600,0,600,900' }; $exp['6420'] = 'stay'
+      GfCheck "L5a fill, ${closure}: the neighbours meet at the midpoint, and the spare window stays" $r $wins $exp
+    }
+  }
+  # Empty: -Absent empty, so the gone window's area is only empty. Nothing moves, as with no -GapFill.
+  Case 'L5a empty: with -Absent empty, a window missing from the snapshot leaves its area empty and nothing moves' {
+    $b = GfBoard 'empty' $rowM.fr $rowM.who $rowM.gone @() 'closed'
+    $b.absent = @()
+    $r = GfGo $b
+    GfCheck 'L5a empty: the two neighbours stay at their scene rects' $r $b.wins (GfExpect @{ 0 = 'stay'; 2 = 'stay' })
+  }
+  # Full size: ten areas, the top middle one gone. A midpoint share would leave the left window 360 px wide, under the 400 floor, so the left side
+  # takes the whole space (the first side that qualifies). Every other window stays.
+  $fr10 = @(); $who10 = @()
+  for ($i = 0; $i -lt 10; $i++) { $fr10 += , @((($i % 5) * 0.2), ([Math]::Floor($i / 5) * 0.5), 0.2, 0.5); $who10 += , @('claude', "Cell $($i + 1)") }
+  foreach ($closure in 'closed', 'minimized') {
+    Case "L5a full size, ${closure}: ten areas, the top middle one gone; the left neighbour takes the space, the other nine stay" {
+      $b = GfBoard 'full' $fr10 $who10 @(2) @() $closure
+      $r = GfGo $b
+      $exp = @{}; for ($i = 0; $i -lt 10; $i++) { $exp[$i] = 'stay' }; $exp[1] = '240,0,480,450'
+      GfCheck "L5a full size, ${closure}: the left window takes 240,0,480,450, the others stay (1200 x 900, ten areas)" $r $b.wins (GfExpect $exp)
+    }
+  }
+  # Off: no -GapFill gives today's output. The literals are frozen from 74f87cb, the old commit: the closed middle window, no flag.
+  $gfOffJson = '{"placed":[{"id":6401,"app":"chrome","title":"Left","mon":"wide","slots":[1],"pin":0,"zone":-1,"x":0,"y":0,"w":300,"h":900,"from":{"x":0,"y":0,"w":300,"h":900},"ok":true,"note":"dry run"},{"id":6403,"app":"outlook","title":"Right","mon":"wide","slots":[3],"pin":2,"zone":-1,"x":900,"y":0,"w":300,"h":900,"from":{"x":900,"y":0,"w":300,"h":900},"ok":true,"note":"dry run"}],"missing":[{"pin":1,"app":"claude","match":"Gone","why":"no open window"}],"left":[]}'
+  $gfOffText = @('chrome    slots 1      x=0 y=0 300x900  Left', 'outlook   slots 3      x=900 y=0 300x900  Right', 'Grid 3x1 (400 x 900 per slot): pinned 2, tiled 0 of 0 others.') -join "`n"
+  Case 'L5a off: a run with no -GapFill gives today''s output, as -Json and as text' {
+    $b = GfBoard 'off' $rowM.fr $rowM.who $rowM.gone @() 'closed'
+    $j = (& $tile -Scene $b.scene -From $b.snap -Json 3>$null) -join ''
+    $t = (((& $tile -Scene $b.scene -From $b.snap 3>$null) | Out-String) -replace "`r", '').TrimEnd()
+    Check 'L5a off: -Json output is byte-identical to today' ($j -ceq $gfOffJson) "got $j"
+    Check 'L5a off: text output is byte-identical to today' ($t -ceq $gfOffText) "got $(($t -split "`n") -join ' / ')"
   }
 
 } finally {

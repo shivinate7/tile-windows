@@ -17,6 +17,8 @@
 #   6 run folders (green): the sweep removes a run folder older than a day and keeps a newer one (test-temp-standard).
 #   7 CLAUDECODE (red 7a, 7b on 62acbd4): with no suite, a flagless -Scene is refused naming TILE_TEST_ALLOW_LIVE. Green controls: the
 #     exempt runs, the opt-in, a neither-var run, and the tray and server apply paths (their dry seams) still run.
+#   8 L5a (red 8a and 8c on 74f87cb): -GapFill joins the guard. A bare -GapFill -Json under the suite, or under CLAUDECODE, is refused. 8b, 8d and
+#     8e are green controls: a -Scene run is refused by the old guard already, and -DryRun and -From are exempt.
 # Every flagless run names a scene or spec that matches no open window (tile-test-no-such-app), and the scope check proves no
 # open window has that app name. So no flagless run can move a window on any code.
 # Each child's env is set or stripped in full. A probe child first shows which seam vars reached it (scope before subject).
@@ -256,6 +258,19 @@ Apply-Scene ([pscustomobject]@{ id = 'default'; name = 'Default' }) 'from the te
   Check '7l CLAUDECODE: the server apply path (-From) places the fixture window as a dry run, not refused' ($null -ne $ap -and $ap.Count -eq 1 -and $ap[0].ok -eq $true -and "$($ap[0].note)" -like 'dry run*') "no dry-run entry back (refused or failed): $(Short $apErr) url [$(Short $svUrl)]"
   try { [void](Invoke-WebRequest -UseBasicParsing "$($svUrl)quit" -Method Post -Body 'quit') } catch { }
   Check 'the server exits on /quit (CLAUDECODE case)' ($sv.WaitForExit(5000))
+
+  # ---- 8. L5a: -GapFill joins the guard. Red on 74f87cb, where the flag is ignored, so a bare -GapFill -Json runs as the snapshot the guard
+  # exempts. The -Scene form is refused by the old guard already (a green control). -DryRun and -From are exempt and must not be refused.
+  $gfBare = Invoke-PsChild "-File `"$tile`" -GapFill -Json" (New-ChildEnv $suite)
+  Check '8a suite: a -GapFill run with -Json and no scene is refused, and the refusal names TILE_TEST_ALLOW_LIVE' ($gfBare.Code -ne 0 -and (($gfBare.Out + $gfBare.Err) -match 'TILE_TEST_ALLOW_LIVE')) "exit $($gfBare.Code); out [$(Short $gfBare.Out)]"
+  $gfScene = Invoke-PsChild "-File `"$tile`" -Scene `"$sceneNone`" -GapFill -Json" (New-ChildEnv $suite)
+  Check '8b suite: a -GapFill run with -Scene and no -DryRun is refused, naming TILE_TEST_ALLOW_LIVE' ($gfScene.Code -ne 0 -and (($gfScene.Out + $gfScene.Err) -match 'TILE_TEST_ALLOW_LIVE')) "exit $($gfScene.Code); out [$(Short $gfScene.Out)]"
+  $gfCc = Invoke-PsChild "-File `"$tile`" -GapFill -Json" (New-ChildEnv $agent)
+  Check '8c CLAUDECODE: a -GapFill run with -Json and no scene is refused, naming TILE_TEST_ALLOW_LIVE' ($gfCc.Code -ne 0 -and (($gfCc.Out + $gfCc.Err) -match 'TILE_TEST_ALLOW_LIVE')) "exit $($gfCc.Code); out [$(Short $gfCc.Out)]"
+  $gfDry = Invoke-PsChild "-File `"$tile`" -GapFill -DryRun -Json" (New-ChildEnv $suite)
+  Check '8d suite: -GapFill with -DryRun is exempt, so it is not refused (control)' (($gfDry.Out + $gfDry.Err) -notmatch 'TILE_TEST_ALLOW_LIVE') "out [$(Short $gfDry.Out)] err [$(Short $gfDry.Err)]"
+  $gfFrom = Invoke-PsChild "-File `"$tile`" -GapFill -From `"$fixture`" -Json" (New-ChildEnv $suite)
+  Check '8e suite: -GapFill with -From is exempt, so it is not refused (control)' (($gfFrom.Out + $gfFrom.Err) -notmatch 'TILE_TEST_ALLOW_LIVE') "out [$(Short $gfFrom.Out)] err [$(Short $gfFrom.Err)]"
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
