@@ -665,13 +665,27 @@ try {
     Check 'L3 zones: with areas on, the zone is paused, so Zone A is not placed' (-not (PlacedOf $r 6501)) (Desc $r 6501)
   }
 
-  # ---- Item G (L3, plan layout-free-build, item G): Get-CollapsedAreas($areas, $absent, $locked, $size), defined in tile.ps1 after its -Lib
+  # ---- Item G (L3, plan layout-free-build, item G): Get-CollapsedAreas($areas, $absent, $locked, $size), defined in tile.ps1 before its -Lib
   # return. A child powershell dot-sources tile.ps1 -Lib, so no variable of this file meets tile.ps1's param block. It runs each call of each
   # case and prints one line per call: case, call index, and the result as JSON (or MISSING when the function is not defined).
   # Contract: $areas = [{rect: [fx, fy, fw, fh]}] in fractions of the work area; $absent and $locked = 0-based indexes into $areas; $size = @(W, H)
   # in pixels, for the 400 x 300 floor. Returns one entry per area, in order: its new rect in fractions, or $null for an area whose window is
   # gone and whose space stays a gap. A locked area, or one the call does not touch, returns its rect as it was.
   function GArea($rect) { [pscustomobject]@{ rect = @([double[]]$rect) } }
+  # Every subset of 0..n-1, as the calls of a case: absent = the subset, locked = none. The empty subset comes first, the full set last.
+  function GSubsets([int]$n) {
+    $calls = @()
+    for ($mask = 0; $mask -lt (1 -shl $n); $mask++) {
+      $s = @(); for ($b = 0; $b -lt $n; $b++) { if ($mask -band (1 -shl $b)) { $s += $b } }
+      $calls += [pscustomobject]@{ absent = @($s); locked = @() }
+    }
+    ,$calls
+  }
+  function GSet($a) { '{' + ((@($a) | % { $_ }) -join ',') + '}' }
+  # A 2x2 grid (areas 0 and 1 on top, 2 and 3 below) and a 3x1 grid of equal cells. Each absent subset of each is one call (G9, G10).
+  $gGrid2 = @((GArea @(0, 0, 0.5, 0.5)), (GArea @(0.5, 0, 0.5, 0.5)), (GArea @(0, 0.5, 0.5, 0.5)), (GArea @(0.5, 0.5, 0.5, 0.5)))
+  $gGrid3 = @((GArea @(0, 0, (1 / 3), 1)), (GArea @((1 / 3), 0, (1 / 3), 1)), (GArea @((2 / 3), 0, (1 / 3), 1)))
+  $gSub2 = GSubsets 4; $gSub3 = GSubsets 3
   $g1 = @(0, 0, 0.25, 1), @(0.25, 0, 0.5, 1), @(0.75, 0, 0.25, 1)
   $gCases = @(
     [pscustomobject]@{ id = 'G1'; size = @(1200, 900); areas = @((GArea $g1[0]), (GArea $g1[1]), (GArea $g1[2])); calls = @([pscustomobject]@{ absent = @(1); locked = @() }) },
@@ -681,7 +695,9 @@ try {
     [pscustomobject]@{ id = 'G5'; size = @(1000, 600); areas = @((GArea @(0, 0, 0.2, 1)), (GArea @(0.2, 0, 0.2, 1)), (GArea @(0.4, 0, 0.6, 1))); calls = @([pscustomobject]@{ absent = @(1); locked = @() }) },
     [pscustomobject]@{ id = 'G6'; size = @(1200, 900); areas = @((GArea @(0, 0, 0.25, 1)), (GArea @(0.25, 0, 0.25, 1)), (GArea @(0.5, 0, 0.25, 1)), (GArea @(0.75, 0, 0.25, 1))); calls = @([pscustomobject]@{ absent = @(1, 2); locked = @() }, [pscustomobject]@{ absent = @(2, 1); locked = @() }) },
     [pscustomobject]@{ id = 'G7'; size = @(1200, 900); areas = @((GArea $g1[0]), (GArea $g1[1]), (GArea $g1[2])); calls = @([pscustomobject]@{ absent = @(1); locked = @() }, [pscustomobject]@{ absent = @(); locked = @() }) },
-    [pscustomobject]@{ id = 'G8'; size = @(1200, 900); areas = @((GArea @(0, 0, 1, 0.25)), (GArea @(0, 0.25, 1, 0.5)), (GArea @(0, 0.75, 1, 0.25))); calls = @([pscustomobject]@{ absent = @(1); locked = @() }) }
+    [pscustomobject]@{ id = 'G8'; size = @(1200, 900); areas = @((GArea @(0, 0, 1, 0.25)), (GArea @(0, 0.25, 1, 0.5)), (GArea @(0, 0.75, 1, 0.25))); calls = @([pscustomobject]@{ absent = @(1); locked = @() }) },
+    [pscustomobject]@{ id = 'G9'; size = @(1200, 900); areas = $gGrid2; calls = $gSub2 },
+    [pscustomobject]@{ id = 'G10'; size = @(1200, 900); areas = $gGrid3; calls = $gSub3 }
   )
   $gOut = @(); $gRes = @{}
   try {
@@ -749,6 +765,46 @@ try {
   }
   Case 'L3 item G: an above and below pair meet at the midpoint when no left or right side qualifies' {
     GCheck 'L3 item G: an above and below pair meet at the midpoint (1200 x 900)' 'G8|0' @(@(0, 0, 1, 0.5), $null, @(0, 0.5, 1, 0.5))
+  }
+
+  # Two returned rects overlap when each axis overlaps by more than 1e-9, so a shared edge is no overlap. A gap ($null) overlaps nothing.
+  function GRect($r) { if ($null -eq $r) { 'gap' } else { '[' + (@($r) -join ',') + ']' } }
+  function GOver($p, $q) {
+    if ($null -eq $p -or $null -eq $q) { return $false }
+    # [Math] on a mixed int and double picks the int overload, so 0 and 0.5 give 0. Cast first.
+    $p = [double[]]@($p); $q = [double[]]@($q)
+    $ox = [Math]::Min($p[0] + $p[2], $q[0] + $q[2]) - [Math]::Max($p[0], $q[0])
+    $oy = [Math]::Min($p[1] + $p[3], $q[1] + $q[3]) - [Math]::Max($p[1], $q[1])
+    ($ox -gt 1e-9) -and ($oy -gt 1e-9)
+  }
+  # One check per call. The result has $want entries (one per area), and no two returned non-null rects overlap. The FAIL line names the first pair.
+  function GNoOverlap([string]$name, [string]$key, [int]$want) {
+    $txt = $gRes[$key]
+    if ($null -eq $txt) { Check $name $false 'the probe printed no line for this call'; return }
+    if ($txt -eq 'MISSING') { Check $name $false 'Get-CollapsedAreas is not defined by tile.ps1 -Lib'; return }
+    $got = ConvertFrom-Json $txt  # assigned, not wrapped: PowerShell 5.1 emits a JSON array as one object
+    $n = @($got).Count
+    $pair = ''
+    for ($a = 0; $a -lt $n -and $pair -eq ''; $a++) {
+      for ($b = $a + 1; $b -lt $n -and $pair -eq ''; $b++) {
+        if (GOver ($got[$a]) ($got[$b])) { $pair = "area $a $(GRect ($got[$a])) overlaps area $b $(GRect ($got[$b]))" }
+      }
+    }
+    $why = $pair
+    if ($n -ne $want) { $why = "got $n entries, want $want" }
+    Check $name (($n -eq $want) -and ($pair -eq '')) "$why; the result is $(GText $got)"
+  }
+  # A neighbour that grows into two gaps at once overlaps the area past them: area 0 in the diagonal {1,2} grows right into one gap and down into the other, over area 3.
+  # The empty and full subsets are included: nothing gone, and everything gone.
+  Case 'L3 item G overlap: no two returned areas overlap, for every absent subset of a 2x2 grid' {
+    for ($k = 0; $k -lt @($gSub2).Count; $k++) {
+      GNoOverlap "L3 item G overlap: 2x2 grid, absent $(GSet ($gSub2[$k].absent)): no two returned areas overlap" "G9|$k" 4
+    }
+  }
+  Case 'L3 item G overlap: no two returned areas overlap, for every absent subset of a 3x1 grid' {
+    for ($k = 0; $k -lt @($gSub3).Count; $k++) {
+      GNoOverlap "L3 item G overlap: 3x1 grid, absent $(GSet ($gSub3[$k].absent)): no two returned areas overlap" "G10|$k" 3
+    }
   }
 
 } finally {
