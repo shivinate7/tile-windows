@@ -94,6 +94,8 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .when svg{width:12px;height:12px;flex:none}
 .live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
 .crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+/* A card with the menu button has three things in its bottom row; where they do not fit, the buttons go on a second line. */
+.crow.has{flex-wrap:wrap;row-gap:4px}
 .tag{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
 .mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden}
 .mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
@@ -103,8 +105,9 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .lay{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:3px;flex:none;color:var(--muted)}
 .lay svg{width:13px;height:13px}
 .lay.own{background:var(--ink);color:var(--panel)}
-/* The card's menu button sits in the mini map's top right corner (the map is drawn centred and aria-hidden, so the corner is empty). The open menu is on the page, not in the card, so the rail's scroll box does not clip it. */
-.cmenu{position:absolute;top:9px;right:10px;z-index:1;min-height:26px;width:28px;height:26px;padding:0;font-size:15px;line-height:1;letter-spacing:.05em}
+/* The card's menu button sits beside Apply, in the card's bottom row, so it never covers a monitor drawn in the mini map. The open menu is on the page, not in the card, so the rail's scroll box does not clip it. */
+.cact{display:flex;gap:4px;align-items:center;flex:none;margin-left:auto}
+.cmenu{min-height:26px;width:28px;height:26px;padding:0;font-size:15px;line-height:1;letter-spacing:.05em}
 .cmenu[aria-expanded="true"]{border-color:var(--ink)}
 .menu{position:fixed;z-index:50;display:grid;gap:2px;width:236px;padding:4px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent)}
 .menu button{display:grid;gap:2px;text-align:left;border:0;background:transparent;border-radius:5px;padding:7px 9px;min-height:32px;white-space:normal}
@@ -766,7 +769,7 @@ async function loadAll(){
     setSnap(sj);await previewAll();
   }catch(e){status(e instanceof TypeError?"Could not reach the server. Start Tile Windows again.":`Could not ${step}: ${e.message}`)}
 }
-async function refresh(){if(isBusy)return;status("Reading your windows…");
+async function refresh(){if(isBusy&&!following)return;status("Reading your windows…");
   try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);await resnap(await r.json());hist=[];prevs={};await previewAll();status("Windows read again.")}
   catch(e){status("Could not read windows: "+e.message);
     // A failed re-read leaves the old copy on screen, so the strip says it may be out of date (it is not shown as current).
@@ -1114,17 +1117,19 @@ function renderRail(){
     $("railsum").textContent=nOn?`${nOn} of ${ids.length} scenes have triggers on. The tray agent runs them.`:`No scene has a trigger on yet. Open a scene to switch one on.`;
     // The mark says whose layout a card shows. It says nothing while no scene follows another setup (every card would only say "own layout").
     const lst=Object.fromEntries(ids.map(id=>[id,layState(id)])),marks=ids.some(id=>lst[id]&&lst[id].name);
+    // The cards are drawn again on every render (a preview answers, a save lands), so a button on a card that had focus is found again and gets it back.
+    const fa=document.activeElement,fsel=fa&&fa.closest&&fa.closest("#cards")?["data-pick","data-apply","data-menu"].filter(a=>fa.hasAttribute(a)).map(a=>`[${a}="${CSS.escape(fa.getAttribute(a))}"]`).join(""):"";
     $("cards").innerHTML=ids.map(id=>{const s=work[id],on=id===st.active,l=marks?lst[id]:null,fol=!!(l&&!l.own&&l.name),
       lt=l&&(l.own?"Own layout":l.name?`Follows ${l.name}`:""),
       // The mark sits beside the tag. Its words are its title and label (and hidden text, so a reader that skips the label still has them): the strip says them once, in words, for the selected scene.
       lmark=lt?`<span class="lay${l.own?" own":""}" role="img" title="${esc(lt)}" aria-label="${esc(lt)}">${l.own?OWNI:LINKI}<span class="vh">${esc(lt)}</span></span>`:"";return `<article class="card${id===selId?" sel":""}">
-      ${followName(id)?`<button type="button" class="btn cmenu" data-menu="${esc(id)}" aria-haspopup="menu" aria-expanded="${menuId===id}" aria-label="More for ${esc(s.name)}" title="More for ${esc(s.name)}">⋯</button>`:""}
       <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini${fol?" follow":""}" aria-hidden="true">${miniHTML(prevs[id])}</span>
       <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
       ${(s.trigger||{}).type&&s.trigger.type!=="manual"?`<span class="when">${CLOCK}${esc(trigText(s))}</span>`:""}
       ${chipsOf(s).length?`<span class="chips" aria-label="Extra triggers on">${chipsOf(s).map(c=>`<i>${esc(c)}</i>`).join("")}</span>`:""}
       </button>
-      <div class="crow"><span class="tag">${lmark}${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}</span><button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></div></article>`}).join("");
+      <div class="crow${followName(id)?" has":""}"><span class="tag">${lmark}${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}</span><span class="cact">${followName(id)?`<button type="button" class="btn cmenu" data-menu="${esc(id)}" aria-haspopup="menu" aria-expanded="${menuId===id}" aria-label="More for ${esc(s.name)}" title="More for ${esc(s.name)}">⋯</button>`:""}<button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></span></div></article>`}).join("");
+    if(fsel){const n=$("cards").querySelector(fsel);if(n)n.focus()}
     placeMenu();
   }else $("cards").innerHTML=`<p class="note">Scenes need the app server. Open Tile Windows from the Start menu, or run <code>serve.ps1</code>.</p>`;
   const counts={};for(const w of snap.windows){const c=catOf(w.app);counts[c]=(counts[c]||0)+1}
@@ -1254,21 +1259,31 @@ async function flushSave(id){
   clearTimeout(svT[id]);if(unsaved[id]&&!svBusy[id])saveLayout(id);
   while(svBusy[id])await new Promise(r=>setTimeout(r,10));
   return!failed[id]&&!stale[id]}
+// The key, the name and the setup's name are read when the item is chosen, so a setup change while this waits removes nothing on the new setup. The page is busy from the choice to the end
+// (no edit lands, so no save can follow the remove and bring the layout back), but Refresh still runs: the check of plug.key below handles a setup that changed meanwhile.
+let following=false;
 async function followAgain(id){
-  const name=followName(id);if(!name||isBusy||!work[id])return;
-  if(!await flushSave(id)){status(`Could not follow ${name} again: this scene's layout is not saved yet. Try again after it saves.`);return}
-  const key=plug.key,own=clone(work[id]),nm=work[id].name;
+  const name=followName(id),key=plug&&plug.key;if(!name||!key||isBusy||!work[id])return;
+  const setup=plugName(),own=clone(work[id]),nm=work[id].name;
+  following=true;busy(true);
   try{
+    if(!await flushSave(id)){status(`Could not follow ${name} again: this scene's layout is not saved yet. Try again after it saves.`);return}
     const r=await post("layout/remove",{scene:id,key});
     if(r.status===409){status("Could not follow again: the setup changed. Refresh to read the windows again.");return}
     if(!r.ok)throw new Error((await r.text())||`The server said ${r.status}.`);
     const sc=saved(id);if(sc&&sc.layouts)delete sc.layouts[key];
-    const l=await fetch("layouts",{cache:"no-store"});if(l.ok)lays=await l.json();
+    // The follow is done on the server. Undo is offered only on the setup it was made on, and before the optional re-read, so a re-read that fails cannot take it away.
+    if(plug.key!==key){toast(`${nm} follows ${name} again on ${setup}.`);status(`On ${setup}, ${nm} follows ${name} until you change it. The setup changed since, so Undo is not offered.`);return}
     hist.push({k:"follow",id,s:own});
-    if(lays[id])adoptLayout(id);
+    // The re-read only shows which layout the board now follows. If it fails, the board keeps the layout it has, not marked as saved, and the strip says the read failed.
+    let read=false;
+    try{const l=await fetch("layouts",{cache:"no-store"});if(l.ok){lays=await l.json();read=true}}catch(_){}
+    if(read){if(lays[id])adoptLayout(id)}
+    else{delete lays[id];readErr="The layouts could not be read after the follow"}
     selId=id;optim=null;render();preview(id);
     toast(`${nm} follows ${name} again.`,"",{undo:true});status(`${nm} follows ${name} until you change it.`)
-  }catch(e){status("Could not follow again: "+(e instanceof TypeError?"the app server stopped answering":String(e.message||e)))}}
+  }catch(e){status("Could not follow again: "+(e instanceof TypeError?"the app server stopped answering":String(e.message||e)))}
+  finally{following=false;busy(false)}}
 
 /* ---------- Autosave: a board change is written for the plugged-in setup (decision monitor-setups, item 8) ---------- */
 // Id mode only. An edit that changes the layout counts as one change only in this page until its POST /layout is answered. The write waits one task, so the edits of one
@@ -1963,7 +1978,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="srefresh")refresh();
   else if(t.id==="addgrid"){const m=curMon;edit(x=>{(x.grids||(x.grids={}))[mk(m)]={c:1,r:1}},`${monName(m)} has a 1×1 grid. Drag windows onto it.`)}
   else if(t.dataset.menu!==undefined)toggleMenu(t.dataset.menu);
-  else if(t.dataset.fol!==undefined){const id=t.dataset.fol;closeMenu();await followAgain(id);const b=document.querySelector(`[data-pick="${CSS.escape(id)}"]`);if(b)b.focus()}
+  else if(t.dataset.fol!==undefined){const id=t.dataset.fol,card=()=>document.querySelector(`[data-pick="${CSS.escape(id)}"]`);closeMenu();if(card())card().focus();await followAgain(id);if(card())card().focus()}
   else if(t.dataset.pick){selId=t.dataset.pick;optim=null;selZone=null;zanchor=null;picks=null;closeAsk(false);render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}
   else if(t.dataset.apply){selId=t.dataset.apply;render();if(!prevs[selId])await preview(selId);applyScene()}
   else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
@@ -2020,6 +2035,8 @@ function setTheme(t){if(!["light","dark"].includes(t))t="system";if(t==="system"
 $("theme").onchange=e=>{setTheme(e.target.value);try{localStorage.setItem("tile-theme",e.target.value)}catch(_){}};
 try{setTheme(localStorage.getItem("tile-theme")||"system")}catch(_){setTheme("system")}
 addEventListener("keydown",ev=>{if(ev.key==="Escape"&&menuId){closeMenu(true);return}
+  // Tab leaves the open menu: it closes and focus is on its button, so the key goes on from there (the menu sits at the end of the page and has nothing after it to tab to).
+  if(ev.key==="Tab"&&menuId&&$("cmenu")&&$("cmenu").contains(document.activeElement)){closeMenu(true);return}
   if(ev.key==="Escape"&&picks&&!rz&&!zdraw&&!drag){picks=null;render();status("Pick cleared.");return}
   if(ev.key==="Escape"&&rz){const r=rz;endResize({type:"cancel"});try{r.grip.releasePointerCapture(r.pid)}catch(_){}status("Resize canceled. Nothing changed.");return}
   if(ev.key==="Escape"&&(zdraw||zanchor)){zanchor=null;const z=zdraw;if(z){endZone({type:"cancel"});try{stage.releasePointerCapture(z.pid)}catch(_){}}status("Zone drawing canceled. Nothing changed.");return}if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
