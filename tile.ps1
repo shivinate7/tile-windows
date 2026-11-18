@@ -178,11 +178,11 @@ function Move-Win($win, $x, $y, $ww, $hh) {
 }
 if ($Lib) { return }
 
-# Live-move guard: under the test suite (test/run.ps1 sets TILE_TEST_SUITE), a run that can reach Move-Win is refused unless the caller sets
+# Live-move guard: under the test suite (test/run.ps1 sets TILE_TEST_SUITE) or an agent shell (Claude Code sets CLAUDECODE), a run that can reach Move-Win is refused unless the caller sets
 # TILE_TEST_ALLOW_LIVE=1. Exempt: -DryRun, -From (always a dry run), -Monitors, -List (returns before any Move-Win), and -Json as the bare snapshot.
-# Runs before any scene read, window read or pass. Outside the suite nothing changes.
-if ($env:TILE_TEST_SUITE -and $env:TILE_TEST_ALLOW_LIVE -ne '1' -and -not ($DryRun -or $From -or $Monitors -or $List -or ($Json -and -not ($Scene -or $Default -or $Place -or $PlaceFile)))) {
-  throw 'Refused: this run would move windows, and TILE_TEST_SUITE is set. Add -DryRun, or set TILE_TEST_ALLOW_LIVE=1 to allow a live run.'
+# Runs before any scene read, window read or pass. Outside the suite and an agent shell nothing changes.
+if (($env:TILE_TEST_SUITE -or $env:CLAUDECODE) -and $env:TILE_TEST_ALLOW_LIVE -ne '1' -and -not ($DryRun -or $From -or $Monitors -or $List -or ($Json -and -not ($Scene -or $Default -or $Place -or $PlaceFile)))) {
+  throw 'Refused: this run would move windows, and TILE_TEST_SUITE or CLAUDECODE is set. Add -DryRun, or set TILE_TEST_ALLOW_LIVE=1 to allow a live run.'
 }
 
 function JsonText($s) { if ($s -match '^\s*[\[{]') { $s } else { [IO.File]::ReadAllText((Resolve-Path -LiteralPath $s), $TileUtf8) } }
