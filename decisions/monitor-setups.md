@@ -10,7 +10,7 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
   Departs from: main, `tile.ps1`'s per-role loop, which skips a role with no screen and lists its pins as missing.
 - Item 7, follow or a frozen copy. Follow the closest known setup until the owner makes a change on the new one. Frozen copy: not taken. Replaces the mockup's pick.
 - Item 17, the count triggers. Option a: replace the `monitors` extra ("For N screens") with "Use This Scene on This Setup", with a setup select. The `noext` extra ("Laptop only") stays. Keep both counts: not taken.
-  Departs from: `decisions/triggers.md`, which picks a scene per monitor set. What was built counts screens (`app.html`, the `monitors` and `noext` extras).
+  Departs from: `decisions/triggers.md`, which picks a scene per monitor set. The `monitors` extra (a screen count) is replaced by the setup pick, built in PR 31 (setup-trigger, see Built).
 - Item 8, autosave (owner, 2026-11-17 11:38 CST). Owner's word: "autosave". Every board edit is written straight away for the setup in use. Layouts have no Save or Revert. Undo still steps back moves. Replaces the mockup's pick. Loss: a test move is kept; Undo is the way back.
   Departs from: main, `app.html` `save` and `revert` buttons.
 
@@ -18,8 +18,8 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - Item 1, how a monitor is known (coordinator default, owner may change). By its hardware: the maker, product code and serial Windows reports (`WmiMonitorID`), with the built-in screen found by its connection (`WmiMonitorConnectionParams`). Fallback: maker, product and port. Unmeasured: the builder verifies that a WMI monitor maps to a `Screen.DeviceName`, and how two identical monitors with no serial differ. Departs from: main, `tile.ps1` `Pick` and `Roles`, and `app.html` `ROLE` and `monName()`, which name a monitor by its size role.
 - Item 4, what makes a new setup (coordinator default, owner may change). The sorted list of monitor IDs. Moving the same monitors, or changing their scale, is the same setup, and the board redraws at the new positions. "When the Monitors Change" does not fire on a rearrange. Departs from: main, `tray.ps1` `Get-MonitorKey`.
 - Item 5, where a layout lives (coordinator default, owner may change). Each setup keeps its own grids, pins, zones, held cells and fill screen, keyed by monitor ID. Needs a `scenes.json` migration. Departs from: main, `scenes.json`, which names roles (`wide`, `tall`, `laptop`).
-- Item 14, the first setup (coordinator default 2026-11-17 13:26 CST, owner may change). Seeded by shape: `laptop` to the built-in screen; `wide` to the widest non-built-in landscape monitor (any aspect, 16:9 included); `tall` to a non-built-in monitor taller than wide. Each role goes to one monitor only: the widest candidate, then the lowest id. A built-in screen never takes `wide`. A zero width or height has no shape. Names: Laptop for the built-in screen; Ultrawide only when wider than 2:1; Portrait when taller than wide; otherwise "Monitor N". A first launch with the `wide` monitor unplugged gives the laptop its own grid, and the `wide` part's windows show as unplaced.
-  Departs from: main `tile.ps1` `Pick` — the widest screen takes wide even when it is the laptop → the laptop never takes wide.
+- Item 14, the first setup (coordinator default 2026-11-17 13:26 CST, owner may change; amended by coordinator rulings 17:27, 17:42 and 17:52 CST). Seeded by shape: `laptop` to the built-in screen; `wide` to the widest non-built-in landscape monitor (any aspect, 16:9 included); `tall` to a non-built-in monitor taller than wide. Each role goes to one monitor only: the widest candidate, then the lowest id. With two or more monitors a built-in screen never takes `wide`. A lone plugged monitor holds the `laptop` and `wide` roles, and `tall` too when it is portrait, as on main. `tile.ps1` `Pick` reads `Get-TileRoles` (`config.ps1`), the one home for this pick. Solo (the one-screen scene `solo` in `scenes.json`) keeps main's `wide` pins: Chrome on the `wide` screen. A zero width or height has no shape. Names: Laptop for the built-in screen; Ultrawide only when wider than 2:1; Portrait when taller than wide; otherwise "Monitor N". With two or more monitors plugged in, a first launch with the `wide` monitor unplugged gives the laptop its own grid, and the `wide` part's windows show as unplaced.
+  Departs from: main `tile.ps1` `Pick`, with two or more monitors only: the widest screen takes `wide` even when it is the laptop. There the laptop never takes `wide`.
 - Edit only the plugged-in setup (coordinator default, owner may change). Monitors and Setups (item 13) is a dialog from the strip; a setup not plugged in cannot be edited. The rail option is not taken. This answers the critique's question on editing an unplugged setup.
 - Item 7, closest known setup (coordinator default 2026-11-17 11:47 CST, owner may change): the known setup sharing the most monitors. A tie goes to the one used last. This is item 6's pick, and it is what "closest known setup" means.
 - Edited mark (coordinator default 2026-11-17 11:47 CST, owner may change): a scene card shows `follows <setup>` while it follows, and `own layout` once any edit lands on this setup. Autosave makes the first edit the switch. This replaces the mockup's Edited mark and its tag.
@@ -37,13 +37,16 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - 15:23 CST: the tray keeps the name Get-MonitorKey but returns the setup key from monitor ids.
 - 15:23 CST: a 404 "route absent" counts as red for a new route.
 - 15:30 CST: windows the layout's fill would put on an unplugged monitor go to `left` as "Its screen is unplugged" (extends owner item 9).
+- 17:35 CST: on the role path, a window pinned to a role no plugged monitor holds goes to `left` as "Its screen is unplugged", not `missing` (extends the 15:30 ruling and owner item 9, where an unplugged monitor's windows go).
 - 16:18 CST: POST /config never writes layouts, for any key; only POST /layout does.
+- 18:07 CST: a lone monitor holding several roles seeds its grid in the role order wide, tall, laptop (`Get-TileRoleOrder`, `config.ps1`, the one home).
 
 **Built.**
 - Identity, PR 27 (monitor ids): built and merged.
 - Config v4, PR 26 (setup config): built and merged.
 - Engine, PR 28 (engine layouts): built and merged.
 - Server and tray, PR 29 (setup plumbing): built and merged.
+- Item 17, the count triggers, PR 31 (setup-trigger, open draft): built. "Use This Scene on This Setup" replaces the `monitors` extra ("For N screens"), with flag `setup` and `scene.setupKey`. The old `monitors` flag migrates off, with a note. The grid trigger uses the wide-role monitor by id.
 
 **Open, not ruled.**
 - Item 7: the `Follow <setup> Again` control (`cd-own`) stays (coordinator default 2026-11-17 11:47 CST). What it links to is not ruled. The notes' items 11 and 16 still name Desk in their examples; rewording them is not ruled.
