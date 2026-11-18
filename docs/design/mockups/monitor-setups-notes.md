@@ -51,9 +51,10 @@ redraws the board; windows move on Apply or by that trigger, as today. Windows T
    monitor reads "Monitor N" until renamed. The owner renames in the inspector's Monitor section
    (`Name`, every state but `bd-today`) or in Monitors and Setups.
 3. **A monitor with no ID** (`bd-noid`). **Dropped** (coordinator ruling, 2026-11-17, recorded
-   23:10 CST). A monitor with no EDID is already identified by its size (size-WxH), so it is
-   remembered by size. No amber strip and no Remember It by Its Size button. The state still drawn
-   in `monitor-setups.html` is not the design. Loss: two hotel monitors of one size become one
+   23:14 CST). No monitor lacks an ID: each gets one in the order of item 1, and the size
+   (`size-WxH`) is used only when Windows reports no device at all. No amber strip and no Remember
+   It by Its Size button. The mockup HTML still draws the dropped state (`monitor-setups.html`,
+   `bd-noid`); removing it is a design-file change, not done. Loss: two hotel monitors of one size become one
    monitor.
    Departs from: plan lane H and this state.
 
