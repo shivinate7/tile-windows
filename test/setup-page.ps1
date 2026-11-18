@@ -50,6 +50,9 @@
 #   Card menu placement: at 1440 wide, a menu opened from a More button with no room below opens above
 #     it and covers neither More nor Preview. With room below it opens below and covers neither (control).
 #   Undo after a follow: the footer stops saying the scene follows a setup; the strip and card show its own layout.
+#   Kind icons (decision monitor-setups, item 25; mockup card-kind-icon.html): each card shows its kind as one svg icon titled and labelled
+#     Built-in, Custom or Not saved, and no kind word is on screen. An edited scene shows one amber dot in its bottom row, with a title or label
+#     that says edited. At 1024 and 1440 no card's bottom-row label is cut, and at 1024 every card has one height.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 $ErrorActionPreference = 'Stop'
@@ -1118,6 +1121,103 @@ try {
     Press-Key $ws 'Tab' 9
     $after = Js $ws 'const m = document.getElementById("cmenu"); const a = document.activeElement; return { open: !!m, inMenu: !!(a && a.closest("#cmenu")), on: a ? a.tagName : null }'
     Check 'Tab from the open menu closes it or keeps focus in it, never leaves it open with focus outside' (-not ($after.open -and -not $after.inMenu)) "menu open: $($after.open); focus on: $($after.on)"
+  }
+
+  # Kind icons (decision monitor-setups, item 25; mockup card-kind-icon.html). A card's kind is Built-in for the built-in scene, Custom for a scene
+  # in the config, and Not saved for a scene the page holds with no config entry. Each card shows its kind as one icon (an svg) titled and
+  # labelled with the kind word, and no kind word is on screen. No user path keeps a scene unsaved, so the Not saved card is set in the page's
+  # work map the way the page's own self-test sets one.
+  $kindWords = 'Built-in', 'Custom', 'Not saved'
+  $kindJs = @'
+const words = ["Built-in", "Custom", "Not saved"];
+const cardsOf = () => [...document.querySelectorAll("#cards [data-pick]")].map(b => ({ id: b.dataset.pick, card: b.closest("article.card") }));
+// The text a reader sees: not the text of a visually hidden, aria-hidden or hidden part, nor of a part that is not drawn.
+const seen = el => { const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let t = ""; while (w.nextNode()) { const p = w.currentNode.parentElement; if (!p || p.closest(".vh,[aria-hidden=true],[hidden]") || p.getClientRects().length === 0) continue; t += w.currentNode.textContent + " " } return t.replace(/\s+/g, " ").trim() };
+'@
+  # The amber dot: a box of 6 to 8 px filled with the page's --hi, or an amber ::before of that size, in a card's bottom row.
+  $dotJs = @'
+const amber = (() => { const p = document.createElement("i"); p.style.background = "var(--hi)"; document.body.appendChild(p); const c = getComputedStyle(p).backgroundColor; p.remove(); return c })();
+const sized = v => parseFloat(v) >= 6 && parseFloat(v) <= 8;
+const dotsIn = card => { const row = card.querySelector(".crow"); if (!row) return -1; return [row, ...row.querySelectorAll("*")].filter(el => { const cs = getComputedStyle(el), pb = getComputedStyle(el, "::before"), r = el.getBoundingClientRect(); return (cs.backgroundColor === amber && sized(r.width) && sized(r.height)) || (pb.content !== "none" && pb.content !== "normal" && pb.backgroundColor === amber && sized(pb.width)) }).length };
+// The elements in a card whose title or label says edited.
+const editedLabels = card => [...card.querySelectorAll("[title],[aria-label]")].filter(x => /\bedited\b/i.test((x.getAttribute("title") || "") + " " + (x.getAttribute("aria-label") || ""))).length;
+'@
+  # The cut check: a bottom-row element whose own text is wider inside than its box is cut. Also the card heights, and the Solo row (the control).
+  $cutJs = @'
+const cut = [], heights = [];
+let soloRow = false;
+for (const { id, card } of cardsOf()) {
+  heights.push(Math.round(card.getBoundingClientRect().height));
+  const row = card.querySelector(".crow");
+  if (id === "solo") soloRow = !!row && row.clientWidth > 0;
+  for (const el of card.querySelectorAll(".crow, .crow *")) {
+    if (!(el instanceof HTMLElement) || el.closest(".vh") || el.getClientRects().length === 0 || el.clientWidth === 0) continue;
+    const own = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim() !== "");
+    if (own && el.scrollWidth > el.clientWidth + 1) cut.push(id + ": " + el.textContent.trim().slice(0, 30) + " is " + el.scrollWidth + " px in a " + el.clientWidth + " px box");
+  }
+}
+return { cards: cardsOf().length, heights, cut, soloRow };
+'@
+  # The kind rail: Focus has its own layout and Meetings follows Laptop + Ultrawide, so the rail shows a layout mark and a More button, and a
+  # Not saved scene is added beside them. Opens the live page on Focus at the window size the caller set, and waits until the rail is drawn.
+  function Open-Kind-Rail($sock) {
+    Put-Config (New-FollowConfig)
+    if (-not (Open-Page $sock $url 'focus')) { return $false }
+    [void](Js $sock 'const s = clone(work.focus); s.id = "kind-probe"; s.name = "Kind probe"; work["kind-probe"] = s; await preview("kind-probe"); render(); return true')
+    WaitFor $sock '!!document.querySelector("[data-pick=kind-probe]") && !!document.querySelector("[data-pick=solo]")' 30
+  }
+  # Each scene the rail shows, with the kind it must show: the built-in scene, a saved scene, and the Not saved probe.
+  $expectKind = @{ 'kind-probe' = 'Not saved' }
+  foreach ($x in @((New-Config).scenes)) { $expectKind[[string]$x.id] = $(if ($x.builtIn) { 'Built-in' } else { 'Custom' }) }
+
+  Case 'each card shows its kind as one icon titled and labelled with the kind word, and no kind word is on screen' {
+    $opened = Open-Kind-Rail $ws
+    Check 'the kind rail opens on Focus, with a Not saved card (control)' $opened 'the page did not draw the rail in time'
+    if (-not $opened) { return }
+    $cards = @(Js $ws ($kindJs + 'return cardsOf().map(({ id, card }) => ({ id, text: seen(card), icons: [...card.querySelectorAll("[aria-label]")].filter(x => words.includes(x.getAttribute("aria-label"))).map(x => ({ title: x.getAttribute("title"), label: x.getAttribute("aria-label"), svg: x.tagName.toLowerCase() === "svg" || !!x.querySelector("svg") })) }))'))
+    foreach ($id in $expectKind.Keys) {
+      $want = $expectKind[$id]
+      $c = @($cards | ? { $_.id -eq $id })[0]
+      Check "the $id card is on the page (scope)" ($null -ne $c) 'no card with that scene id'
+      if ($null -eq $c) { continue }
+      $icons = @($c.icons)
+      $shown = @($icons | ? { $_.title -ceq $want -and $_.label -ceq $want -and $_.svg })
+      $iconList = if ($icons.Count) { ($icons | % { "title '$($_.title)', label '$($_.label)', svg $($_.svg)" }) -join '; ' } else { 'none' }
+      Check "the $id card's text names its kind $want (control)" ([string]$c.text).Contains($want) "visible text: '$($c.text)'"
+      Check "the $id card shows $want as one icon, titled and labelled $want" ($icons.Count -eq 1 -and $shown.Count -eq 1) "kind icons on the card: $iconList"
+      Check "the $id card shows no kind word as visible text" (-not @($kindWords | ? { ([string]$c.text).Contains($_) }).Count) "visible text: '$($c.text)'"
+    }
+  }
+
+  Case 'an edited scene shows one amber edited dot in its bottom row, with a title or label that says edited' {
+    $opened = Open-Kind-Rail $ws
+    Check 'the kind rail opens on Focus (control)' $opened 'the page did not draw the rail in time'
+    if (-not $opened) { return }
+    # The name is changed and the change is committed, as a user does. Focus is saved, so its card reads edited, not Not saved.
+    [void](Js $ws 'const f = document.getElementById("sceneName"); f.value = "Focus renamed"; f.dispatchEvent(new Event("change", { bubbles: true })); return true')
+    $edited = WaitFor $ws '/edited/.test(document.querySelector("[data-pick=focus]").closest("article.card").textContent)' 30
+    Check 'the Focus card reads edited once its name is changed and not saved (scope)' $edited 'the Focus card does not read edited'
+    if (-not $edited) { return }
+    $d = Js $ws ($kindJs + $dotJs + 'const f = cardsOf().find(c => c.id === "focus").card, s = cardsOf().find(c => c.id === "solo").card; return { focusDots: dotsIn(f), focusLabels: editedLabels(f), soloDots: dotsIn(s), soloLabels: editedLabels(s) }')
+    Check 'the Solo card, not edited, shows no edited dot or label (control)' ($d.soloDots -eq 0 -and $d.soloLabels -eq 0) "amber dots $($d.soloDots), edited labels $($d.soloLabels)"
+    Check 'the edited Focus card has a title or label that says edited' ($d.focusLabels -gt 0) 'no title or label on the Focus card says edited'
+    Check 'the edited Focus card shows one amber dot in its bottom row' ($d.focusDots -eq 1) "amber dots in its bottom row: $($d.focusDots)"
+  }
+
+  Case 'at 1024 and 1440 no card bottom-row label is cut, and at 1024 every card has one height' {
+    foreach ($w in 1440, 1024) {
+      [void](Cdp $ws 'Emulation.setDeviceMetricsOverride' @{ width = $w; height = 900; deviceScaleFactor = 1; mobile = $false })
+      try {
+        $opened = Open-Kind-Rail $ws
+        Check "${w}: the kind rail opens on Focus (control)" $opened 'the page did not draw the rail in time'
+        if (-not $opened) { continue }
+        $m = Js $ws ($kindJs + $cutJs)
+        Check "${w}: every card is drawn (scope)" ([int]$m.cards -eq $expectKind.Count) "cards drawn: $($m.cards) of $($expectKind.Count)"
+        Check "${w}: the Solo card's bottom row is measured (control)" ([bool]$m.soloRow) 'no bottom row on the Solo card'
+        Check "${w}: no card's bottom-row label is cut" (@($m.cut).Count -eq 0) (@($m.cut) -join ' | ')
+        if ($w -eq 1024) { Check '1024: every card has one height' (@(@($m.heights) | Sort-Object -Unique).Count -eq 1) "card heights: $(@($m.heights) -join ', ')" }
+      } finally { [void](Cdp $ws 'Emulation.clearDeviceMetricsOverride') }
+    }
   }
 
   Case 'the offline page shows no Follow item on any card and sends no POST' {
