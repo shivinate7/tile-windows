@@ -118,6 +118,26 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .menu button b{font-weight:600;font-size:12.5px}
 .menu button small{font-size:12px;color:var(--muted)}
 @media (forced-colors:active){.menu{border-color:CanvasText}}
+/* Split Cell (mockup split-cell.html): the split menu is .menu with two groups and a glyph for the half the window keeps; the board previews the focused item. */
+.menu.split{width:244px;gap:0}
+.menu .mh{margin:0;padding:6px 9px 4px;font:700 13px var(--f)}
+.menu .mg{margin:0;padding:6px 9px 2px;display:flex;justify-content:space-between;gap:8px;align-items:baseline;font:600 12px var(--f);color:var(--muted)}
+.menu .mg small{font:400 11.5px var(--f)}
+.menu button.mi{grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px}
+.menu button.mi:focus-visible{background:color-mix(in srgb,var(--select) 12%,transparent);outline:0;box-shadow:inset 0 0 0 2px var(--select)}
+.menu button.mi[aria-disabled="true"]{color:var(--muted);cursor:not-allowed}
+.menu button.mi[aria-disabled="true"]:hover{background:transparent}
+.menu button.mi[aria-disabled="true"] .gl{opacity:.45}
+.menu kbd{font:600 11px var(--f-mono);padding:0 4px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);border-radius:3px;color:var(--muted)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
+.menu .mwhy{margin:0;padding:2px 9px 6px;font-size:12px;color:var(--muted)}
+.menu .mf{margin:0;padding:6px 9px 4px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);margin-top:4px}
+.gl{width:26px;height:18px;flex:none}
+.gl .k{fill:color-mix(in srgb,var(--cat) 55%,var(--panel));stroke:var(--cat);stroke-width:1.5}
+.gl .o{fill:none;stroke:var(--muted);stroke-width:1.2;stroke-dasharray:2 1.6}
+.sprev{position:absolute;z-index:6;pointer-events:none;box-sizing:border-box;border:2px solid var(--select);border-radius:3px;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--select) 18%,var(--screen)) 0 4px,var(--screen) 4px 8px)}
+.sdiv{position:absolute;z-index:7;pointer-events:none;box-sizing:border-box;border:0 dashed var(--select)}
+@media (forced-colors:active){.gl .k{fill:Highlight;stroke:CanvasText}.gl .o{stroke:CanvasText}.sprev,.sdiv{border-color:Highlight}}
 @media (forced-colors:active){.lay.own{border:1px solid CanvasText}.mini.follow b{border-color:CanvasText}.ked{forced-color-adjust:none;background:CanvasText;border-color:CanvasText}}
 
 .cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
@@ -390,6 +410,9 @@ dialog form{display:grid;gap:10px}
 @media (hover:none){.tile:hover .lk{visibility:hidden}.tile.sel .lk,.tile.lock .lk{visibility:visible}}
 /* The hit areas reach 24px (WCAG 2.5.8) while the drawn chip stays small. */
 .tile .lk::after,.tile .stk::after{content:"";position:absolute;inset:-3px}
+.tile.tiny .lk,.tile.tiny .stayput,.tile.tiny .rsz,.tile.tiny .stk{display:none}
+.tile.tiny{padding-left:6px;padding-right:2px}
+.tile.tiny b{padding:1px 3px}
 .tile .lk:hover{background:color-mix(in srgb,var(--ink) 12%,transparent);color:var(--ink)}
 .tile.lock{cursor:default}
 .tile.lock .lk{background:var(--ink);color:var(--panel)}
@@ -606,6 +629,7 @@ dialog form{display:grid;gap:10px}
     <details id="keys" class="keys"><summary>Keyboard</summary><ul>
       <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
       <li>Ctrl+Shift+arrows resize it from its top or left edge.</li>
+      <li>S or Shift+F10 opens Split Cell on the selected window. Shift+S splits it in half side by side at once, and so does a double-click. J joins a split cell.</li>
       <li>Delete unpins it. K keeps it where it is (off the board).</li>
       <li>L locks or unlocks it. B brings the window behind it to the front.</li>
       <li>A locked window moves only after a warning.</li>
@@ -1123,6 +1147,8 @@ function render(){
     e.hidden=false;const pr=px(x.r);Object.assign(e.style,pr);
     // Stay Put reads in words from 84px across; a narrower tile shows the icon alone, named by its tooltip and label.
     const ico=parseFloat(pr.width)<84;e.classList.toggle("narrow",ico);
+    // Under 40px (a half at 1024) the tag is the app's first letter; its name stays in the label and the inspector (split-cell notes S5).
+    const tiny=LIVE&&parseFloat(pr.width)<40;e.classList.toggle("tiny",tiny);const tg=e.firstChild,tn=tiny?appName(w.app).charAt(0):appName(w.app);if(tg.textContent!==tn)tg.textContent=tn;
     // The badge names the window right behind ("Chrome", "Chrome +1"). A narrow tile has no room for a name, so it shows that app's initial; the label and tooltip keep the true count.
     if(sb&&back.length){const bn=appName(back[0].app);
       sb.innerHTML=ico?`<i class="ini cat-${catOf(back[0].app)}">${esc(bn.charAt(0))}</i>`:`${parseFloat(pr.width)>=140?BEHIND:""}<span>${esc(bn)}</span>${back.length>1?`<span class="n"><i class="sp"> </i>+${back.length-1}</span>`:""}`;
@@ -1171,7 +1197,7 @@ function render(){
   const cb=$("clearbd"),unpinned=prevs[selId]?prevs[selId].placed.filter(p=>p.pin<0&&!p.behind).length:0;
   cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
-  $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind.":
+  $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   overText(V);renderSetbar();renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);renderPicks();
 }
@@ -1252,7 +1278,13 @@ function where(x){if(inBay(x))return`no cell (${bayWhy(x).toLowerCase()}), stays
   const p=x.p,m=p?snap.monitors.find(m=>mk(m)===p.mon):monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2);
   if(x.kind==="behind")return `${m?monName(m):"?"} · behind the window in cell${p.slots.length>1?"s":""} ${p.slots.join("+")}`;
   const z=p&&p.zone>=0&&LIVE?(scene().zones||[])[p.zone]:null;
-  return `${m?monName(m):"?"}${p?` · cell${p.slots.length>1?"s":""} ${p.slots.join("+")}`:""}${z?` · ${zoneName(z)} zone`:""}`}
+  return `${m?monName(m):"?"}${p?` · ${cellWords(p)}`:""}${z?` · ${zoneName(z)} zone`:""}`}
+// "cell 3, the left half of cell 2" on a split grid for a window in one fine cell; plain "cells 1+2" otherwise (split-cell notes S7).
+function cellWords(p){const g=LIVE&&scene().grids[p.mon],n=`cell${p.slots.length>1?"s":""} ${p.slots.join("+")}`;
+  if(!g||p.slots.length!==1)return n;const[mx,my]=MXY(g);if(mx===1&&my===1)return n;
+  const v=p.slots[0]-1,col=v%GC(g),row=Math.floor(v/GC(g)),cell=Math.floor(row/my)*g.c+Math.floor(col/mx)+1;
+  const part=mx===2&&my===1?(col%2?"the right half":"the left half"):mx===1&&my===2?(row%2?"the bottom half":"the top half"):"a part";
+  return `${n}, ${part} of cell ${cell}`}
 function overText(V){const P=prev(),o=$("over");if(!LIVE||!P){o.textContent="";o.classList.remove("warn");return}
   const parts=[];
   if(P.missing.length)parts.push(`<b>Not open:</b> ${esc([...new Set(P.missing.map(m=>appName(m.app)+(m.why!=="no open window"?` (${m.why})`:"")))].join(", "))}.`);
@@ -1302,6 +1334,10 @@ function renderRail(){
   if(st.log)$("recent").innerHTML=st.log.slice(0,5).map(l=>`<li><span>${esc(l.t)}</span>${esc(l.x)}</li>`).join("");
 }
 const stepper=(lbl,val,attrs,min,max,off=false)=>`<span class="step"><button type="button" ${attrs} data-d="-1" aria-label="Fewer ${lbl}" ${val<=min||off?"disabled":""}>−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" ${attrs} data-d="1" aria-label="More ${lbl}" ${val>=max||off?"disabled":""}>+</button></span>`;
+// What a split monitor's steppers count (split-cell mockup, S4): the finished grid, with a note on what a filled window takes and how to go back.
+const splitNote=g=>{const[mx,my]=MXY(g);if(mx===1&&my===1)return"";
+  const how=mx>1&&my>1?`${mx} columns and ${my} rows`:mx>1?`${mx} columns`:`${my} rows`;
+  return `<p class="note" id="splitnote">Split ${mx>1&&my>1?"both ways":mx>1?"side by side":"stacked"}: each filled window takes ${how}, so it keeps its size. Join every split to go back to ${g.c}×${g.r}.</p>`};
 // The monitor's own name (item 2): a live page that knows the monitor by id. A rename is POST /rename.
 const monNameField=m=>{const c=idm()?(cfg.monitors||{})[m.id]:null;
   return c?`<div class="mname"><div class="field stack"><label for="monName">Name</label><input type="text" id="monName" value="${esc(c.name)}" maxlength="24" autocomplete="off" data-rk="monitor" data-rid="${esc(m.id)}"></div></div>`:""};
@@ -1341,7 +1377,8 @@ function renderInsp(V){
   const mons=LIVE?snap.monitors.filter(x=>mk(x)):snap.monitors;
   let h=`<div class="seg" role="group" aria-label="Monitor">${mons.map(x=>`<button type="button" data-mon="${snap.monitors.indexOf(x)}" aria-pressed="${x===m}">${esc(monName(x))}</button>`).join("")}</div>
     ${monNameField(m)}<p class="note">${monSize(idm()&&(cfg.monitors||{})[m.id]||{bw:m.bw||m.w,bh:m.bh||m.h})} pixels.${idm()&&(cfg.monitors||{})[m.id]?`${(cfg.monitors[m.id].builtin||m.builtin)?" Built-in screen.":""} In ${plural(mgSetupCount(m.id),"setup")}.`:""}</p>`;
-  if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
+  if(g){const[mx,my]=MXY(g);
+    h+=`<div class="field"><span>Columns</span>${stepper("columns",GC(g),'data-g="c"',mx,baseMax(g,"c")*mx)}</div><div class="field"><span>Rows</span>${stepper("rows",GR(g),'data-g="r"',my,baseMax(g,"r")*my)}</div>${splitNote(g)}`;
     if(s&&s.fill&&s.fill.mon===mk(m)){const off=!!s.fill.off;
       h+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="fillSw" ${off?"":"checked"}><span class="xt"><b>Fill Empty Cells</b><small>${off?"Windows stay where they are. A new window waits in Windows That Stay Put.":"Windows that are not pinned fill the free cells."}</small></span></label>
       <div class="field stack"><label for="sort">Fill order</label><select id="sort" ${off?'disabled title="Fill is off, so the fill order does nothing. Turn on Fill Empty Cells to use it." aria-describedby="fillwhy"':""}>${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note" id="fillwhy">${off?"Fill is off, so the fill order does nothing.":`Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.`}</p></div>`}
@@ -1359,6 +1396,8 @@ function renderInsp(V){
       <div class="t">${esc(w.title)}</div>
       <div class="m">${inBay(x)?`No cell: ${esc(bayWhy(x).toLowerCase())}. It stays where it is. Pick a cell below to place it.`:!LIVE?esc(where(x)):pin?"Pinned · "+esc(where(x)):x.kind==="fill"?`Fills ${esc(where(x))}`:esc(where(x)[0].toUpperCase()+where(x).slice(1))}.</div>`;
     if(onBoard)wh+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="lockSw" ${lockd?"checked":""}><span class="xt"><b>Lock</b><small>${lockd?"It moves only after a warning.":"It never moves."} Swaps, zones and fill go around it.</small></span></label>`;
+    if(onBoard&&cellOfWin(w.id)){const j=joinInfo(w.id),why=lockd?"Locked. Unlock it first.":!j.split?"This cell is not split.":"";
+      wh+=`<div class="acts"><button type="button" class="btn" id="splitbtn" aria-haspopup="menu" aria-expanded="${!!smenu&&smenu.id===w.id}" ${lockd?'disabled title="Locked. Unlock it first."':""}>Split Cell</button><button type="button" class="btn" id="joinbtn" ${why?`disabled title="${why}"`:""}>Join Halves</button></div>${why?`<p class="why"><span>${esc(why)}</span></p>`:""}`}
     if(stk.length)wh+=`<div class="bstack"><h3 class="grp">Behind This Window <span class="ct2">${stk.length}</span></h3><ul>${stk.map(e=>{const bw=e.id&&winById(e.id);
       return `<li class="bw cat-${catOf(e.b.app)}"><div class="bwt"><i class="sw"></i><b>${esc(appName(e.b.app))}</b><span>${esc(bw?bw.title:(e.b.match||"Not open"))}</span></div><div class="row2"><button type="button" class="btn" data-bf="${e.k}" ${bw?"":"disabled"} title="${esc(appName(e.b.app))} comes to the front. ${esc(appName(w.app))} goes behind it.">Bring to Front</button><button type="button" class="btn" data-bo="${e.k}" title="${esc(appName(e.b.app))} leaves this cell and goes to Windows That Stay Put.">Take Out</button></div></li>`}).join("")}</ul><p class="note">Take Out moves it to Windows That Stay Put.</p></div>`;
     if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,GC(s.grids[pin.mon]),lockd)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,GR(s.grids[pin.mon]),lockd)}</div>
@@ -1645,9 +1684,9 @@ const nameList=a=>a.length<3?a.join(" and "):a.length===3?`${a[0]}, ${a[1]} and 
 function optimCover(ids,why=COVERED){const P=prev();if(!P)return;const set=new Set(ids);
   P.placed=P.placed.filter(p=>!set.has(p.id));P.left=[...P.left.filter(l=>!set.has(l.id)),...ids.map(id=>{const w=winById(id);return{id,app:w.app,title:w.title,why}})]}
 // After a resize or a Merge sent windows to the list: their chips wear a blue ring for about 1.5 seconds, and a Drop Note under the new block says where they went.
-function coverNote(r,ids,entry,actor,closed=[]){bayFlash=new Set(ids);clearTimeout(bayFlashT);
+function coverNote(r,ids,entry,actor,closed=[],lead=""){bayFlash=new Set(ids);clearTimeout(bayFlashT);
   bayFlashT=setTimeout(()=>{bayFlash.clear();for(const c of document.querySelectorAll("#bgrps .chip.ring"))c.classList.remove("ring")},1500);
-  dropNote(r,coverSay(ids,closed,actor,n=>`<b>${esc(n)}</b>`).join(". "),entry)}
+  dropNote(r,(lead?lead+" ":"")+coverSay(ids,closed,actor,n=>`<b>${esc(n)}</b>`).join(". "),entry)}
 // The span the pointer is over, in whole cells, stopped by a locked tile. Every window it covers goes to Windows That Stay Put, not to a free cell.
 // dir: the edges that move, as in HDIR. With dir.l or dir.t the left or top edge moves, so the right or bottom edge stays put when a lock cuts the span short.
 function planResize(id,mon,c0,r0,cs,rs,dir=HDIR.br){
@@ -1698,6 +1737,139 @@ function commitResize(r,pl){
     optimCover(pl.list);pinEdit(x,r.id,mon,pl.r0*GC(g)+pl.c0,pl.cs,pl.rs,self)},
     `${actorName(w,pl.list)} now spans ${pl.cs}×${pl.rs}.${n||pl.closed.length?` ${coverSay(pl.list,pl.closed,w).join(". ")}.`:""}${pl.stopped?" It stopped at a locked tile.":""}`);
   if(ok&&(n||pl.closed.length))coverNote(px(cellRect(mon,g,pl.c0,pl.r0,pl.cs,pl.rs)),pl.list,hist[hist.length-1],w,pl.closed)}
+/* ---------- Split Cell (layout-free items 1-13; mockup split-cell.html) ---------- */
+// A window's block now: its placed entry, grid, monitor and cells (fine cells on a split grid). Null when it has no cell.
+function cellOfWin(id){const P=prev(),p=LIVE&&P&&P.placed.find(q=>q.id===id&&!q.behind),g=p&&scene().grids[p.mon];
+  return g?{p,g,role:p.mon,mon:snap.monitors.find(q=>mk(q)===p.mon),b:pbox(p,g)}:null}
+const SPDIR={side:{name:"Side by Side",k:["Left","Right"],x:true},stack:{name:"Stacked",k:["Top","Bottom"],x:false}};
+// How a cut of block b along dir lands. dbl: the grid doubles on that axis, because the cut is not on a line the grid has (item 7). ok:false says why not.
+function splitPlan(g,b,dir){const X=SPDIR[dir].x,[mx,my]=MXY(g),u=X?mx:my,n=X?b.cs:b.rs;
+  if(n%2===0)return{ok:true,dbl:false,grid:`${GC(g)}×${GR(g)}`};
+  if(u>1)return{ok:false,why:`This half is as narrow as a split goes. Join it first, or split it ${X?"stacked":"side by side"}.`};
+  const fc=GC(g)*(X?2:1),fr=GR(g)*(X?1:2);
+  if(fc>COLMAX)return{ok:false,why:`The grid would pass ${COLMAX} columns.`};
+  if(fr>ROWMAX)return{ok:false,why:`The grid would pass ${ROWMAX} rows.`};
+  return{ok:true,dbl:true,grid:`${fc}×${fr}`}}
+// The kept half of block b, in the grid after the cut. keep 0 is the left or top half.
+function keptBlock(b,dir,keep,dbl){const X=SPDIR[dir].x,f=dbl?2:1;
+  if(X){const cs=b.cs*f/2;return{c:b.c*f+(keep?cs:0),r:b.r,cs,rs:b.rs}}
+  const rs=b.rs*f/2;return{c:b.c,r:b.r*f+(keep?rs:0),cs:b.cs,rs}}
+// The words a split says, in the Drop Note, the status line and Undo's toast.
+const keepWords=(dir,keep)=>`keeps the ${SPDIR[dir].k[keep].toLowerCase()} half`;
+// Split the window's cell. One edit, so one POST /layout and one Undo: the grid keeps c and r and sets mult, every pin, zone and held entry on the monitor takes doubled
+// slots, and the window is pinned to its kept half (item 5). A locked window does not split (item 11).
+function splitCell(id,dir,keep){
+  const c=cellOfWin(id),w=winById(id);if(!c||!w||isBusy){status("That window has no cell to split.");return false}
+  if(isLockedId(id)){status(`${w.title} is locked. Unlock it first.`);return false}
+  const pl=splitPlan(c.g,c.b,dir);if(!pl.ok){status(pl.why);return false}
+  const X=SPDIR[dir].x,role=c.role,mon=c.mon,was=c.p.slots.join("+"),A=appName(w.app),nb=keptBlock(c.b,dir,keep,pl.dbl);
+  curMon=mon;selWin=id;
+  const ok=edit(x=>{const g=x.grids[role],self=pinNow(x,id);
+    if(pl.dbl){const fx=X?2:1,fy=X?1:2,ofc=GC(g),ofr=GR(g),[mx,my]=MXY(g),
+      re=sl=>[...new Set(sl.filter(v=>v<ofc*ofr).flatMap(v=>{const col=v%ofc,row=Math.floor(v/ofc),o=[];for(let dy=0;dy<fy;dy++)for(let dx=0;dx<fx;dx++)o.push((row*fy+dy)*ofc*fx+col*fx+dx);return o}))].sort((a,b)=>a-b);
+      for(const q of x.pins)if(q.mon===role)q.slots=re(q.slots);
+      if(x.fill&&x.fill.held)for(const h of x.fill.held)if(h.mon===role)h.slots=re(h.slots);
+      for(const z of x.zones||[])if(z.mon===role)z.slots=re(z.slots);
+      g.mult=[mx*fx,my*fy];if(x.fill&&x.fill.mon===role)x.fill.unit=[mx*fx,my*fy]}
+    pinEdit(x,id,mon,nb.r*GC(g)+nb.c,nb.cs,nb.rs,self)},`Split cell ${was}. ${A} ${keepWords(dir,keep)}.`);
+  if(ok)dropNote(px(cellRect(mon,scene().grids[role],nb.c,nb.r,nb.cs,nb.rs)),`Split cell ${was}. <b>${esc(A)}</b> ${keepWords(dir,keep)}.`,hist[hist.length-1]);
+  return ok}
+// K1 (the owner's pick while question K is open): Shift+S or a double-click splits the window's cell side by side at once, and it keeps the left half.
+const splitFast=id=>splitCell(id,"side",0);
+// The base cells a window's block reaches, and whether it is part of a split. A block on whole base cells is not split.
+function joinInfo(id){const c=cellOfWin(id);if(!c)return null;const[mx,my]=MXY(c.g),b=c.b,
+  c0=Math.floor(b.c/mx)*mx,c1=Math.ceil((b.c+b.cs)/mx)*mx,r0=Math.floor(b.r/my)*my,r1=Math.ceil((b.r+b.rs)/my)*my;
+  return{...c,split:c0!==b.c||c1!==b.c+b.cs||r0!==b.r||r1!==b.r+b.rs,c0,r0,cs:c1-c0,rs:r1-r0}}
+// After a join: an axis of mult halves back when no pin, zone or held entry on the monitor sits off the base grid on it (item 9). Answers whether any axis did.
+function halveGrid(x,role){const g=x.grids[role],[mx,my]=MXY(g);if(mx===1&&my===1)return false;
+  const ofc=GC(g),ofr=GR(g),lists=[...x.pins.filter(q=>q.mon===role),...((x.fill&&x.fill.held)||[]).filter(h=>h.mon===role),...(x.zones||[]).filter(z=>z.mon===role)],
+    on=(u,k)=>lists.every(o=>{const sl=o.slots.filter(v=>v<ofc*ofr);if(!sl.length)return true;const b=bbox(sl,g);return k?b.c%u===0&&b.cs%u===0:b.r%u===0&&b.rs%u===0}),
+    fx=on(mx,true)?mx:1,fy=on(my,false)?my:1;
+  if(fx===1&&fy===1)return false;
+  const re=sl=>[...new Set(sl.filter(v=>v<ofc*ofr).map(v=>Math.floor(Math.floor(v/ofc)/fy)*(ofc/fx)+Math.floor((v%ofc)/fx)))].sort((a,b)=>a-b);
+  for(const o of lists)o.slots=re(o.slots);
+  const nm=[mx/fx,my/fy];
+  if(nm[0]===1&&nm[1]===1){delete g.mult;if(x.fill&&x.fill.mon===role)delete x.fill.unit}
+  else{g.mult=nm;if(x.fill&&x.fill.mon===role)x.fill.unit=[...nm]}
+  return true}
+// Join Halves: the window takes its whole base cell, as a resize does (a window there goes to Windows That Stay Put, a lock stops it), then the grid halves back where it can.
+function joinCell(id){
+  const j=joinInfo(id),w=winById(id);if(!j||!w||isBusy){status("That window has no cell to join.");return false}
+  if(isLockedId(id)){status(`${w.title} is locked. Unlock it first.`);return false}
+  if(!j.split){status("This cell is not split.");return false}
+  const pl=planResize(id,j.mon,j.c0,j.r0,j.cs,j.rs);
+  if(pl.stopped){status("A locked tile is in the way. Nothing changed.");return false}
+  const role=j.role,mon=j.mon,self=pinNow(scene(),id),was=j.p.slots.join("+"),n=pl.list.length,[ox,oy]=MXY(j.g);let halved=false;
+  curMon=mon;selWin=id;
+  const lead=()=>`Joined cell ${was}.${halved?` The grid is ${GC(scene().grids[role])}×${GR(scene().grids[role])} again.`:""}`;
+  const ok=edit(x=>{
+    for(const o of pl.covered)x.pins=x.pins.filter(q=>q!==o.q);
+    for(const wid of pl.list)bayEdit(x,wid,null,true,COVERED);
+    optimCover(pl.list);pinEdit(x,id,mon,j.r0*GC(x.grids[role])+j.c0,j.cs,j.rs,self);
+    halved=halveGrid(x,role)},()=>`${lead()}${n||pl.closed.length?` ${coverSay(pl.list,pl.closed,w).join(". ")}.`:""}`);
+  if(ok){const g=scene().grids[role],[nx,ny]=MXY(g),fx=ox/nx,fy=oy/ny,r=px(cellRect(mon,g,j.c0/fx,j.r0/fy,j.cs/fx,j.rs/fy));
+    if(n||pl.closed.length)coverNote(r,pl.list,hist[hist.length-1],w,pl.closed,esc(lead()));else dropNote(r,esc(lead()),hist[hist.length-1])}
+  return ok}
+
+/* The split menu: S or Shift+F10 under the selected tile, a right-click at the pointer, Split Cell in the inspector under its button. Esc closes it and puts focus back. */
+let smenu=null;  // {id, back}: the window the open split menu is for, and what takes focus when it closes
+const GLOCK='<svg class="gl" viewBox="0 0 26 18" aria-hidden="true"><g transform="translate(7 3)" fill="currentColor"><path d="M3.5 5V3.6a2.5 2.5 0 0 1 5 0V5H9.5v6h-7V5h1zm1.3 0h2.4V3.6a1.2 1.2 0 0 0-2.4 0V5z"/></g></svg>';
+const GJOIN='<svg class="gl" viewBox="0 0 26 18" aria-hidden="true"><rect class="k" x="1.6" y="1.6" width="22.8" height="14.8" rx="1.5"/></svg>';
+// A glyph for a split item: the kept half filled in the window's colour, the open half dashed.
+function glyph(dir,keep){const X=SPDIR[dir].x,k=X?(keep?[13,1,12,16]:[1,1,12,16]):(keep?[1,9,24,8]:[1,1,24,8]),o=X?(keep?[1,1,12,16]:[13,1,12,16]):(keep?[1,1,24,8]:[1,9,24,8]);
+  return `<svg class="gl" viewBox="0 0 26 18" aria-hidden="true"><rect class="o" x="${o[0]+.6}" y="${o[1]+.6}" width="${o[2]-1.2}" height="${o[3]-1.2}" rx="1.5"/><rect class="k" x="${k[0]+.6}" y="${k[1]+.6}" width="${k[2]-1.2}" height="${k[3]-1.2}" rx="1.5"/></svg>`}
+function splitMenuHTML(id){
+  const c=cellOfWin(id),w=winById(id),A=esc(appName(w.app)),locked=isLockedId(id),j=joinInfo(id),LOCKWHY="Locked. Unlock it first.";
+  const grp=dir=>{const D=SPDIR[dir],pl=splitPlan(c.g,c.b,dir),off=locked?LOCKWHY:pl.ok?"":pl.why;
+    return `<p class="mg"><span>${D.name}</span><small>${off?"Off":esc(`Grid ${pl.dbl?"goes to":"stays"} ${pl.grid}`)}</small></p>`+
+      [0,1].map(k=>`<button type="button" role="menuitem" class="mi cat-${catOf(w.app)}" data-sp="${dir}:${k}"${off?` aria-disabled="true" title="${esc(off)}"`:""}>${glyph(dir,k)}<b>${A} Keeps ${D.k[k]}</b></button>`).join("")+
+      (off&&!locked?`<p class="mwhy">${esc(off)}</p>`:"")};
+  return `<div class="menu split" role="menu" id="smenu" aria-labelledby="smh"><p class="mh" id="smh">Split Cell ${esc(c.p.slots.join("+"))}</p>`+
+    (locked?`<button type="button" role="menuitem" class="mi" data-sp="unlock">${GLOCK}<b>Unlock ${A}</b><kbd>L</kbd></button><p class="mwhy">${LOCKWHY}</p>`:"")+
+    grp("side")+grp("stack")+
+    (j&&j.split?`<hr><button type="button" role="menuitem" class="mi" data-sp="join"${locked?` aria-disabled="true" title="${LOCKWHY}"`:""}>${GJOIN}<b>Join Halves</b><kbd>J</kbd></button>`:"")+
+    `<p class="mf">${locked?"Esc closes.":"Enter splits. Esc closes."}</p></div>`}
+function clearSplitPreview(){for(const e of stage.querySelectorAll(".sprev,.sdiv"))e.remove()}
+// The focused item on the board: a dashed line on the cut and a hatched open half (item S2 of the notes). It draws the grid the cut would make, so nothing moves.
+function splitPreview(id,dir,keep){clearSplitPreview();const c=cellOfWin(id);if(!c||!dir)return;const pl=splitPlan(c.g,c.b,dir);if(!pl.ok)return;
+  const X=SPDIR[dir].x,[mx,my]=MXY(c.g),g2={...c.g,mult:[mx*(pl.dbl&&X?2:1),my*(pl.dbl&&!X?2:1)]},k=keptBlock(c.b,dir,keep,pl.dbl),
+    o=X?{...k,c:keep?k.c-k.cs:k.c+k.cs}:{...k,r:keep?k.r-k.rs:k.r+k.rs},
+    kr=px(cellRect(c.mon,g2,k.c,k.r,k.cs,k.rs)),or=px(cellRect(c.mon,g2,o.c,o.r,o.cs,o.rs)),n=v=>parseFloat(v),
+    h=document.createElement("div"),l=document.createElement("div");
+  h.className="sprev";Object.assign(h.style,or);l.className="sdiv";
+  if(X){const x=keep?n(kr.left):n(kr.left)+n(kr.width);Object.assign(l.style,{left:x-1+"px",top:Math.min(n(kr.top),n(or.top))+"px",width:"2px",height:Math.max(n(kr.height),n(or.height))+"px",borderLeftWidth:"2px"})}
+  else{const y=keep?n(kr.top):n(kr.top)+n(kr.height);Object.assign(l.style,{top:y-1+"px",left:Math.min(n(kr.left),n(or.left))+"px",height:"2px",width:Math.max(n(kr.width),n(or.width))+"px",borderTopWidth:"2px"})}
+  stage.append(h,l)}
+function closeSplit(back){const s=smenu;smenu=null;clearSplitPreview();const m=$("smenu");if(m)m.remove();
+  for(const b of document.querySelectorAll("#splitbtn"))b.setAttribute("aria-expanded","false");
+  if(back&&s)s.back()}
+// at: {x,y} for a right-click (the menu opens at the pointer), or {el} for a key or the inspector button (the menu opens under it).
+function openSplit(id,at){
+  closeSplit(false);closeMenu();
+  const c=cellOfWin(id);if(isBusy)return false;if(!c){status("That window has no cell to split.");return false}
+  const d=document.createElement("div");d.innerHTML=splitMenuHTML(id);const m=d.firstElementChild;document.body.appendChild(m);
+  const w=m.offsetWidth,h=m.offsetHeight,r=at.el?at.el.getBoundingClientRect():null;
+  let L=r?r.left:at.x,T=r?r.bottom+4:at.y;
+  if(T+h+8>innerHeight)T=r?r.top-4-h:at.y-h;
+  m.style.left=clamp(L,8,Math.max(8,innerWidth-w-8))+"px";m.style.top=Math.max(8,T)+"px";
+  const tile=()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true})};
+  smenu={id,back:at.el&&at.el.id==="splitbtn"?()=>{const b=$("splitbtn");if(b)b.focus();else tile()}:tile};
+  for(const b of document.querySelectorAll("#splitbtn"))b.setAttribute("aria-expanded","true");
+  const show=ev=>{const t=ev.target.closest&&ev.target.closest("[data-sp]");if(!t){clearSplitPreview();return}const[dir,k]=String(t.dataset.sp).split(":");if(SPDIR[dir]&&t.getAttribute("aria-disabled")!=="true")splitPreview(id,dir,+k);else clearSplitPreview()};
+  m.addEventListener("focusin",show);m.addEventListener("mouseover",show);
+  m.addEventListener("keydown",ev=>{const items=[...m.querySelectorAll('[role="menuitem"]')],i=items.indexOf(document.activeElement);
+    if(ev.key==="Escape"){ev.preventDefault();ev.stopPropagation();closeSplit(true)}
+    else if(ev.key==="Tab"){closeSplit(true)}
+    else if(ev.key==="ArrowDown"||ev.key==="ArrowUp"||ev.key==="Home"||ev.key==="End"){ev.preventDefault();ev.stopPropagation();
+      const n=items.length;items[ev.key==="Home"?0:ev.key==="End"?n-1:(i+(ev.key==="ArrowDown"?1:-1)+n)%n].focus({preventScroll:true})}});
+  const first=m.querySelector('[role="menuitem"]:not([aria-disabled="true"])')||m.querySelector('[role="menuitem"]');if(first)first.focus({preventScroll:true});
+  return true}
+// A choice in the open split menu. A disabled item stays put and says why in its title.
+function splitPick(t){if(!smenu||t.getAttribute("aria-disabled")==="true")return;const id=smenu.id,v=t.dataset.sp,back=smenu.back;closeSplit(false);
+  if(v==="unlock")toggleLock(id);else if(v==="join")joinCell(id);else{const[dir,k]=v.split(":");splitCell(id,dir,+k)}
+  requestAnimationFrame(()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true});else back()})}
+document.addEventListener("pointerdown",ev=>{if(smenu&&!ev.target.closest("#smenu,#splitbtn"))closeSplit(false)},true);
+addEventListener("scroll",()=>{if(smenu)closeSplit(false)},true);addEventListener("resize",()=>{if(smenu)closeSplit(false)});
 // Zones: a rectangle of cells, filled with one app's or category's windows.
 function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort((a,b)=>appName(a).localeCompare(appName(b)));
   return `<optgroup label="Category">${cfg.categories.map(([c,l])=>`<option value="cat:${c}"${cur==="cat:"+c?" selected":""}>${esc(l)}</option>`).join("")}</optgroup><optgroup label="App">${apps.map(a=>`<option value="app:${esc(a)}"${cur==="app:"+a?" selected":""}>${esc(appName(a))}</option>`).join("")}</optgroup>`}
@@ -1718,19 +1890,24 @@ async function newZone(m,g,c0,r0,c1,r1){
   const under=snap.windows.find(w=>{const d=drawn[w.id];return d&&monAt(d.x+d.w/2,d.y+d.h/2)===m&&slots.includes(clamp(Math.floor((d.y+d.h/2-m.y)/(m.h/GR(g))),0,GR(g)-1)*GC(g)+clamp(Math.floor((d.x+d.w/2-m.x)/(m.w/GC(g))),0,GC(g)-1))});
   const f=await ask(`New Zone: ${plural(cs,"Column")} × ${plural(rs,"Row")} on ${onMon(m)}`,`<p class="note">The zone fills with these windows in fill order. A pin inside it keeps its cell. Windows that do not fit stay put.</p><label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts(under?"app:"+under.app:"cat:code")}</select></label>`,"Add Zone");
   if(!f)return;addZone(m,g,c0,r0,c1,r1,zoneFill(f.zf.value))}
+// The grid caps count cells of the finished grid (c times mx, r times my): 24 columns and 8 rows (layout-free plan, lane L2). A + on a split monitor steps the base grid.
+const COLMAX=24,ROWMAX=8;
+const baseMax=(g,k)=>Math.floor((k==="c"?COLMAX:ROWMAX)/MXY(g)[k==="c"?0:1]);
+// Slots of a grid with ofc fine columns, kept on the same column and row in a grid nfc by nfr; cells past the new edge go.
+const reslot=(sl,ofc,nfc,nfr)=>sl.map(v=>[v%ofc,Math.floor(v/ofc)]).filter(([c,r])=>c<nfc&&r<nfr).map(([c,r])=>r*nfc+c);
 function setGrid(k,d){const m=curMon;
-  if(!LIVE){const g=gridOf(m);g[k]=clamp(g[k]+d,1,k==="c"?8:4);m.el.dataset.g="";render();return}
+  if(!LIVE){const g=gridOf(m);g[k]=clamp(g[k]+d,1,k==="c"?COLMAX:ROWMAX);m.el.dataset.g="";render();return}
   // A grid that would cut off a locked tile's cells does not change: a locked tile never moves.
-  const cur=scene().grids[mk(m)],nxt={...cur,[k]:clamp(cur[k]+d,1,k==="c"?8:4)};
-  if(scene().pins.some(p=>p.lock&&p.mon===mk(m)&&p.slots.some(v=>v<cur.c*cur.r&&(v%cur.c>=nxt.c||Math.floor(v/cur.c)>=nxt.r)))){status("A locked tile is in the way. Nothing changed.");render();return}
-  edit(s=>{const g=s.grids[mk(m)],o={...g};g[k]=clamp(g[k]+d,1,k==="c"?8:4);
+  const cur=scene().grids[mk(m)],nxt={...cur,[k]:clamp(cur[k]+d,1,baseMax(cur,k))},ofc=GC(cur),ofr=GR(cur),nfc=GC(nxt),nfr=GR(nxt);
+  if(scene().pins.some(p=>p.lock&&p.mon===mk(m)&&p.slots.some(v=>v<ofc*ofr&&(v%ofc>=nfc||Math.floor(v/ofc)>=nfr)))){status("A locked tile is in the way. Nothing changed.");render();return}
+  edit(s=>{const g=s.grids[mk(m)];g[k]=nxt[k];
     // Keep each pin on the same column and row; drop cells past the new edge.
-    for(const p of s.pins)if(p.mon===mk(m))p.slots=p.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+    for(const p of s.pins)if(p.mon===mk(m))p.slots=reslot(p.slots,ofc,nfc,nfr);
     s.pins=s.pins.filter(p=>p.slots.length);
-    if(s.fill&&s.fill.held){for(const h of s.fill.held)if(h.mon===mk(m))h.slots=h.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+    if(s.fill&&s.fill.held){for(const h of s.fill.held)if(h.mon===mk(m))h.slots=reslot(h.slots,ofc,nfc,nfr);
       s.fill.held=s.fill.held.filter(h=>h.slots.length);if(!s.fill.held.length)delete s.fill.held}
-    for(const z of s.zones||[])if(z.mon===mk(m))z.slots=z.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
-    if(s.zones){s.zones=s.zones.filter(z=>z.slots.length);selZone=null}},`${monName(m)} grid: ${scene().grids[mk(m)].c+(k==="c"?d:0)}×${scene().grids[mk(m)].r+(k==="r"?d:0)}.`)}
+    for(const z of s.zones||[])if(z.mon===mk(m))z.slots=reslot(z.slots,ofc,nfc,nfr);
+    if(s.zones){s.zones=s.zones.filter(z=>z.slots.length);selZone=null}},`${monName(m)} grid: ${nfc}×${nfr}.`)}
 function pinOf(id){const P=prev(),p=P&&P.placed.find(q=>q.id===id);return p&&p.pin>=0&&!p.behind?{p,pin:scene().pins[p.pin]}:null}
 
 /* ---------- Drag: pointer capture, transform while moving, one rAF per frame ---------- */
@@ -1909,7 +2086,10 @@ for(const el of [stage,$("bay")]){el.addEventListener("pointermove",move);el.add
 stage.addEventListener("keydown",ev=>{
   const e=ev.target.closest(".tile");if(!e||isBusy||ev.target.tagName==="BUTTON")return;const id=+e.dataset.id;
   if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();selWin=id;render();return}
+  if(LIVE&&prev()&&((ev.key==="F10"&&ev.shiftKey)||ev.key==="ContextMenu")){ev.preventDefault();selWin=id;render();openSplit(id,{el:e});return}
   if(LIVE&&prev()&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey){
+    if(ev.key==="s"||ev.key==="S"){ev.preventDefault();selWin=id;render();if(ev.shiftKey)splitFast(id);else openSplit(id,{el:e});return}
+    if(ev.key==="j"||ev.key==="J"){ev.preventDefault();selWin=id;joinCell(id);return}
     if(ev.key==="l"||ev.key==="L"){ev.preventDefault();toggleLock(id);return}
     if(ev.key==="b"||ev.key==="B"){ev.preventDefault();const pp=pinOf(id);if(pp&&stackOf(pp.p.pin).length)bringFront(pp.p.pin);else status("Nothing is behind that window.");return}}
   if((ev.key==="Delete"||ev.key==="Backspace")&&LIVE){ev.preventDefault();unpin(id);return}
@@ -1939,6 +2119,11 @@ stage.addEventListener("keydown",ev=>{
       swapInto(id,hit[0].id,m,r*GC(g)+c,false);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}}
   curMon=m;pinWin(id,m,r*GC(g)+c,cs,rs);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));
 });
+// A right-click on the board never shows the browser's own menu; on a window it opens the split menu at the pointer.
+stage.addEventListener("contextmenu",ev=>{ev.preventDefault();const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev())return;
+  const id=+e.dataset.id;selWin=id;render();openSplit(id,{x:ev.clientX,y:ev.clientY})});
+stage.addEventListener("dblclick",ev=>{const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev()||ev.target.closest("button"))return;ev.preventDefault();splitFast(+e.dataset.id)});
+
 function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.");return}
   if(pp.pin.lock){status(`${winById(id).title} is locked. Unlock it first.`);return}
   edit(s=>{leavePin(s,s.pins[pp.p.pin])},`Unpinned ${winById(id).title}. ${(pp.pin.behind||[]).length?"The window behind it takes the cell.":"It fills if its app is in the fill list."}`)}
@@ -2151,6 +2336,9 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="retry")retrySave();
   else if(t.id==="srefresh")refresh();
   else if(t.id==="addgrid"){const m=curMon;edit(x=>{(x.grids||(x.grids={}))[mk(m)]={c:1,r:1}},`${monName(m)} has a 1×1 grid. Drag windows onto it.`)}
+  else if(t.dataset.sp!==undefined)splitPick(t);
+  else if(t.id==="splitbtn"){if(smenu&&smenu.id===selWin)closeSplit(true);else openSplit(selWin,{el:t})}
+  else if(t.id==="joinbtn")joinCell(selWin);
   else if(t.dataset.menu!==undefined)toggleMenu(t.dataset.menu);
   else if(t.dataset.fol!==undefined){const id=t.dataset.fol,card=()=>document.querySelector(`[data-pick="${CSS.escape(id)}"]`);closeMenu();if(card())card().focus();await followAgain(id);if(card())card().focus()}
   else if(t.dataset.pick){selId=t.dataset.pick;optim=null;selZone=null;zanchor=null;picks=null;closeAsk(false);render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}
