@@ -1128,8 +1128,8 @@ try {
 
   # Kind icons (decision monitor-setups, item 25; mockup card-kind-icon.html). A card's kind is Built-in for the built-in scene, Custom for a scene
   # in the config, and Not saved for a scene the page holds with no config entry. Each card shows its kind as one icon (an svg) titled and
-  # labelled with the kind word, and no kind word is on screen. No user path keeps a scene unsaved, so the Not saved card is set in the page's
-  # work map the way the page's own self-test sets one.
+  # labelled with the kind word, and no kind word is on screen. A failed Save As New keeps its copy in the work map with no config entry
+  # (saveAsNew in app.html), so a user can reach a Not saved card. The probe sets one in the work map the way the page's own self-test does.
   $kindWords = 'Built-in', 'Custom', 'Not saved'
   $kindJs = @'
 const words = ["Built-in", "Custom", "Not saved"];
@@ -1228,23 +1228,28 @@ return { cards: cardsOf().length, heights, cut, soloRow };
   }
 
   # Inspector kind (monitor-setups notes, item 25: the owner's yes, to say the kind once in words in the inspector's Scene section). The Scene
-  # section's visible text holds the selected scene's kind word once and no other kind's word. The reasons line (#whyoff) is left out: it says
-  # why a control is off ("Built-in scenes cannot be deleted.", "Not saved yet, so nothing to revert to."), and those words are not the kind.
-  # The words match case-sensitively, so a note's "built-in" does not count. Read as a user sees it: no visually hidden or hidden text.
+  # section's visible text holds the selected scene's kind word once and no other kind's word. The kind words are counted without the reasons
+  # line (#whyoff): it says why a control is off ("Built-in scenes cannot be deleted.", "Not saved yet, so nothing to revert to."), and those
+  # words are not the kind. The word edited is counted over the whole section, reasons line included. The kind words match case-sensitively,
+  # so a note's "built-in" does not count. Read as a user sees it: no visually hidden or hidden text.
   $sceneKindJs = @'
 const sceneKind = () => {
-  const box = document.getElementById("scenebox"), name = document.getElementById("sceneName");
-  if (!box) return { name: null, text: "", builtIn: 0, custom: 0, notSaved: 0, edited: 0 };
-  const w = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
-  let t = "";
-  while (w.nextNode()) {
-    const p = w.currentNode.parentElement;
-    if (!p || p.closest("#whyoff, .vh, [aria-hidden=true], [hidden]") || p.getClientRects().length === 0) continue;
-    t += w.currentNode.textContent + " ";
-  }
-  t = t.replace(/\s+/g, " ").trim();
+  const box = document.getElementById("scenebox"), name = document.getElementById("sceneName"), line = document.getElementById("skind"), crumb = document.getElementById("sedit");
+  if (!box) return { name: null, text: "", line: null, crumb: false, builtIn: 0, custom: 0, notSaved: 0, edited: 0 };
+  // The visible text of the box, without the parts that the skip selector names.
+  const shown = skip => {
+    const w = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    let t = "";
+    while (w.nextNode()) {
+      const p = w.currentNode.parentElement;
+      if (!p || p.closest(skip) || p.getClientRects().length === 0) continue;
+      t += w.currentNode.textContent + " ";
+    }
+    return t.replace(/\s+/g, " ").trim();
+  };
+  const t = shown("#whyoff, .vh, [aria-hidden=true], [hidden]"), all = shown(".vh, [aria-hidden=true], [hidden]");
   const n = re => (t.match(re) || []).length;
-  return { name: name ? name.value : null, text: t, builtIn: n(/\bBuilt-in\b/g), custom: n(/\bCustom\b/g), notSaved: n(/\bNot saved\b/g), edited: n(/\bedited\b/gi) };
+  return { name: name ? name.value : null, text: t, line: line ? line.textContent.replace(/\s+/g, " ").trim() : null, crumb: !!crumb && !crumb.hidden, builtIn: n(/\bBuilt-in\b/g), custom: n(/\bCustom\b/g), notSaved: n(/\bNot saved\b/g), edited: (all.match(/\bedited\b/gi) || []).length };
 };
 '@
   # Waits until the Scene section shows the named scene, so a read is of the scene the page selected.
@@ -1276,7 +1281,13 @@ const sceneKind = () => {
       foreach ($other in @($kindWords | ? { $_ -ne $s.word })) {
         Check "$($s.name): the Scene section shows no $other" ($counts[$other] -eq 0) "$other in the Scene section: $($counts[$other]); its visible text: '$($k.text)'"
       }
-      if ($s.scene -ne 'kind-probe') { Check "$($s.name), unchanged: the Scene section says no edited (control)" ($k.edited -eq 0) "edited in the Scene section: $($k.edited)" }
+      Check "$($s.name): the Scene section says no edited (control)" ($k.edited -eq 0) "edited in the Scene section: $($k.edited); its visible text: '$($k.text)'"
+      if ($s.scene -eq 'kind-probe') {
+        # The probe has no config entry, so the page counts it edited: the crumb reads Edited. Its inspector line must still never say edited.
+        Check 'Kind probe, Not saved: the crumb reads Edited, so the page counts the probe edited (control)' $k.crumb 'the crumb does not read Edited'
+        Check 'Kind probe, Not saved: the inspector line starts with its kind word (control)' ([string]$k.line).StartsWith('Not saved') "the inspector line reads: '$($k.line)'"
+        Check 'Kind probe, Not saved: the inspector line never says edited' ([string]$k.line -notmatch '\bedited\b') "the inspector line reads: '$($k.line)'"
+      }
     }
   }
 
