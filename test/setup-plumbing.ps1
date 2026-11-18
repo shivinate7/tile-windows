@@ -44,8 +44,6 @@ try {
   Add-Type -AssemblyName System.Drawing   # Rectangle for the monitor bounds; run.ps1 loads it earlier, a child does not
   . (Join-Path $root 'tray.ps1') -Lib   # Get-MonitorKey, Step-Tray, New-TrayState, and config.ps1 (Get-TileSetupKey)
 
-  # A tray scene set: one scene per monitor count, each made for that count (the display trigger picks by count).
-  $trayCfg = ConvertFrom-Json '{"scenes":[{"id":"one","name":"One","trigger":{"type":"display"},"auto":{"monitors":true},"screens":1},{"id":"two","name":"Two","trigger":{"type":"display"},"auto":{"monitors":true},"screens":2},{"id":"three","name":"Three","trigger":{"type":"display"},"auto":{"monitors":true},"screens":3}]}'
   $d = [datetime]'2026-10-20 10:00'   # a fixed time: the display trigger does not read the clock
   function Ids($x) { (@($x) | % { $_.id }) -join ',' }
   # The setup key of some monitor ids, through the product's own key function.
@@ -58,6 +56,8 @@ try {
   function Step-Pair([string]$a, [string]$b) { $ts = New-TrayState; $null = Step-Tray $ts $d $trayCfg $a $null ''; Ids (Step-Tray $ts $d $trayCfg $b $null '') }
 
   $k1 = Key-Of 'AUO1'; $k2 = Key-Of 'AUO1', 'DEL2'; $k3 = Key-Of 'AUO1', 'DEL2', 'LEN3'
+  # A tray scene set: one scene per setup, each made on that setup (Use This Scene on This Setup, owner ruling Q4 A, 2026-11-17 09:47 CST).
+  $trayCfg = ConvertFrom-Json ('{"scenes":[{"id":"one","name":"One","trigger":{"type":"display"},"auto":{"setup":true},"setupKey":"' + $k1 + '"},{"id":"two","name":"Two","trigger":{"type":"display"},"auto":{"setup":true},"setupKey":"' + $k2 + '"},{"id":"three","name":"Three","trigger":{"type":"display"},"auto":{"setup":true},"setupKey":"' + $k3 + '"}]}')
 
   # Rearranged (decision item 4): the same three monitors in other places. The key the tray takes must not move with the bounds.
   $arrA = @((New-TestScreen 'DISPLAY1' 'LEN3' 0 1000 1536 960), (New-TestScreen 'DISPLAY2' 'AUO1' 1536 0 4096 1728), (New-TestScreen 'DISPLAY3' 'DEL2' 5632 0 1200 1920))

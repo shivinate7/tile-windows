@@ -1,8 +1,8 @@
 # Tile Windows tray agent: an icon in the notification area.
 #   Menu: Open Tile Windows, Apply Scene >, Quit. Double-click opens the app.
-#   Applies scenes on their trigger: a schedule (days + time), when the monitor set changes, or when a
+#   Applies scenes on their trigger: a schedule (days + time), when the plugged-in setup changes, or when a
 #   Teams call starts (and, if the scene says so, goes back to the scene before when the call ends).
-#   Also runs the per-scene switches in scene.auto (see README, Triggers): desk, window, activity, size, gaps, offer, monitors, noext, grid.
+#   Also runs the per-scene switches in scene.auto (see README, Triggers): desk, window, activity, size, gaps, offer, setup, noext, grid.
 # -Open: open the app (starts the agent first if it is not running).
 # -NoIcon: run without the icon (tests). -NoApply: every apply is a dry run (tests).
 # -Lib: define the functions and return (tests dot-source it).
@@ -40,7 +40,7 @@ function Test-TeamsCall($mic, $wins) {
 }
 # ---- Triggers beyond the schedule: each one a pure function of its inputs. Win32 signals feed them in the tick below. ----
 # The per-scene switches. Each is off unless the scene's .auto sets it true. The page's trigger editor lists the same names (a test checks).
-$TileAutoFlags = @('desk', 'window', 'activity', 'size', 'gaps', 'offer', 'monitors', 'noext', 'grid')
+$TileAutoFlags = @('desk', 'window', 'activity', 'size', 'gaps', 'offer', 'setup', 'noext', 'grid')
 function Test-Auto($sc, [string]$flag) { [bool]($sc -and $sc.auto -and $sc.auto.$flag) }
 # Does any scene apply itself? Then the tray reads the call state, which the in-call guard needs.
 function Test-AnyAuto($cfg) { [bool]@($cfg.scenes | ? { $sc = $_; ($sc.trigger.type -and $sc.trigger.type -ne 'manual') -or @($TileAutoFlags | ? { Test-Auto $sc $_ }).Count }).Count }
@@ -62,7 +62,7 @@ function Get-Opt($cfg, $sc, [string]$flag, [string]$name) {
 }
 # The cap on each threshold. The page's AUTO list caps its boxes at the same values (a test checks).
 $TileOptMax = @{ 'desk.lockMin' = 240; 'desk.idleMin' = 240; 'window.holdSec' = 60; 'activity.dwellSec' = 3600; 'activity.graceMin' = 240
-  'grid.at' = 20; 'size.at' = 500; 'offer.leadMin' = 30; 'gaps.minutes' = 480; 'monitors.screens' = 8; 'noext.sec' = 600 }
+  'grid.at' = 20; 'size.at' = 500; 'offer.leadMin' = 30; 'gaps.minutes' = 480; 'noext.sec' = 600 }
 function Read-Num($v, [double]$def, [string]$key) {
   $n = 0.0; if (-not [double]::TryParse("$v", [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$n) -or $n -le 0) { return $def }
   [Math]::Min($n, $TileOptMax[$key])
@@ -168,7 +168,21 @@ function Step-NoExternal($s, [datetime]$now, $cfg, $n, [string]$active, [double]
   $st = $s; New-Cand $sc.id 'because the external monitors are gone' 'noext' ({ $st.soloDone = $true }.GetNewClosure())
 }
 # The scene (with the config's category map attached, as Get-TileScene gives it) as JSON for tile.ps1 -Scene, its ultrawide grid swapped.
-function Get-GridSceneJson($sc, $grid) { $full = ConvertFrom-Json (ConvertTo-Json -Depth 8 -Compress $sc); $full.grids.wide = $grid; ConvertTo-Json -Depth 8 -Compress $full }
+# The ultrawide is the monitor that holds the wide role (Get-TileRoles over $plugged, the monitors tile.ps1 -Monitors read), not the widest screen.
+# The role template always gets the grid (tile.ps1's Pick takes the wide role from the same Get-TileRoles). A scene with its own layout for the plugged-in setup runs
+# that layout by monitor id, so the grid goes there too, on the wide-role monitor's id, when the layout has a grid for it.
+function Get-GridSceneJson($sc, $grid, $plugged = $null) {
+  $full = ConvertFrom-Json (ConvertTo-Json -Depth 8 -Compress $sc); $full.grids.wide = $grid
+  $key = Get-TileKnownSetupKey $plugged
+  $own = if ($key -and $full.layouts) { $full.layouts.PSObject.Properties[$key] }
+  if ($own) {
+    $mons = [pscustomobject]@{}
+    foreach ($m in @($plugged)) { $mons | Add-Member -NotePropertyName ([string]$m.id) -NotePropertyValue ([pscustomobject]@{ builtin = [bool]$m.builtin; bw = $m.bw; bh = $m.bh; w = $m.w; h = $m.h }) }
+    $wide = (Get-TileRoles $mons @($plugged | % { [string]$_.id }))['wide']
+    if ($wide -and $own.Value.grids -and $own.Value.grids.PSObject.Properties[$wide]) { $own.Value.grids.$wide = $grid }
+  }
+  ConvertTo-Json -Depth 8 -Compress $full
+}
 # Grid follows the Claude count: dense from 'at' Claude windows, roomy again at 'at' minus 2, and in between whatever it was ($prev), so a count
 # that hovers at the line does not flap. $null when the scene has no switch or no claudeGrid.
 function Get-ClaudeMode($sc, [int]$n, [string]$prev = '') {
@@ -196,8 +210,8 @@ function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active, $sig 
   if ($sig) { $agenda = Get-TodayAgenda $sig.agenda $now }
   foreach ($x in (Get-DueScenes $cfg $now $s.fired)) { $s.fired[$x.id] = $now.ToString('yyyy-MM-dd HH:mm'); $ev += New-Cand $x.id 'on schedule' 'schedule' }
   if ($key) {
-    $n = @($key -split '[;|]').Count  # the key's monitors: ids joined by '|' (setup key), or bounds strings joined by ';'
-    $d = @(Get-AutoScenes $cfg 'monitors' | ? { (Read-Num $_.screens 0 'monitors.screens') -eq $n })[0]; if (-not $d) { $d = @(Get-DisplayScenes $cfg)[0] }
+    # Use This Scene on This Setup: the scene whose setupKey is the plugged-in key. A key of ids ignores a rearrange, so only a change of monitors fires.
+    $d = @(Get-AutoScenes $cfg 'setup' | ? { $_.setupKey -ceq $key })[0]; if (-not $d) { $d = @(Get-DisplayScenes $cfg)[0] }
     if ($s.lastKey -and $key -ne $s.lastKey -and $d) { $ev += New-Cand $d.id 'because the monitors changed' 'display' }
     $s.lastKey = $key
   }
@@ -486,7 +500,7 @@ public static class TileInput {
 try { [TileInput]::Start() } catch { Write-Warning "Some automatic triggers are off: $($_.Exception.Message)" }
 $tile = Join-Path $PSScriptRoot 'tile.ps1'; $serve = Join-Path $PSScriptRoot 'serve.ps1'
 $srv = $null; $url = ''; $state = New-TrayState; $dirtyAt = $null; $tick = 0; $first = $true
-$agendaRaw = $null; $offer = $null; $gridMode = @{}
+$agendaRaw = $null; $offer = $null; $gridMode = @{}; $plugged = $null  # plugged: the monitors of the last good read, for the grid trigger
 
 # Any balloon replaces a pending offer, so a click on it never arranges.
 function Note([string]$text) { $script:offer = $null; if ($icon) { $icon.ShowBalloonTip(4000, 'Tile Windows', $text, 'Info') } }
@@ -510,7 +524,7 @@ function Apply-Scene($s, [string]$why, [string]$prev = '') {
     if ((Test-Auto $s 'grid') -and $s.claudeGrid) {
       $cn = @(Read-Windows | ? { $_.app -eq 'claude' -and -not $_.min }).Count
       $mode = Get-ClaudeMode $s $cn $gridMode[$s.id]
-      if ($mode) { $gridMode[$s.id] = $mode; $arg = Get-GridSceneJson (Get-TileScene $s.id) $s.claudeGrid.$mode }
+      if ($mode) { $gridMode[$s.id] = $mode; $arg = Get-GridSceneJson (Get-TileScene $s.id) $s.claudeGrid.$mode $script:plugged }
       if ($mode -eq 'dense') { $gridLine = "Dense grid: $cn $(Get-TileAppName 'claude') $(if ($cn -eq 1) { 'window' } else { 'windows' })." }
     }
     $r = (& $tile -Scene $arg -Json -DryRun:$NoApply 3>$null) -join '' | ConvertFrom-Json
@@ -620,7 +634,7 @@ $timer.add_Tick({
   # The monitor key: on the first tick (seeds), then 2 s after the display last changed.
   if ([TileDisplayWatch]::Dirty) { [TileDisplayWatch]::Dirty = $false; $script:dirtyAt = Get-Date }
   $key = $null
-  if ($first -or ($dirtyAt -and ((Get-Date) - $dirtyAt).TotalSeconds -ge 2)) { $script:first = $false; $script:dirtyAt = $null; $key = Get-MonitorKey (Read-Monitors) }
+  if ($first -or ($dirtyAt -and ((Get-Date) - $dirtyAt).TotalSeconds -ge 2)) { $script:first = $false; $script:dirtyAt = $null; $mons = Read-Monitors; if ($mons) { $script:plugged = $mons }; $key = Get-MonitorKey $mons }
   # Teams calls: poll every 3 s while any scene applies itself (the in-call guard needs the reading too).
   $call = $null; $any = Test-AnyAuto $cfg; $n = ++$script:tick
   if (($n % 3) -eq 0 -and $any) { $call = Test-TeamsCall (Get-MicUsage) (Get-TeamsWindows) }

@@ -31,8 +31,10 @@ function Set-TileBad([string]$path, [string]$fresh) {
   $bad = "$path.bad"; if (Test-Path -LiteralPath $bad) { $bad = "$path.$((Get-Date).ToString('yyyyMMdd-HHmmss-fff')).bad" }
   Retry-TileIO { [IO.File]::Copy($path, $bad, $false); [IO.File]::Delete($path) }
   $n = "$([IO.Path]::GetFileName($path)) could not be read, so $fresh. The old file is $([IO.Path]::GetFileName($bad))."
-  $script:TileNote = $n; Write-TileFile $TileNoteFile ((@((Get-TileNote), $n) | ? { $_ }) -join ' ')
+  Add-TileNote $n
 }
+# Adds a line to note.txt (the page shows it until dismissed) and keeps it in this process for the tray's balloon. Callers hold the lock.
+function Add-TileNote([string]$n) { $script:TileNote = $n; Write-TileFile $TileNoteFile ((@((Get-TileNote), $n) | ? { $_ }) -join ' ') }
 function Get-TileNote { if (Test-Path -LiteralPath $TileNoteFile) { Read-TileFile $TileNoteFile } else { '' } }
 function Clear-TileNote { Use-TileLock { if (Test-Path -LiteralPath $TileNoteFile) { Retry-TileIO { [IO.File]::Delete($TileNoteFile) } } } }
 
@@ -63,10 +65,34 @@ function Update-TileConfig([string]$text) {
     $out = ConvertTo-Json -Depth 10 $c; Save-TileConfigText $out; $out
   } catch { $text }
 }
+# "Use This Scene for This Many Screens" (auto.monitors, scene.screens) was replaced by "Use This Scene on This Setup" (auto.setup, scene.setupKey;
+# owner ruling Q4 A, 2026-11-17 09:47 CST, decision monitor-setups item 17). A scene with the old switch on loads with it off, and a note asks the owner
+# to pick a setup for it; nothing else in the scene changes. It runs on every read but parses only a config that still has the switch on, so it is
+# not tied to the version: a version 4 config written before this change gets it too. A separate step, not a branch of Update-TileConfig,
+# so that one stays a no-op once the config is current.
+function Update-TileSetupSwitch([string]$text) {
+  if ($text -notmatch '"monitors"\s*:\s*true') { return $text }
+  try {
+    $c = ConvertFrom-Json $text; $gone = @()
+    foreach ($x in @($c.scenes)) {
+      if (-not ($x.auto -and $x.auto.PSObject.Properties['monitors'] -and [bool]$x.auto.monitors)) { continue }
+      $x.auto.PSObject.Properties.Remove('monitors')
+      $gone += $(if ($x.screens) { "$($x.name) ($($x.screens) screens)" } else { [string]$x.name })
+    }
+    if (-not $gone.Count) { return $text }
+    $new = ConvertTo-Json -Depth 10 $c
+    # The note first, then the save, so a failure never leaves the switch off on disk with no note. Any failure returns the old text unchanged: the
+    # next read retries, and a note already written is not written twice.
+    $msg = "Use This Scene for This Many Screens is gone, so it is off for $($gone -join ', '). Pick a setup for each of them under Use This Scene on This Setup."
+    Use-TileLock { if (-not (Get-TileNote).Contains($msg)) { Add-TileNote $msg } }
+    Save-TileConfigText $new
+    $new
+  } catch { $text }
+}
 function Get-TileConfigText {
   if (Test-Path -LiteralPath $TileConfig) {
     $t = Read-TileFile $TileConfig
-    try { Test-TileConfig $t; return (Update-TileConfig $t) } catch {
+    try { Test-TileConfig $t; return (Update-TileSetupSwitch (Update-TileConfig $t)) } catch {
       # Check again under the lock: another writer may have fixed or already moved it.
       $ok = Use-TileLock { if (Test-Path -LiteralPath $TileConfig) { $t2 = Read-TileFile $TileConfig; try { Test-TileConfig $t2; $t2 } catch { Set-TileBad $TileConfig 'the starter scenes are back' } } }
       if ($ok) { return $ok }
@@ -135,6 +161,9 @@ function Get-TileMonShape($m) {
   if ($w -le 0 -or $h -le 0) { return '' }
   if ($h -gt $w) { 'tall' } elseif ($w -gt $h) { 'wide' } else { '' }
 }
+# The role order: wide, then tall, then laptop. The one home for it: tile.ps1's Roles picks screens in it, and Resolve-TileLayout seeds a
+# monitor that holds several roles by the first of it that the scene has a grid for.
+function Get-TileRoleOrder { 'wide', 'tall', 'laptop' }
 # The seeding pick (decision monitor-setups item 14): each role goes to one monitor of the ids, the widest candidate of its shape, then the
 # lowest id. Returns a hashtable role -> id. A monitor the config does not know has no shape.
 function Get-TileRoles($monitors, $ids) {
@@ -147,6 +176,12 @@ function Get-TileRoles($monitors, $ids) {
   $role = @{}
   foreach ($c in @($cand | Sort-Object @{ Expression = { $_.w }; Descending = $true }, @{ Expression = { $_.id }; Descending = $false })) {
     if (-not $role.ContainsKey($c.shape)) { $role[$c.shape] = $c.id }
+  }
+  # A lone plugged monitor holds the laptop and wide roles whatever its shape, and tall too when it is portrait (as Pick always gave it, coordinator
+  # ruling 2026-11-17 17:42 CST). With two or more monitors a built-in never takes wide.
+  $one = @(@($ids) | Select-Object -Unique)
+  if ($one.Count -eq 1 -and $monitors -and $monitors.PSObject.Properties[[string]$one[0]]) {
+    $tall = $role.ContainsKey('tall'); $role = @{ laptop = [string]$one[0]; wide = [string]$one[0] }; if ($tall) { $role['tall'] = [string]$one[0] }
   }
   $role
 }
@@ -239,7 +274,7 @@ function Resolve-TileLayout($cfg, $scene, [string]$key) {
     $r = Copy-TileObject $best; $g = [pscustomobject]@{}
     foreach ($gp in @($r.grids.PSObject.Properties)) { if ($ids -ccontains $gp.Name) { $g | Add-Member -NotePropertyName $gp.Name -NotePropertyValue $gp.Value } }
     $pick = Get-TileRoles $cfg.monitors $ids
-    foreach ($shape in $pick.Keys) {
+    foreach ($shape in @(Get-TileRoleOrder | Where-Object { $pick.ContainsKey($_) })) {
       $id = $pick[$shape]
       if ($g.PSObject.Properties[$id]) { continue }
       $tg = if ($scene.grids) { $scene.grids.PSObject.Properties[$shape] }
@@ -249,9 +284,10 @@ function Resolve-TileLayout($cfg, $scene, [string]$key) {
     return $r
   }
   $role = Get-TileRoles $cfg.monitors $ids; $grids = [pscustomobject]@{}
-  foreach ($shape in $role.Keys) {
+  # A monitor holds one grid: a lone monitor holding several roles takes the first role in Get-TileRoleOrder that the scene has a grid for.
+  foreach ($shape in @(Get-TileRoleOrder | Where-Object { $role.ContainsKey($_) })) {
     $tg = if ($scene.grids) { $scene.grids.PSObject.Properties[$shape] }
-    if ($tg) { $grids | Add-Member -NotePropertyName $role[$shape] -NotePropertyValue ([pscustomobject]@{ c = $tg.Value.c; r = $tg.Value.r }) }
+    if ($tg -and -not $grids.PSObject.Properties[[string]$role[$shape]]) { $grids | Add-Member -NotePropertyName $role[$shape] -NotePropertyValue ([pscustomobject]@{ c = $tg.Value.c; r = $tg.Value.r }) }
   }
   $tpl = Copy-TileObject ([pscustomobject]@{ pins = @($scene.pins | Where-Object { $_ }); zones = @($scene.zones | Where-Object { $_ }); fill = $(if ($scene.fill) { $scene.fill } else { [pscustomobject]@{} }) })
   $at = { param($v) if ($v -and $role.ContainsKey([string]$v)) { $role[[string]$v] } else { $v } }

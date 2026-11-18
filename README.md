@@ -54,12 +54,12 @@ A scene applies itself through one **main trigger** (pick one: by hand, on a sch
 | Use This Scene for Calls of Its Size | A Teams call that starts during a meeting in `agenda.json` applies Listen (a big call) or Meetings. `meetingSize` in config.json names the scenes. | a big call is 25 people or more (set on Listen) | the scene it applies |
 | Offer This Scene Before a Meeting | A tray balloon offers the scene for the meeting's size. Nothing moves unless you click the balloon. | 2 min before | the scene it offers |
 | Use This Scene in a Gap Between Meetings | A next busy meeting is far off, none is on now, and input was within 2 minutes: apply the scene, once per gap. With no meeting left, or within 10 minutes of a call ending, it does nothing. | next meeting 60 min away | the scene it applies |
-| Use This Scene for This Many Screens | When the monitors change, apply the scene whose `screens` equals the new count (Solo is 1). With no match, the scene that applies on a monitor change runs, as before. | screens | the scene it applies |
-| Use This Scene When the External Monitors Go | One screen left for a while, while unlocked and not idle, and no monitor-set scene applied in the last minute: apply the scene. | 30 s | the scene it applies |
+| Use This Scene on This Setup | When the plugged-in setup changes to the one picked on the scene (`setupKey`), apply the scene. A setup is the set of monitors, so rearranging or rescaling the same monitors fires nothing. With no match, the scene that applies on a monitor change runs, as before. | the setup | the scene it applies |
+| Use This Scene When the External Monitors Go | One screen left for a while, while unlocked and not idle, and no setup scene applied in the last minute: apply the scene. | 30 s | the scene it applies |
 
 Thresholds are stored with the scene (`opt`), with the defaults in `optDefaults` in config.json. Thursday Prep is an ordinary schedule (Thursday 14:30): set "On a Schedule" on it. Applying a scene by hand is never limited.
 
-Two scenes can hold the same extra (the gap, the laptop-only and the screen-count scenes can clash, as can two main triggers of the same kind). The first scene in the rail wins, and the inspector says "also used by ...".
+Two scenes can hold the same extra (the gap, the laptop-only and the setup scenes can clash, as can two main triggers of the same kind). The first scene in the rail wins, and the inspector says "also used by ...".
 
 Guards, for every automatic apply:
 

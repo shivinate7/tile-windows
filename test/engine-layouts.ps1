@@ -263,6 +263,132 @@ try {
     # The template's Chrome pin has no window here, so its slot stays free: Claude 3001 takes the first cell.
     Check 'control: with no layout for this setup, the role template places Claude 3001 on the ultrawide first cell' (OnCell $r 3001 1 (CellRect $ultDesk 5 2 0)) (Desc $r 3001)
   }
+
+  # ---- Wide role (decision monitor-setups, item 14): with two or more monitors a built-in never takes wide. A lone plugged monitor holds
+  # wide, as on main's Pick. Pick (tile.ps1) and Get-TileRoles (config.ps1) name the same wide monitor. Laptop with a portrait has no wide
+  # monitor, so the scene's wide pin is not placed. ----
+  $wideScene = Write-Json 'wide-role-scene.json' ([pscustomobject]@{ id = 'wide-role'; name = 'Wide role'; grids = [pscustomobject]@{ wide = [pscustomobject]@{ c = 2; r = 1 }; tall = [pscustomobject]@{ c = 1; r = 2 } }; pins = @([pscustomobject]@{ app = 'chrome'; match = ''; mon = 'wide'; slots = @(0) }, [pscustomobject]@{ app = 'claude'; match = ''; mon = 'tall'; slots = @(0) }); fill = [pscustomobject]@{ mon = 'wide'; apps = @(); skip = @(); sort = 'app' } })
+  $chromeW = Win 4101 'chrome' 'Procore - Chrome' 0
+  $claudeW = Win 4102 'claude' 'Claude - chat' 500
+  $snapWideLap = Write-Snap 'wide-laptop.json' @($lapDesk) @($chromeW)
+  $snapWidePort = Write-Snap 'wide-portrait.json' @($lapDesk, $tallB) @($chromeW, $claudeW)
+  $snapWideUlt = Write-Snap 'wide-ultrawide.json' @($lapDesk, $ultDesk) @($chromeW, $claudeW)
+  $snapSoloLap = Write-Snap 'solo-laptop.json' @($lapDesk) @($chromeW, $claudeW)
+  # The wide monitor's id by Pick: tile.ps1 -Monitors prints each monitor's role. '' when no monitor takes wide.
+  function Wide-Of($mons) { $w = @($mons | ? { $_.role -ceq 'wide' }); if ($w.Count) { [string]$w[0].id } else { '' } }
+  # Assigned, not piped: ConvertFrom-Json emits a JSON array as one object, and @() around it would nest the list.
+  function Pick-From([string]$snap) { $pm = ConvertFrom-Json ((& $tile -Monitors -From $snap 3>$null) -join ''); Wide-Of $pm }
+  function Pick-Seam($list) { Wide-Of (Invoke-MonitorsSeam $list) }
+  # The wide monitor's id by Get-TileRoles over the same monitors, stored as config.monitors stores them.
+  function Config-Wide($list) {
+    $m = New-Object PSObject
+    foreach ($x in @($list)) { $m | Add-Member -NotePropertyName ([string]$x.id) -NotePropertyValue ([pscustomobject]@{ name = $x.name; builtin = [bool]$x.builtin; bw = $x.bw; bh = $x.bh }) }
+    $roles = Get-TileRoles $m @($list | % { [string]$_.id })
+    [string]$roles['wide']
+  }
+  function Named([string]$id) { if ($id) { $id } else { 'none' } }
+
+  Case 'wide, laptop alone: a role-keyed scene pinned to wide places Chrome on the laptop, a lone plugged monitor holding wide' {
+    $lapObj = Get-Content -Raw -LiteralPath $snapWideLap | ConvertFrom-Json
+    Check 'scope: the snapshot holds the built-in laptop alone, with Chrome open' ((@($lapObj.monitors.id) -join ',') -ceq $LAP -and @($lapObj.windows | ? { $_.app -eq 'chrome' }).Count -eq 1) (@($lapObj.monitors.id) -join ',')
+    $r = Invoke-SceneFrom $wideScene $snapWideLap
+    Check 'wide, laptop alone: Chrome is in the first cell of the 2x1 wide grid, on the laptop' (OnCell $r 4101 1 (CellRect $lapDesk 2 1 0)) (Desc $r 4101)
+    Check 'wide, laptop alone: Chrome is not listed in left' ((LeftWhy $r 4101) -eq '') "left why: '$(LeftWhy $r 4101)'"
+  }
+  Case 'wide, laptop and portrait: wide places nothing on the laptop, and the portrait takes tall' {
+    $pObj = Get-Content -Raw -LiteralPath $snapWidePort | ConvertFrom-Json
+    $wantPort = (@($LAP, $TAL) | Sort-Object) -join ','
+    Check 'scope: the snapshot holds the laptop and the portrait, with Chrome and Claude open' (((@($pObj.monitors.id) | Sort-Object) -join ',') -ceq $wantPort -and @($pObj.windows).Count -eq 2) (@($pObj.monitors.id) -join ',')
+    $r = Invoke-SceneFrom $wideScene $snapWidePort
+    Check 'wide, laptop and portrait: Chrome is not placed on the laptop (wide does not fall back to the built-in)' (-not (PlacedOf $r 4101)) (Desc $r 4101)
+    Check 'wide, laptop and portrait: Chrome is listed in left' ((LeftWhy $r 4101) -ne '') (Desc $r 4101)
+    Check 'control: wide, laptop and portrait: Claude takes the portrait tall cell 1' (OnCell $r 4102 1 (CellRect $tallB 1 2 0)) (Desc $r 4102)
+  }
+  Case 'control: wide, laptop and ultrawide: the ultrawide takes wide, and Chrome is in its first wide cell' {
+    $uObj = Get-Content -Raw -LiteralPath $snapWideUlt | ConvertFrom-Json
+    $wantUlt = (@($LAP, $ULT) | Sort-Object) -join ','
+    Check 'scope: the snapshot holds the laptop and the ultrawide, with Chrome and Claude open' (((@($uObj.monitors.id) | Sort-Object) -join ',') -ceq $wantUlt -and @($uObj.windows).Count -eq 2) (@($uObj.monitors.id) -join ',')
+    $r = Invoke-SceneFrom $wideScene $snapWideUlt
+    Check 'control: Chrome is in the ultrawide first wide cell (2 columns)' (OnCell $r 4101 1 (CellRect $ultDesk 2 1 0)) (Desc $r 4101)
+  }
+  Case 'wide: Pick and Get-TileRoles name the same wide monitor on each setup, read by -From and by the seam' {
+    $setups = @(
+      [pscustomobject]@{ name = 'laptop alone'; list = @($lapDesk); snap = $snapWideLap },
+      [pscustomobject]@{ name = 'laptop and portrait'; list = @($lapDesk, $tallB); snap = $snapWidePort },
+      [pscustomobject]@{ name = 'laptop and ultrawide'; list = @($lapDesk, $ultDesk); snap = $snapWideUlt })
+    foreach ($su in $setups) {
+      $snapIds = @((Get-Content -Raw -LiteralPath $su.snap | ConvertFrom-Json).monitors).Count
+      Check "scope: wide, $($su.name): the snapshot holds $(@($su.list).Count) monitor(s)" ($snapIds -eq @($su.list).Count) "snapshot monitors: $snapIds"
+      $want = Config-Wide $su.list
+      $fromPick = Pick-From $su.snap
+      $seamPick = Pick-Seam $su.list
+      Check "wide, $($su.name), -From: Pick names the same wide monitor as Get-TileRoles" ($fromPick -ceq $want) "Pick $(Named $fromPick), Get-TileRoles $(Named $want)"
+      Check "wide, $($su.name), seam: Pick names the same wide monitor as Get-TileRoles" ($seamPick -ceq $want) "Pick $(Named $seamPick), Get-TileRoles $(Named $want)"
+    }
+  }
+  # A lone plugged monitor holds wide, as on main's Pick: Get-TileRoles (config.ps1) and Pick name it for wide, on a laptop, a 16:9 external and a portrait.
+  Case 'wide, lone plugged monitor: Get-TileRoles and Pick name it for wide, on a laptop, a 16:9 external and a portrait' {
+    $snapLoneUlt = Write-Snap 'lone-ultrawide.json' @($ultDesk) @($chromeW)
+    $snapLonePort = Write-Snap 'lone-portrait.json' @($tallB) @($chromeW)
+    $lones = @(
+      [pscustomobject]@{ name = 'laptop'; list = @($lapDesk); snap = $snapWideLap; want = $LAP },
+      [pscustomobject]@{ name = 'ultrawide'; list = @($ultDesk); snap = $snapLoneUlt; want = $ULT },
+      [pscustomobject]@{ name = 'portrait'; list = @($tallB); snap = $snapLonePort; want = $TAL })
+    foreach ($lo in $lones) {
+      $snapN = @((Get-Content -Raw -LiteralPath $lo.snap | ConvertFrom-Json).monitors).Count
+      Check "scope: lone $($lo.name): the snapshot holds one monitor" ($snapN -eq 1) "snapshot monitors: $snapN"
+      $want = Config-Wide $lo.list
+      Check "lone $($lo.name): Get-TileRoles names it for wide" ($want -ceq $lo.want) "Get-TileRoles $(Named $want), want $(Named $lo.want)"
+      $fromPick = Pick-From $lo.snap
+      Check "lone $($lo.name), -From: Pick names the same wide monitor as Get-TileRoles" ($fromPick -ceq $want) "Pick $(Named $fromPick), Get-TileRoles $(Named $want)"
+      $seamPick = Pick-Seam $lo.list
+      Check "lone $($lo.name), seam: Pick names the same wide monitor as Get-TileRoles" ($seamPick -ceq $want) "Pick $(Named $seamPick), Get-TileRoles $(Named $want)"
+    }
+  }
+  # -Proc with the default -Monitor wide. A snapshot names the built-in, so Pick must take it for wide, not throw.
+  Case 'wide, laptop alone: -From -Proc chrome, with the default -Monitor wide, runs and prints its grid' {
+    $lapObj = Get-Content -Raw -LiteralPath $snapWideLap | ConvertFrom-Json
+    Check 'scope: the snapshot holds the built-in laptop alone' ((@($lapObj.monitors).Count -eq 1) -and [bool]$lapObj.monitors[0].builtin) "monitors: $(@($lapObj.monitors).Count)"
+    $threw = ''; $txt = ''
+    try { $txt = (& $tile -From $snapWideLap -Proc chrome -DryRun 3>$null) | Out-String } catch { $threw = $_.Exception.Message }
+    Check 'wide, laptop alone: -From -Proc chrome, default -Monitor wide, does not throw and prints a grid' ($threw -eq '' -and $txt -match 'Grid \d+x\d+') $(if ($threw) { "threw: $threw" } else { "no grid line in: $($txt.Trim())" })
+  }
+  # Control, green on the old code: the seam path reads no built-in flag, so the laptop is a wide candidate there.
+  Case 'control: laptop alone on the seam, -Proc chrome -DryRun with the default -Monitor wide prints a grid' {
+    $env:TILE_SCREENS_FILE = Write-Seam @($lapDesk)
+    try { $txt = (& $tile -Proc chrome -DryRun 3>$null) | Out-String } finally { $env:TILE_SCREENS_FILE = $null }
+    Check 'control: seam laptop alone, -Proc chrome -DryRun, default -Monitor wide, prints its grid' ($txt -match 'Grid \d+x\d+') "output: $($txt.Trim())"
+  }
+  Case 'solo: a laptop alone places Chrome and Claude on the laptop, whichever role the starter pins Chrome to' {
+    $solo = @(([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json).scenes | ? { $_.id -eq 'solo' })[0]
+    $soloPin = @($solo.pins | ? { $_.app -eq 'chrome' })
+    Check 'scope: the Solo starter has one Chrome pin' ($soloPin.Count -eq 1) "Chrome pins: $($soloPin.Count)"
+    $soloFile = Write-Json 'solo-starter.json' $solo
+    $r = Invoke-SceneFrom $soloFile $snapSoloLap
+    Check 'solo, laptop alone: Chrome is on the laptop left half' (OnCell $r 4101 1 (CellRect $lapDesk 2 1 0)) (Desc $r 4101)
+    Check 'solo, laptop alone: Claude is on the laptop right half' (OnCell $r 4102 2 (CellRect $lapDesk 2 1 1)) (Desc $r 4102)
+  }
+  # The Solo starter resolved for a lone built-in 1920x1080 (the key with no layout, as the caller resolves it) is posted by id. Its 2x1 laptop
+  # grid puts Chrome left and Claude right, the rects the raw Solo scene gives on the role path (coordinator ruling 2026-11-17 18:07 CST).
+  Case 'solo, resolved: the lone built-in resolves Solo to its 2x1 wide cell, and the posted layout puts Chrome left and Claude right' {
+    $solo = @(([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json).scenes | ? { $_.id -eq 'solo' })[0]
+    $wideCell = "$($solo.grids.wide.c),$($solo.grids.wide.r)"; $lapCell = "$($solo.grids.laptop.c),$($solo.grids.laptop.r)"
+    Check 'scope: the Solo starter has a 2x1 wide cell and a 1x1 laptop cell' ($wideCell -ceq '2,1' -and $lapCell -ceq '1,1') "wide $wideCell, laptop $lapCell"
+    $cfgSolo = [pscustomobject]@{}
+    $kSolo = Register-TileSetup $cfgSolo @($lapDesk)
+    $roleSolo = Get-TileRoles $cfgSolo.monitors @($LAP)
+    Check 'scope: the lone built-in holds the laptop and wide roles' ([string]$roleSolo['laptop'] -ceq $LAP -and [string]$roleSolo['wide'] -ceq $LAP) "laptop '$([string]$roleSolo['laptop'])', wide '$([string]$roleSolo['wide'])'"
+    $soloRaw = Write-Json 'solo-raw.json' $solo
+    $raw = Invoke-SceneFrom $soloRaw $snapSoloLap
+    Check 'control: the raw Solo scene on the role path puts Chrome left and Claude right' ((OnCell $raw 4101 1 (CellRect $lapDesk 2 1 0)) -and (OnCell $raw 4102 2 (CellRect $lapDesk 2 1 1))) "$(Desc $raw 4101) | $(Desc $raw 4102)"
+    $resSolo = Resolve-TileLayout $cfgSolo $solo $kSolo
+    $postSolo = Write-Json 'post-solo.json' ([pscustomobject]@{ id = 'post-solo'; name = 'Post solo'; grids = $resSolo.grids; pins = @($resSolo.pins); zones = @($resSolo.zones); fill = $resSolo.fill; bay = @($resSolo.bay) })
+    $r = Invoke-SceneFrom $postSolo $snapSoloLap
+    Check 'solo, resolved: Chrome is on the laptop left half (960 wide)' (OnCell $r 4101 1 (CellRect $lapDesk 2 1 0)) (Desc $r 4101)
+    Check 'solo, resolved: Claude is on the laptop right half' (OnCell $r 4102 2 (CellRect $lapDesk 2 1 1)) (Desc $r 4102)
+    $same = [bool](PlacedOf $r 4101) -and [bool](PlacedOf $r 4102) -and ((RectOf (PlacedOf $r 4101)) -ceq (RectOf (PlacedOf $raw 4101))) -and ((RectOf (PlacedOf $r 4102)) -ceq (RectOf (PlacedOf $raw 4102)))
+    Check 'solo, resolved: the rects match the raw Solo scene on the role path' $same "resolved: $(Desc $r 4101) | $(Desc $r 4102); raw: $(Desc $raw 4101) | $(Desc $raw 4102)"
+  }
 } finally {
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue

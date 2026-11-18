@@ -615,7 +615,7 @@ const AUTO=[
 ["size","Use This Scene for Calls of Its Size","Big calls go to Listen, others to Meetings, from the meeting file.","Calls and Meetings","Call Size",[{k:"at",l:"Big from",u:"people.",max:500,scope:"size"}]],
 ["offer","Offer This Scene Before a Meeting","A tray notice asks first. Nothing moves unless you click it.","Calls and Meetings","Offer",[{k:"leadMin",l:"Ask",u:"min before.",max:30}]],
 ["gaps","Use This Scene in a Gap Between Meetings","When the next busy meeting is far off and you are at the PC.","Calls and Meetings","Gap",[{k:"minutes",l:"A gap of",u:"min or more.",max:480}]],
-["monitors","Use This Scene for This Many Screens","When the monitors change to this count.","Monitors","Screens",[{k:"screens",l:"For",u:"screens.",max:8,scope:"scene"}]],
+["setup","Use This Scene on This Setup","When this setup is plugged in. A rearranged setup is the same setup.","Monitors","Setup",[{k:"setupKey",l:"On",u:"",scope:"setup"}]],
 ["noext","Use This Scene When the External Monitors Go","When only the laptop screen has been left for a while.","Monitors","Laptop Only",[{k:"sec",l:"Gone for",u:"s.",max:600}]]
 ];
 
@@ -658,19 +658,19 @@ const saved=id=>cfg.scenes.find(s=>s.id===id);
 // Id mode: the layout autosaves, so only a name, trigger or extra that Save has not kept counts as an edit.
 const edited=id=>!!work[id]&&(idm()?JSON.stringify(metaOf(work[id]))!==JSON.stringify(metaOf(saved(id)||{})):JSON.stringify(work[id])!==JSON.stringify(saved(id)));
 // A built-in scene is read-only except its trigger switches (.auto): Default carries the first-unlock and grid switches.
-const autoOnly=(a,b)=>{if(!b)return false;const f=o=>{const x=clone(o);["auto","opt","trigger","screens"].forEach(k=>delete x[k]);if(x.claudeGrid)delete x.claudeGrid.at;return JSON.stringify(x)};return f(a)===f(b)};
+const autoOnly=(a,b)=>{if(!b)return false;const f=o=>{const x=clone(o);["auto","opt","trigger","screens","setupKey"].forEach(k=>delete x[k]);if(x.claudeGrid)delete x.claudeGrid.at;return JSON.stringify(x)};return f(a)===f(b)};
 const railIds=()=>[...cfg.scenes.map(s=>s.id),...Object.keys(work).filter(id=>!saved(id))];
 const hasAny=s=>!!s&&(((s.trigger||{}).type&&s.trigger.type!=="manual")||AUTO.some(([k])=>(s.auto||{})[k]));
 const chipsOf=s=>AUTO.filter(([k])=>(s.auto||{})[k]).map(x=>x[4]);
 // A threshold's value: the scene's own, else the default from the config.
-const optGet=(s,f,o)=>o.scope==="scene"?s.screens:o.scope==="grid"?(s.claudeGrid||{}).at:((s.opt||{})[f]||{})[o.k]??(o.scope==="size"?(cfg.meetingSize||{}).at:((cfg.optDefaults||{})[f]||{})[o.k]);
+const optGet=(s,f,o)=>o.scope==="setup"?s.setupKey:o.scope==="grid"?(s.claudeGrid||{}).at:((s.opt||{})[f]||{})[o.k]??(o.scope==="size"?(cfg.meetingSize||{}).at:((cfg.optDefaults||{})[f]||{})[o.k]);
 // Where two scenes hold the same extra trigger, the first in the rail wins (the tray takes the first in config order).
-function sameUsers(f,s){return railIds().map(i=>work[i]).filter(x=>x&&(x.auto||{})[f]&&(f!=="monitors"||x.screens===s.screens))}
-function conflictNote(f,s){if(!["gaps","noext","monitors"].includes(f)||!(s.auto||{})[f])return "";const u=sameUsers(f,s);if(u.length<2)return "";
+function sameUsers(f,s){return railIds().map(i=>work[i]).filter(x=>x&&(x.auto||{})[f]&&(f!=="setup"||x.setupKey===s.setupKey))}
+function conflictNote(f,s){if(!["gaps","noext","setup"].includes(f)||!(s.auto||{})[f])return "";const u=sameUsers(f,s);if(u.length<2)return "";
   const others=u.filter(x=>x.id!==s.id).map(x=>x.name);return u[0].id===s.id?`Also used by ${others.join(", ")}. This scene is first in the rail, so it wins.`:`Also used by ${others.join(", ")}. ${u[0].name} is first in the rail and wins.`}
 // A switch that cannot do anything for this scene says so, instead of sitting on silently.
 function needNote(f,s){if(!(s.auto||{})[f])return "";const m=cfg.meetingSize||{};
-  if(f==="monitors"&&!s.screens)return "Set the number of screens, or this does nothing.";
+  if(f==="setup"&&!s.setupKey)return "Pick a setup, or this does nothing.";
   if((f==="size"||f==="offer")&&s.id!==m.big&&s.id!==m.small)return "Only the scenes named in the meeting rule (Listen and Meetings) take part, so this does nothing here.";
   if(f==="activity"&&cfg.activity&&!cfg.activity.some(a=>a.scene===s.id))return "No app in the activity map points at this scene, so this does nothing.";
   return ""}
@@ -679,13 +679,17 @@ const warnNote=(id,t)=>`<p class="xwarn" id="${id}">${WARN}<span><span class="vh
 // The extra triggers that apply to this scene: the grid switch only where the scene carries a second grid.
 const autoRows=s=>AUTO.filter(([k])=>k!=="grid"||s.claudeGrid||(s.auto||{}).grid);
 const autoNote=(k,s)=>[conflictNote(k,s),needNote(k,s)].filter(Boolean).join(" ");
+// The setups the config has seen, by name, for the setup select. A key the config does not know still shows, so a pick is never dropped silently.
+const setupName=k=>((cfg.setups||{})[k]||{}).name||"A setup not seen here";
+function setupOptions(key){const ks=Object.keys(cfg.setups||{}).sort((a,b)=>setupName(a).localeCompare(setupName(b)));if(key&&!ks.includes(key))ks.push(key);
+  return `<option value="">Pick a setup</option>`+ks.map(k=>`<option value="${esc(k)}"${k===key?" selected":""}>${esc(setupName(k))}</option>`).join("")}
 // Thresholds show only while their switch is on; a note sits under its switch, before the thresholds.
 function autoUI(s){const rows=autoRows(s),groups=[...new Set(rows.map(x=>x[3]))],big=s.id===(cfg.meetingSize||{}).big;
   return groups.map(g=>`<h3 class="grp">${g}</h3>`+rows.filter(x=>x[3]===g).map(([k,l,h,,,opts])=>{const on=!!(s.auto||{})[k];
     const os=opts.filter(o=>!(o.scope==="size"&&!big)&&!(o.scope==="grid"&&!s.claudeGrid)),cn=autoNote(k,s);
     return `<div class="xrow"><label class="switch"><input type="checkbox" data-auto="${k}" ${on?"checked":""} ${cn?`aria-describedby="xn-${k}"`:""}><span class="xt"><b>${l}</b><small>${esc(h)}</small></span>${on?'<span class="xon">On</span>':""}</label>
       ${cn?warnNote("xn-"+k,cn):""}
-      ${on&&os.length?`<div class="xopt">${os.map(o=>`<label>${o.l} <input type="number" min="1" max="${o.max}" step="1" data-xf="${k}" data-xk="${o.k}" data-xs="${o.scope||""}" value="${esc(optGet(s,k,o)??"")}" aria-label="${esc(l+": "+o.l+" "+o.u)}"> ${o.u}</label>`).join("")}</div>`:""}</div>`}).join("")).join("")}
+      ${on&&os.length?`<div class="xopt">${os.map(o=>o.scope==="setup"?`<label>${o.l} <select data-xf="${k}" data-xk="${o.k}" data-xs="setup" aria-label="${esc(l+": "+o.l)}">${setupOptions(s.setupKey)}</select></label>`:`<label>${o.l} <input type="number" min="1" max="${o.max}" step="1" data-xf="${k}" data-xk="${o.k}" data-xs="${o.scope||""}" value="${esc(optGet(s,k,o)??"")}" aria-label="${esc(l+": "+o.l+" "+o.u)}"> ${o.u}</label>`).join("")}</div>`:""}</div>`}).join("")).join("")}
 
 // The fields of the chosen main trigger, under its radio. A shared main trigger says which scene wins.
 function trigFields(s,t){
@@ -1937,9 +1941,10 @@ document.addEventListener("change",ev=>{const t=ev.target;
   else if(t.id==="back")edit(s=>{s.trigger.back=t.checked});
   else if(t.dataset.auto){const x=AUTO.find(a=>a[0]===t.dataset.auto),msg=`${x[1]} is ${t.checked?"on":"off"} for ${scene().name}. ${t.checked?"It moves windows without asking once you Save.":"Save to keep it."}`;
     edit(s=>{(s.auto||(s.auto={}))[t.dataset.auto]=t.checked},msg);sceneMsg=msg;if($("smsg"))$("smsg").textContent=msg}
+  else if(t.dataset.xs==="setup")edit(s=>{if(t.value)s.setupKey=t.value;else delete s.setupKey},t.value?`${scene().name} applies on ${setupName(t.value)}. Save to keep it.`:"No setup picked. Save to keep it.");
   else if(t.dataset.xk){const v=clamp(Math.round(+t.value)||1,1,+t.max),f=t.dataset.xf,k=t.dataset.xk,sc=t.dataset.xs;
 
-    edit(s=>{if(sc==="scene")s.screens=v;else if(sc==="grid")(s.claudeGrid||(s.claudeGrid={})).at=v;else((s.opt||(s.opt={}))[f]||(s.opt[f]={}))[k]=v},`Set to ${v}. Save to keep it.`)}
+    edit(s=>{if(sc==="grid")(s.claudeGrid||(s.claudeGrid={})).at=v;else((s.opt||(s.opt={}))[f]||(s.opt[f]={}))[k]=v},`Set to ${v}. Save to keep it.`)}
   else if(t.id==="match"){const pp=pinOf(selWin);
     if(pp&&pp.pin.lock){status("That window is locked. Unlock it first.");render()}
     else edit(s=>{if(pp)s.pins[pp.p.pin].match=t.value.trim()},"The pin now matches any title containing that text.")}
