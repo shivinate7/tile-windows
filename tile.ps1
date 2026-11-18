@@ -312,8 +312,8 @@ function Pick($role, $taken = @()) {
   $s = @($screens | ? { $taken -notcontains $_.Name })
   switch ($role) {
     # The wide role is Get-TileRoles' pick (config.ps1, decision monitor-setups item 14): the widest landscape monitor that is not the built-in
-    # panel, then the lowest id. A laptop alone, or with a portrait, holds none. Builtin is unset where the monitor list carries no identity, so
-    # every screen is a candidate there. A screen with no id is keyed by its name.
+    # panel, then the lowest id. With two or more monitors, a laptop with only a portrait holds no wide role; a lone monitor holds wide. Builtin
+    # is unset where the monitor list carries no identity, so every screen is a candidate there. A screen with no id is keyed by its name.
     'wide'   { $mons = New-Object PSObject; $key = @{}
                foreach ($x in $s) { $k = $(if ($x.Id) { [string]$x.Id } else { [string]$x.Name }); if (-not $mons.PSObject.Properties[$k]) { $key[$k] = $x; $mons | Add-Member -NotePropertyName $k -NotePropertyValue ([pscustomobject]@{ builtin = [bool]$x.Builtin; bw = $x.BW; bh = $x.BH }) } }
                $id = (Get-TileRoles $mons @($mons.PSObject.Properties.Name))['wide']; if ($id) { $key[$id] } }
