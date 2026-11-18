@@ -44,9 +44,11 @@ $form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray 
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
 # The run marks its children as the suite (TILE_TEST_SUITE): tile.ps1 refuses a live move under it unless TILE_TEST_ALLOW_LIVE is set.
 # test\safe-moves.ps1 holds those checks.
-$saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME; TILE_TEST_SUITE = $env:TILE_TEST_SUITE }
+$saved = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME; TILE_TEST_SUITE = $env:TILE_TEST_SUITE; CLAUDECODE = $env:CLAUDECODE }
 $env:USERPROFILE = Profile 'run'; $env:APPDATA = Join-Path $env:USERPROFILE 'AppData\Roaming'; $env:TILE_HOME = $null
 $env:TILE_TEST_SUITE = '1'
+# Claude Code sets CLAUDECODE=1 in an agent's shell. Clear it, so no child of this run inherits it; a case that needs it sets it itself.
+$env:CLAUDECODE = $null
 try {
   . (Join-Path $root 'config.ps1')
   Check 'the run and its children use a temp profile' ($env:USERPROFILE.StartsWith($tmp) -and $env:APPDATA.StartsWith($tmp) -and $TileHome.StartsWith($tmp)) "$env:USERPROFILE | $TileHome"
