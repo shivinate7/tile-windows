@@ -203,24 +203,38 @@ function Copy-TileObject($o) { ConvertFrom-Json (ConvertTo-Json -Depth 20 -Compr
 #   3. the scene's role template (grids, pins, zones, fill by wide, tall and laptop), seeded by the pick (Get-TileRoles): each role goes to one monitor, read from
 #      config.monitors (Register stores it). A monitor that holds no role takes no grid; a role no monitor has keeps its name
 #      as the pin's monitor, so those windows have no cell either.
+# The closest known setup: of the setups whose key is in $held (the keys that hold a layout), the one sharing the most monitors with $ids,
+# a tie to the one used last. Returns its config.setups property (.Name is the key, .Value the setup), or $null when none shares a monitor.
+# $except is a key that is never the pick. The one home for the pick: Resolve-TileLayout, Get-TileFollows and the snapshot's setup.follows read it.
+function Get-TileClosestSetup($cfg, $ids, $held, [string]$except = '') {
+  $best = $null; $bestN = 0; $bestUsed = [datetime]::MinValue
+  foreach ($p in @($cfg.setups.PSObject.Properties)) {
+    if ($p.Name -ceq $except -or @($held) -cnotcontains $p.Name) { continue }
+    $n = @($p.Value.ids | Where-Object { @($ids) -ccontains $_ }).Count
+    if (-not $n) { continue }
+    $used = [datetime]::MinValue; $u = $p.Value.lastUsed
+    if ($u -is [datetime]) { $used = $u } elseif ($u) { try { $used = [datetime]::Parse([string]$u, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind) } catch {} }
+    if ($n -gt $bestN -or ($n -eq $bestN -and $used -gt $bestUsed)) { $best = $p; $bestN = $n; $bestUsed = $used }
+  }
+  $best
+}
+# The name of the setup a scene follows on $key: the closest known setup that holds a layout of the scene, while the scene has none of its own for $key; else ''.
+function Get-TileFollows($cfg, $scene, [string]$key) {
+  $lays = $scene.layouts
+  if (-not $lays -or $lays.PSObject.Properties[$key]) { return '' }
+  $sp = $cfg.setups.PSObject.Properties[$key]
+  $ids = @($(if ($sp) { $sp.Value.ids } else { $key -split '\|' }) | Where-Object { $_ })
+  $pick = Get-TileClosestSetup $cfg $ids @($lays.PSObject.Properties.Name) $key
+  if ($pick) { [string]$pick.Value.name } else { '' }
+}
 function Resolve-TileLayout($cfg, $scene, [string]$key) {
   $sp = $cfg.setups.PSObject.Properties[$key]
   $ids = @($(if ($sp) { $sp.Value.ids } else { $key -split '\|' }) | Where-Object { $_ })
   $lays = $scene.layouts
   $own = if ($lays) { $lays.PSObject.Properties[$key] }
   if ($own) { return (Copy-TileObject $own.Value) }
-  $best = $null; $bestN = 0; $bestUsed = [datetime]::MinValue
-  if ($lays) {
-    foreach ($p in @($cfg.setups.PSObject.Properties)) {
-      $lp = $lays.PSObject.Properties[$p.Name]
-      if (-not $lp) { continue }
-      $n = @($p.Value.ids | Where-Object { $ids -ccontains $_ }).Count
-      if (-not $n) { continue }
-      $used = [datetime]::MinValue; $u = $p.Value.lastUsed
-      if ($u -is [datetime]) { $used = $u } elseif ($u) { try { $used = [datetime]::Parse([string]$u, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind) } catch {} }
-      if ($n -gt $bestN -or ($n -eq $bestN -and $used -gt $bestUsed)) { $best = $lp.Value; $bestN = $n; $bestUsed = $used }
-    }
-  }
+  $pick = if ($lays) { Get-TileClosestSetup $cfg $ids @($lays.PSObject.Properties.Name) $key }
+  $best = if ($pick) { $lays.PSObject.Properties[$pick.Name].Value }
   if ($best) {
     $r = Copy-TileObject $best; $g = [pscustomobject]@{}
     foreach ($gp in @($r.grids.PSObject.Properties)) { if ($ids -ccontains $gp.Name) { $g | Add-Member -NotePropertyName $gp.Name -NotePropertyValue $gp.Value } }
