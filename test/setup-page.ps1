@@ -33,7 +33,8 @@
 #     Built-in screen, with no maker or product code (dialog and inspector).
 #   Monitors and Setups, a forget of a scene's setup: the forget turns that scene's setup switch off on the server, and the page takes it. The
 #     card of the scene shows its switch off with no reload, a Save of another scene writes the switch off to config.json, and the pick-a-setup note
-#     the forget answered shows on the page.
+#     the forget answered shows on the page. With one scene aimed at the forgotten setup, the note does not say each of them, and the
+#     footer does not repeat the note.
 #   Offline, dialog: the offline page shows no Monitors and Setups button and sends no request. A guard: green on the old commit, and a
 #     mutant with the button turns it red (run on a scratch copy).
 #   Card menu (Follow Again, decision monitor-setups item 7; mockup cd-own): a scene with its own layout on the plugged setup offers
@@ -46,9 +47,9 @@
 #     offered after the setup changed, nor is its toast Undo; a failed GET /layouts after the remove leaves the board not showing the removed
 #     layout as saved; Enter on the item leaves focus on a control on the card; Tab from the open menu never leaves it open with focus outside.
 #     The autosave flush before the remove is a guard: a mutant with the flush removed turns it red.
-#   Card menu placement (debt card-menu-clamped-over-button): at 1440 wide, a menu opened from a More button with no room below opens above
+#   Card menu placement: at 1440 wide, a menu opened from a More button with no room below opens above
 #     it and covers neither More nor Preview. With room below it opens below and covers neither (control).
-#   Undo after a follow (debt follow-undo-footer-stale): the footer stops saying the scene follows a setup; the strip and card show its own layout.
+#   Undo after a follow: the footer stops saying the scene follows a setup; the strip and card show its own layout.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 $ErrorActionPreference = 'Stop'
@@ -776,6 +777,36 @@ try {
     Check 'right after the forget, the pick-a-setup note shows on the page' ($shown -eq $true) 'the forget answered with the note, and the page does not show it'
   }
 
+  # One scene aimed at the forgotten setup: the note says "Pick a setup" and does not say "each of them", which is for two or more scenes.
+  Case 'Monitors and Setups: after a forget of the one setup a scene is aimed at, the pick-a-setup note does not say each of them' {
+    Put-Config (Office-Config); Dismiss-Note $url
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $aimed = @((Read-Config).scenes | ? { $_.setupKey -ceq 'O9' }).Count
+    Check 'exactly one scene is aimed at Office (scope)' ($aimed -eq 1) "scenes aimed at Office: $aimed"
+    $res = Forget-Office $ws
+    Check 'Office is forgotten from the dialog (control)' ($res -eq 'forgot') "forget: $res"
+    if ($res -ne 'forgot') { return }
+    $note = Js $ws 'const t = document.body.innerText.replace(/\s+/g, " "); const m = t.match(/A setup you forgot[^]*?pick a setup[^.]*\./i); return m ? m[0] : null'
+    Check 'the pick-a-setup note shows after the forget (scope)' ([string]$note -match 'Pick a setup') "note: '$note'"
+    Check 'the pick-a-setup note does not say each of them, with one scene aimed at the setup' ([string]$note -notmatch 'each of them') "note: '$note'"
+  }
+
+  # The footer status line holds the forget's own message. The server's note shows once, in the dialog message line or the toast.
+  Case 'Monitors and Setups: after a forget of the one setup a scene is aimed at, the footer does not repeat the pick-a-setup note' {
+    Put-Config (Office-Config); Dismiss-Note $url
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $res = Forget-Office $ws
+    Check 'Office is forgotten from the dialog (control)' ($res -eq 'forgot') "forget: $res"
+    if ($res -ne 'forgot') { return }
+    $footer = [string](Js $ws 'return document.getElementById("msg").textContent.replace(/\s+/g, " ").trim()')
+    Check 'the footer names the forget (scope)' ($footer -match 'Forgot Office') "footer: '$footer'"
+    Check 'the footer does not repeat the pick-a-setup note' ($footer -notmatch 'A setup you forgot|pick a setup') "footer: '$footer'"
+  }
+
   # Follow Again on the card menu. Each case opens its own page, and opens the menu as a user does, through the card's More button.
   Case 'card menu: Focus, with its own layout on the plugged setup, offers "Follow Laptop + Ultrawide Again"; Meetings, which follows, offers none' {
     Put-Config (New-FollowConfig)
@@ -881,7 +912,7 @@ try {
     [void](WaitFor $sock 'window.__fa.items().length > 0' 15)
     [bool](Js $sock ('return window.__fa.item("' + $followLabel + '") !== null'))
   }
-  # Card menu placement (debt card-menu-clamped-over-button). The Focus card's menu is opened in a 1440-wide window of the given height. Its rect is
+  # Card menu placement. The Focus card's menu is opened in a 1440-wide window of the given height. Its rect is
   # checked against the card's More button and its Preview button, read once the menu is open. At 520 high Focus's More button sits near the
   # bottom edge, with no room below for its menu; at 900 high there is room.
   function Menu-Geometry($sock) {
