@@ -1174,7 +1174,9 @@ return { cards: cardsOf().length, heights, cut, soloRow };
     $opened = Open-Kind-Rail $ws
     Check 'the kind rail opens on Focus, with a Not saved card (control)' $opened 'the page did not draw the rail in time'
     if (-not $opened) { return }
-    $cards = @(Js $ws ($kindJs + 'return cardsOf().map(({ id, card }) => ({ id, text: seen(card), icons: [...card.querySelectorAll("[aria-label]")].filter(x => words.includes(x.getAttribute("aria-label"))).map(x => ({ title: x.getAttribute("title"), label: x.getAttribute("aria-label"), svg: x.tagName.toLowerCase() === "svg" || !!x.querySelector("svg") })) }))'))
+    # Js hands back the list as one array. Wrapping it in @() makes the list one element, and each card would then match every card's icons.
+    $cards = Js $ws ($kindJs + 'return cardsOf().map(({ id, card }) => ({ id, text: seen(card), titles: [...card.querySelectorAll("[title]")].map(x => x.getAttribute("title")), labels: [...card.querySelectorAll("[aria-label]")].map(x => x.getAttribute("aria-label")), icons: [...card.querySelectorAll("[aria-label]")].filter(x => words.includes(x.getAttribute("aria-label"))).map(x => ({ title: x.getAttribute("title"), label: x.getAttribute("aria-label"), svg: x.tagName.toLowerCase() === "svg" || !!x.querySelector("svg") })) }))')
+    Check 'the rail lists every card, one entry each (scope)' (@($cards | ? { $_.id }).Count -eq $expectKind.Count) "entries listed: $(@($cards).Count)"
     foreach ($id in $expectKind.Keys) {
       $want = $expectKind[$id]
       $c = @($cards | ? { $_.id -eq $id })[0]
@@ -1183,7 +1185,9 @@ return { cards: cardsOf().length, heights, cut, soloRow };
       $icons = @($c.icons)
       $shown = @($icons | ? { $_.title -ceq $want -and $_.label -ceq $want -and $_.svg })
       $iconList = if ($icons.Count) { ($icons | % { "title '$($_.title)', label '$($_.label)', svg $($_.svg)" }) -join '; ' } else { 'none' }
-      Check "the $id card's text names its kind $want (control)" ([string]$c.text).Contains($want) "visible text: '$($c.text)'"
+      # The control reads the kind from the card's title or label, which both the old card and the icon carry. The visible text is checked below.
+      $named = @(@($c.titles) + @($c.labels))
+      Check "the $id card's title or label names its kind $want (control)" ($named -contains $want) "titles and labels: $($named -join ' | ')"
       Check "the $id card shows $want as one icon, titled and labelled $want" ($icons.Count -eq 1 -and $shown.Count -eq 1) "kind icons on the card: $iconList"
       Check "the $id card shows no kind word as visible text" (-not @($kindWords | ? { ([string]$c.text).Contains($_) }).Count) "visible text: '$($c.text)'"
     }
