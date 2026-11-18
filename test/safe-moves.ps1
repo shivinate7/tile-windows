@@ -9,7 +9,7 @@
 # that holds there and must keep holding.
 #   Scope (green): a probe child shows which seam vars reached it; the bare snapshot lists no window named tile-test-no-such-app.
 #   1 refusal (red): under the suite, a flagless -Scene, -PlaceFile, bare -Monitor, -Scene -Json or -PlaceFile -Json run is refused,
-#     and so is a flagless -Default (with or without -Json) and an inline -Place.
+#     and so is a flagless -Default (with or without -Json) and an inline -Place (with or without -Json).
 #   2 controls (green): -DryRun, bare -Json, -Monitors, -List, -From and a -Lib dot-source still run under the suite.
 #   3 opt-in (green): TILE_TEST_ALLOW_LIVE=1 lets a flagless -Scene run.
 #   4 outside the suite (green): with no suite var, a flagless -Scene is not refused.
@@ -135,7 +135,11 @@ try {
     $pl = Invoke-PsChild "-File `"$tile`" -Place $placeArg" (New-ChildEnv $suite)
     Check '1k suite: an inline -Place exits non-zero' ($pl.Code -ne 0) "exit $($pl.Code): the place run went ahead"
     Check '1l suite: the inline -Place refusal names TILE_TEST_ALLOW_LIVE' (($pl.Out + $pl.Err) -match 'TILE_TEST_ALLOW_LIVE') "no refusal text; out [$(Short $pl.Out)] err [$(Short $pl.Err)]"
-  } else { Check '1k-1l suite: not run, the inline -Place scope check above failed' $false }
+    # 1m, 1n: the apply form (serve.ps1 posts -Place -Json) is refused too. -Json does not make a -Place run a read.
+    $plj = Invoke-PsChild "-File `"$tile`" -Place $placeArg -Json" (New-ChildEnv $suite)
+    Check '1m suite: an inline -Place with -Json exits non-zero (JSON output does not make it a read)' ($plj.Code -ne 0) "exit $($plj.Code): the place run went ahead"
+    Check '1n suite: the -Place -Json refusal names TILE_TEST_ALLOW_LIVE' (($plj.Out + $plj.Err) -match 'TILE_TEST_ALLOW_LIVE') "no refusal text; out [$(Short $plj.Out)] err [$(Short $plj.Err)]"
+  } else { Check '1k-1n suite: not run, the inline -Place scope check above failed' $false }
 
   # ---- 2. Controls: the reads and dry runs that stay exempt still run under the suite (green on 656a8cf). ----
   $dry = Invoke-PsChild "-File `"$tile`" -Scene `"$sceneNone`" -DryRun" (New-ChildEnv $suite)
