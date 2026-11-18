@@ -96,7 +96,10 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 /* The bottom row stays on one line, so every card in the strip keeps one height: where the label, the menu button and Apply do not fit, the label ends in an ellipsis (its full text is its title). */
 .crow{display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0}
 .tag{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.tagt{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.kd{display:inline-grid;place-items:center;width:16px;height:16px;flex:none;color:var(--muted)}
+.kd svg{width:13px;height:13px}
+/* Edited: the crumb's amber dot, beside the kind mark. A 1px ink ring keeps it above 3:1 on a white card. */
+.ked{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hi);border:1px solid var(--ink);flex:none}
 .mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden}
 .mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
 .mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
@@ -115,7 +118,7 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .menu button b{font-weight:600;font-size:12.5px}
 .menu button small{font-size:12px;color:var(--muted)}
 @media (forced-colors:active){.menu{border-color:CanvasText}}
-@media (forced-colors:active){.lay.own{border:1px solid CanvasText}.mini.follow b{border-color:CanvasText}}
+@media (forced-colors:active){.lay.own{border:1px solid CanvasText}.mini.follow b{border-color:CanvasText}.ked{forced-color-adjust:none;background:CanvasText;border-color:CanvasText}}
 
 .cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
 .sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
@@ -1256,6 +1259,10 @@ function trigText(s){const t=s.trigger||{type:"manual"};if(t.type==="time"){cons
   return t.type==="display"?"When the monitors change":t.type==="call"?"When a Teams call starts":"By hand"}
 const LINKI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 8a2.4 2.4 0 0 0 3.4 0l2-2a2.4 2.4 0 0 0-3.4-3.4l-.6.6M8 6a2.4 2.4 0 0 0-3.4 0l-2 2a2.4 2.4 0 0 0 3.4 3.4l.6-.6"/></svg>',
   OWNI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="2.5" width="10.4" height="7" rx="1"/><path d="M5 12h4M7 9.5V12"/></svg>';
+// The card's kind. Built-in: a box (shipped with the app). Custom: a person (made by you). Not saved: a dashed ring (only in this page).
+const KBUILT='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M7 1.4 12.2 4.2v5.6L7 12.6 1.8 9.8V4.2z"/><path d="M1.8 4.2 7 7l5.2-2.8M7 7v5.6"/></svg>',
+  KCUST='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="4.6" r="2.4"/><path d="M2.4 12.6a4.6 4.6 0 0 1 9.2 0"/></svg>',
+  KDRAFT='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.6 1.33" aria-hidden="true"><circle cx="7" cy="7" r="5"/></svg>';
 const MOREI='<svg viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><circle cx="3" cy="7" r="1.25"/><circle cx="7" cy="7" r="1.25"/><circle cx="11" cy="7" r="1.25"/></svg>';
 const CLOCK='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="6" cy="6" r="4.8"/><path d="M6 3.4V6l1.8 1.2"/></svg>';
 function renderRail(){
@@ -1270,13 +1277,15 @@ function renderRail(){
       lt=l&&(l.own?"Own layout":l.name?`Follows ${l.name}`:""),
       // The mark sits beside the tag. Its words are its title and label (and hidden text, so a reader that skips the label still has them): the strip says them once, in words, for the selected scene.
       lmark=lt?`<span class="lay${l.own?" own":""}" role="img" title="${esc(lt)}" aria-label="${esc(lt)}">${l.own?OWNI:LINKI}<span class="vh">${esc(lt)}</span></span>`:"",
-      tagt=`${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}`;return `<article class="card${id===selId?" sel":""}">
+      // The kind is an icon with its word as title and label, as the layout mark has. An edited saved scene also gets the amber dot.
+      ed=edited(id)&&saved(id),kw=s.builtIn?"Built-in":saved(id)?"Custom":"Not saved",kmark=`<span class="kd" role="img" title="${kw}" aria-label="${kw}">${s.builtIn?KBUILT:saved(id)?KCUST:KDRAFT}<span class="vh">${kw}${ed?", edited":""}</span></span>`,
+      kedit=ed?`<span class="ked" role="img" title="Edited" aria-label="Edited"></span>`:"";return `<article class="card${id===selId?" sel":""}">
       <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini${fol?" follow":""}" aria-hidden="true">${miniHTML(prevs[id])}</span>
       <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
       ${(s.trigger||{}).type&&s.trigger.type!=="manual"?`<span class="when">${CLOCK}${esc(trigText(s))}</span>`:""}
       ${chipsOf(s).length?`<span class="chips" aria-label="Extra triggers on">${chipsOf(s).map(c=>`<i>${esc(c)}</i>`).join("")}</span>`:""}
       </button>
-      <div class="crow"><span class="tag">${lmark}<span class="tagt" title="${tagt}">${tagt}</span></span><span class="cact">${followName(id)?`<button type="button" class="btn cmenu" data-menu="${esc(id)}" aria-haspopup="menu" aria-expanded="${menuId===id}" aria-label="More for ${esc(s.name)}" title="More for ${esc(s.name)}">${MOREI}</button>`:""}<button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></span></div></article>`}).join("");
+      <div class="crow"><span class="tag">${lmark}${kmark}${kedit}</span><span class="cact">${followName(id)?`<button type="button" class="btn cmenu" data-menu="${esc(id)}" aria-haspopup="menu" aria-expanded="${menuId===id}" aria-label="More for ${esc(s.name)}" title="More for ${esc(s.name)}">${MOREI}</button>`:""}<button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></span></div></article>`}).join("");
     if(fsel){const n=$("cards").querySelector(fsel);if(n)n.focus()}
     placeMenu();
   }else $("cards").innerHTML=`<p class="note">Scenes need the app server. Open Tile Windows from the Start menu, or run <code>serve.ps1</code>.</p>`;
