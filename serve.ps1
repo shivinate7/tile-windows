@@ -5,9 +5,12 @@
 #                           setup's name while this one has no layout of its own, else ''. A snapshot whose monitors carry no ids has key ''.
 #   GET  /<token>/config    config.json (scenes and settings); created from scenes.json on first run
 #   POST /<token>/config    body = whole config; validated, then written. It always keeps the server's monitors, setups and each scene's layouts.
-#   GET  /<token>/layouts   {scene id: {layout, follows}}. layout is what Resolve-TileLayout gives that scene for the plugged-in setup; follows is the
-#                           name of the setup it follows there (Get-TileFollows), '' when it has its own layout or none to follow.
+#   GET  /<token>/layouts   {scene id: {layout, follows, closest}}. layout is what Resolve-TileLayout gives that scene for the plugged-in setup; follows is the
+#                           name of the setup it follows there (Get-TileFollows), '' when it has its own layout or none to follow. closest is the closest other setup that holds the scene's layout, own or not
+#                           (Get-TileClosestName): what the card's Follow Again names.
 #   POST /<token>/layout    body = {scene, key, layout}; saves that scene's layout for key. 409 and no change when key is not the plugged-in setup.
+#   POST /<token>/layout/remove  body = {scene, key}; drops that scene's layout for key (the card's Follow Again). 409 and no change when key is
+#                           not the plugged-in setup; the scene's other keys and the other scenes stay.
 #   GET  /<token>/state     state.json (scene last applied, recent log)
 #   GET  /<token>/appnames  the display name of each app (appNames in scenes.json)
 #   POST /<token>/preview   body = scene; answers tile.ps1 -Scene -From <last snapshot> -Json (moves nothing)
@@ -124,6 +127,22 @@ function Save-SceneLayout($b, $mons) {
     return 200
   }
 }
+# POST /layout/remove: the answer's status code. Same lock, key check and fresh read as Save-SceneLayout.
+function Remove-SceneLayout($b, $mons) {
+  Use-TileLock {
+    $key = Get-TileKnownSetupKey $mons
+    if (-not $key -or [string]$b.key -cne $key) { return 409 }
+    $cfg = ConvertFrom-Json (Get-TileConfigText)
+    $sc = @($cfg.scenes | ? { $_.id -eq $b.scene })[0]
+    if (-not $sc) { return 404 }
+    if ($sc.layouts -and $sc.layouts.PSObject.Properties[$key]) {
+      $sc.layouts.PSObject.Properties.Remove($key)
+      if (-not @($sc.layouts.PSObject.Properties).Count) { $sc.PSObject.Properties.Remove('layouts') }
+      Save-TileConfigObject $cfg
+    }
+    return 200
+  }
+}
 $snap = '{"monitors":[],"windows":[]}'
 
 try {
@@ -148,7 +167,7 @@ try {
         'GET layouts' {
           $key = Get-TileKnownSetupKey (Get-Plugged)
           $cfg = ConvertFrom-Json (Get-TileConfigText); $out = [ordered]@{}
-          if ($key) { foreach ($sc in @($cfg.scenes)) { $out[[string]$sc.id] = [ordered]@{ layout = Resolve-TileLayout $cfg $sc $key; follows = Get-TileFollows $cfg $sc $key } } }
+          if ($key) { foreach ($sc in @($cfg.scenes)) { $out[[string]$sc.id] = [ordered]@{ layout = Resolve-TileLayout $cfg $sc $key; follows = Get-TileFollows $cfg $sc $key; closest = Get-TileClosestName $cfg $sc $key } } }
           Send $ctx 200 'application/json' (ConvertTo-Json -Depth 20 -Compress -InputObject $out)
         }
         'GET config' { Send $ctx 200 'application/json' (Get-TileConfigText) }
@@ -164,6 +183,16 @@ try {
           $b = ConvertFrom-Json $body
           if (-not $b.scene -or -not $b.key -or $b.layout -isnot [pscustomobject]) { Send $ctx 400 'text/plain' 'Body needs scene, key and a layout object.'; continue }
           switch (Save-SceneLayout $b @(Get-Plugged)) {
+            200 { Send $ctx 200 'text/plain' 'Saved' }
+            404 { Send $ctx 404 'text/plain' "No scene '$($b.scene)'." }
+            default { Send $ctx 409 'text/plain' 'That setup is not the one plugged in.' }
+          }
+        }
+        'POST layout/remove' {
+          if (-not ($body = Body $ctx $req '{')) { continue }
+          $b = ConvertFrom-Json $body
+          if (-not $b.scene -or -not $b.key) { Send $ctx 400 'text/plain' 'Body needs scene and key.'; continue }
+          switch (Remove-SceneLayout $b @(Get-Plugged)) {
             200 { Send $ctx 200 'text/plain' 'Saved' }
             404 { Send $ctx 404 'text/plain' "No scene '$($b.scene)'." }
             default { Send $ctx 409 'text/plain' 'That setup is not the one plugged in.' }

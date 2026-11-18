@@ -93,8 +93,10 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .when{display:flex;gap:5px;align-items:center;font-size:12px;color:var(--ink)}
 .when svg{width:12px;height:12px;flex:none}
 .live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
-.crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+/* The bottom row stays on one line, so every card in the strip keeps one height: where the label, the menu button and Apply do not fit, the label ends in an ellipsis (its full text is its title). */
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0}
 .tag{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.tagt{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden}
 .mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
 .mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
@@ -103,6 +105,16 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .lay{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:3px;flex:none;color:var(--muted)}
 .lay svg{width:13px;height:13px}
 .lay.own{background:var(--ink);color:var(--panel)}
+/* The card's menu button sits beside Apply, in the card's bottom row, so it never covers a monitor drawn in the mini map. The open menu is on the page, not in the card, so the rail's scroll box does not clip it. */
+.cact{display:flex;gap:4px;align-items:center;flex:none;margin-left:auto}
+.cmenu{width:28px;padding:0}
+.cmenu[aria-expanded="true"]{border-color:var(--ink)}
+.menu{position:fixed;z-index:50;display:grid;gap:2px;width:236px;padding:4px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent)}
+.menu button{display:grid;gap:2px;text-align:left;border:0;background:transparent;border-radius:5px;padding:7px 9px;min-height:32px;white-space:normal}
+.menu button:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.menu button b{font-weight:600;font-size:12.5px}
+.menu button small{font-size:12px;color:var(--muted)}
+@media (forced-colors:active){.menu{border-color:CanvasText}}
 @media (forced-colors:active){.lay.own{border:1px solid CanvasText}.mini.follow b{border-color:CanvasText}}
 
 .cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
@@ -757,7 +769,7 @@ async function loadAll(){
     setSnap(sj);await previewAll();
   }catch(e){status(e instanceof TypeError?"Could not reach the server. Start Tile Windows again.":`Could not ${step}: ${e.message}`)}
 }
-async function refresh(){if(isBusy)return;status("Reading your windows…");
+async function refresh(){if(isBusy&&!following)return;status("Reading your windows…");
   try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);await resnap(await r.json());hist=[];prevs={};await previewAll();status("Windows read again.")}
   catch(e){status("Could not read windows: "+e.message);
     // A failed re-read leaves the old copy on screen, so the strip says it may be out of date (it is not shown as current).
@@ -781,8 +793,11 @@ function reseed(){
   for(const x of cfg.scenes){const w=work[x.id];if(!w){seed(x);continue}
     if(!idm()){if(lastKey)work[x.id]=clone(x);continue}
     if(!lays[x.id]||(unsaved[x.id]&&lastKey===plug.key))continue;
-    for(const k of LAYKEYS)delete w[k];delete w.layouts;Object.assign(w,clone(lays[x.id].layout));lsaved[x.id]=lq[x.id]=JSON.stringify(layoutOf(w));unsaved[x.id]=0;delete failed[x.id];delete stale[x.id]}
+    adoptLayout(x.id)}
   lastKey=plug?plug.key:""}
+// The board of scene id takes the layout the server resolved for this setup (lays), and counts as saved.
+function adoptLayout(id){const w=work[id];
+  for(const k of LAYKEYS)delete w[k];delete w.layouts;Object.assign(w,clone(lays[id].layout));lsaved[id]=lq[id]=JSON.stringify(layoutOf(w));unsaved[id]=0;delete failed[id];delete stale[id]}
 // A setup or monitor the server met since the page loaded: names and layouts come from a fresh config. Scenes themselves are not replaced.
 // A failed read throws: the caller says so, and the page keeps the copy it has.
 async function readKnown(){
@@ -824,6 +839,8 @@ function layState(id){
   if(!idm())return null;
   if(hasKey((saved(id)||{}).layouts||{},plug.key))return{own:true};
   return{own:false,name:(lays[id]||{}).follows||""}}
+// The setup a card's Follow Again names: the server's closest other setup that holds the scene's layout, offered only while the scene has its own layout here. '' offers nothing.
+const followName=id=>{const l=layState(id);return l&&l.own?String((lays[id]||{}).closest||""):""};
 const plugName=()=>((cfg.setups||{})[plug.key]||plug).name||"This setup";
 // Monitors the layouts still name (a pin, zone or fill on a screen of another setup) that are not plugged in, with the size config remembers for them.
 // They are drawn whichever scene is selected and whether or not it has its own layout here: they are what is missing from this setup.
@@ -1093,6 +1110,7 @@ function trigText(s){const t=s.trigger||{type:"manual"};if(t.type==="time"){cons
   return t.type==="display"?"When the monitors change":t.type==="call"?"When a Teams call starts":"By hand"}
 const LINKI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 8a2.4 2.4 0 0 0 3.4 0l2-2a2.4 2.4 0 0 0-3.4-3.4l-.6.6M8 6a2.4 2.4 0 0 0-3.4 0l-2 2a2.4 2.4 0 0 0 3.4 3.4l.6-.6"/></svg>',
   OWNI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="2.5" width="10.4" height="7" rx="1"/><path d="M5 12h4M7 9.5V12"/></svg>';
+const MOREI='<svg viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><circle cx="3" cy="7" r="1.25"/><circle cx="7" cy="7" r="1.25"/><circle cx="11" cy="7" r="1.25"/></svg>';
 const CLOCK='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="6" cy="6" r="4.8"/><path d="M6 3.4V6l1.8 1.2"/></svg>';
 function renderRail(){
   if(LIVE){
@@ -1100,16 +1118,21 @@ function renderRail(){
     $("railsum").textContent=nOn?`${nOn} of ${ids.length} scenes have triggers on. The tray agent runs them.`:`No scene has a trigger on yet. Open a scene to switch one on.`;
     // The mark says whose layout a card shows. It says nothing while no scene follows another setup (every card would only say "own layout").
     const lst=Object.fromEntries(ids.map(id=>[id,layState(id)])),marks=ids.some(id=>lst[id]&&lst[id].name);
+    // The cards are drawn again on every render (a preview answers, a save lands), so a button on a card that had focus is found again and gets it back.
+    const fa=document.activeElement,fsel=fa&&fa.closest&&fa.closest("#cards")?["data-pick","data-apply","data-menu"].filter(a=>fa.hasAttribute(a)).map(a=>`[${a}="${CSS.escape(fa.getAttribute(a))}"]`).join(""):"";
     $("cards").innerHTML=ids.map(id=>{const s=work[id],on=id===st.active,l=marks?lst[id]:null,fol=!!(l&&!l.own&&l.name),
       lt=l&&(l.own?"Own layout":l.name?`Follows ${l.name}`:""),
       // The mark sits beside the tag. Its words are its title and label (and hidden text, so a reader that skips the label still has them): the strip says them once, in words, for the selected scene.
-      lmark=lt?`<span class="lay${l.own?" own":""}" role="img" title="${esc(lt)}" aria-label="${esc(lt)}">${l.own?OWNI:LINKI}<span class="vh">${esc(lt)}</span></span>`:"";return `<article class="card${id===selId?" sel":""}">
+      lmark=lt?`<span class="lay${l.own?" own":""}" role="img" title="${esc(lt)}" aria-label="${esc(lt)}">${l.own?OWNI:LINKI}<span class="vh">${esc(lt)}</span></span>`:"",
+      tagt=`${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}`;return `<article class="card${id===selId?" sel":""}">
       <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini${fol?" follow":""}" aria-hidden="true">${miniHTML(prevs[id])}</span>
       <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
       ${(s.trigger||{}).type&&s.trigger.type!=="manual"?`<span class="when">${CLOCK}${esc(trigText(s))}</span>`:""}
       ${chipsOf(s).length?`<span class="chips" aria-label="Extra triggers on">${chipsOf(s).map(c=>`<i>${esc(c)}</i>`).join("")}</span>`:""}
       </button>
-      <div class="crow"><span class="tag">${lmark}${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}</span><button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></div></article>`}).join("");
+      <div class="crow"><span class="tag">${lmark}<span class="tagt" title="${tagt}">${tagt}</span></span><span class="cact">${followName(id)?`<button type="button" class="btn cmenu" data-menu="${esc(id)}" aria-haspopup="menu" aria-expanded="${menuId===id}" aria-label="More for ${esc(s.name)}" title="More for ${esc(s.name)}">${MOREI}</button>`:""}<button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></span></div></article>`}).join("");
+    if(fsel){const n=$("cards").querySelector(fsel);if(n)n.focus()}
+    placeMenu();
   }else $("cards").innerHTML=`<p class="note">Scenes need the app server. Open Tile Windows from the Start menu, or run <code>serve.ps1</code>.</p>`;
   const counts={};for(const w of snap.windows){const c=catOf(w.app);counts[c]=(counts[c]||0)+1}
   $("legend").innerHTML=cfg.categories.map(([c,l])=>`<button type="button" class="lg cat-${c}" data-cat="${c}" aria-pressed="${!hidden.has(c)}"><i class="sw"></i>${esc(l)}<span class="ct">${counts[c]||0}</span></button>`).join("");
@@ -1217,6 +1240,53 @@ function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter
   edit(x=>{x.fill=x.fill||{};x.fill.off=true;delete x.fill.held},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
 // id: the scene to change, by default the selected one. A caller that waits first passes the scene it started on.
 function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";const s=work[id];hist.push({k:"edit",id,s:clone(s)});fn(s);if(msg)status(typeof msg==="function"?msg():msg);layoutEdited(id);render();preview(id);return true}
+/* ---------- Follow Again: the card menu drops a scene's own layout for this setup (decision monitor-setups, item 7) ---------- */
+let menuId=null;
+function closeMenu(back){const id=menuId;menuId=null;const m=$("cmenu");if(m)m.remove();
+  for(const b of document.querySelectorAll("[data-menu]"))b.setAttribute("aria-expanded","false");
+  if(back&&id){const b=document.querySelector(`[data-menu="${CSS.escape(id)}"]`);if(b)b.focus()}}
+// Puts the open menu under its button, on the page (fixed), and keeps the one element across renders so its focus stays. The menu closes when its scene no longer has the item.
+function placeMenu(){
+  const old=$("cmenu"),name=menuId&&followName(menuId),b=name&&document.querySelector(`[data-menu="${CSS.escape(menuId)}"]`);
+  if(!b){if(menuId||old)closeMenu();return}
+  let m=old;
+  if(!m||m.dataset.for!==menuId||m.dataset.name!==name){if(m)m.remove();
+    m=document.createElement("div");m.id="cmenu";m.className="menu";m.setAttribute("role","menu");m.dataset.for=menuId;m.dataset.name=name;
+    m.innerHTML=`<button type="button" role="menuitem" data-fol="${esc(menuId)}"><b>Follow ${esc(name)} Again</b><small>Drops ${esc(work[menuId].name)}'s layout for ${esc(plugName())}. Undo brings it back.</small></button>`;
+    document.body.appendChild(m);b.setAttribute("aria-expanded","true");m.querySelector("button").focus()}
+  const r=b.getBoundingClientRect();m.style.top=Math.min(r.bottom+4,innerHeight-m.offsetHeight-8)+"px";m.style.left=Math.max(8,Math.min(r.right-236,innerWidth-244))+"px"}
+function toggleMenu(id){if(menuId===id)return closeMenu(true);closeMenu();menuId=id;placeMenu()}
+// A save of scene id that is waiting or in flight is written first, so it cannot land after the remove and bring the layout back. False when it did not go through.
+async function flushSave(id){
+  clearTimeout(svT[id]);if(unsaved[id]&&!svBusy[id])saveLayout(id);
+  while(svBusy[id])await new Promise(r=>setTimeout(r,10));
+  return!failed[id]&&!stale[id]}
+// The key, the name and the setup's name are read when the item is chosen, so a setup change while this waits removes nothing on the new setup. The page is busy from the choice to the end
+// (no edit lands, so no save can follow the remove and bring the layout back), but Refresh still runs: the check of plug.key below handles a setup that changed meanwhile.
+let following=false;
+async function followAgain(id){
+  const name=followName(id),key=plug&&plug.key;if(!name||!key||isBusy||!work[id])return;
+  const setup=plugName(),own=clone(work[id]),nm=work[id].name;
+  following=true;busy(true);
+  try{
+    if(!await flushSave(id)){status(`Could not follow ${name} again: this scene's layout is not saved yet. Try again after it saves.`);return}
+    const r=await post("layout/remove",{scene:id,key});
+    if(r.status===409){status("Could not follow again: the setup changed. Refresh to read the windows again.");return}
+    if(!r.ok)throw new Error((await r.text())||`The server said ${r.status}.`);
+    const sc=saved(id);if(sc&&sc.layouts)delete sc.layouts[key];
+    // The follow is done on the server. Undo is offered only on the setup it was made on, and before the optional re-read, so a re-read that fails cannot take it away.
+    if(plug.key!==key){toast(`${nm} follows ${name} again on ${setup}.`);status(`On ${setup}, ${nm} follows ${name} until you change it. The setup changed since, so Undo is not offered.`);return}
+    hist.push({k:"follow",id,s:own});
+    // The re-read only shows which layout the board now follows. If it fails, the board keeps the layout it has, not marked as saved, and the strip says the read failed.
+    let read=false;
+    try{const l=await fetch("layouts",{cache:"no-store"});if(l.ok){lays=await l.json();read=true}}catch(_){}
+    if(read){if(lays[id])adoptLayout(id)}
+    else{delete lays[id];readErr="The layouts could not be read after the follow"}
+    selId=id;optim=null;render();preview(id);
+    toast(`${nm} follows ${name} again.`,"",{undo:true});status(`${nm} follows ${name} until you change it.`)
+  }catch(e){status("Could not follow again: "+(e instanceof TypeError?"the app server stopped answering":String(e.message||e)))}
+  finally{following=false;busy(false)}}
+
 /* ---------- Autosave: a board change is written for the plugged-in setup (decision monitor-setups, item 8) ---------- */
 // Id mode only. An edit that changes the layout counts as one change only in this page until its POST /layout is answered. The write waits one task, so the edits of one
 // gesture are one POST. A longer wait is unproven: the page test settles on the POSTs in flight once the preview an edit starts answers, and a timer pending then is not seen.
@@ -1838,6 +1908,7 @@ $("apply").onclick=async()=>{
 $("undo").onclick=async()=>{if(isBusy)return;const e=hist.pop();if(!e)return;removeNote();
   if(e.k==="rects"){offRects=e.r;render();toast("Undid the last move.");return}
   if(e.k==="edit"){selId=e.id;work[e.id]=e.s;optim=null;layoutEdited(e.id,true);render();preview(selId);toast("Undid the last change.");return}
+  if(e.k==="follow"){selId=e.id;work[e.id]=e.s;optim=null;lq[e.id]=null;layoutEdited(e.id,true);render();preview(selId);toast("Undid the last change.");return}
   if(e.k==="apply"){if(e.back.length)await placeBack(e.back);else toast("That Apply moved nothing.")}};
 $("refresh").onclick=()=>refresh();
 $("closeres").onclick=()=>{$("results").hidden=true};
@@ -1889,6 +1960,7 @@ function ask(title,body,ok,danger){return new Promise(res=>{const d=$("dlg"),f=$
 document.addEventListener("click",async ev=>{
   // A press routed through the strip clicks its button when the release lands on that button too.
   const pb=peekBtn;peekBtn=null;
+  if(menuId&&!ev.target.closest("#cmenu,[data-menu]"))closeMenu();
   const t=ev.target.closest("button")||(pb&&pb.isConnected&&overEl(pb,ev.clientX,ev.clientY)?pb:null);if(!t||t.classList.contains("tile")||t.closest("#toast"))return;
   if(t.dataset.mon!==undefined){curMon=snap.monitors[+t.dataset.mon];render()}
   else if(t.dataset.bay){selWin=+t.dataset.bay;render();requestAnimationFrame(()=>{const m=$("moveto");if(m)m.focus()})}
@@ -1907,6 +1979,8 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="retry")retrySave();
   else if(t.id==="srefresh")refresh();
   else if(t.id==="addgrid"){const m=curMon;edit(x=>{(x.grids||(x.grids={}))[mk(m)]={c:1,r:1}},`${monName(m)} has a 1×1 grid. Drag windows onto it.`)}
+  else if(t.dataset.menu!==undefined)toggleMenu(t.dataset.menu);
+  else if(t.dataset.fol!==undefined){const id=t.dataset.fol,card=()=>document.querySelector(`[data-pick="${CSS.escape(id)}"]`);closeMenu();if(card())card().focus();await followAgain(id);if(card())card().focus()}
   else if(t.dataset.pick){selId=t.dataset.pick;optim=null;selZone=null;zanchor=null;picks=null;closeAsk(false);render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}
   else if(t.dataset.apply){selId=t.dataset.apply;render();if(!prevs[selId])await preview(selId);applyScene()}
   else if(t.dataset.cat){const c=t.dataset.cat;hidden.has(c)?hidden.delete(c):hidden.add(c);render()}
@@ -1962,10 +2036,14 @@ async function editCats(){
 function setTheme(t){if(!["light","dark"].includes(t))t="system";if(t==="system")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme=t;$("theme").value=t}
 $("theme").onchange=e=>{setTheme(e.target.value);try{localStorage.setItem("tile-theme",e.target.value)}catch(_){}};
 try{setTheme(localStorage.getItem("tile-theme")||"system")}catch(_){setTheme("system")}
-addEventListener("keydown",ev=>{if(ev.key==="Escape"&&picks&&!rz&&!zdraw&&!drag){picks=null;render();status("Pick cleared.");return}
+addEventListener("keydown",ev=>{if(ev.key==="Escape"&&menuId){closeMenu(true);return}
+  // Tab leaves the open menu: it closes and focus is on its button, so the key goes on from there (the menu sits at the end of the page and has nothing after it to tab to).
+  if(ev.key==="Tab"&&menuId&&$("cmenu")&&$("cmenu").contains(document.activeElement)){closeMenu(true);return}
+  if(ev.key==="Escape"&&picks&&!rz&&!zdraw&&!drag){picks=null;render();status("Pick cleared.");return}
   if(ev.key==="Escape"&&rz){const r=rz;endResize({type:"cancel"});try{r.grip.releasePointerCapture(r.pid)}catch(_){}status("Resize canceled. Nothing changed.");return}
   if(ev.key==="Escape"&&(zdraw||zanchor)){zanchor=null;const z=zdraw;if(z){endZone({type:"cancel"});try{stage.releasePointerCapture(z.pid)}catch(_){}}status("Zone drawing canceled. Nothing changed.");return}if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
 // The board's size depends on the text and list below it, so lay out again when they change height.
+addEventListener("scroll",()=>{if(menuId)closeMenu()},true);addEventListener("resize",()=>{if(menuId)closeMenu()});
 let rlay=0;const relay=()=>{if(snap&&!rlay)rlay=requestAnimationFrame(()=>{rlay=0;layout();render()})};addEventListener("resize",relay);
 {const ro=new ResizeObserver(relay);for(const id of ["setbar","bbar","over","bay"])ro.observe($(id))}
 
