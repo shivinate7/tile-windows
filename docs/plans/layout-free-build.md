@@ -1,6 +1,6 @@
 ## layout-free-build
 
-**Status.** L0 (PR 45, golden layouts) and L5b (PR 43, gap watch) are merged. L1 (PR 46, finer grid) is built and not merged yet. The other lanes are not built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
+**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L3 (PR 50, free areas) and L5b (PR 43, gap watch) are merged. L2, L4 and L5a are not built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
 
 **Source.** The Plan agent's build plan (opus), revised after a refuter, 2026-11-18 11:20 CST. It was first checked against origin/main 9e6ae0a. The symbols that replace its line numbers were checked against origin/main b6bc537 by 2026-11-18 11:23 CST. Its other claims, such as the columns cap of 8 and the span stepper following `g.c`, were not re-checked. Main has no docs/map/.
 
@@ -18,7 +18,7 @@ One fact drives L1. On the 1365px test area, five columns are 273px wide (`[int]
 
 **L1. Engine: finer grid** (`tile.ps1`; no designer; needs L0)
 
-Status: built in PR 46 (finer grid). The engine and its red cases are on branch `finer-grid`, at head commit 37a94e0. Not merged to main yet.
+Status: built in PR 46 (finer grid), merged at commit fce4790. Its engine and red cases were on branch `finer-grid`, at head commit 37a94e0.
 
 - New `grids[mon].mult:[mx,my]`: cell edges come from the base grid, and each base cell is then divided.
 - New `fill.unit:[ux,uy]`: each filled window gets one aligned block of cells.
@@ -56,6 +56,9 @@ Status: built in PR 46 (finer grid). The engine and its red cases are on branch 
   - the right-click menu.
 
 **L3. Engine: Free Layout areas and item G** (`tile.ps1`; no designer; after L1, since both edit the `Pass` function)
+
+Status: built in PR 50 (free areas), merged at commit 74f87cb.
+
 - `layouts[key].grids[monId].free.areas`. Each area is a rect in fractions, plus a pin, an app and title, or nothing.
 - Each line is rounded once, so neighbours share a pixel.
 - The fill takes empty areas in reading order. Zones pause (item 26).
@@ -63,12 +66,12 @@ Status: built in PR 46 (finer grid). The engine and its red cases are on branch 
 - Tests: areas built from a grid give L0 exactly, so switching on moves nothing. Item G's cases below.
 
 **Item G. Who takes a closed or minimized window's space** (in L3; used by L5a and Close Gap)
-- A side qualifies when its neighbours exactly cover the gone window's edge: none sticks out past it, none is locked, and they leave no hole.
+- A side qualifies when its neighbours exactly cover the gone window's edge: none sticks out past it, none is locked, and they leave no hole. A side also needs a share that leaves no overlap with a live area.
 - If left and right both qualify, they meet at the midpoint. Otherwise, if above and below both qualify, they meet at the midpoint.
-- Otherwise the first single side that qualifies takes it all, in the order of notes item 17 (left, above, right, below).
-- If a midpoint share would leave a window under 400×300, the whole space goes to the first side that qualifies.
-- If no side qualifies (a pinwheel centre, or only locked neighbours), the space stays a dashed gap.
-- Close Gap calls the same function. When no side qualifies, Close Gap is off and says why (item 17).
+- Otherwise the first single side that qualifies takes it all, in the order of notes item 17 (left, above, right, below). When one side cannot take the region, the next side in that order does.
+- If a midpoint share would leave a window under 400×300, or would overlap a live area, the whole space goes to the first side that qualifies.
+- If no side can take it (a pinwheel centre, or only locked neighbours), the space stays a dashed gap.
+- Close Gap calls the same function. When no side can take it, Close Gap is off and says why (item 17).
 - The result is worked out at apply time and never saved, so a restored window gets its saved rect back.
 - Tests:
   - a middle column's space is split by its left and right neighbours;
