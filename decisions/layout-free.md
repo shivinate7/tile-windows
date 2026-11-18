@@ -3,6 +3,7 @@
 Kind: build
 Plan: docs/design/mockups/layout-free-notes.md#split-cell (windows)
 Plan: docs/design/mockups/layout-free-notes.md#free-layout (windows)
+Plan: docs/plans/layout-free-build.md#layout-free-build (windows)
 
 **Question.** How does a cell split, and how does a window's edge move when the board is not on the grid?
 
@@ -37,9 +38,11 @@ Plan: docs/design/mockups/layout-free-notes.md#free-layout (windows)
 - The Shift key is the coordinator's pick, 2026-11-18 11:14 CST, open to the owner's change. Reason: it matches the `edges-drag` caption in layout-free.html, so the mockup needs no change.
 - With the key pick above, the drag half of question (b) is closed.
 
-Not yet asked: (c) the fast action's trigger, direction and share. S stays with the menu, as drawn, until the owner rules on it.
+Asked 2026-11-18 11:15 CST, open: (c) the fast action's trigger, direction and share (plan questions 1 and 3, keys S and K). S stays with the menu, as drawn, until the owner rules on it.
 
-Not yet asked: how a closed window's space divides when more than one neighbour takes it.
+Asked 2026-11-18 11:15 CST, open: how a closed window's space divides when more than one neighbour takes it (plan question 4, key M).
+
+Asked 2026-11-18 11:15 CST, open: does live gap-filling apply to plain grid scenes, or only to Free Layout boards (plan question 2, key G).
 
 Notes item 8 (one level) was picked only while item 3 stood, so it has no ruling now.
 
