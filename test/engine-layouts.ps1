@@ -382,6 +382,19 @@ try {
     Check 'wide, laptop and portrait, -Proc x, explicit -Monitor wide: does not throw' ($threw -eq '') "threw: $threw"
     Check 'wide, laptop and portrait, -Proc x, explicit -Monitor wide: window x lands on the laptop (x=0 y=0 384x520)' ($txt -match 'x=0 y=0 384x520') "output: $($txt.Trim())"
   }
+  # The same fallback with the portrait listed first. The widest screen is still the laptop (1920 beats 1080), so the list order must not pick it.
+  # A fallback that takes the first listed screen lands the window on the portrait (x=1920) and fails the rect check.
+  $snapPortFirst = Write-Snap 'wide-portrait-first.json' @($tallB, $lapDesk) @((Win 4103 'x' 'Doc X' 0))
+  Case 'wide, portrait listed first: -Proc x with the default -Monitor wide lands on the laptop, the widest, not the first listed' {
+    $pObj = Get-Content -Raw -LiteralPath $snapPortFirst | ConvertFrom-Json
+    $firstId = [string](@($pObj.monitors.id)[0])
+    Check 'scope: the portrait is listed first in the snapshot' ($firstId -ceq $TAL) "first listed: $firstId"
+    Check 'scope: no monitor takes wide on that snapshot' ((Pick-From $snapPortFirst) -ceq '') "Pick names $(Named (Pick-From $snapPortFirst))"
+    $threw = ''; $txt = ''
+    try { $txt = (& $tile -From $snapPortFirst -Proc x -DryRun 3>$null) | Out-String } catch { $threw = $_.Exception.Message }
+    Check 'wide, portrait listed first, -Proc x, default -Monitor wide: does not throw' ($threw -eq '') "threw: $threw"
+    Check 'wide, portrait listed first, -Proc x, default -Monitor wide: window x lands on the laptop (x=0 y=0 384x520)' ($txt -match 'x=0 y=0 384x520') "output: $($txt.Trim())"
+  }
   Case 'solo: a laptop alone places Chrome and Claude on the laptop, whichever role the starter pins Chrome to' {
     $solo = @(([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json).scenes | ? { $_.id -eq 'solo' })[0]
     $soloPin = @($solo.pins | ? { $_.app -eq 'chrome' })
