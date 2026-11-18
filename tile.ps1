@@ -312,8 +312,8 @@ function Pick($role, $taken = @()) {
   $s = @($screens | ? { $taken -notcontains $_.Name })
   switch ($role) {
     # The wide role is Get-TileRoles' pick (config.ps1, decision monitor-setups item 14): the widest landscape monitor that is not the built-in
-    # panel, then the lowest id. A laptop alone, or with a portrait, holds none. Builtin is unset where the monitor list carries no identity, so
-    # every screen is a candidate there. A screen with no id is keyed by its name.
+    # panel, then the lowest id. With two or more monitors, a laptop with only a portrait holds no wide role; a lone monitor holds wide. Builtin
+    # is unset where the monitor list carries no identity, so every screen is a candidate there. A screen with no id is keyed by its name.
     'wide'   { $mons = New-Object PSObject; $key = @{}
                foreach ($x in $s) { $k = $(if ($x.Id) { [string]$x.Id } else { [string]$x.Name }); if (-not $mons.PSObject.Properties[$k]) { $key[$k] = $x; $mons | Add-Member -NotePropertyName $k -NotePropertyValue ([pscustomobject]@{ builtin = [bool]$x.Builtin; bw = $x.BW; bh = $x.BH }) } }
                $id = (Get-TileRoles $mons @($mons.PSObject.Properties.Name))['wide']; if ($id) { $key[$id] } }
@@ -539,6 +539,9 @@ $cs = if ($sc -and $sc.cats) { $sc } else { ConvertFrom-Json ([IO.File]::ReadAll
 $cats = $cs.cats; $catOrder = @($cs.categories | % { [string]$_[0] }); if (-not $catOrder.Count) { $catOrder = @('code', 'browse', 'comms', 'other') }
 if (-not $sc) {
   $scr = Pick $Monitor
+  # A direct -Monitor wide run with no monitor holding the wide role (a laptop with a portrait) falls back to the widest screen, as before
+  # item 14; scenes and the role path keep item 14 and send such a pin to left (coordinator ruling 2026-11-17 19:03 CST).
+  if (-not $scr -and $Monitor -eq 'wide') { $scr = @($screens | Sort-Object { -$_.BW } | Select-Object -First 1)[0] }
   if (-not $scr) { throw "No monitor matches '$Monitor'." }
   Pass $scr $Cols $Rows $Cells $Proc $pins $Skip $Order $Sort ($Monitor -eq 'wide') $Monitor
   return
