@@ -253,14 +253,19 @@ function Get-TileClosestSetup($cfg, $ids, $held, [string]$except = '') {
   }
   $best
 }
-# The name of the setup a scene follows on $key: the closest known setup that holds a layout of the scene, while the scene has none of its own for $key; else ''.
-function Get-TileFollows($cfg, $scene, [string]$key) {
+# The name of the closest known setup other than $key that holds a layout of the scene, own layout for $key or not; else ''. What "Follow <name> Again" names.
+function Get-TileClosestName($cfg, $scene, [string]$key) {
   $lays = $scene.layouts
-  if (-not $lays -or $lays.PSObject.Properties[$key]) { return '' }
+  if (-not $lays) { return '' }
   $sp = $cfg.setups.PSObject.Properties[$key]
   $ids = @($(if ($sp) { $sp.Value.ids } else { $key -split '\|' }) | Where-Object { $_ })
   $pick = Get-TileClosestSetup $cfg $ids @($lays.PSObject.Properties.Name) $key
   if ($pick) { [string]$pick.Value.name } else { '' }
+}
+# The name of the setup a scene follows on $key: the closest known setup that holds a layout of the scene, while the scene has none of its own for $key; else ''.
+function Get-TileFollows($cfg, $scene, [string]$key) {
+  if (-not $scene.layouts -or $scene.layouts.PSObject.Properties[$key]) { return '' }
+  Get-TileClosestName $cfg $scene $key
 }
 function Resolve-TileLayout($cfg, $scene, [string]$key) {
   $sp = $cfg.setups.PSObject.Properties[$key]
