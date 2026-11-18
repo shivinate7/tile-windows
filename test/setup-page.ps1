@@ -14,8 +14,14 @@
 #   Inspector: after a layout-only edit there is no Revert button, and Save is off with "No name or trigger changes to save".
 #   Cards: a scene with no layout of its own on the plugged setup reads "follows <setup>"; one with its own layout reads "own layout".
 #   Offline (file://): the sample loads, and a board edit sends no POST.
-# The unplugged and offline cases already hold on the old page (the engine lists the unplugged window, and the offline page never
-# posts): they are guards that the builder must keep green. The other cases are red on the old page.
+#   Setup change: a POST /layout the server refuses (409: the setup changed) leaves the strip amber, with a message that the setup
+#     changed and a Refresh control. The strip offers no retry under the old key. Refresh or Apply onto the new setup clears Undo:
+#     no POST /layout under the new key carries the old setup's layout.
+#   Autosave: a board edit's POST /layout keeps the Windows That Stay Put and held entries of closed windows as the server had them.
+#   Failed read: a re-read whose GET /config or GET /layouts fails leaves the strip amber, with a message.
+#   Delete: deleting a scene whose save was refused, or still in flight, leaves the strip clear, and a late refusal does not bring it back.
+# Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
+# clears Undo, and delete cases. The setup change, Apply, autosave and failed-read cases are red on the page as it stands.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $serve = Join-Path $root 'serve.ps1'; $appHtml = Join-Path $root 'app.html'
@@ -148,8 +154,28 @@ if (!window.__h) {
 }
 return true
 '@
+# The server reads the -From file on every request, so the file is the plugged-in setup. A is the Desk setup of this file; B (the wide and
+# the tall screens) is plugged in by writing it. Open-Page plugs A back in, so a case never starts on B.
+$snapAText = [IO.File]::ReadAllText($snapPath, $utf8)
+$snapBText = ConvertTo-Json -Depth 10 -Compress -InputObject ([pscustomobject]@{ monitors = @($snapObj.monitors | ? { @('U1', 'P1') -contains $_.id }); windows = @($snapObj.windows) })
+function Plug([string]$text) { [IO.File]::WriteAllText($snapPath, $text, $utf8) }
+# The POSTs of a log (from window.__h.posts) sent under one setup key.
+function Posts-Under($posts, [string]$key) { @(@($posts) | ? { $_ -and (ConvertFrom-Json $_.body).key -ceq $key }) }
+# The POSTs of a log sent under one setup key whose layout is the given canonical text.
+function Posts-Carrying($posts, [string]$key, [string]$canon) { @(@($posts) | ? { $_ -and ((ConvertFrom-Json $_.body).key -ceq $key) -and ((Canon (ConvertFrom-Json $_.body).layout) -ceq $canon) }) }
+# The autosave strip as the page shows it: hidden or not, amber or not, its text, and its buttons.
+$stripJs = 'const b = document.getElementById("setbar"); return { hidden: b.hidden, warn: b.classList.contains("warn"), text: b.textContent.replace(/\s+/g, " ").trim(), buttons: [...b.querySelectorAll("button")].map(x => x.textContent.trim()) }'
+# Deletes the scene on the page through its Delete button and the confirm dialog, and waits until its card is gone.
+function Delete-Scene($sock, [string]$scene) {
+  [void](Js $sock 'document.getElementById("del").click(); return true')
+  [void](WaitFor $sock 'document.getElementById("dlg").open && !!document.querySelector("#dlgform button[value=ok]")')
+  [void](Js $sock 'document.querySelector("#dlgform button[value=ok]").click(); return true')
+  WaitFor $sock ('!document.querySelector("[data-pick=__S__]")'.Replace('__S__', $scene))
+}
+
 # Opens the live page on a scene: the card is clicked, as a user would.
 function Open-Page($sock, [string]$url, [string]$scene) {
+  Plug $snapAText
   if (-not (Go $sock $url $livePageReady)) { return $false }
   [void](Js $sock $installJs)
   [void](Js $sock ('document.querySelector("[data-pick=__S__]").click(); return true'.Replace('__S__', $scene)))
@@ -194,13 +220,13 @@ try {
     Put-Config (New-Config)
     $opened = Open-Page $ws $url 'focus'
     Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
-    $pre = Js $ws 'const r = await fetch("layouts", { cache: "no-store" }); return await r.json()'
+    $pre = Js $ws 'return layoutOf(work.focus)'   # the layout the page shows before the edit: the one Undo must write back
     [void](Board-Edit $ws 1001)
     $p = Js $ws 'document.getElementById("undo").click(); await window.__h.settle(); return { layout: window.__h.posts("layout") }'
     $lay = @($p.layout)
     Check 'Undo sends one more POST /layout (two in all)' ($lay.Count -eq 2) "POST /layout count after Undo: $($lay.Count)"
     $restored = $false
-    if ($lay.Count -eq 2) { $restored = (Canon (ConvertFrom-Json $lay[1].body).layout) -ceq (Canon $pre.focus) }
+    if ($lay.Count -eq 2) { $restored = (Canon (ConvertFrom-Json $lay[1].body).layout) -ceq (Canon $pre) }
     Check 'Undo writes the layout back as it was before the edit' $restored 'the layout Undo sent is not the one from before the edit'
   }
 
@@ -250,6 +276,141 @@ try {
     $body = if ($lay.Count -eq 1) { ConvertFrom-Json $lay[0].body }
     Check 'that POST /layout names Default and the plugged-in setup key' ($null -ne $body -and $body.scene -ceq 'default' -and $body.key -ceq $plugKey) "sent: $(if ($body) { "scene $($body.scene), key $($body.key)" } else { 'no POST /layout' })"
     Check 'a board edit on Default sends no POST /config' (@($p.config).Count -eq 0) "POST /config count: $(@($p.config).Count)"
+  }
+
+  # A save the server refuses with 409 (the setup changed after the edit): the strip says so and offers no retry under the old key.
+  Case 'a layout save refused with 409 (the setup changed) leaves the strip amber, with Refresh, and no retry under the old key' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    Plug $snapBText
+    $p = Board-Edit $ws 1001
+    $sent = @(Posts-Under $p.layout $plugKey)
+    Check 'the edit sends its POST /layout under the setup the page holds (control)' ($sent.Count -eq 1) "POST /layout under $($plugKey): $($sent.Count)"
+    $bar = Js $ws $stripJs
+    Check 'the strip is on the page (scope)' ($null -ne $bar -and -not $bar.hidden) 'the strip is missing or hidden'
+    Check 'the strip is amber after the refused save (control)' ($null -ne $bar -and $bar.warn -eq $true) 'the strip is not amber'
+    Check 'the strip says the setup changed' ([string]$bar.text -match 'changed') "strip text: '$($bar.text)'"
+    Check 'the strip has a Refresh control' (@($bar.buttons | ? { $_ -ceq 'Refresh' }).Count -eq 1) "strip buttons: $(@($bar.buttons) -join ', ')"
+    Check 'the strip has no Try Again control' (@($bar.buttons | ? { $_ -match 'Try Again' }).Count -eq 0) "strip buttons: $(@($bar.buttons) -join ', ')"
+    # Press the strip's own button (Try Again on the old page, which resends the old key). No POST /layout may go under the old key after the 409.
+    [void](Js $ws 'const b = document.querySelector("#setbar button"); if (b) b.click(); await window.__h.settle(); return true')
+    $after = Js $ws 'return { layout: window.__h.posts("layout") }'
+    $again = @(Posts-Under $after.layout $plugKey)
+    Check 'no POST /layout under the old setup key after the 409' ($again.Count -eq 1) "POST /layout under the old key: $($again.Count)"
+  }
+
+  # Refresh reads the windows again and clears Undo. A board change made on the old setup is not undone onto the new one.
+  Case 'Refresh onto a new setup: Undo sends no POST /layout under the new key carrying the old layout' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    $preCanon = Canon (Js $ws 'return layoutOf(work.focus)')
+    [void](Board-Edit $ws 1001)
+    Plug $snapBText
+    [void](Js $ws 'await document.getElementById("refresh").onclick(); await window.__h.settle(); return true')
+    $now = Js $ws 'return plug.key'
+    Check 'Refresh moved the page onto the new setup (control)' ($now -ceq 'P1|U1') "plug key: $now"
+    [void](Js $ws 'await document.getElementById("undo").onclick(); await window.__h.settle(); return true')
+    $log = Js $ws 'return { layout: window.__h.posts("layout") }'
+    $carried = @(Posts-Carrying $log.layout 'P1|U1' $preCanon)
+    Check 'Undo after Refresh sends no POST /layout under the new key carrying the old layout' ($carried.Count -eq 0) "POSTs carrying the old layout under the new key: $($carried.Count)"
+  }
+
+  # Apply on a live server moves windows and re-reads the setup. Every -From server is a dry run, which does not re-read, so this case
+  # answers the scene call as a live one would (its placed notes stop saying dry run). The page's own code does the rest.
+  Case 'Apply onto a new setup: Undo sends no POST /layout under the new key carrying the old layout' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    $preCanon = Canon (Js $ws 'return layoutOf(work.focus)')
+    [void](Board-Edit $ws 1001)
+    Plug $snapBText
+    [void](Js $ws 'const g = window.fetch; window.fetch = async (u, o) => { const r = await g(u, o); if (String(u) !== "scene" || !r.ok) return r; const j = await r.json(); for (const p of j.placed || []) if (/^dry run/.test(p.note || "")) p.note = "moved"; return new Response(JSON.stringify(j), { status: 200, headers: { "Content-Type": "application/json" } }) }; return true')
+    [void](Js $ws 'await document.getElementById("apply").onclick(); await window.__h.settle(); return true')
+    $now = Js $ws 'return plug.key'
+    Check 'Apply moved the page onto the new setup (control)' ($now -ceq 'P1|U1') "plug key: $now"
+    [void](Js $ws 'for (let i = 0; i < 3; i++) { await document.getElementById("undo").onclick(); await window.__h.settle(); } return true')
+    $log = Js $ws 'return { layout: window.__h.posts("layout") }'
+    $carried = @(Posts-Carrying $log.layout 'P1|U1' $preCanon)
+    Check 'Undo after Apply sends no POST /layout under the new key carrying the old layout' ($carried.Count -eq 0) "POSTs carrying the old layout under the new key: $($carried.Count)"
+  }
+
+  # Autosave writes the layout as the server has it. A Windows That Stay Put entry and a held fill entry, both for closed windows, are kept.
+  $keepLayout = '{"grids":{"U1":{"c":4,"r":3}},"pins":[],"zones":[],"fill":{"mon":"U1","apps":[],"skip":[],"sort":"app","held":[{"app":"slack","title":"Huddle","mon":"U1","slots":[0]},{"app":"teams-old","title":"Standup","mon":"U1","slots":[1]}]},"bay":[{"app":"slack","title":"Huddle"},{"app":"teams-old","title":"Standup"}]}'
+  Case 'a board edit saves the Windows That Stay Put and held entries of closed windows as the server had them' {
+    $cfg = New-Config; Add-Layout $cfg 'focus' $plugKey $keepLayout; Put-Config $cfg
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    $stored = Js $ws 'const c = await (await fetch("config", { cache: "no-store" })).json(); return c.scenes.find(s => s.id === "focus").layouts["L1|P1|U1"]'
+    Check 'the server holds two Windows That Stay Put entries and two held entries (scope)' (@($stored.bay).Count -eq 2 -and @($stored.fill.held).Count -eq 2) "bay: $(@($stored.bay).Count), held: $(@($stored.fill.held).Count)"
+    $p = Board-Edit $ws 1001
+    $sent = @(Posts-Under $p.layout $plugKey)
+    Check 'the edit sends one POST /layout under the plugged-in setup (control)' ($sent.Count -eq 1) "POST /layout under the key: $($sent.Count)"
+    $body = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout }
+    Check 'the POST /layout keeps the Windows That Stay Put entries as the server had them' ($null -ne $body -and (Canon $body.bay) -ceq (Canon $stored.bay)) "bay sent: $(if (-not $body) { 'no POST /layout' } elseif ($null -eq $body.bay) { 'no bay' } else { Canon $body.bay })"
+    Check 'the POST /layout keeps the held entries of the closed windows as the server had them' ($null -ne $body -and (Canon $body.fill.held) -ceq (Canon $stored.fill.held)) "held sent: $(if (-not $body) { 'no POST /layout' } elseif ($null -eq $body.fill -or $null -eq $body.fill.held) { 'no held' } else { Canon $body.fill.held })"
+  }
+
+  # A re-read whose GET /layouts or GET /config fails: the strip says so in amber, instead of showing the old copy as if it were current.
+  function Fail-Read($sock, [string]$route) {
+    [void](Js $sock ('const f = window.fetch; window.fetch = (u, o) => String(u) === "__R__" ? Promise.resolve(new Response("read failed", { status: 500 })) : f(u, o); await document.getElementById("refresh").onclick(); await window.__h.settle(); return true'.Replace('__R__', $route)))
+  }
+  Case 'a failed GET /layouts on a re-read leaves the strip amber, with a message' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    Fail-Read $ws 'layouts'
+    $bar = Js $ws $stripJs
+    Check 'the strip is on the page (scope)' ($null -ne $bar -and -not $bar.hidden) 'the strip is missing or hidden'
+    Check 'the strip is amber after a failed GET /layouts' ($null -ne $bar -and $bar.warn -eq $true) "strip text: '$($bar.text)'"
+    Check 'the strip says the read failed' ([string]$bar.text -match 'could not|couldn.t|failed|did not|didn.t|unable|not read') "strip text: '$($bar.text)'"
+  }
+  Case 'a failed GET /config on a re-read leaves the strip amber, with a message' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    Fail-Read $ws 'config'
+    $bar = Js $ws $stripJs
+    Check 'the strip is on the page (scope)' ($null -ne $bar -and -not $bar.hidden) 'the strip is missing or hidden'
+    Check 'the strip is amber after a failed GET /config' ($null -ne $bar -and $bar.warn -eq $true) "strip text: '$($bar.text)'"
+    Check 'the strip says the read failed' ([string]$bar.text -match 'could not|couldn.t|failed|did not|didn.t|unable|not read') "strip text: '$($bar.text)'"
+  }
+
+  # Delete a scene whose save was refused: the strip must not keep the deleted scene's save state.
+  Case 'deleting a scene whose save was refused clears the strip' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    Plug $snapBText
+    [void](Board-Edit $ws 1001)
+    $before = Js $ws $stripJs
+    Check 'the strip is amber before the delete (control)' ($null -ne $before -and $before.warn -eq $true) 'the strip is not amber before the delete'
+    [void](Delete-Scene $ws 'focus')
+    $after = Js $ws $stripJs
+    Check 'the strip is clear after the delete' ($null -ne $after -and $after.warn -ne $true) "strip text: '$($after.text)'"
+  }
+
+  # Delete a scene whose save is still in flight. The save's answer (a 409 here) comes after the delete and must not bring the strip back.
+  Case 'deleting a scene whose save is in flight: its late refusal leaves the strip clear' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    # Holds every POST /layout until the test opens the gate.
+    [void](Js $ws 'window.__gate = new Promise(r => { window.__open = r }); const g = window.fetch; window.fetch = (u, o) => String(u) === "layout" && o && String(o.method || "").toUpperCase() === "POST" ? window.__gate.then(() => g(u, o)) : g(u, o); return true')
+    [void](Board-Edit $ws 1001)
+    $inFlight = WaitFor $ws 'svBusy["focus"] === true'
+    Check 'the save is in flight when the delete starts (control)' $inFlight 'no save in flight'
+    [void](Delete-Scene $ws 'focus')
+    $stillBusy = Js $ws 'return svBusy["focus"] === true'
+    Check 'the save is still in flight after the delete (control)' ($stillBusy -eq $true) 'the save ended before the delete'
+    Plug $snapBText
+    $mid = Js $ws $stripJs
+    Check 'the strip is clear while the save is in flight' ($null -ne $mid -and $mid.warn -ne $true) "strip text: '$($mid.text)'"
+    [void](Js $ws 'window.__open(); return true')
+    [void](WaitFor $ws 'window.__h.posts("layout").length === 1 && svBusy["focus"] === false')
+    $after = Js $ws $stripJs
+    Check 'the late refusal leaves the strip clear' ($null -ne $after -and $after.warn -ne $true) "strip text: '$($after.text)'"
   }
 
   Case 'the offline page loads its sample and a board edit sends no POST' {
