@@ -304,14 +304,19 @@ if ($From) {
 function Pick($role, $taken = @()) {
   $s = @($screens | ? { $taken -notcontains $_.Name })
   switch ($role) {
-    'wide'   { $s | Sort-Object BW -Descending | Select-Object -First 1 }
+    # The wide role is Get-TileRoles' pick (config.ps1, decision monitor-setups item 14): the widest landscape monitor that is not the built-in
+    # panel, then the lowest id. A laptop alone, or with a portrait, holds none. Builtin is unset where the monitor list carries no identity, so
+    # every screen is a candidate there. A screen with no id is keyed by its name.
+    'wide'   { $mons = New-Object PSObject; $key = @{}
+               foreach ($x in $s) { $k = $(if ($x.Id) { [string]$x.Id } else { [string]$x.Name }); if (-not $mons.PSObject.Properties[$k]) { $key[$k] = $x; $mons | Add-Member -NotePropertyName $k -NotePropertyValue ([pscustomobject]@{ builtin = [bool]$x.Builtin; bw = $x.BW; bh = $x.BH }) } }
+               $id = (Get-TileRoles $mons @($mons.PSObject.Properties.Name))['wide']; if ($id) { $key[$id] } }
     'laptop' { $s | Sort-Object { $_.BW * $_.BH } | Select-Object -First 1 }
     'tall'   { $s | Where-Object { $_.BH -gt $_.BW } | Select-Object -First 1 }
     default  { $screens[[int]$role] }
   }
 }
 # Scene roles get distinct screens, widest first, so one screen never holds two grids.
-function Roles { $r = @{}; $t = @(); foreach ($k in 'wide', 'tall', 'laptop') { $s = Pick $k $t; if ($s) { $r[$k] = $s; $t += $s.Name } }; $r }
+function Roles { $r = @{}; $t = @(); foreach ($k in Get-TileRoleOrder) { $s = Pick $k $t; if ($s) { $r[$k] = $s; $t += $s.Name } }; $r }
 
 # The monitor objects -Json and -Monitors print.
 function Get-MonitorObjects($roles) {
@@ -570,7 +575,9 @@ foreach ($role in $passKeys) {
   $gp = if ($sc.grids) { $sc.grids.PSObject.Properties[$role] }
   $g = if ($gp) { $gp.Value }
   $scr = if ($idMode) { @($screens | ? { $_.Id -eq $role })[0] } else { $roles[$role] }
-  $phantom = $idMode -and -not $scr
+  # A role no plugged monitor holds is a phantom too: its pins, zones and held windows are claimed and listed in left, never moved. Its fill is not
+  # (a role template's fill stays skipped, as before), so the windows it would have filled stay where they are.
+  $phantom = -not $scr
   if ($g) { $gc = [int]$g.c; $gr = [int]$g.r }
   elseif ($phantom) {
     # No grid for a monitor that is not plugged in (a resolved layout drops it): the cells its entries name are enough to match their windows.
@@ -595,9 +602,9 @@ foreach ($role in $passKeys) {
     $sl = @($h.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
     if ($sl.Count) { [pscustomobject]@{ Id = $h.id; App = [string]$h.app; Title = [string]$h.title; Slots = $sl } }
   } })
-  $isFill = $sc.fill.mon -eq $role
+  $isFill = $sc.fill.mon -eq $role -and ($idMode -or -not $phantom)
   if (-not $ps.Count -and -not $isFill -and -not $zs.Count -and -not $hs.Count) { continue }
-  if (-not $scr -and -not $phantom) { Write-Warning "No $role monitor. That part of the scene is skipped."; $missing += @($ps | % { [pscustomobject]@{ pin = $_.Index; app = $_.App; match = $_.Match; why = "no $role monitor" } }); continue }
+  if ($phantom -and -not $idMode) { Write-Warning "No $role monitor. That part of the scene is skipped." }
   if ($phantom) { $scr = [pscustomobject]@{ Name = "unplugged $role"; X = 0; Y = 0; W = 100 * $gc; H = 100 * $gr } }
   $passes += [pscustomobject]@{ Scr = $scr; Phantom = $phantom; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Held = $hs; Role = $role
     Skip = $(if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }); Sort = $(if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }) }
