@@ -824,7 +824,7 @@ function layState(id){
   if(!idm())return null;
   if(hasKey((saved(id)||{}).layouts||{},plug.key))return{own:true};
   return{own:false,name:(lays[id]||{}).follows||""}}
-const setupName=()=>((cfg.setups||{})[plug.key]||plug).name||"This setup";
+const plugName=()=>((cfg.setups||{})[plug.key]||plug).name||"This setup";
 // Monitors the layouts still name (a pin, zone or fill on a screen of another setup) that are not plugged in, with the size config remembers for them.
 // They are drawn whichever scene is selected and whether or not it has its own layout here: they are what is missing from this setup.
 function goneIds(){
@@ -856,7 +856,7 @@ function renderSetbar(){
   else if(L&&L.own)sub=`${sc} has its own layout here. Board changes save as you make them.`;
   else if(L&&L.name)sub=`${sc} follows ${esc(L.name)} until you change it.`;
   else sub=`${sc} starts from its starter layout here. Board changes save as you make them.`;
-  const html=`${smapHTML(goneIds())}<div class="sid"><b>${esc(setupName())}</b><span>${sub}</span></div>${extra}`;
+  const html=`${smapHTML(goneIds())}<div class="sid"><b>${esc(plugName())}</b><span>${sub}</span></div>${extra}`;
   if(el.dataset.h!==cls+html){el.dataset.h=cls+html;el.className=cls;el.innerHTML=html;if(cls.includes("warn"))el.setAttribute("role","status");else el.removeAttribute("role")}
   el.hidden=false}
 
