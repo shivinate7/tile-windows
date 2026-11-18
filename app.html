@@ -1009,9 +1009,13 @@ async function mgForget(t){
   // A setup the re-read no longer has (dropped here or by another forget) takes its scenes' aim with it too.
   if(!bad){const more=had.filter(k=>!hasKey(cfg.setups||{},k)&&!gone.includes(k));if(more.length){mgUnaim(more);render()}}
   const say=r.status===409?`${cur.name} is ${kind==="setup"?"in use":"plugged in"} now, so it stays.`:r.status===404?`${cur.name} was already gone.`:`Forgot ${cur.name}.`;
-  mgSaid({...m,ok:say,bad:bad?`Could not read the names again: ${bad}.`:""},btn);
-  // The server's note (a scene lost its setup: pick another) shows now, not at the next load. Last, so no later message replaces it.
-  noteFrom(r)}
+  // The server's note (a scene lost its setup: pick another) goes in the dialog's message line while the dialog is open, where a toast would sit
+  // behind it; the toast shows when the dialog closes. With the dialog shut it shows now. Last, so no later message replaces it.
+  const nh=r.headers.get("X-Tile-Note"),note=nh?decodeURIComponent(nh):"",inDlg=!!note&&$("mgdlg").open;
+  mgSaid({...m,ok:inDlg?`${say} ${note}`:say,bad:bad?`Could not read the names again: ${bad}.`:""},btn);
+  if(inDlg)mgNote=note;else noteFrom(r)}
+let mgNote="";  // a server note held back while the dialog is open: toasted when it closes
+$("mgdlg").addEventListener("close",()=>{if(!mgNote)return;const n=mgNote;mgNote="";toast(n,"warn",{sticky:true});noteUp=true});
 // A read after a write that landed: "" when it worked, else why it failed. The strip says so too (readErr), until a read lands.
 async function mgReread(read){try{await read();return""}catch(e){readErr=mgFail(e);render();return readErr}}
 // After a forget: names, setups and the layouts the scenes follow are read again. Edits that are only in this page, and Undo, stay.
