@@ -28,9 +28,9 @@
 #   Size id (item 3, coordinator ruling 21:04 CST): a monitor whose id is size-WxH is remembered by that id. The strip is the normal one, and
 #     no Remember It by Its Size button is on the page. Two shapes: every monitor with a size id, and only the ultrawide.
 #   Monitors and Setups, reads and names: a rename that returns keeps the text typed in another name field; a forget answered 200 whose config
-#     re-read fails says Could not forget; a rename that landed whose re-read fails shows the failed read; the Monitor picker shows a renamed
-#     monitor once its inspector Name field is left; the built-in monitor reads Built-in screen, with no maker or product code (dialog and
-#     inspector).
+#     re-read fails says it was forgotten, shows the failed read, and never says Could not forget; a rename that landed whose re-read fails
+#     shows the failed read; the Monitor picker shows a renamed monitor once its inspector Name field is left; the built-in monitor reads
+#     Built-in screen, with no maker or product code (dialog and inspector).
 #   Offline, dialog: the offline page shows no Monitors and Setups button and sends no request. A guard: green on the old commit, and a
 #     mutant with the button turns it red (run on a scratch copy).
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
@@ -556,8 +556,9 @@ try {
     Check 'the setup name field keeps the text typed while the rename was in flight' ([string]$field -ceq 'Typed name') "field now: '$field'"
   }
 
-  # A forget the server answered 200 whose config re-read then fails: the dialog says it could not forget, and does not say it forgot.
-  Case 'Monitors and Setups: a forget answered 200 whose config re-read fails says Could not forget' {
+  # A forget the server answered 200 whose config re-read then fails: the forget landed, so the dialog says it was forgotten and shows the
+  # failed read, and the strip goes amber. The dialog never says Could not forget for a forget that landed.
+  Case 'Monitors and Setups: a forget answered 200 whose config re-read fails says it was forgotten, shows the failed read, and never says Could not forget' {
     $cfg = New-Config
     $cfg.monitors | Add-Member -NotePropertyName 'H27' -NotePropertyValue ([pscustomobject]@{ name = 'Home 27'; builtin = $false; lastSeen = $stamp; bw = 2560; bh = 1440 })
     Put-Config $cfg
@@ -573,7 +574,11 @@ try {
     $text = Js $ws 'return (document.getElementById("mgsay") || {}).textContent.replace(/\s+/g, " ").trim()'
     $sent = Js $ws 'return window.__h.posts("forget").length'
     Check 'the forget was sent and answered (control)' ($sent -eq 1 -and [string]$text -notmatch '^\s*$') "POST /forget count: $sent, dialog: '$text'"
-    Check 'a forget answered 200 whose config re-read fails says Could not forget' ([string]$text -match 'Could not forget') "dialog: '$text'"
+    Check 'a forget answered 200 whose config re-read fails: the dialog says the item was forgotten' ([string]$text -match 'Forgot Home 27') "dialog: '$text'"
+    Check 'a forget answered 200 whose config re-read fails: the dialog shows the failed read' ([string]$text -match 'Could not read the names again') "dialog: '$text'"
+    Check 'a forget answered 200 whose config re-read fails: the dialog does not say Could not forget' ([string]$text -notmatch 'Could not forget') "dialog: '$text'"
+    $bar = Js $ws $stripJs
+    Check 'a forget answered 200 whose config re-read fails: the strip is amber' ($null -ne $bar -and $bar.warn -eq $true) "strip text: '$($bar.text)'"
   }
 
   # A rename that landed, then a re-read of the config that fails: the dialog or the strip says the read failed. It is not swallowed.
