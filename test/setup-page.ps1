@@ -20,6 +20,15 @@
 #   Autosave: a board edit's POST /layout keeps the Windows That Stay Put and held entries of closed windows as the server had them.
 #   Failed read: a re-read whose GET /config or GET /layouts fails leaves the strip amber, with a message.
 #   Delete: deleting a scene whose save was refused, or still in flight, leaves the strip clear, and a late refusal does not bring it back.
+#   Monitors and Setups (decision monitor-setups, item 13): the strip has a Monitors and Setups button, and it opens a dialog that lists each
+#     monitor and each setup in a name field. Forget is off for the monitor plugged in and for the setup in use, and each off Forget's reason
+#     is the text its aria-describedby names. An unplugged monitor and its setup have Forget on. Two states: plugged-in only (empty), and
+#     with an unplugged monitor and its setup (full).
+#   bd-noid (item 3): a snapshot whose monitors carry no id shows the strip, amber, with a Remember It by Its Size button. Two shapes: every
+#     monitor with no id, and only one (the mockup's Monitor 2).
+#   Offline, dialog: the offline page shows no Monitors and Setups button and sends no request. A guard: green on the old commit, and a
+#     mutant with the button turns it red (run on a scratch copy).
+# On 54b842b the strip has no Monitors and Setups button and no bd-noid strip, so those cases are red by assert.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, and delete cases. The setup change, Apply, autosave and failed-read cases are red on the page as it stands.
 $ErrorActionPreference = 'Stop'
@@ -173,9 +182,9 @@ function Delete-Scene($sock, [string]$scene) {
   WaitFor $sock ('!document.querySelector("[data-pick=__S__]")'.Replace('__S__', $scene))
 }
 
-# Opens the live page on a scene: the card is clicked, as a user would.
-function Open-Page($sock, [string]$url, [string]$scene) {
-  Plug $snapAText
+# Opens the live page on a scene: the card is clicked, as a user would. $snapText, when given, is the snapshot the server shows instead of A.
+function Open-Page($sock, [string]$url, [string]$scene, [string]$snapText = '') {
+  Plug $(if ($snapText) { $snapText } else { $snapAText })
   if (-not (Go $sock $url $livePageReady)) { return $false }
   [void](Js $sock $installJs)
   [void](Js $sock ('document.querySelector("[data-pick=__S__]").click(); return true'.Replace('__S__', $scene)))
@@ -185,6 +194,39 @@ function Open-Page($sock, [string]$url, [string]$scene) {
 function Board-Edit($sock, [int]$id, [int]$slot = 9) {
   Js $sock ('pinWin(__ID__, snap.monitors.find(m => m.role === "wide"), __SLOT__); await preview(selId); await window.__h.settle(); return { layout: window.__h.posts("layout"), config: window.__h.posts("config") }'.Replace('__ID__', "$id").Replace('__SLOT__', "$slot"))
 }
+# The Monitors and Setups dialog and the strip's button for it. Helpers answer null or false for a missing piece, so no page script throws.
+# A row is the smallest element that holds one name field (an input whose value is the name) and one Forget button.
+$dlgHelpers = @'
+const dlgOf = () => [...document.querySelectorAll("dialog, [role=dialog]")].find(d => /Monitors and Setups/.test(d.textContent) && (d.tagName !== "DIALOG" || d.open));
+const forgetsIn = el => [...el.querySelectorAll("button")].filter(b => b.textContent.trim() === "Forget");
+const rowOf = name => { const d = dlgOf(); if (!d) return null; const f = [...d.querySelectorAll("input")].find(i => i.value === name); if (!f) return null; let r = f; while (r && r !== d && forgetsIn(r).length === 0) r = r.parentElement; return r && forgetsIn(r).length === 1 ? r : null; };
+const forgetOf = name => { const r = rowOf(name); return r ? forgetsIn(r)[0] : null; };
+const offOf = name => { const b = forgetOf(name); return !!b && (b.disabled || b.getAttribute("aria-disabled") === "true"); };
+const reasonOf = name => { const b = forgetOf(name); if (!b) return ""; return (b.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean).map(id => { const e = document.getElementById(id); return e ? e.textContent : ""; }).join(" ").replace(/\s+/g, " ").trim(); };
+'@
+# The strip's Monitors and Setups button, found by its text, aria-label or title.
+$mgBtnTest = '[...document.querySelectorAll("#setbar button")].find(x => /Monitors and Setups/.test(x.textContent + " " + (x.getAttribute("aria-label") || "") + " " + (x.title || "")))'
+$hasMgJs = "return !!($mgBtnTest)"
+$openDlgJs = "const b = $mgBtnTest; if (!b) return false; b.click(); return true"
+$dlgUpCond = '[...document.querySelectorAll("dialog, [role=dialog]")].some(d => /Monitors and Setups/.test(d.textContent) && (d.tagName !== "DIALOG" || d.open))'
+# Clicks the strip's button and waits for the dialog. Answers 'nobutton', 'noopen' or 'open'.
+function Open-Dialog($sock) {
+  if ((Js $sock $hasMgJs) -ne $true) { return 'nobutton' }
+  [void](Js $sock $openDlgJs)
+  if (WaitFor $sock $dlgUpCond 20) { 'open' } else { 'noopen' }
+}
+# The named rows of the open dialog: whether each is listed, whether its Forget is off, and the text its Forget names as its reason.
+function Dlg-Rows($sock, [string[]]$names) {
+  Js $sock ($dlgHelpers + 'const names = ' + (ConvertTo-Json -Compress -InputObject @($names)) + '; return names.map(n => ({ n: n, row: !!rowOf(n), off: offOf(n), reason: reasonOf(n) }))')
+}
+# A snapshot whose monitors carry no id: every one of them (the sample file's shape), and only the ultrawide (the mockup's Monitor 2).
+$noIdAll = [IO.File]::ReadAllText($fixture, $utf8)
+$noIdOneObj = ConvertFrom-Json $snapAText
+$noIdU1 = @($noIdOneObj.monitors | ? { $_.id -eq 'U1' })[0]
+[void]$noIdU1.PSObject.Properties.Remove('id')
+$noIdOne = ConvertTo-Json -Depth 10 -Compress -InputObject $noIdOneObj
+# Wraps fetch before the page's own scripts run, so a request made while the page loads is recorded too.
+$recordJs = '(() => { window.__sent = []; const f = window.fetch.bind(window); window.fetch = (u, o) => { window.__sent.push(((o && o.method) || "GET").toUpperCase() + " " + String(u)); return f(u, o); }; })();'
 
 try {
   $probe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $probe.Start(); $port = $probe.LocalEndpoint.Port; $probe.Stop()
@@ -413,6 +455,63 @@ try {
     Check 'the late refusal leaves the strip clear' ($null -ne $after -and $after.warn -ne $true) "strip text: '$($after.text)'"
   }
 
+  # The strip's Monitors and Setups button opens a dialog listing each monitor and setup in a name field. Empty state first: only the
+  # plugged-in monitors and Desk. Forget is off for each plugged-in monitor and for the setup in use, and each off Forget names its reason.
+  Case 'Monitors and Setups: the strip button opens a dialog that lists the plugged-in monitors and the setup, with Forget off for them' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    $st = Open-Dialog $ws
+    Check 'the strip has a Monitors and Setups button that opens a dialog (scope)' ($st -eq 'open') $(if ($st -eq 'nobutton') { 'no Monitors and Setups button in the strip' } else { 'no Monitors and Setups dialog after the click' })
+    if ($st -eq 'open') {
+      $r = Dlg-Rows $ws @('Laptop', 'Portrait', 'Ultrawide', 'Desk')
+      $unlisted = @($r | ? { -not $_.row } | % { $_.n })
+      Check 'the dialog lists each plugged-in monitor and the setup in use, each in a name field' ($unlisted.Count -eq 0) "not listed: $($unlisted -join ', ')"
+      $forgetOn = @($r | ? { $_.row -and -not $_.off } | % { $_.n })
+      Check 'Forget is off for each plugged-in monitor and for the setup in use' ($forgetOn.Count -eq 0) "Forget on for: $($forgetOn -join ', ')"
+      $noReason = @($r | ? { $_.row -and $_.off -and $_.reason -notmatch 'plugged|in use' } | % { $_.n })
+      Check 'each off Forget names its reason, tied to the button' ($noReason.Count -eq 0) "no reason for: $($noReason -join ', ')"
+    }
+  }
+
+  # Full state: an unplugged monitor (Home 27) and the setup Home, which holds it. Forget is on for both; the plugged-in rows stay off.
+  Case 'Monitors and Setups: an unplugged monitor and its setup are listed, with Forget on for them' {
+    $cfg = New-Config
+    $cfg.monitors | Add-Member -NotePropertyName 'H27' -NotePropertyValue ([pscustomobject]@{ name = 'Home 27'; builtin = $false; lastSeen = $stamp; bw = 2560; bh = 1440 })
+    $cfg.setups | Add-Member -NotePropertyName 'H27|L1' -NotePropertyValue ([pscustomobject]@{ name = 'Home'; ids = @('H27', 'L1'); lastUsed = $stamp })
+    Put-Config $cfg
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus with the unplugged monitor known (control)' $opened 'the page did not open on Focus in time'
+    $st = Open-Dialog $ws
+    Check 'the strip has a Monitors and Setups button that opens a dialog (scope)' ($st -eq 'open') $(if ($st -eq 'nobutton') { 'no Monitors and Setups button in the strip' } else { 'no Monitors and Setups dialog after the click' })
+    if ($st -eq 'open') {
+      $r = Dlg-Rows $ws @('Laptop', 'Portrait', 'Ultrawide', 'Desk', 'Home 27', 'Home')
+      $unlisted = @($r | ? { -not $_.row } | % { $_.n })
+      Check 'the dialog lists the unplugged Home 27 and the setup Home, each in a name field' ($unlisted.Count -eq 0) "not listed: $($unlisted -join ', ')"
+      $plugOn = @($r | ? { $_.n -in @('Laptop', 'Portrait', 'Ultrawide', 'Desk') -and $_.row -and -not $_.off } | % { $_.n })
+      Check 'Forget stays off for each plugged-in monitor and for the setup in use' ($plugOn.Count -eq 0) "Forget on for: $($plugOn -join ', ')"
+      $unplugOff = @($r | ? { $_.n -in @('Home 27', 'Home') -and $_.row -and $_.off } | % { $_.n })
+      Check 'Forget is on for Home 27 and for the setup Home, which are not plugged in or in use' ($unplugOff.Count -eq 0) "Forget off for: $($unplugOff -join ', ')"
+    }
+  }
+
+  # bd-noid (decision monitor-setups, item 3): a snapshot whose monitors carry no id. The strip shows, amber, and offers Remember It by Its
+  # Size. Both shapes: every monitor with no id, and only one.
+  Case 'bd-noid: a snapshot whose monitors carry no id shows the strip amber, with Remember It by Its Size' {
+    Put-Config (New-Config)
+    foreach ($v in @(@{ label = 'every monitor'; text = $noIdAll }, @{ label = 'one monitor, Monitor 2'; text = $noIdOne })) {
+      $opened = Open-Page $ws $url 'focus' $v.text
+      Check "bd-noid ($($v.label)): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { continue }
+      $shown = WaitFor $ws '!document.getElementById("setbar").hidden' 20
+      Check "bd-noid ($($v.label)): the strip is shown (scope)" $shown 'the strip stays hidden for a snapshot with a monitor that has no id'
+      if (-not $shown) { continue }
+      $bar = Js $ws $stripJs
+      Check "bd-noid ($($v.label)): the strip is amber" ($bar.warn -eq $true) "strip text: '$($bar.text)'"
+      Check "bd-noid ($($v.label)): the strip offers Remember It by Its Size" (@($bar.buttons | ? { $_ -ceq 'Remember It by Its Size' }).Count -eq 1) "strip buttons: $(@($bar.buttons) -join ', ')"
+    }
+  }
+
   Case 'the offline page loads its sample and a board edit sends no POST' {
     $fileUrl = ([Uri]$appHtml).AbsoluteUri
     $loaded = Go $ws $fileUrl 'typeof snap !== "undefined" && !!snap && /^Offline/.test(document.getElementById("msg").textContent)'
@@ -422,6 +521,22 @@ try {
       $p = Js $ws 'pinWin(snap.windows[0].id, snap.monitors.find(m => m.role === "wide"), 9); await window.__h.settle(); return { all: window.__posts }'
       Check 'a board edit on the offline page sends no POST' (@($p.all).Count -eq 0) "POSTs sent: $(@($p.all).Count)"
     }
+  }
+
+  # The offline page has no setup strip, so no Monitors and Setups button, and it sends no request: not while it loads, not after.
+  # The recorder is installed before the page's scripts run, so a request made during the load is in the list.
+  Case 'the offline page shows no Monitors and Setups button, and sends no request' {
+    $pre = Cdp $ws 'Page.addScriptToEvaluateOnNewDocument' @{ source = $recordJs }
+    $preId = $pre.result.identifier
+    try {
+      $loaded = Go $ws ([Uri]$appHtml).AbsoluteUri 'typeof snap !== "undefined" && !!snap && /^Offline/.test(document.getElementById("msg").textContent)'
+      Check 'the offline page loads its sample (scope)' $loaded 'the offline sample did not load in time'
+      if ($loaded) {
+        $o = Js $ws 'const shown = [...document.querySelectorAll("button")].filter(x => /Monitors and Setups/.test(x.textContent + " " + (x.getAttribute("aria-label") || "") + " " + (x.title || "")) && x.getClientRects().length > 0); return { shown: shown.length, sent: window.__sent || [] }'
+        Check 'the offline page shows no Monitors and Setups button' ($o.shown -eq 0) "shown: $($o.shown)"
+        Check 'the offline page sends no request, while it loads or after' (@($o.sent).Count -eq 0) "sent: $(@($o.sent) -join ' | ')"
+      }
+    } finally { if ($preId) { [void](Cdp $ws 'Page.removeScriptToEvaluateOnNewDocument' @{ identifier = $preId }) } }
   }
 } catch {
   $script:fail++; "FAIL  page cases stopped: $($_.Exception.Message)"
