@@ -469,7 +469,7 @@ function scenario(st,G,F){
     const s=sv(x,0),g=sv(.4,.5);
     if(st==="drag-segment"){pills(s,.5,`${pw(.2,x)} px`,`${pw(x,.8)} px`);
       sc.extra+=`<div class="guide" style="left:${g.x.toFixed(1)}px;top:${s.y.toFixed(1)}px;height:${s.h.toFixed(1)}px"></div>`;
-      sc.extra+=at(I.ew,s.x-11,s.y+s.h*.78);tipAt(s.x+14,s.y+s.h*.78+12,`This row only. <kbd>Shift</kbd> moves the whole line.`);
+      sc.extra+=at(I.ew,s.x-11,s.y+s.h*.5);tipAt(s.x+14,s.y+s.h*.5+12,`This row only. <kbd>Shift</kbd> moves the whole line.`);
       sc.anns+=ann({l:s.x-6,t:s.y,w:12,h:s.h},"One Row's Part Moves",{up:true});
       sc.anns+=ann({l:g.x-6,t:g.y,w:12,h:g.h},"Lower Row Keeps Its Line",{today:false});}
     sc.msg=`Claude ${pw(.2,x)} px wide, Chrome ${pw(x,.8)} px.`;

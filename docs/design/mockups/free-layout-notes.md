@@ -123,7 +123,8 @@ F10. **Whether the board shows a gone window's space as lent (owned by L4).** Th
      - Grown Neighbours (state `gap-grown`): the board draws the screen: the neighbours grown, and
        the gone window's saved space as a dashed outline. Gain: the board matches the screen. Loss: a
        drag on a grown neighbour edits a rect that is not saved, so it is unclear what it changes.
-     Pick: Lent Space.
+     Pick: Lent Space. The hatch carries meaning (space on loan), as `layout-free-notes.md` item 29
+     says of every hatch here; each part keeps a solid or dashed edge, so forced colours keep it.
 
 F11. **A gap that stays.** When no side qualifies (here: Terminal and File Explorer locked), the
      space stays empty on the screen and draws as a yellow hatched gap with "Excel closed, Stays
