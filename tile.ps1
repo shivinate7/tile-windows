@@ -298,31 +298,33 @@ function Get-CollapsedAreas($areas, $absent, $locked, $size) {
     $true
   }
 
-  # Regions go in a fixed order (top line, then left line), so the result does not depend on the order of $absent. A region whose chosen share would
-  # make a neighbour overlap another area (it already grew into a region beside this one) is not applied: that gap stays.
+  # Regions go in a fixed order (top line, then left line), so the result does not depend on the order of $absent. A share that would make a neighbour
+  # overlap another area (it already grew into a region beside this one) does not count: the next qualifying side is tried, and the gap stays only
+  # when no side is left.
   $rord = @(if ($regions.Count) { 0..($regions.Count - 1) | Sort-Object { $regions[$_][1] }, { $regions[$_][0] } })
   foreach ($ri in $rord) {
     $reg = $regions[$ri]
-    $before = @(for ($i = 0; $i -lt $n; $i++) { , [double[]]@($cur[$i]) })
     $side = @{}; foreach ($s in 'left', 'above', 'right', 'below') { $side[$s] = Get-Side $reg $s }
     $done = $false
     foreach ($pair in @(@('left', 'right', 0, $W), @('above', 'below', 1, $H))) {
       if ($done -or $null -eq $side[$pair[0]] -or $null -eq $side[$pair[1]]) { continue }
       $ax = [int]$pair[2]; $len = [double]$pair[3]
       $m = [Math]::Round([Math]::Round(($reg[$ax] + $reg[$ax + 2]) / 2, 9) * $len) / $len
-      $save = @{}; foreach ($i in @($side[$pair[0]]) + @($side[$pair[1]])) { $save[$i] = [double[]]@($cur[$i]) }
+      $idx = @(@($side[$pair[0]]) + @($side[$pair[1]]))
+      $save = @{}; foreach ($i in $idx) { $save[$i] = [double[]]@($cur[$i]) }
       foreach ($i in @($side[$pair[0]])) { $cur[$i][$ax + 2] = $m }
       foreach ($i in @($side[$pair[1]])) { $cur[$i][$ax] = $m }
-      if (Test-Floor @(@($side[$pair[0]]) + @($side[$pair[1]]))) { $done = $true } else { foreach ($i in $save.Keys) { $cur[$i] = $save[$i] } }
+      if ((Test-Floor $idx) -and (Test-NoOverlap $idx)) { $done = $true } else { foreach ($i in $save.Keys) { $cur[$i] = $save[$i] } }
       break
     }
-    if (-not $done) { foreach ($s in 'left', 'above', 'right', 'below') {
+    if ($done) { continue }
+    foreach ($s in 'left', 'above', 'right', 'below') {
       if ($null -eq $side[$s]) { continue }
-      foreach ($i in @($side[$s])) { switch ($s) { 'left' { $cur[$i][2] = $reg[2] } 'above' { $cur[$i][3] = $reg[3] } 'right' { $cur[$i][0] = $reg[0] } 'below' { $cur[$i][1] = $reg[1] } } }
-      break
-    } }
-    $moved = @(for ($i = 0; $i -lt $n; $i++) { for ($k = 0; $k -lt 4; $k++) { if ($cur[$i][$k] -ne $before[$i][$k]) { $i; break } } })
-    if ($moved.Count -and -not (Test-NoOverlap $moved)) { for ($i = 0; $i -lt $n; $i++) { $cur[$i] = $before[$i] } }
+      $idx = @($side[$s]); $save = @{}; foreach ($i in $idx) { $save[$i] = [double[]]@($cur[$i]) }
+      foreach ($i in $idx) { switch ($s) { 'left' { $cur[$i][2] = $reg[2] } 'above' { $cur[$i][3] = $reg[3] } 'right' { $cur[$i][0] = $reg[0] } 'below' { $cur[$i][1] = $reg[1] } } }
+      if (Test-NoOverlap $idx) { break }
+      foreach ($i in $save.Keys) { $cur[$i] = $save[$i] }
+    }
   }
 
   for ($i = 0; $i -lt $n; $i++) {
