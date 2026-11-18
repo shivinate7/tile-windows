@@ -2,7 +2,7 @@
 
 **Status.** Nothing is built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
 
-**Source.** The Plan agent's build plan (opus), revised after a refuter, 2026-11-18 11:20 CST. It was first checked against origin/main 9e6ae0a. Its cited symbols and line numbers were checked again against origin/main b6bc537 on 2026-11-18 11:23 CST. Main has no docs/map/.
+**Source.** The Plan agent's build plan (opus), revised after a refuter, 2026-11-18 11:20 CST. It was first checked against origin/main 9e6ae0a. The symbols that replace its line numbers were checked against origin/main b6bc537 by 2026-11-18 11:23 CST. Its other claims, such as the columns cap of 8 and the span stepper following `g.c`, were not re-checked. Main has no docs/map/.
 
 **Terms.** A lane is one build unit, L0 to L5b. Each lane merges alone. "Item N" means item N of `docs/design/mockups/layout-free-notes.md`. Item G is the gap rule below. Questions 1 to 4 are at the end.
 
@@ -138,7 +138,7 @@ Status: all four are open, asked 2026-11-18 11:15 CST. Keys S, G, K and M name q
 1. **Key S, share.** A 1/3 or 2/3 share needs a tripled grid, and quarters or a second split need ×4. Allow those, or halves only? Departs from: decision `layout-free`, 2026-11-17 19:09 CST ruling ("doubles"), and notes items 1 and 10. Status: open.
 2. **Key G, gap-fill scope.** Does live gap-filling apply to plain grid scenes, or only to Free Layout boards (the default above)? Departs from: the constraint that existing grid scenes keep working unchanged. Status: open.
 3. **Key K, fast-split trigger.** What triggers the fast split? Proposed: Shift+S, or a double-click on the selected tile, splits it in half along its longer side. Departs from: decision `layout-free`, open item (c). Status: open.
-4. **Key M, midpoint share.** When both opposite sides qualify, should they share the space at the midpoint (item G)? Departs from: the `tree-gap` state in the notes' Splitter Tree option, where the sibling takes the space. Status: open.
+4. **Key M, midpoint share.** When both opposite sides qualify, should they share the space at the midpoint (item G)? Departs from: decision `layout-free`, 2026-11-18 11:08 CST ruling (state `tree-gap` joins Shared Edges, and the neighbours grow into the space at once), and notes item 21 (Splitter Tree), where the one sibling takes the space. Status: open.
 
 **Critical files for implementation**
 - `tile.ps1`
