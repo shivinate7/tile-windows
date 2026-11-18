@@ -17,6 +17,8 @@
 #   'Its screen is unplugged', and kept out of missing.
 # Safety: every scene run here passes -From (always a dry run) or -DryRun. -Json on a scene with neither moves real windows.
 #
+# Finer grid (L1, plan layout-free-build, items 2 to 5): the cases after the solo cases. One lone monitor, a 5x2 base, mult [2,1] or [1,2],
+# unit fill, zones and held windows on the doubled slots. Each runs tile.ps1 -Scene <json> -From <snapshot> -Json, a dry run.
 # Red on 31ea7c1: the id cases (desk, rearranged, item 9, seam, setup B, full size) fail by an assert. The controls (empty layout,
 # -Monitor wide, role-keyed scene, a layout for another setup) pass there and must stay green.
 $ErrorActionPreference = 'Stop'
@@ -424,6 +426,118 @@ try {
     Check 'solo, resolved: Claude is on the laptop right half' (OnCell $r 4102 2 (CellRect $lapDesk 2 1 1)) (Desc $r 4102)
     $same = [bool](PlacedOf $r 4101) -and [bool](PlacedOf $r 4102) -and ((RectOf (PlacedOf $r 4101)) -ceq (RectOf (PlacedOf $raw 4101))) -and ((RectOf (PlacedOf $r 4102)) -ceq (RectOf (PlacedOf $raw 4102)))
     Check 'solo, resolved: the rects match the raw Solo scene on the role path' $same "resolved: $(Desc $r 4101) | $(Desc $r 4102); raw: $(Desc $raw 4101) | $(Desc $raw 4102)"
+  }
+  # ---- Finer grid (L1, plan layout-free-build, items 2 to 5). One lone monitor holds the wide role, so each run is the wide grid of a
+  # 5x2 base. mult [2,1] splits each cell in two along x; mult [1,2] along y. A base cell keeps CellRect's int cut, so a split cell's
+  # halves must tile it exactly. Every run is a dry run (-From).
+  function FgMon([int]$w, [int]$h) { Mon "FG-${w}x$h" 0 0 $w $h $w $h }
+  function FgWin([int]$id, $app, $title, [int]$x, [int]$y = 0) { [pscustomobject]@{ id = $id; app = $app; title = $title; x = $x; y = $y; w = 400; h = 300 } }
+  function FgPin($app, $match, [int[]]$slots) { [pscustomobject]@{ app = $app; match = $match; mon = 'wide'; slots = @($slots) } }
+  function FgGrid([int]$mx, [int]$my) { [pscustomobject]@{ c = 5; r = 2; mult = @($mx, $my) } }
+  function FgScene([string]$name, $grid, $pins = @(), $fill = $null, $zones = @()) { Write-Json $name ([pscustomobject]@{ id = $name; name = $name; grids = [pscustomobject]@{ wide = $grid }; pins = @($pins); zones = @($zones); fill = $fill }) }
+  # The slots a placed window covers, sorted, as the output numbers them (1-based): '1+2'.
+  function SlotKey($p) { (@($p.slots) | Sort-Object) -join '+' }
+
+  Case 'control: a lone 5x2 wide grid with no mult cuts 1365x1001 into L0 cells: a pin on slot 2 gets the L0 cell rect' {
+    $m = FgMon 1365 1001
+    $snap = Write-Snap 'fg-base-snap.json' @($m) @((FgWin 5000 'chrome' 'Base A' 0))
+    $sc = FgScene 'fg-base-scene.json' ([pscustomobject]@{ c = 5; r = 2 }) @((FgPin 'chrome' 'Base A' @(1)))
+    $r = Invoke-SceneFrom $sc $snap
+    Check 'control: the pin on slot 2 is placed at the L0 cell rect (x 273, 273x500)' ((RectOf (PlacedOf $r 5000)) -ceq (CellRect $m 5 2 1)) (Desc $r 5000)
+  }
+  Case 'L1 halves, horizontal: the two halves of a 5x2 cell tile it exactly, on 1365x1001 (odd width), 4096x1680 and 1080x1872' {
+    foreach ($dim in @(@(1365, 1001), @(4096, 1680), @(1080, 1872))) {
+      $w = [int]$dim[0]; $h = [int]$dim[1]; $tag = "${w}x$h"; $m = FgMon $w $h
+      $snap = Write-Snap "fg-halves-$tag.json" @($m) @((FgWin 5101 'chrome' 'Half A' 0), (FgWin 5102 'claude' 'Half B' 500))
+      $sc = FgScene "fg-halves-$tag-scene.json" (FgGrid 2 1) @((FgPin 'chrome' 'Half A' @(0)), (FgPin 'claude' 'Half B' @(1)))
+      $r = Invoke-SceneFrom $sc $snap
+      $a = PlacedOf $r 5101; $b = PlacedOf $r 5102; $cw = [int]($w / 5); $ch = [int]($h / 2)
+      Check "L1 halves ${tag}: both halves are placed" ([bool]($a -and $b)) "$(Desc $r 5101) | $(Desc $r 5102)"
+      Check "L1 halves ${tag}: the left half starts at the old cell's left edge (x 0)" ([bool]($a -and [int]$a.x -eq 0)) (Desc $r 5101)
+      Check "L1 halves ${tag}: the right half starts where the left half ends (no gap, no overlap)" ([bool]($a -and $b -and [int]$b.x -eq [int]$a.x + [int]$a.w)) "$(Desc $r 5101) | $(Desc $r 5102)"
+      Check "L1 halves ${tag}: the right half ends at the old cell's right edge (x $cw)" ([bool]($b -and [int]$b.x + [int]$b.w -eq $cw)) (Desc $r 5102)
+      Check "L1 halves ${tag}: both halves have the old cell's top and height (y 0, h $ch)" ([bool]($a -and $b -and [int]$a.y -eq 0 -and [int]$b.y -eq 0 -and [int]$a.h -eq $ch -and [int]$b.h -eq $ch)) "$(Desc $r 5101) | $(Desc $r 5102)"
+    }
+  }
+  Case 'L1 fill, horizontal: a unit of [2,1] gives each filled window one block of two slots, the old cell''s full width' {
+    $m = FgMon 1365 1001
+    $fill = [pscustomobject]@{ mon = 'wide'; apps = @('claude'); skip = @(); sort = 'app'; unit = @(2, 1) }
+    $sc = FgScene 'fg-unit-scene.json' (FgGrid 2 1) @() $fill
+    $r = Invoke-SceneFrom $sc (Write-Snap 'fg-unit3.json' @($m) @((FgWin 5201 'claude' 'Fill 1' 0), (FgWin 5202 'claude' 'Fill 2' 500), (FgWin 5203 'claude' 'Fill 3' 1000)))
+    Check 'scope: the three claude windows are all placed' (@($r.placed).Count -eq 3) "placed $(@($r.placed).Count)"
+    for ($i = 0; $i -lt 3; $i++) {
+      $p = PlacedOf $r (5201 + $i)
+      Check "L1 fill: window $($i + 1) takes slots $(2 * $i + 1)+$(2 * $i + 2), at the old cell's rect $(CellRect $m 5 2 $i)" ([bool]($p -and (SlotKey $p) -ceq "$(2 * $i + 1)+$(2 * $i + 2)" -and (RectOf $p) -ceq (CellRect $m 5 2 $i))) (Desc $r (5201 + $i))
+    }
+    $rf = Invoke-SceneFrom $sc (Write-Snap 'fg-unit10.json' @($m) @(1..10 | % { FgWin (5300 + $_) 'claude' "Full $_" (100 * $_) }))
+    $bad = @()
+    for ($i = 0; $i -lt 10; $i++) {
+      $row = [Math]::Floor($i / 5); $col = $i % 5
+      $want = "$($row * 10 + 2 * $col + 1)+$($row * 10 + 2 * $col + 2)"
+      $p = PlacedOf $rf (5301 + $i)
+      if (-not ($p -and (SlotKey $p) -ceq $want -and (RectOf $p) -ceq (CellRect $m 5 2 $i))) { $bad += "$(Desc $rf (5301 + $i)), want slots $want" }
+    }
+    Check 'L1 fill, full size: ten windows take the ten blocks, one per old cell, each at its old rect' ($bad.Count -eq 0 -and @($rf.placed).Count -eq 10) "$($bad -join ' | ')"
+    $re = Invoke-SceneFrom $sc (Write-Snap 'fg-unit-empty.json' @($m) @())
+    Check 'control: unit fill with no window places nothing and lists nothing left or missing' (@($re.placed).Count -eq 0 -and @($re.left).Count -eq 0 -and @($re.missing).Count -eq 0) "placed $(@($re.placed).Count), left $(@($re.left).Count), missing $(@($re.missing).Count)"
+  }
+  Case 'L1 zone, horizontal: a zone on the two halves of one cell takes one half each' {
+    $m = FgMon 1365 1001; $cw = [int]($m.w / 5)
+    $zone = [pscustomobject]@{ mon = 'wide'; slots = @(0, 1); app = 'chrome' }
+    $sc = FgScene 'fg-zone-scene.json' (FgGrid 2 1) @() $null @($zone)
+    $r = Invoke-SceneFrom $sc (Write-Snap 'fg-zone-snap.json' @($m) @((FgWin 5401 'chrome' 'Zone A' 0), (FgWin 5402 'chrome' 'Zone B' 500)))
+    $a = PlacedOf $r 5401; $b = PlacedOf $r 5402
+    Check 'L1 zone: Zone A takes slot 1, the left half of the old cell' ([bool]($a -and (SlotKey $a) -ceq '1' -and [int]$a.x -eq 0 -and [int]$a.w -gt 0 -and [int]$a.w -lt $cw)) (Desc $r 5401)
+    Check 'L1 zone: Zone B takes slot 2, and the two halves tile the old cell (no gap, no overlap)' ([bool]($a -and $b -and (SlotKey $b) -ceq '2' -and [int]$b.x -eq [int]$a.x + [int]$a.w -and [int]$b.x + [int]$b.w -eq $cw)) (Desc $r 5402)
+  }
+  Case 'L1 held, horizontal: a held window on slot 2 stays in the right half of the old cell' {
+    $m = FgMon 1365 1001; $cw = [int]($m.w / 5); $ch = [int]($m.h / 2)
+    $fill = [pscustomobject]@{ mon = 'wide'; apps = @(); skip = @(); sort = 'app'; off = $true; held = @([pscustomobject]@{ app = 'claude'; title = 'Held A'; mon = 'wide'; slots = @(1) }) }
+    $sc = FgScene 'fg-held-scene.json' (FgGrid 2 1) @() $fill
+    $r = Invoke-SceneFrom $sc (Write-Snap 'fg-held-snap.json' @($m) @((FgWin 5501 'claude' 'Held A' 0)))
+    $p = PlacedOf $r 5501
+    Check 'L1 held: Held A takes slot 2' ([bool]($p -and (SlotKey $p) -ceq '2')) (Desc $r 5501)
+    Check "L1 held: Held A is the right half of the old cell (x above 0, ends at x $cw, y 0, h $ch)" ([bool]($p -and [int]$p.x -gt 0 -and [int]$p.x + [int]$p.w -eq $cw -and [int]$p.y -eq 0 -and [int]$p.h -eq $ch)) (Desc $r 5501)
+  }
+  Case 'L1 stacked halves: the two halves of a 5x2 cell tile it exactly, on 1365x1002 (a 501-high cell, so the halves are unequal)' {
+    $m = FgMon 1365 1002; $cw = [int]($m.w / 5); $ch = [int]($m.h / 2)
+    $snap = Write-Snap 'fg-sh-snap.json' @($m) @((FgWin 5601 'chrome' 'Top A' 0), (FgWin 5602 'claude' 'Bottom B' 500))
+    $sc = FgScene 'fg-sh-scene.json' (FgGrid 1 2) @((FgPin 'chrome' 'Top A' @(0)), (FgPin 'claude' 'Bottom B' @(5)))
+    $r = Invoke-SceneFrom $sc $snap
+    $a = PlacedOf $r 5601; $b = PlacedOf $r 5602
+    Check 'L1 stacked halves: both halves are placed' ([bool]($a -and $b)) "$(Desc $r 5601) | $(Desc $r 5602)"
+    Check "L1 stacked halves: both halves span the old cell's width (x 0, w $cw)" ([bool]($a -and $b -and [int]$a.x -eq 0 -and [int]$b.x -eq 0 -and [int]$a.w -eq $cw -and [int]$b.w -eq $cw)) "$(Desc $r 5601) | $(Desc $r 5602)"
+    Check 'L1 stacked halves: the bottom half starts where the top half ends (no gap, no overlap)' ([bool]($a -and $b -and [int]$a.y -eq 0 -and [int]$b.y -eq [int]$a.y + [int]$a.h)) "$(Desc $r 5601) | $(Desc $r 5602)"
+    Check "L1 stacked halves: the bottom half ends at the old cell's bottom edge (y $ch)" ([bool]($b -and [int]$b.y + [int]$b.h -eq $ch)) (Desc $r 5602)
+  }
+  Case 'L1 stacked fill: a unit of [1,2] gives each filled window one block of two slots, the old cell''s full height' {
+    $m = FgMon 1365 1002
+    $fill = [pscustomobject]@{ mon = 'wide'; apps = @('claude'); skip = @(); sort = 'app'; unit = @(1, 2) }
+    $sc = FgScene 'fg-su-scene.json' (FgGrid 1 2) @() $fill
+    $r = Invoke-SceneFrom $sc (Write-Snap 'fg-su-snap.json' @($m) @((FgWin 5701 'claude' 'Stack 1' 0), (FgWin 5702 'claude' 'Stack 2' 500), (FgWin 5703 'claude' 'Stack 3' 1000)))
+    Check 'scope: the three claude windows are all placed' (@($r.placed).Count -eq 3) "placed $(@($r.placed).Count)"
+    for ($i = 0; $i -lt 3; $i++) {
+      $p = PlacedOf $r (5701 + $i)
+      Check "L1 stacked fill: window $($i + 1) takes slots $($i + 1)+$($i + 6), at the old cell's rect $(CellRect $m 5 2 $i)" ([bool]($p -and (SlotKey $p) -ceq "$($i + 1)+$($i + 6)" -and (RectOf $p) -ceq (CellRect $m 5 2 $i))) (Desc $r (5701 + $i))
+    }
+  }
+  Case 'L1 stacked zone: a zone on the two halves of one cell takes one half each' {
+    $m = FgMon 1365 1002; $cw = [int]($m.w / 5); $ch = [int]($m.h / 2)
+    $zone = [pscustomobject]@{ mon = 'wide'; slots = @(0, 5); app = 'chrome' }
+    $sc = FgScene 'fg-sz-scene.json' (FgGrid 1 2) @() $null @($zone)
+    $r = Invoke-SceneFrom $sc (Write-Snap 'fg-sz-snap.json' @($m) @((FgWin 5801 'chrome' 'Zone Top' 0 0), (FgWin 5802 'chrome' 'Zone Bottom' 0 600)))
+    $a = PlacedOf $r 5801; $b = PlacedOf $r 5802
+    Check "L1 stacked zone: Zone Top takes slot 1, the top half of the old cell (x 0, w $cw)" ([bool]($a -and (SlotKey $a) -ceq '1' -and [int]$a.x -eq 0 -and [int]$a.w -eq $cw -and [int]$a.y -eq 0 -and [int]$a.h -gt 0 -and [int]$a.h -lt $ch)) (Desc $r 5801)
+    Check 'L1 stacked zone: Zone Bottom takes slot 6, and the two halves tile the old cell (no gap, no overlap)' ([bool]($a -and $b -and (SlotKey $b) -ceq '6' -and [int]$b.y -eq [int]$a.y + [int]$a.h -and [int]$b.y + [int]$b.h -eq $ch)) (Desc $r 5802)
+  }
+  Case 'L1 stacked held: a held window on slot 6 stays in the bottom half of the old cell' {
+    $m = FgMon 1365 1002; $cw = [int]($m.w / 5); $ch = [int]($m.h / 2)
+    $fill = [pscustomobject]@{ mon = 'wide'; apps = @(); skip = @(); sort = 'app'; off = $true; held = @([pscustomobject]@{ app = 'claude'; title = 'Held B'; mon = 'wide'; slots = @(5) }) }
+    $sc = FgScene 'fg-shh-scene.json' (FgGrid 1 2) @() $fill
+    $r = Invoke-SceneFrom $sc (Write-Snap 'fg-shh-snap.json' @($m) @((FgWin 5901 'claude' 'Held B' 0 0)))
+    $p = PlacedOf $r 5901
+    Check 'L1 stacked held: Held B takes slot 6' ([bool]($p -and (SlotKey $p) -ceq '6')) (Desc $r 5901)
+    Check "L1 stacked held: Held B is the bottom half of the old cell (y above 0, ends at y $ch, x 0, w $cw)" ([bool]($p -and [int]$p.y -gt 0 -and [int]$p.y + [int]$p.h -eq $ch -and [int]$p.x -eq 0 -and [int]$p.w -eq $cw)) (Desc $r 5901)
   }
 } finally {
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
