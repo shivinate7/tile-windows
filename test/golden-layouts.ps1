@@ -9,6 +9,8 @@
 # window's frozen rect, for the cell span its slots cover on its grid. The page is asked directly; no page hook is used.
 # The frozen files were written once from origin/main (9e6ae0a) by a one-off run. Nothing here rewrites them. A deliberate
 # layout change re-freezes the affected file by hand, in the same commit, with its reason.
+# Finer grid (L1): split copies of frozen starters (mult on the wide grid) must keep the frozen rects outside the split cell. Cases below the
+# frozen-set loop; each runs tile.ps1 -Scene <json> -From <snapshot> -Json, a dry run.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\golden-layouts.ps1
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
 $ErrorActionPreference = 'Stop'
@@ -63,13 +65,17 @@ try {
 
   $starters = [IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json
   $ids = @($starters.scenes | ForEach-Object { $_.id })
-  # A starter as the page sends it: the scene plus the category map (the same as -Scene <name> resolves from scenes.json).
-  function GoldenStarter($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $s | Add-Member -Force cats $starters.cats; $s | Add-Member -Force categories $starters.categories; ConvertTo-Json -Depth 10 -Compress $s }
-  function GoldenRun($id, $snapJson) {
-    $raw = (& $tile -Scene (GoldenStarter $id) -From $snapJson -Json 3>$null) -join ''
-    if (-not $raw) { throw "tile.ps1 printed nothing for $id" }
+  # A scene as the page sends it: the scene plus the category map (the same as -Scene <name> resolves from scenes.json).
+  function GoldenPosted($s) { $s | Add-Member -Force cats $starters.cats; $s | Add-Member -Force categories $starters.categories; ConvertTo-Json -Depth 10 -Compress $s }
+  function GoldenStarter($id) { GoldenPosted (@($starters.scenes | ? { $_.id -eq $id })[0]) }
+  # A starter's own copy, to edit. The frozen scene in scenes.json is never changed.
+  function GoldenCopy($id) { ConvertFrom-Json (ConvertTo-Json -Depth 10 -Compress (@($starters.scenes | ? { $_.id -eq $id })[0])) }
+  function GoldenRunPosted($postedJson, $snapJson, $name) {
+    $raw = (& $tile -Scene $postedJson -From $snapJson -Json 3>$null) -join ''
+    if (-not $raw) { throw "tile.ps1 printed nothing for $name" }
     ConvertFrom-Json $raw
   }
+  function GoldenRun($id, $snapJson) { GoldenRunPosted (GoldenStarter $id) $snapJson $id }
   # One line per window, left entry and missing entry, in the same words for a run and for a frozen entry.
   function GoldenGrids($grids) { @($grids.PSObject.Properties | Sort-Object Name | % { "$($_.Name) $([int]$_.Value.c)x$([int]$_.Value.r)" }) }
   function GoldenLines($e, $grids) {
@@ -113,6 +119,74 @@ try {
       Check "golden ${set} ${id}: placed windows, rects, left and missing match the frozen layout" ($d -eq '') $d
     }
   }
+  # ---- Finer grid (L1, plan layout-free-build). A split doubles the wide grid: along x (mult [2,1]) or along y (mult [1,2]). Base cells
+  # keep the L0 cut, so every window outside the split cell keeps its frozen rect. The split cell's kept window takes one half. Each
+  # case edits a copy of a frozen starter and changes nothing else. Sets: the four frozen layouts that place windows.
+  $splitSets = @('1365x1001', '3440x1392', '1080x1872', 'fixture')
+  function SplitFrozen($set, $id) {
+    $gold = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $goldenDir "$set.json"), $utf8))
+    $m = @{}; foreach ($p in @($gold.scenes.PSObject.Properties[$id].Value.placed)) { $m["$([int64]$p.id)"] = $p }; $m
+  }
+  function SplitPlaced($r) { $m = @{}; foreach ($p in @($r.placed)) { $m["$([int64]$p.id)"] = $p }; $m }
+  function SameRect($a, $b) { [bool]($a -and $b -and [int]$a.x -eq [int]$b.x -and [int]$a.y -eq [int]$b.y -and [int]$a.w -eq [int]$b.w -and [int]$a.h -eq [int]$b.h) }
+  function RectText($p) { if ($p) { "$([int]$p.x),$([int]$p.y) $([int]$p.w)x$([int]$p.h)" } else { 'not placed' } }
+  function SetProp($o, [string]$name, $value) { Add-Member -InputObject $o -Force -NotePropertyName $name -NotePropertyValue $value }
+  # One case. An error inside it is one FAIL line naming the case, and the run goes on (the same helper engine-layouts.ps1 keeps).
+  function Case([string]$name, [scriptblock]$body) { try { & $body } catch { $script:fail++; "FAIL  $name  threw: $($_.Exception.Message)" } }
+  # The frozen windows other than $skip: how many, which differ from their frozen rect, and whether the run placed exactly as many.
+  function SplitOthers($got, $fz, $skip) {
+    $others = @($fz.Keys | ? { $_ -ne $skip })
+    $bad = @($others | ? { -not (SameRect $got[$_] $fz[$_]) })
+    [pscustomobject]@{ n = $others.Count; bad = $bad; same = ($bad.Count -eq 0 -and $got.Count -eq $fz.Count) }
+  }
+
+  Case 'L1 split, horizontal: default 5x2 becomes 10x2; 1001 keeps the left half of slot 1; every other frozen window keeps its rect' {
+    foreach ($set in $splitSets) {
+      $fz = SplitFrozen $set 'default'; $snap = ConvertTo-Json -Depth 6 -Compress $sets[$set]
+      $s = GoldenCopy 'default'
+      SetProp $s.grids.wide 'mult' @(2, 1)
+      SetProp $s.fill 'unit' @(2, 1)
+      $s.pins = @($s.pins) + [pscustomobject]@{ app = 'claude'; match = 'Refactor the grid solver'; mon = 'wide'; slots = @(0) }
+      $got = SplitPlaced (GoldenRunPosted (GoldenPosted $s) $snap "split default $set")
+      $f = $fz['1001']; $k = $got['1001']
+      Check "L1 split ${set}: scope, the frozen default places 1001 in wide slot 1" ([bool]($f -and [string]$f.mon -ceq 'wide' -and (@($f.slots) -join '+') -ceq '1')) "frozen: $(RectText $f)"
+      Check "L1 split ${set}: 1001 keeps the left half of slot 1 (same x, y and height, narrower)" ([bool]($f -and $k -and [int]$k.x -eq [int]$f.x -and [int]$k.y -eq [int]$f.y -and [int]$k.h -eq [int]$f.h -and [int]$k.w -gt 0 -and [int]$k.w -lt [int]$f.w)) "now $(RectText $k), frozen $(RectText $f)"
+      $o = SplitOthers $got $fz '1001'
+      Check "L1 split ${set}: the other $($o.n) frozen windows keep their rects, and none is added" $o.same "differ: $($o.bad -join ', '); placed $($got.Count), frozen $($fz.Count)"
+    }
+  }
+  Case 'L1 span, horizontal: the solo chrome pin spans both halves of slot 1 and keeps its rect; 1001 keeps the left half of slot 2' {
+    foreach ($set in $splitSets) {
+      $fz = SplitFrozen $set 'solo'; $snap = ConvertTo-Json -Depth 6 -Compress $sets[$set]
+      $s = GoldenCopy 'solo'
+      Check "L1 span ${set}: scope, the solo starter has one wide pin, for chrome" ([bool](@($s.pins).Count -eq 1 -and [string]$s.pins[0].app -ceq 'chrome' -and [string]$s.pins[0].mon -ceq 'wide')) "pins: $(@($s.pins).Count)"
+      SetProp $s.grids.wide 'mult' @(2, 1)
+      SetProp $s.fill 'unit' @(2, 1)
+      $s.pins[0].slots = @(0, 1)
+      $s.pins = @($s.pins) + [pscustomobject]@{ app = 'claude'; match = 'Refactor the grid solver'; mon = 'wide'; slots = @(2) }
+      $got = SplitPlaced (GoldenRunPosted (GoldenPosted $s) $snap "span solo $set")
+      $f7 = $fz['1007']; $f1 = $fz['1001']; $k7 = $got['1007']; $k1 = $got['1001']
+      Check "L1 span ${set}: scope, the frozen solo has chrome 1007 in slot 1 and 1001 in slot 2" ([bool]($f7 -and $f1 -and (@($f7.slots) -join '+') -ceq '1' -and (@($f1.slots) -join '+') -ceq '2')) "frozen: $(RectText $f7) | $(RectText $f1)"
+      Check "L1 span ${set}: chrome 1007 spans both halves of slot 1 and keeps its frozen rect" (SameRect $k7 $f7) "now $(RectText $k7), frozen $(RectText $f7)"
+      Check "L1 split ${set}: 1001 keeps the left half of slot 2 (same x, y and height, narrower)" ([bool]($f1 -and $k1 -and [int]$k1.x -eq [int]$f1.x -and [int]$k1.y -eq [int]$f1.y -and [int]$k1.h -eq [int]$f1.h -and [int]$k1.w -gt 0 -and [int]$k1.w -lt [int]$f1.w)) "now $(RectText $k1), frozen $(RectText $f1)"
+    }
+  }
+  Case 'L1 split, stacked: default 5x2 becomes 5x4; 1001 keeps the top half of slot 1; every other frozen window keeps its rect' {
+    foreach ($set in $splitSets) {
+      $fz = SplitFrozen $set 'default'; $snap = ConvertTo-Json -Depth 6 -Compress $sets[$set]
+      $s = GoldenCopy 'default'
+      SetProp $s.grids.wide 'mult' @(1, 2)
+      SetProp $s.fill 'unit' @(1, 2)
+      $s.pins = @($s.pins) + [pscustomobject]@{ app = 'claude'; match = 'Refactor the grid solver'; mon = 'wide'; slots = @(0) }
+      $got = SplitPlaced (GoldenRunPosted (GoldenPosted $s) $snap "split stacked $set")
+      $f = $fz['1001']; $k = $got['1001']
+      Check "L1 split stacked ${set}: scope, the frozen default places 1001 in wide slot 1" ([bool]($f -and [string]$f.mon -ceq 'wide' -and (@($f.slots) -join '+') -ceq '1')) "frozen: $(RectText $f)"
+      Check "L1 split stacked ${set}: 1001 keeps the top half of slot 1 (same x, y and width, shorter)" ([bool]($f -and $k -and [int]$k.x -eq [int]$f.x -and [int]$k.y -eq [int]$f.y -and [int]$k.w -eq [int]$f.w -and [int]$k.h -gt 0 -and [int]$k.h -lt [int]$f.h)) "now $(RectText $k), frozen $(RectText $f)"
+      $o = SplitOthers $got $fz '1001'
+      Check "L1 split stacked ${set}: the other $($o.n) frozen windows keep their rects, and none is added" $o.same "differ: $($o.bad -join ', '); placed $($got.Count), frozen $($fz.Count)"
+    }
+  }
+
   # Page: headless Edge over DevTools, as bay.ps1 drives it. cellRect is a global; the page is asked for it directly.
   $edgeExe = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
   if (-not $edgeExe) { 'SKIP  page check: Microsoft Edge not found in either Program Files folder.' } else {
