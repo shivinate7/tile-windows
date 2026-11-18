@@ -161,6 +161,9 @@ function Get-TileMonShape($m) {
   if ($w -le 0 -or $h -le 0) { return '' }
   if ($h -gt $w) { 'tall' } elseif ($w -gt $h) { 'wide' } else { '' }
 }
+# The role order: wide, then tall, then laptop. The one home for it: tile.ps1's Roles picks screens in it, and Resolve-TileLayout seeds a
+# monitor that holds several roles by the first of it that the scene has a grid for.
+function Get-TileRoleOrder { 'wide', 'tall', 'laptop' }
 # The seeding pick (decision monitor-setups item 14): each role goes to one monitor of the ids, the widest candidate of its shape, then the
 # lowest id. Returns a hashtable role -> id. A monitor the config does not know has no shape.
 function Get-TileRoles($monitors, $ids) {
@@ -257,7 +260,7 @@ function Resolve-TileLayout($cfg, $scene, [string]$key) {
     $r = Copy-TileObject $best; $g = [pscustomobject]@{}
     foreach ($gp in @($r.grids.PSObject.Properties)) { if ($ids -ccontains $gp.Name) { $g | Add-Member -NotePropertyName $gp.Name -NotePropertyValue $gp.Value } }
     $pick = Get-TileRoles $cfg.monitors $ids
-    foreach ($shape in @('tall', 'laptop', 'wide' | Where-Object { $pick.ContainsKey($_) })) {
+    foreach ($shape in @(Get-TileRoleOrder | Where-Object { $pick.ContainsKey($_) })) {
       $id = $pick[$shape]
       if ($g.PSObject.Properties[$id]) { continue }
       $tg = if ($scene.grids) { $scene.grids.PSObject.Properties[$shape] }
@@ -267,8 +270,8 @@ function Resolve-TileLayout($cfg, $scene, [string]$key) {
     return $r
   }
   $role = Get-TileRoles $cfg.monitors $ids; $grids = [pscustomobject]@{}
-  # A monitor holds one grid: a lone monitor holding several roles takes the first of tall, laptop, wide that the scene has a grid for.
-  foreach ($shape in @('tall', 'laptop', 'wide' | Where-Object { $role.ContainsKey($_) })) {
+  # A monitor holds one grid: a lone monitor holding several roles takes the first role in Get-TileRoleOrder that the scene has a grid for.
+  foreach ($shape in @(Get-TileRoleOrder | Where-Object { $role.ContainsKey($_) })) {
     $tg = if ($scene.grids) { $scene.grids.PSObject.Properties[$shape] }
     if ($tg -and -not $grids.PSObject.Properties[[string]$role[$shape]]) { $grids | Add-Member -NotePropertyName $role[$shape] -NotePropertyValue ([pscustomobject]@{ c = $tg.Value.c; r = $tg.Value.r }) }
   }

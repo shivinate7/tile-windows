@@ -316,7 +316,7 @@ function Pick($role, $taken = @()) {
   }
 }
 # Scene roles get distinct screens, widest first, so one screen never holds two grids.
-function Roles { $r = @{}; $t = @(); foreach ($k in 'wide', 'tall', 'laptop') { $s = Pick $k $t; if ($s) { $r[$k] = $s; $t += $s.Name } }; $r }
+function Roles { $r = @{}; $t = @(); foreach ($k in Get-TileRoleOrder) { $s = Pick $k $t; if ($s) { $r[$k] = $s; $t += $s.Name } }; $r }
 
 # The monitor objects -Json and -Monitors print.
 function Get-MonitorObjects($roles) {
