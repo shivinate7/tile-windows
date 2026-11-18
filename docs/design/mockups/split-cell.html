@@ -433,13 +433,13 @@ function splitMenu(o,pos,kind){
     ${grp("side","Side by Side","Left","Right")}${grp("stacked","Stacked","Top","Bottom")}
     ${o.join?`<hr><button type="button" role="menuitem" class="mi"><svg class="gl" viewBox="0 0 26 18" aria-hidden="true"><rect class="k" x="1.6" y="1.6" width="22.8" height="14.8" rx="1.5" style="fill:color-mix(in srgb,var(--code) 55%,var(--panel));stroke:var(--code)"/></svg><b>Join Halves</b><kbd>J</kbd></button>`:""}
     <p class="mf">${o.lockWhy?"Esc closes.":"Enter splits. Esc closes."}</p></div>`}
-function splitPop(o,pos){const off=o.lockWhy,sOff=off||o.side.off,tOff=off||o.stacked.off,dir=o.foc&&o.foc.startsWith("stacked")?"stacked":"side",k=o.foc?+o.foc.slice(-1):0;
+function splitPop(o,pos){const off=o.lockWhy,sOff=off||o.side.off,tOff=off||o.stacked.off,dir=o.foc?(o.foc.startsWith("stacked")?"stacked":"side"):(sOff&&!tOff?"stacked":"side"),k=o.foc?+o.foc.slice(-1):0;
   const kl=dir==="side"?["Left","Right"]:["Top","Bottom"];
   return `<div class="pop" role="dialog" id="${o.F}-${o.F==="menu-pop"?"popover":"menu"}" aria-labelledby="${o.F}-ph" style="left:${pos.l.toFixed(1)}px;top:${pos.t.toFixed(1)}px">
     <h3 id="${o.F}-ph">Split Cell ${esc(o.cell)}</h3>
     <div class="prow"><span>Direction</span><div class="seg" role="group" aria-label="Direction"><button type="button" aria-pressed="${dir==="side"}"${sOff?` disabled title="${esc(sOff)}"`:""}>Side by Side</button><button type="button" aria-pressed="${dir==="stacked"}"${tOff?` disabled title="${esc(tOff)}"`:""}>Stacked</button></div></div>
     <div class="prow"><span>${esc(o.name)} keeps</span><div class="seg" role="group" aria-label="${esc(o.name)} keeps"><button type="button" aria-pressed="${k===0}"${off?" disabled":""}>${kl[0]}</button><button type="button" aria-pressed="${k===1}"${off?" disabled":""}>${kl[1]}</button></div></div>
-    <p class="note">${off?esc(off):sOff?esc(sOff):`The grid becomes ${esc(o[dir].grid.replace("Grid goes to ","").replace("Grid stays ",""))}.`}</p>
+    <p class="note">${off?esc(off):sOff&&dir==="side"?esc(sOff):`${sOff?esc(sOff)+" ":""}The grid becomes ${esc(o[dir].grid.replace("Grid goes to ","").replace("Grid stays ",""))}.`}</p>
     <div class="pacts">${off?`<button type="button" class="btn pri">Unlock ${esc(o.name)}</button>`:`<button type="button" class="btn pri">Split</button>`}<button type="button" class="btn">Cancel</button></div>
     ${o.join?`<button type="button" class="btn">Join Halves</button>`:""}</div>`}
 
@@ -478,11 +478,11 @@ function scenario(st,G,F){
     sc.areas.push({b:wr([.2,.25,.2,.25]),lab:"Open half",sub:"Fills last"});
     const t=wr([.2,0,.2,.5]);sc.extra+=focusBox(`${F}-result`,t);
     sc.extra+=dnote(wr([.2,0,.2,.5]),"Split cell 2. <b>Claude</b> keeps the top half.",10);
-    sc.extra+=`<div class="tip" style="left:${(t.l+t.w+8).toFixed(1)}px;top:${(t.t+4).toFixed(1)}px"><kbd>Shift</kbd>+<kbd>S</kbd> or a double-click</div>`;
+    sc.extra+=`<div class="tip" style="left:${(t.l).toFixed(1)}px;top:${(t.t-52).toFixed(1)}px"><kbd>Shift</kbd>+<kbd>S</kbd> or a double-click</div>`;
     sc.anns+=ann(t,"Fast Split, Question K",{up:true,prop:true});sc.msg="Split cell 2. Claude keeps the top half.";sc.win.split="halfS";sc.split=true}
   if(st==="fast-side"){splitCb();sc.sel="cb";openHalf();const t=wr([.2,0,.2,.5]);sc.extra+=focusBox(`${F}-result`,t);
     sc.extra+=dnote(wr(by.cb.f),"Split cell 2. <b>Claude</b> keeps the left half.",10);
-    sc.extra+=`<div class="tip" style="left:${(t.l+t.w+8).toFixed(1)}px;top:${(t.t+4).toFixed(1)}px"><kbd>Shift</kbd>+<kbd>S</kbd> or a double-click</div>`;
+    sc.extra+=`<div class="tip" style="left:${(t.l).toFixed(1)}px;top:${(t.t-52).toFixed(1)}px"><kbd>Shift</kbd>+<kbd>S</kbd> or a double-click</div>`;
     sc.anns+=ann(t,"Fast Split, Question K",{up:true,prop:true});sc.msg="Split cell 2. Claude keeps the left half.";sc.win.split="half"}
 
   if(st==="fill-last"){sc.wins.push({id:"np",mon:"wide",app:"Notepad",cat:"other",title:"notes.txt - Notepad",f:[.3,0,.1,.5]});

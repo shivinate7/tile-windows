@@ -66,7 +66,8 @@ S2. **Menu behaviour.** The focused item previews on the board: a dashed line an
     opens above, as `placeMenu()` does today. A locked tile's menu leads with Unlock (L), so the
     refusal is no dead end (state `case-lock`). A half's menu adds Join Halves (J) (state
     `case-again`). Departs from: `.menu` is `position:fixed` under a button today; at the pointer
-    it needs the same edge clamp.
+    it needs the same edge clamp. Gain: the split shows before it acts, and every way in ends in
+    the same menu. Loss: at the pointer the menu covers the row under the tile. Pick: as drawn.
 
 S3. **The fast split's look (question K, proposed).** Shift+S or a double-click on the selected
     tile splits at once, with the Drop Note and Undo as any split. Two rules drawn:
@@ -94,16 +95,21 @@ S5. **Small halves.** Layout-free item 12. The three options share one board: a 
 S6. **The open half on the board.** A dashed box that reads as space, with "Open half" and
     "Fills last" (or "Stays empty" with fill off, "Zone fills last" in a zone, "Kept empty" with a
     no-entry mark under Keep This Half Empty). Under 40px it is the dashed box alone; its label is
-    in its accessible name. Selecting it is layout-free item 2 (owner grant).
+    in its accessible name. Selecting it is layout-free item 2 (owner grant). Gain: the cell's own
+    dashed look, so it reads as space, not a window. Loss: two words in a 47px box at 1440 wrap to
+    three lines. Pick: as drawn.
 
 S7. **Words.** The board hint gains "Right-click a window to split its cell." The keyboard list
     gains "S or Shift+F10 opens Split Cell on the selected window or open half. J joins a split
     cell." The monitor label reads the fine grid ("10×2"). The inspector names a half by both
-    numbers: "Pinned · Ultrawide cell 3, the left half of cell 2."
+    numbers: "Pinned · Ultrawide cell 3, the left half of cell 2." Gain: the right-click is
+    found without the keyboard list, and a half names both numbers. Loss: a longer hint line.
+    Pick: as drawn.
 
 S8. **Save shapes.** The "Saves in the layout as" blocks use the L1 plan's fields (`mult`,
     `fill.unit`) and a proposed `fill.keepEmpty`. The builder owns the shape. Layouts live per
-    setup now, so the blocks show only the changed keys.
+    setup now, so the blocks show only the changed keys. Gain: the builder sees each state's data.
+    Loss: a field name here may differ from L1's. Pick: L1's names win.
 
 ## Departs from today
 

@@ -53,7 +53,8 @@ Each frame with a new scene shape shows "Saves in the scene as" under it.
    half. Enter splits, Esc cancels. Gain: one key, one choice, seen before it acts. Loss: a
    popover over the board at 1024 covers the row under it. Pick: the menu as drawn. The mockup draws no fast action. Owner, 2026-11-17 14:12 CST (decision
    `layout-free`): right-click also opens this menu, and a fast action splits the selected cell in
-   two at once. Its trigger, direction and share are open (question (c)). While question S is
+   two at once. Its trigger, direction and share are open (question (c), called question K in
+   `split-cell-notes.md`). While question S is
    open, the menu offers halves only and has no share row; `split-cell.html` draws the menu as it
    stands now (`split-cell-notes.md` items S1 and S2).
 2. **Empty cell.** Selecting an empty cell is new. Today only windows select, and Draw Zone picks
@@ -101,6 +102,8 @@ Question S is the owner's open question on shares (halves only, or thirds and qu
    While question S is open, that direction is off in the menu with "This half is as narrow as a
    split goes. Join it first, or split it stacked." The other direction stays on and doubles the
    other axis (10×2 to 10×4; state `case-again`). The rows cap rises to a proposed 8 for this.
+   Gain: the grid never goes past ×2 on an axis until question S rules. Loss: no quarter cell in
+   two steps. Pick: as drawn.
 9. **Join.** J on a half, Join Halves in the inspector, or Join Halves in the split menu. The
    selected window takes the whole base cell. If the other half holds a window, that window goes
    to a free cell in fill order, else to Windows That Stay Put, as resize does (decision
@@ -108,13 +111,18 @@ Question S is the owner's open question on shares (halves only, or thirds and qu
    half. After the join, if no pin, zone, held entry or Keep This Half Empty entry on that monitor
    sits off the base grid on that axis, the axis halves back (10×2 to 5×2), and `mult` and
    `fill.unit` go (state `join`). Otherwise the grid stays and the window takes its 2-cell block.
-   On a cell that is not split, Join Halves is off with "This cell is not split."
+   On a cell that is not split, Join Halves is off with "This cell is not split." Gain: the board
+   goes back to today's grid and drop targets when the last split goes. Loss: a join can change
+   the Columns count the owner sees (10 to 5), which may surprise. Pick: halve back, said in the
+   Drop Note (item 13).
 10. **No share bar while question S is open.** With halves only, a bar between the halves could
     snap to the middle only, so it would change nothing and is not drawn (`ux-control-earns-place`).
     If question S allows thirds or quarters, the bar comes back and snaps to the lines the grid
-    holds.
+    holds. Gain: no control that does nothing. Loss: the share cannot change after a split without
+    a join and a new split. Pick: no bar.
 11. **Cases.** Every pin, zone and held entry on the monitor gets doubled slots, and nothing else
-    moves.
+    moves. Gain: each case keeps today's rule (stack, lock, zone, hold), so nothing new to learn.
+    Loss: a split of a held cell pins a window the owner had only held. Pick: as listed.
     - A stacked tile: the back windows stay on the pin, so they go with the front window into the
       kept half; the strip and the badge go too (state `case-stack`).
     - A locked tile: every split item is off with "Locked. Unlock it first." (today's lock reason),
@@ -142,7 +150,9 @@ Question S is the owner's open question on shares (halves only, or thirds and qu
     half." with Undo, in the Drop Note look (decision `stack-and-lock`). It names the cell by its
     number before the split, since the numbers change with the grid. The fast split uses the same
     words: one act, one name. A join says "Joined cell 2." and adds "The grid is 5×2 again." when
-    the grid halves back. The status bar keeps the same words.
+    the grid halves back. The status bar keeps the same words. Gain: the old number is the one the
+    owner just pointed at. Loss: the board's cell labels show the new numbers at once. Pick: as
+    drawn.
 
 ## Free Layout
 
