@@ -972,9 +972,9 @@ function mgOpen(){mgSay=null;mgRender();const d=$("mgdlg");if(!d.open)d.showModa
 const mgFail=e=>e instanceof TypeError?"The app server stopped answering":String(e.message||e).replace(/\.\s*$/,"");
 // The message: what happened (ok), then what failed (bad, a "Could not…" sentence, shown in --bad).
 const mgSayHTML=()=>`<p class="why say" id="mgsay" role="status" tabindex="-1">${esc(mgSay.ok)}${mgSay.ok&&mgSay.bad?" ":""}${mgSay.bad?`<span class="bad">${esc(mgSay.bad)}</span>`:""}</p>`;
-// m: {kind, id, ctl: "rk" (the name field) or "fk" (Forget), ok, bad}. The redraw puts it in that row and scrolls it into view. Focus goes to
+// m: {kind, id, ctl: "rk" (the name field) or "fk" (Forget), ok, bad, say}. The footer shows say when given, else ok, so a note in the dialog line is not repeated there. The redraw puts it in that row and scrolls it into view. Focus goes to
 // $focus when given and still there, else stays where it was; when focus would leave the dialog, it goes to the message.
-function mgSaid(m,$focus){mgSay=m;status([m.ok,m.bad].filter(Boolean).join(" "));const d=$("mgdlg");if(!d.open)return;
+function mgSaid(m,$focus){mgSay=m;status([m.say??m.ok,m.bad].filter(Boolean).join(" "));const d=$("mgdlg");if(!d.open)return;
   mgRender($focus);const p=$("mgsay");if(!p)return;if(!d.contains(document.activeElement))p.focus();p.scrollIntoView({block:"nearest"})}
 async function mgRename(t){
   const kind=t.dataset.rk,id=t.dataset.rid,cur=mgKnown(kind)[id];if(!cur)return;
@@ -1012,7 +1012,7 @@ async function mgForget(t){
   // The server's note (a scene lost its setup: pick another) goes in the dialog's message line while the dialog is open, where a toast would sit
   // behind it; the toast shows when the dialog closes. With the dialog shut it shows now. Last, so no later message replaces it.
   const nh=r.headers.get("X-Tile-Note"),note=nh?decodeURIComponent(nh):"",inDlg=!!note&&$("mgdlg").open;
-  mgSaid({...m,ok:inDlg?`${say} ${note}`:say,bad:bad?`Could not read the names again: ${bad}.`:""},btn);
+  mgSaid({...m,say,ok:inDlg?`${say} ${note}`:say,bad:bad?`Could not read the names again: ${bad}.`:""},btn);
   if(inDlg)mgNote=note;else noteFrom(r)}
 let mgNote="";  // a server note held back while the dialog is open: toasted when it closes
 $("mgdlg").addEventListener("close",()=>{if(!mgNote)return;const n=mgNote;mgNote="";toast(n,"warn",{sticky:true});noteUp=true});

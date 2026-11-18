@@ -83,14 +83,14 @@ function Update-TileSetupSwitch([string]$text) {
     $new = ConvertTo-Json -Depth 10 $c
     # The note first, then the save, so a failure never leaves the switch off on disk with no note. Any failure returns the old text unchanged: the
     # next read retries, and a note already written is not written twice.
-    $msg = "Use This Scene for This Many Screens is gone, so it is off for $($gone -join ', '). $(Get-TilePickSetupAsk)"
+    $msg = "Use This Scene for This Many Screens is gone, so it is off for $($gone -join ', '). $(Get-TilePickSetupAsk $gone.Count)"
     Use-TileLock { if (-not (Get-TileNote).Contains($msg)) { Add-TileNote $msg } }
     Save-TileConfigText $new
     $new
   } catch { $text }
 }
-# The ask that ends each note about a scene whose "Use This Scene on This Setup" went off: the migration above and a forgotten setup (serve.ps1 Forget-Known).
-function Get-TilePickSetupAsk { 'Pick a setup for each of them under Use This Scene on This Setup.' }
+# The ask that ends each note about a scene whose "Use This Scene on This Setup" went off: the migration above and a forgotten setup (serve.ps1 Forget-Known). $count is how many scenes lost their setup: one gets "it", two or more "each of them".
+function Get-TilePickSetupAsk($count) { if ($count -eq 1) { 'Pick a setup for it under Use This Scene on This Setup.' } else { 'Pick a setup for each of them under Use This Scene on This Setup.' } }
 # Turns off "Use This Scene on This Setup" for each scene aimed at one of $keys and clears its setupKey, in $cfg (the caller holds the lock and saves).
 # Returns the names of the scenes whose switch was on, for the note.
 function Clear-TileSetupTriggers($cfg, $keys) {

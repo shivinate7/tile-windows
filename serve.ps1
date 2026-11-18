@@ -187,7 +187,7 @@ function Forget-Known($b, $mons) {
     if ($kind -eq 'monitor') { $cfg.monitors.PSObject.Properties.Remove($id) }
     # A scene aimed at a forgotten setup has its switch off, and a note asks for a pick (as Update-TileSetupSwitch does). Note first, then save.
     $gone = @(Clear-TileSetupTriggers $cfg $drop)
-    if ($gone.Count) { Add-TileNote "A setup you forgot was the one $($gone -join ', ') used, so Use This Scene on This Setup is off for it. $(Get-TilePickSetupAsk)" }
+    if ($gone.Count) { Add-TileNote "A setup you forgot was the one $($gone -join ', ') used, so Use This Scene on This Setup is off for it. $(Get-TilePickSetupAsk $gone.Count)" }
     Save-TileConfigObject $cfg
     return 200
   }
