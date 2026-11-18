@@ -93,10 +93,10 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .when{display:flex;gap:5px;align-items:center;font-size:12px;color:var(--ink)}
 .when svg{width:12px;height:12px;flex:none}
 .live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
-.crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
-/* A card with the menu button has three things in its bottom row; where they do not fit, the buttons go on a second line. */
-.crow.has{flex-wrap:wrap;row-gap:4px}
+/* The bottom row stays on one line, so every card in the strip keeps one height: where the label, the menu button and Apply do not fit, the label ends in an ellipsis (its full text is its title). */
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0}
 .tag{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.tagt{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden}
 .mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
 .mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
@@ -107,7 +107,7 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .lay.own{background:var(--ink);color:var(--panel)}
 /* The card's menu button sits beside Apply, in the card's bottom row, so it never covers a monitor drawn in the mini map. The open menu is on the page, not in the card, so the rail's scroll box does not clip it. */
 .cact{display:flex;gap:4px;align-items:center;flex:none;margin-left:auto}
-.cmenu{min-height:26px;width:28px;height:26px;padding:0;font-size:15px;line-height:1;letter-spacing:.05em}
+.cmenu{width:28px;padding:0}
 .cmenu[aria-expanded="true"]{border-color:var(--ink)}
 .menu{position:fixed;z-index:50;display:grid;gap:2px;width:236px;padding:4px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent)}
 .menu button{display:grid;gap:2px;text-align:left;border:0;background:transparent;border-radius:5px;padding:7px 9px;min-height:32px;white-space:normal}
@@ -1110,6 +1110,7 @@ function trigText(s){const t=s.trigger||{type:"manual"};if(t.type==="time"){cons
   return t.type==="display"?"When the monitors change":t.type==="call"?"When a Teams call starts":"By hand"}
 const LINKI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 8a2.4 2.4 0 0 0 3.4 0l2-2a2.4 2.4 0 0 0-3.4-3.4l-.6.6M8 6a2.4 2.4 0 0 0-3.4 0l-2 2a2.4 2.4 0 0 0 3.4 3.4l.6-.6"/></svg>',
   OWNI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="2.5" width="10.4" height="7" rx="1"/><path d="M5 12h4M7 9.5V12"/></svg>';
+const MOREI='<svg viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><circle cx="3" cy="7" r="1.25"/><circle cx="7" cy="7" r="1.25"/><circle cx="11" cy="7" r="1.25"/></svg>';
 const CLOCK='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="6" cy="6" r="4.8"/><path d="M6 3.4V6l1.8 1.2"/></svg>';
 function renderRail(){
   if(LIVE){
@@ -1122,13 +1123,14 @@ function renderRail(){
     $("cards").innerHTML=ids.map(id=>{const s=work[id],on=id===st.active,l=marks?lst[id]:null,fol=!!(l&&!l.own&&l.name),
       lt=l&&(l.own?"Own layout":l.name?`Follows ${l.name}`:""),
       // The mark sits beside the tag. Its words are its title and label (and hidden text, so a reader that skips the label still has them): the strip says them once, in words, for the selected scene.
-      lmark=lt?`<span class="lay${l.own?" own":""}" role="img" title="${esc(lt)}" aria-label="${esc(lt)}">${l.own?OWNI:LINKI}<span class="vh">${esc(lt)}</span></span>`:"";return `<article class="card${id===selId?" sel":""}">
+      lmark=lt?`<span class="lay${l.own?" own":""}" role="img" title="${esc(lt)}" aria-label="${esc(lt)}">${l.own?OWNI:LINKI}<span class="vh">${esc(lt)}</span></span>`:"",
+      tagt=`${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}`;return `<article class="card${id===selId?" sel":""}">
       <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini${fol?" follow":""}" aria-hidden="true">${miniHTML(prevs[id])}</span>
       <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
       ${(s.trigger||{}).type&&s.trigger.type!=="manual"?`<span class="when">${CLOCK}${esc(trigText(s))}</span>`:""}
       ${chipsOf(s).length?`<span class="chips" aria-label="Extra triggers on">${chipsOf(s).map(c=>`<i>${esc(c)}</i>`).join("")}</span>`:""}
       </button>
-      <div class="crow${followName(id)?" has":""}"><span class="tag">${lmark}${s.builtIn?"Built-in":saved(id)?"Custom":"Not saved"}${edited(id)&&saved(id)?" · edited":""}</span><span class="cact">${followName(id)?`<button type="button" class="btn cmenu" data-menu="${esc(id)}" aria-haspopup="menu" aria-expanded="${menuId===id}" aria-label="More for ${esc(s.name)}" title="More for ${esc(s.name)}">⋯</button>`:""}<button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></span></div></article>`}).join("");
+      <div class="crow"><span class="tag">${lmark}<span class="tagt" title="${tagt}">${tagt}</span></span><span class="cact">${followName(id)?`<button type="button" class="btn cmenu" data-menu="${esc(id)}" aria-haspopup="menu" aria-expanded="${menuId===id}" aria-label="More for ${esc(s.name)}" title="More for ${esc(s.name)}">${MOREI}</button>`:""}<button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></span></div></article>`}).join("");
     if(fsel){const n=$("cards").querySelector(fsel);if(n)n.focus()}
     placeMenu();
   }else $("cards").innerHTML=`<p class="note">Scenes need the app server. Open Tile Windows from the Start menu, or run <code>serve.ps1</code>.</p>`;
