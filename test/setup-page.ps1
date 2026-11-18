@@ -53,6 +53,9 @@
 #   Kind icons (decision monitor-setups, item 25; mockup card-kind-icon.html): each card shows its kind as one svg icon titled and labelled
 #     Built-in, Custom or Not saved, and no kind word is on screen. An edited scene shows one amber dot in its bottom row, with a title or label
 #     that says edited. At 1024 and 1440 no card's bottom-row label is cut, and at 1024 every card has one height.
+#   Inspector kind (monitor-setups notes, item 25; the owner's yes): the Scene section shows the selected scene's kind once, in words
+#     (Built-in, Custom or Not saved), no other kind's word, and it changes when a scene of another kind is selected. An edited saved scene's
+#     section says edited once. Its reasons line does not count, and an unsaved scene's edited is not checked.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 $ErrorActionPreference = 'Stop'
@@ -1222,6 +1225,77 @@ return { cards: cardsOf().length, heights, cut, soloRow };
         if ($w -eq 1024) { Check '1024: every card has one height' (@(@($m.heights) | Sort-Object -Unique).Count -eq 1) "card heights: $(@($m.heights) -join ', ')" }
       } finally { [void](Cdp $ws 'Emulation.clearDeviceMetricsOverride') }
     }
+  }
+
+  # Inspector kind (monitor-setups notes, item 25: the owner's yes, to say the kind once in words in the inspector's Scene section). The Scene
+  # section's visible text holds the selected scene's kind word once and no other kind's word. The reasons line (#whyoff) is left out: it says
+  # why a control is off ("Built-in scenes cannot be deleted.", "Not saved yet, so nothing to revert to."), and those words are not the kind.
+  # The words match case-sensitively, so a note's "built-in" does not count. Read as a user sees it: no visually hidden or hidden text.
+  $sceneKindJs = @'
+const sceneKind = () => {
+  const box = document.getElementById("scenebox"), name = document.getElementById("sceneName");
+  if (!box) return { name: null, text: "", builtIn: 0, custom: 0, notSaved: 0, edited: 0 };
+  const w = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+  let t = "";
+  while (w.nextNode()) {
+    const p = w.currentNode.parentElement;
+    if (!p || p.closest("#whyoff, .vh, [aria-hidden=true], [hidden]") || p.getClientRects().length === 0) continue;
+    t += w.currentNode.textContent + " ";
+  }
+  t = t.replace(/\s+/g, " ").trim();
+  const n = re => (t.match(re) || []).length;
+  return { name: name ? name.value : null, text: t, builtIn: n(/\bBuilt-in\b/g), custom: n(/\bCustom\b/g), notSaved: n(/\bNot saved\b/g), edited: n(/\bedited\b/gi) };
+};
+'@
+  # Waits until the Scene section shows the named scene, so a read is of the scene the page selected.
+  function Scene-Shows($sock, [string]$scene, [string]$name) {
+    WaitFor $sock ('selId === "' + $scene + '" && !!document.getElementById("sceneName") && document.getElementById("sceneName").value === "' + $name + '"') 30
+  }
+  # Selects a scene as a user does (its card's button), then waits until the Scene section shows it.
+  function Select-Scene($sock, [string]$scene, [string]$name) {
+    [void](Js $sock ('document.querySelector("[data-pick=' + $scene + ']").click(); return true'))
+    Scene-Shows $sock $scene $name
+  }
+
+  Case 'the Scene section shows the kind of each scene once, in words, and no other kind word, as the page changes scene' {
+    $opened = Open-Kind-Rail $ws
+    Check 'the kind rail opens on Focus, with the Not saved probe (control)' $opened 'the page did not draw the rail in time'
+    if (-not $opened) { return }
+    # Default is built-in, Focus is saved (Custom), and the probe is not saved. Each is selected in turn on this one page.
+    $steps = @(
+      [pscustomobject]@{ scene = 'default'; name = 'Default'; word = 'Built-in' }
+      [pscustomobject]@{ scene = 'focus'; name = 'Focus'; word = 'Custom' }
+      [pscustomobject]@{ scene = 'kind-probe'; name = 'Kind probe'; word = 'Not saved' }
+    )
+    foreach ($s in $steps) {
+      Select-Scene $ws $s.scene $s.name
+      $k = Js $ws ($sceneKindJs + 'return sceneKind()')
+      $counts = @{ 'Built-in' = $k.builtIn; 'Custom' = $k.custom; 'Not saved' = $k.notSaved }
+      Check "$($s.name): the Scene section shows its name (scope)" ($k.name -ceq $s.name) "name in the Scene section: '$($k.name)'"
+      Check "$($s.name): the Scene section shows $($s.word) once, in words" ($counts[$s.word] -eq 1) "$($s.word) in the Scene section: $($counts[$s.word]); its visible text: '$($k.text)'"
+      foreach ($other in @($kindWords | ? { $_ -ne $s.word })) {
+        Check "$($s.name): the Scene section shows no $other" ($counts[$other] -eq 0) "$other in the Scene section: $($counts[$other]); its visible text: '$($k.text)'"
+      }
+      if ($s.scene -ne 'kind-probe') { Check "$($s.name), unchanged: the Scene section says no edited (control)" ($k.edited -eq 0) "edited in the Scene section: $($k.edited)" }
+    }
+  }
+
+  Case 'the Scene section says edited once when a saved scene is changed, and not before' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Scene-Shows $ws 'focus' 'Focus'
+    $before = Js $ws ($sceneKindJs + 'return sceneKind()')
+    Check 'Focus, unchanged: the Scene section says no edited (control)' ($before.edited -eq 0) "edited in the Scene section: $($before.edited); its visible text: '$($before.text)'"
+    # The name is changed and the change is committed, as a user does. The crumb's Edited mark is the page's own sign that the edit took (control).
+    [void](Js $ws 'const f = document.getElementById("sceneName"); f.value = "Focus renamed"; f.dispatchEvent(new Event("change", { bubbles: true })); return true')
+    $marked = WaitFor $ws '!document.getElementById("sedit").hidden' 30
+    Check 'the crumb reads Edited once the name is changed (scope)' $marked 'the page did not mark Focus as edited'
+    if (-not $marked) { return }
+    $after = Js $ws ($sceneKindJs + 'return sceneKind()')
+    Check 'edited Focus: the Scene section says edited once' ($after.edited -eq 1) "edited in the Scene section: $($after.edited); its visible text: '$($after.text)'"
+    Check 'edited Focus: the Scene section still shows Custom once' ($after.custom -eq 1) "Custom in the Scene section: $($after.custom); its visible text: '$($after.text)'"
   }
 
   Case 'the offline page shows no Follow item on any card and sends no POST' {
