@@ -6,7 +6,8 @@
 #   TILE_TEST_ALLOW_LIVE=1: the caller accepts a live run. Unset, or any other value, is refused.
 # Cases. Red means it fails on 656a8cf for the named cause. Green means a control that holds on 656a8cf and must keep holding.
 #   Scope (green): a probe child shows which seam vars reached it; the bare snapshot lists no window named tile-test-no-such-app.
-#   1 refusal (red): under the suite, a flagless -Scene, -PlaceFile, bare -Monitor, -Scene -Json or -PlaceFile -Json run is refused.
+#   1 refusal (red): under the suite, a flagless -Scene, -PlaceFile, bare -Monitor, -Scene -Json or -PlaceFile -Json run is refused,
+#     and so is a flagless -Default (with or without -Json) and an inline -Place.
 #   2 controls (green): -DryRun, bare -Json, -Monitors, -List, -From and a -Lib dot-source still run under the suite.
 #   3 opt-in (green): TILE_TEST_ALLOW_LIVE=1 lets a flagless -Scene run.
 #   4 outside the suite (green): with no suite var, a flagless -Scene is not refused.
@@ -34,6 +35,8 @@ function Invoke-PsChild([string]$argLine, $envSet = @{}) {
   [pscustomobject]@{ Code = $p.ExitCode; Out = $out; Err = $errTask.Result }
 }
 function Short($s) { $t = "$s".Trim(); $t.Substring(0, [Math]::Min(120, $t.Length)) }
+# A child's stdout without its WARNING lines (Write-Warning reaches stdout here), so the JSON after them parses.
+function NoWarn($s) { (("$s" -split '\r?\n') | ? { $_ -notmatch '^WARNING:' }) -join "`n" }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root per repo. The first request of a run
 # removes sibling run folders older than a day and keeps newer ones. stack-lock.ps1 has the sweep, but it runs its own checks at
@@ -97,6 +100,35 @@ try {
   Check '1f suite: a flagless -Scene with -Json exits non-zero (JSON output does not make it a read)' ($sj.Code -ne 0) "exit $($sj.Code): the run went ahead"
   $pj = Invoke-PsChild "-File `"$tile`" -PlaceFile `"$placeNone`" -Json" (New-ChildEnv $suite)
   Check '1g suite: a flagless -PlaceFile with -Json exits non-zero (JSON output does not make it a read)' ($pj.Code -ne 0) "exit $($pj.Code): the place run went ahead"
+
+  # ---- 1 (cont.) -Default and an inline -Place (red on 656a8cf, which has no guard, so both runs would go ahead there). ----
+  # -Default's scene fills claude, chrome and '*' (scenes.json), so it must never reach a window. TILE_SCREENS_FILE holding [] gives the
+  # run no monitor, and a pass with no screen places nothing. Scope first: a dry run places nothing. The refusal cases run only after it passes.
+  $noScreens = Join-Path $run 'screens-none.json'; [IO.File]::WriteAllText($noScreens, '[]', $utf8)
+  $noMon = @{ TILE_TEST_SUITE = '1'; TILE_SCREENS_FILE = $noScreens }
+  $dd = Invoke-PsChild "-File `"$tile`" -Default -DryRun -Json" (New-ChildEnv $noMon)
+  $ddObj = $null; try { $ddObj = ConvertFrom-Json (NoWarn $dd.Out) } catch { }
+  $defScope = $dd.Code -eq 0 -and $null -ne $ddObj -and @($ddObj.placed).Count -eq 0
+  Check 'scope: with no monitor, a dry -Default places nothing (exit 0, placed empty)' $defScope "exit $($dd.Code); out [$(Short $dd.Out)]"
+  if ($defScope) {
+    $dr = Invoke-PsChild "-File `"$tile`" -Default" (New-ChildEnv $noMon)
+    Check '1h suite: a flagless -Default exits non-zero' ($dr.Code -ne 0) "exit $($dr.Code): the run went ahead"
+    Check '1i suite: the -Default refusal names TILE_TEST_ALLOW_LIVE' (($dr.Out + $dr.Err) -match 'TILE_TEST_ALLOW_LIVE') "no refusal text; out [$(Short $dr.Out)] err [$(Short $dr.Err)]"
+    $drj = Invoke-PsChild "-File `"$tile`" -Default -Json" (New-ChildEnv $noMon)
+    Check '1j suite: a flagless -Default with -Json exits non-zero (JSON output does not make it a read)' ($drj.Code -ne 0) "exit $($drj.Code): the run went ahead"
+  } else { Check '1h-1j suite: not run, the -Default scope check above failed' $false }
+  # An inline -Place names one window that is not open. Its argument is one quoted string: each JSON quote arrives as \".
+  $placeJson = '[{"app":"tile-test-no-such-app","title":"none","x":0,"y":0,"w":100,"h":100}]'
+  $placeArg = '"' + ($placeJson -replace '"', '\"') + '"'
+  $pc = Invoke-PsChild "-File `"$tile`" -Place $placeArg -DryRun -Json" (New-ChildEnv $suite)
+  $pcObj = $null; try { $pcObj = @(ConvertFrom-Json (NoWarn $pc.Out)) } catch { }
+  $placeScope = $pc.Code -eq 0 -and $pcObj.Count -eq 1 -and $pcObj[0].ok -eq $false -and $pcObj[0].note -eq 'no open window'
+  Check 'scope: an inline -Place names no open window (dry run: one entry, note no open window)' $placeScope "exit $($pc.Code); out [$(Short $pc.Out)]"
+  if ($placeScope) {
+    $pl = Invoke-PsChild "-File `"$tile`" -Place $placeArg" (New-ChildEnv $suite)
+    Check '1k suite: an inline -Place exits non-zero' ($pl.Code -ne 0) "exit $($pl.Code): the place run went ahead"
+    Check '1l suite: the inline -Place refusal names TILE_TEST_ALLOW_LIVE' (($pl.Out + $pl.Err) -match 'TILE_TEST_ALLOW_LIVE') "no refusal text; out [$(Short $pl.Out)] err [$(Short $pl.Err)]"
+  } else { Check '1k-1l suite: not run, the inline -Place scope check above failed' $false }
 
   # ---- 2. Controls: the reads and dry runs that stay exempt still run under the suite (green on 656a8cf). ----
   $dry = Invoke-PsChild "-File `"$tile`" -Scene `"$sceneNone`" -DryRun" (New-ChildEnv $suite)
