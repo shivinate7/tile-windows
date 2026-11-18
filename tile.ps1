@@ -788,7 +788,7 @@ function Test-IdKeyed($o) {
 $idMode = $false
 if ($screens.Count -and -not @($screens | ? { -not $_.Id }).Count) {
   $setupKey = Get-TileSetupKey $screens
-  $own = if ($sc.layouts) { $sc.layouts.PSObject.Properties[$setupKey] }
+  $own = Get-TileLayoutEntry $sc $setupKey
   $lay = if ($own) { $own.Value } elseif (Test-IdKeyed $sc) { $sc }
   if ($lay) {
     $sc = [pscustomobject]@{ id = $sc.id; name = $sc.name; grids = $lay.grids; pins = @($lay.pins | ? { $_ }); zones = @($lay.zones | ? { $_ }); fill = $(if ($lay.fill) { $lay.fill } else { [pscustomobject]@{} }); bay = $lay.bay; cats = $sc.cats; categories = $sc.categories }

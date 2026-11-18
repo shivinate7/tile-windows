@@ -174,7 +174,7 @@ function Step-NoExternal($s, [datetime]$now, $cfg, $n, [string]$active, [double]
 function Get-GridSceneJson($sc, $grid, $plugged = $null) {
   $full = ConvertFrom-Json (ConvertTo-Json -Depth 8 -Compress $sc); $full.grids.wide = $grid
   $key = Get-TileKnownSetupKey $plugged
-  $own = if ($key -and $full.layouts) { $full.layouts.PSObject.Properties[$key] }
+  $own = Get-TileLayoutEntry $full $key
   if ($own) {
     $mons = [pscustomobject]@{}
     foreach ($m in @($plugged)) { $mons | Add-Member -NotePropertyName ([string]$m.id) -NotePropertyValue ([pscustomobject]@{ builtin = [bool]$m.builtin; bw = $m.bw; bh = $m.bh; w = $m.w; h = $m.h }) }
@@ -473,14 +473,14 @@ function Step-GapFill($state, $events, [datetime]$now, $pidOf = $null) {
 }
 # What the tray keeps about the scene it applied last, for Step-GapFill and Invoke-GapFill. grids: the grids the run used, by monitor key (role or id).
 # The run's own scene is found as the engine finds it: $mode (the grid mode, dense or roomy) swaps the wide grid through Get-GridSceneJson, the same
-# function the apply uses; the setup key of $plugged (Get-TileKnownSetupKey) then picks layouts[key], whose grids are named by monitor id, else the
-# scene's role grids are the run's. With no setup key known (no $plugged), each layout's grids count, and a monitor two layouts both give is left out:
-# it cannot be told which the run used. arg: what Apply-Scene passed to tile.ps1 -Scene. last: handle -> the rect the tray last gave it (for -Last).
+# function the apply uses; the setup key of $plugged (Get-TileKnownSetupKey) then picks layouts[key] (Get-TileLayoutEntry, the engine's own lookup), whose
+# grids are named by monitor id, else the scene's role grids are the run's. With no setup key known (no $plugged) the engine's own monitor read decides,
+# which the tray cannot see: each layout's grids count, and a monitor two layouts both give is left out, since it cannot be told which the run used. arg: what Apply-Scene passed to tile.ps1 -Scene. last: handle -> the rect the tray last gave it (for -Last).
 function New-GapState($sc, $placed, [datetime]$at, $plugged = $null, [string]$mode = '', $arg = $null) {
   $use = $sc
   if ($mode -and $sc.claudeGrid -and $sc.claudeGrid.$mode) { try { $use = ConvertFrom-Json (Get-GridSceneJson $sc $sc.claudeGrid.$mode $plugged) } catch { } }
   $key = Get-TileKnownSetupKey $plugged
-  $own = if ($key -and $use.layouts) { $use.layouts.PSObject.Properties[$key] }
+  $own = Get-TileLayoutEntry $use $key
   $srcs = if ($own) { @($own.Value.grids) } elseif ($key) { @($use.grids) } else { @($use.grids) + @(if ($use.layouts) { $use.layouts.PSObject.Properties | % { $_.Value.grids } }) }
   $grids = @{}; $seen = @{}
   foreach ($src in $srcs) { if ($src) { foreach ($p in $src.PSObject.Properties) { $seen[$p.Name] = 1 + [int]$seen[$p.Name]; $grids[$p.Name] = $p.Value } } }
