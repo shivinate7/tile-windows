@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card Kind Icon</title>
+<style>
+/* Tokens copied from app.html :root (lines 13-23), checked against main 9e6ae0a. No web fonts: this page opens from disk with no network, so the stacks fall back to Segoe UI. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --tmix:26%; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D; --ok:#17754B; --bad:#B42318;
+  /* Mockup chrome only, never product UI: the dashed Today and New labels. */
+  --ann-new:#C0267A; --ann-today:#4F574F;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}
+/* Each drawn frame forces one theme, so light and dark sit side by side. Same values as the root sets above. */
+.th-light{
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D;
+  --ann-new:#C0267A; --ann-today:#4F574F; color-scheme:light}
+.th-dark{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- Mockup shell (not product UI) ---------- */
+.mk{display:grid;gap:12px;padding:16px}
+.banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
+.banner b{color:var(--ann-new)}
+.mkhead{display:grid;gap:4px}
+.mkhead h1{margin:0;font:700 20px var(--f-disp);letter-spacing:-.01em}
+.mkhead p{margin:0;color:var(--muted);max-width:80ch}
+.mkbar{display:grid;gap:8px}
+.mkrow{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.mkgrp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkgrp>span{color:var(--muted);font-size:12px;min-width:44px}
+.mkseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.mkseg button{min-height:32px;border:0;background:transparent;padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.mkseg button+button{border-left:1px solid var(--line)}
+.mkseg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.mkopts{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;font-size:12.5px}
+.mkopts label{display:inline-flex;gap:6px;align-items:center;min-height:32px;cursor:pointer}
+.mkopts input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.mkopts .sep{color:var(--muted);font-size:12px}
+.item{display:grid;gap:10px;padding-top:6px}
+.item>h2{margin:8px 0 0;font:700 18px var(--f-disp);letter-spacing:-.01em}
+.item>p{margin:0;color:var(--muted);max-width:90ch}
+.tkind{font:600 11px var(--f);padding:1px 6px;border-radius:3px;border:1px dashed var(--ann-new);color:var(--ann-new);margin-left:6px;vertical-align:2px;white-space:nowrap}
+.tkind.today{border-color:var(--ann-today);color:var(--ann-today)}
+.scroll{overflow-x:auto;padding-bottom:4px}
+.row{display:flex;gap:16px;align-items:flex-start;width:max-content}
+.col{display:grid;gap:12px;width:max-content}
+/* Each block carries its own theme, so its caption sits on that theme's canvas. */
+.blk{display:grid;gap:6px;align-content:start;padding:10px;border-radius:8px;background:var(--canvas);color:var(--ink)}
+.blk>h3{margin:0;font:700 13.5px var(--f-disp);letter-spacing:-.01em;color:var(--ink);display:flex;flex-wrap:wrap;align-items:center;gap:2px 0}
+.blk>h3 .th{font:12px var(--f);color:var(--muted);margin-left:8px}
+.fit{margin:0;font-size:12px;color:var(--muted)}
+.fit b{font-weight:600;color:var(--ink)}
+.fit b.cut{color:var(--bad)}
+.th-light .fit b.cut,.th-dark .fit b.cut{color:var(--bad)}
+/* What each block marks: a dashed outline on the word today, on the icon in the new rows. */
+.mk-ann .tagt.annd,.mk-ann .kd.annd{outline:1.5px dashed var(--ann-today);outline-offset:2px;border-radius:2px}
+.mk-ann .kd.annn{outline:1.5px dashed var(--ann-new);outline-offset:3px;border-radius:4px}
+
+/* ---------- Product UI: copied from app.html (lines 32-111 and 560-566), main 9e6ae0a ---------- */
+.surf{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px}
+.rail{padding:12px;display:flex;flex-direction:column;gap:8px;width:232px}
+.rail h2{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0}
+/* Below 1180px the scenes become a strip over the canvas (app.html line 564). */
+.strip{padding:8px 12px;display:flex;flex-direction:row;gap:12px;width:1022px;overflow-x:auto}
+.strip>section{display:flex;flex-direction:column;gap:6px;flex:none}
+.strip h2{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0}
+.strip .cards{grid-auto-flow:column;grid-auto-columns:176px}
+.strip .card .pick small{display:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;border:1px solid var(--line);background:var(--panel);padding:5px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.btn svg{width:15px;height:15px}
+.cards{display:grid;gap:6px}
+.card{position:relative;display:grid;gap:4px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.card.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.pick{display:grid;gap:5px;border:0;background:transparent;padding:0;text-align:left;min-width:0;border-radius:4px}
+.pick strong{font:700 15px var(--f-disp);letter-spacing:-.01em;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pick small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.when{display:flex;gap:5px;align-items:center;font-size:12px;color:var(--ink)}
+.when svg{width:12px;height:12px;flex:none}
+.live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0}
+.tag{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.tagt{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden;display:block}
+.mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
+.mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
+.mini.follow b{background:transparent;border:1.5px dashed color-mix(in srgb,var(--cat) 85%,var(--panel))}
+.cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
+.lay{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:3px;flex:none;color:var(--muted)}
+.lay svg{width:13px;height:13px}
+.lay.own{background:var(--ink);color:var(--panel)}
+.cact{display:flex;gap:4px;align-items:center;flex:none;margin-left:auto}
+.cmenu{width:28px;padding:0}
+@media (forced-colors:active){.lay.own{border:1px solid CanvasText}.mini.follow b{border-color:CanvasText}}
+
+/* ---------- New: the kind mark ---------- */
+/* Same box as the layout mark (.lay): a 16px box, a 13px drawing on a 14-unit grid, stroke 1.5, muted. The three kinds differ by outline shape, never by colour. */
+.kd{display:inline-grid;place-items:center;width:16px;height:16px;flex:none;color:var(--muted)}
+.kd svg{width:13px;height:13px}
+/* Edited: the crumb's amber dot (app.html .edited::before), beside the kind mark. A 1px ink ring keeps it above 3:1 on a white card. */
+.ked{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--hi);border:1px solid var(--ink);flex:none}
+@media (forced-colors:active){.ked{forced-color-adjust:none;background:CanvasText;border-color:CanvasText}}
+
+/* ---------- Icon sheet ---------- */
+.sheet{border-collapse:collapse;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px}
+.sheet th,.sheet td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;font-size:12.5px}
+.sheet thead th{font-weight:600;color:var(--muted);font-size:12px}
+.sheet tbody th{font-weight:600}
+.sheet tr:last-child>*{border-bottom:0}
+.sheet td.ic{white-space:nowrap}
+.sheet .sz{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;color:var(--muted);border-radius:4px}
+.sheet .sz.s13 svg{width:13px;height:13px}.sheet .sz.s14 svg{width:14px;height:14px}.sheet .sz.s16 svg{width:16px;height:16px}
+.sheet .why{color:var(--muted);max-width:52ch}
+.sheet .pk{font:600 11px var(--f);padding:1px 6px;border-radius:3px;border:1px solid var(--ink);margin-left:6px;white-space:nowrap}
+.sheet .alt{color:var(--muted);font-weight:400}
+</style>
+</head>
+<body>
+<div class="mk">
+  <p class="banner" role="note"><b>Sample.</b><span>Every scene, setup, trigger and window on this page is invented. No figure here is real.</span></p>
+  <header class="mkhead">
+    <h1>Card Kind Icon</h1>
+    <p>The owner ruled on 2026-11-18 that a scene card shows its kind as an icon, not a word, because "Custom" cuts to "CU…" at 1024 and "CUST…" at 1440. Each icon carries the full word in its title and label, as the layout mark beside it does. Main's row is drawn first, then each option, at 1440 (the rail) and 1024 (the strip), light and dark. Under each block, a line measured on this page says whether any card's bottom row cuts. Designer kind: informed.</p>
+  </header>
+  <nav class="mkbar" aria-label="Mockup controls">
+    <div class="mkgrp"><span id="lblS">Show</span><div class="mkseg" id="segS" role="group" aria-labelledby="lblS"></div></div>
+    <div class="mkrow">
+      <div class="mkgrp"><span id="lblT">Theme</span><div class="mkseg" id="segT" role="group" aria-labelledby="lblT"></div></div>
+      <div class="mkgrp"><span id="lblV">Button</span><div class="mkseg" id="segV" role="group" aria-labelledby="lblV"></div></div>
+      <div class="mkgrp"><span id="lblM">Layout marks</span><div class="mkseg" id="segM" role="group" aria-labelledby="lblM"></div></div>
+    </div>
+    <div class="mkopts" role="group" aria-label="Show options">
+      <span class="sep">Options:</span>
+      <label><input type="checkbox" data-o="all3" checked>All Three as Icons</label>
+      <label><input type="checkbox" data-o="custom1" checked>Custom Only as an Icon</label>
+      <span class="sep">Overlays:</span>
+      <label><input type="checkbox" id="oLabels" checked>Dashed Outlines</label>
+    </div>
+  </nav>
+  <div id="out"></div>
+</div>
+<script>
+"use strict";
+/* ---------- Icons ---------- */
+// From app.html (lines 1257-1260), main 9e6ae0a: the layout marks, the menu and the trigger clock.
+const LINKI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 8a2.4 2.4 0 0 0 3.4 0l2-2a2.4 2.4 0 0 0-3.4-3.4l-.6.6M8 6a2.4 2.4 0 0 0-3.4 0l-2 2a2.4 2.4 0 0 0 3.4 3.4l.6-.6"/></svg>',
+  OWNI='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="2.5" width="10.4" height="7" rx="1"/><path d="M5 12h4M7 9.5V12"/></svg>',
+  MOREI='<svg viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><circle cx="3" cy="7" r="1.25"/><circle cx="7" cy="7" r="1.25"/><circle cx="11" cy="7" r="1.25"/></svg>',
+  CLOCK='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="6" cy="6" r="4.8"/><path d="M6 3.4V6l1.8 1.2"/></svg>';
+// New. Built-in: a box, shipped with the app (hexagon outline). Custom: a person, made by you (head over shoulders, open at the foot). Not saved: a dashed ring, a scene that is only in this page.
+const KBUILT='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M7 1.4 12.2 4.2v5.6L7 12.6 1.8 9.8V4.2z"/><path d="M1.8 4.2 7 7l5.2-2.8M7 7v5.6"/></svg>',
+  KCUST='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="4.6" r="2.4"/><path d="M2.4 12.6a4.6 4.6 0 0 1 9.2 0"/></svg>',
+  KDRAFT='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.6 1.33" aria-hidden="true"><circle cx="7" cy="7" r="5"/></svg>';
+// Shapes looked at and not taken, for the sheet only.
+const ALT={
+  built:['Tile Windows mark','<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1"/><rect x="11" y="3" width="7" height="6" rx="1"/><rect x="2" y="11" width="16" height="6" rx="1"/></svg>','The brand mark already means the app, in the top bar. A second meaning on a card breaks one icon, one meaning, and at 13px it reads as a tiny grid, like the mini map above it.'],
+  cust:['Pencil','<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M9.6 2.2 11.8 4.4 5 11.2 2.2 11.8 2.8 9z"/></svg>','Reads as Edit, an act, and as edited, a state the card shows another way. Not taken.'],
+  draft:['Disk with a slash','<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M2 2h8l2 2v8H2z"/><path d="M4.5 2v3h4V2M1.5 12.5l11-11"/></svg>','Says not saved plainly, but at 13px the slash and the disk lines merge into a hatched square. Not taken.']};
+
+/* ---------- Sample (invented) ---------- */
+// lay: layout mark (f follows Desk, o own layout here). kind: b built-in, c custom, d not saved. ed: edited since saved.
+const CARDS=[
+  {id:"default",name:"Default",blurb:"Claude and Chrome fill the big screen.",kind:"b",ed:true,lay:"f",live:true,when:"When the monitors change",mini:[["a",0,0,1,1,"code"],["b",0,0,1,2,"browse"],["b",0,1,1,2,"comms"]]},
+  {id:"focus",name:"Focus",blurb:"Claude only, three wide.",kind:"c",ed:false,lay:"o",sel:true,menu:true,mini:[["a",0,0,1,1,"code"],["b",0,0,1,2,"browse"],["b",0,1,1,2,"comms"]]},
+  {id:"meetings",name:"Meetings",blurb:"Teams big, mail beside it.",kind:"c",ed:true,lay:"f",when:"When a Teams call starts",mini:[["a",0,0,1,1,"comms"],["b",0,0,1,1,"comms"]]},
+  {id:"evening",name:"Evening",blurb:"Browser left, notes right.",kind:"d",ed:false,lay:"f",mini:[["a",0,0,2,1,"browse"],["a",1,0,2,1,"other"],["b",0,0,1,1,"comms"]]}];
+const KIND={b:["Built-in",KBUILT],c:["Custom",KCUST],d:["Not saved",KDRAFT]};
+
+/* ---------- Draw ---------- */
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function mini(c){const mon={a:[0,0,62,100],b:[64,0,36,100]};
+  return `<span class="mini${V.marks&&c.lay==="f"?" follow":""}" aria-hidden="true">${Object.values(mon).map(([x,y,w,h])=>`<i style="left:${x}%;top:${y}%;width:${w}%;height:${h}%"></i>`).join("")}${c.mini.map(([m,cx,cy,cw,ch,cat])=>{const [x,y,w,h]=mon[m];return `<b class="cat-${cat}" style="left:${x+w*cx/cw+1}%;top:${y+h*cy/ch+8}%;width:${w/cw-2}%;height:${h/ch-16}%"></b>`}).join("")}</span>`}
+function laymark(c){if(!V.marks)return"";const t=c.lay==="o"?"Own layout":"Follows Desk";
+  return `<span class="lay${c.lay==="o"?" own":""}" role="img" title="${t}" aria-label="${t}">${c.lay==="o"?OWNI:LINKI}<span class="vh">${t}</span></span>`}
+// form: today (main's words), all3, custom1.
+function kindPart(c,form,ann,fid){const [w,ic]=KIND[c.kind],ed=c.ed&&c.kind!=="d";
+  const asIcon=form==="all3"||(form==="custom1"&&c.kind==="c");
+  if(!asIcon){const t=`${w}${ed?" · edited":""}`;return `<span class="tagt${ann&&form==="today"?" annd":""}" title="${t}">${t}</span>`}
+  const t=`${w}${ed?", edited":""}`;
+  return `<span class="kd${ann?" annn":""}"${fid?` id="${fid}"`:""} role="img" title="${t}" aria-label="${t}">${ic}<span class="vh">${t}</span></span>${ed?'<span class="ked" aria-hidden="true"></span>':""}`}
+function card(c,form,ann,fid){const verb=V.v==="preview"?"Preview":"Apply";
+  return `<article class="card${c.sel?" sel":""}">
+    <button type="button" class="pick" aria-pressed="${!!c.sel}">${mini(c)}<strong>${esc(c.name)}${c.live?'<span class="live">On screen</span>':""}</strong><small>${esc(c.blurb)}</small>${c.when?`<span class="when">${CLOCK}${esc(c.when)}</span>`:""}</button>
+    <div class="crow"><span class="tag">${laymark(c)}${kindPart(c,form,ann,fid)}</span><span class="cact">${c.menu&&V.marks?`<button type="button" class="btn cmenu" aria-haspopup="menu" aria-expanded="false" aria-label="More for ${esc(c.name)}" title="More for ${esc(c.name)}">${MOREI}</button>`:""}<button type="button" class="btn" aria-label="${verb} ${esc(c.name)}">${verb}</button></span></div></article>`}
+const FORMS={today:["Main Today","today"],all3:["All Three as Icons","new"],custom1:["Custom Only as an Icon","new"]};
+function block(form,w,th,first){const [name,k]=FORMS[form],ann=V.labels;
+  const fid=first&&form!=="today"?form:"";
+  const cards=CARDS.map((c,i)=>card(c,form,ann,fid&&i===1?fid+"-icon":"")).join("");
+  const box=w==="1440"?`<aside class="surf rail" aria-label="Scenes, ${name}, ${th}"><h2>Scenes</h2><div class="cards">${cards}</div></aside>`
+    :`<div class="surf strip" role="region" aria-label="Scenes, ${name}, ${th}"><section><h2>Scenes</h2><div class="cards">${cards}</div></section></div>`;
+  return `<section class="blk th-${th}${ann?" mk-ann":""}"${fid?` id="${fid}"`:""} data-blk aria-label="${name}, ${w}, ${th}"><h3>${name}<span class="tkind${k==="today"?" today":""}">${k==="today"?"Today":"Option"}</span><span class="th">${th}</span></h3>${box}<p class="fit" data-fit>Measuring…</p></section>`}
+function forms(){return["today",...["all3","custom1"].filter(o=>!V.off.has(o))]}
+function themes(){return V.t?[V.t]:["light","dark"]}
+function widthItem(w){const fs=forms();let first=new Set();
+  const make=(f,th)=>{const isFirst=!first.has(f);first.add(f);return block(f,w,th,isFirst)};
+  const body=w==="1440"
+    ?themes().map(th=>`<div class="scroll"><div class="row">${fs.map(f=>make(f,th)).join("")}</div></div>`).join("")
+    :themes().map(th=>`<div class="scroll"><div class="col">${fs.map(f=>make(f,th)).join("")}</div></div>`).join("");
+  const cap=w==="1440"?"The scenes rail is 232px wide, so each card's bottom row has about 190px. Focus has its own layout, so it has the ⋯ menu, the widest row. This page has no web fonts, so it draws in Segoe UI. The app loads Sora, which is wider: there main's Focus card cuts to \"CUST…\" (measured 2026-11-17), though this page's Segoe UI fits."
+    :"Below 1180px the scenes become a strip of 176px cards over the board, so each bottom row has about 158px.";
+  return `<section class="item" aria-labelledby="i-${w}"><h2 id="i-${w}">The Card Row at ${w}</h2><p>${cap}</p>${body}</section>`}
+function sheet(){const th=themes();
+  const rows=[["b","Built-in","A box: it came in the box with the app. A hexagon outline with its top edges, the only six-sided shape in the app.","built"],
+    ["c","Custom","A person: you made it. Head over shoulders, open at the foot, the only figure in the app.","cust"],
+    ["d","Not saved","A dashed ring: not solid yet, only in this page. Dashes are the app's mark for not yet set (a disabled button's edge, a borrowed window).","draft"]];
+  const cell=(svg,t)=>`<td class="ic">${t.map(x=>`<span class="th-${x}" style="display:inline-flex;gap:2px;padding:2px 6px;border-radius:6px;background:var(--panel);border:1px solid var(--line);margin-right:6px">${["s13","s14","s16"].map(s=>`<span class="sz ${s}">${svg}</span>`).join("")}</span>`).join("")}</td>`;
+  const body=rows.map(([k,w,why,a])=>{const [an,asvg,awhy]=ALT[a];
+    return `<tr><th scope="row">${w}<span class="pk">Pick</span></th>${cell(KIND[k][1],th)}<td class="why">${why}</td></tr>
+      <tr><th scope="row" class="alt">${an}</th>${cell(asvg,th)}<td class="why">${awhy}</td></tr>`}).join("");
+  const near=[["Follows Desk (today)",LINKI],["Own layout (today)",OWNI],["More (today)",MOREI],["Trigger (today)",CLOCK]].map(([n,s])=>`<tr><th scope="row" class="alt">${n}</th>${cell(s,th)}<td class="why">Already on the card. The new marks must not share these shapes.</td></tr>`).join("");
+  const ed=`<tr><th scope="row">Custom, edited<span class="pk">Pick</span></th>${`<td class="ic">${th.map(x=>`<span class="th-${x}" style="display:inline-flex;gap:4px;align-items:center;padding:8px 10px;border-radius:6px;background:var(--panel);border:1px solid var(--line);margin-right:6px"><span class="kd">${KCUST}</span><span class="ked"></span></span>`).join("")}</td>`}<td class="why">The crumb's amber dot, beside the mark. It replaces the words " · edited".</td></tr>`;
+  return `<section class="item" aria-labelledby="i-sheet"><h2 id="i-sheet">The Icons, Each at 13, 14 and 16px</h2><p>The card draws each at 13px in a 16px box, the layout mark's size. Muted, stroke 1.5 on a 14-unit grid, like the layout marks.</p><div class="scroll"><table class="sheet"><thead><tr><th scope="col">Kind</th><th scope="col">13, 14, 16px (${th.join(", ")})</th><th scope="col">Why this shape</th></tr></thead><tbody>${body}${ed}${near}</tbody></table></div></section>`}
+
+/* ---------- Measure ---------- */
+// A card's row cuts when its label is cut (scrollWidth over clientWidth) or the row overflows the card.
+function measure(){for(const b of document.querySelectorAll("[data-blk]")){let cut=[];
+  for(const c of b.querySelectorAll(".card")){const n=c.querySelector("strong").firstChild.textContent,r=c.querySelector(".crow"),t=c.querySelector(".tagt");
+    if((t&&t.scrollWidth>t.clientWidth+0.5)||r.scrollWidth>r.clientWidth+0.5)cut.push(n)}
+  const out=b.querySelector("[data-fit]");
+  out.innerHTML=cut.length?`Measured here: <b class="cut">cuts</b> on ${cut.join(", ")}.`:`Measured here: <b>fits</b> on every card.`}}
+
+/* ---------- State ---------- */
+const OPTS=["all3","custom1"],SHOWS=[["all","All"],["1440","1440"],["1024","1024"],["sheet","Icon Sheet"]];
+const V={s:"all",t:"",v:"apply",marks:true,labels:true,off:new Set()};
+function readHash(){const h=new URLSearchParams(location.hash.slice(1));
+  V.s=SHOWS.some(x=>x[0]===h.get("s"))?h.get("s"):"all";
+  V.t=["light","dark"].includes(h.get("t"))?h.get("t"):"";
+  V.v=h.get("v")==="preview"?"preview":"apply";
+  V.marks=h.get("marks")!=="0";V.labels=h.get("labels")!=="0";
+  V.off=new Set((h.get("hide")||"").split(",").filter(o=>OPTS.includes(o)))}
+function writeHash(){const p=[`s=${V.s}`];if(V.t)p.push(`t=${V.t}`);if(V.v!=="apply")p.push(`v=${V.v}`);if(!V.marks)p.push("marks=0");if(!V.labels)p.push("labels=0");if(V.off.size)p.push(`hide=${[...V.off].join(",")}`);history.replaceState(null,"","#"+p.join("&"))}
+function render(){
+  if(V.t)document.documentElement.dataset.theme=V.t;else delete document.documentElement.dataset.theme;
+  const segs=[["segS",SHOWS,"s"],["segT",[["","Both"],["light","Light"],["dark","Dark"]],"t"],["segV",[["apply","Apply"],["preview","Preview"]],"v"],["segM",[["1","Shown"],["0","None"]],"marks"]];
+  for(const [id,opts,k] of segs)document.getElementById(id).innerHTML=opts.map(([v,l])=>`<button type="button" data-k="${k}" data-v="${v}" aria-pressed="${k==="marks"?(V.marks?"1":"0")===v:V[k]===v}">${l}</button>`).join("");
+  for(const cb of document.querySelectorAll("[data-o]"))cb.checked=!V.off.has(cb.dataset.o);
+  document.getElementById("oLabels").checked=V.labels;
+  const parts=V.s==="all"?["1440","1024","sheet"]:[V.s];
+  document.getElementById("out").innerHTML=parts.map(p=>p==="sheet"?sheet():widthItem(p)).join("");
+  measure();writeHash()}
+document.addEventListener("click",e=>{const b=e.target.closest(".mkseg button");if(!b)return;
+  if(b.dataset.k==="marks")V.marks=b.dataset.v==="1";else V[b.dataset.k]=b.dataset.v;render()});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.dataset.o){if(t.checked)V.off.delete(t.dataset.o);else V.off.add(t.dataset.o);render();return}
+  if(t.id==="oLabels"){V.labels=t.checked;render()}});
+addEventListener("hashchange",()=>{readHash();render()});
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(measure);
+readHash();render();
+</script>
+</body>
+</html>

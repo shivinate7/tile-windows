@@ -23,7 +23,7 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - Coordinator 19:03 CST: a direct `tile.ps1 -Proc` run with `-Monitor wide` (default or explicit) and no monitor holding the wide role falls back to the widest screen, as main did. Scenes and the role path keep item 14 (a wide pin with no wide monitor goes to `left`).
 - Edit only the plugged-in setup (coordinator default, owner may change). Monitors and Setups (item 13) is a dialog from the strip; a setup not plugged in cannot have its layout edited. Its name can change either way (20:33 CST ruling). The rail option is not taken. This answers the critique's question on editing an unplugged setup.
 - Item 7, closest known setup (coordinator default 2026-11-17 11:47 CST, owner may change): the known setup sharing the most monitors. A tie goes to the one used last. This is item 6's pick, and it is what "closest known setup" means.
-- Edited mark (coordinator default 2026-11-17 11:47 CST, owner may change; the marks themselves are set by the 18:05 and 18:09 CST rulings below): autosave makes the first edit the switch.
+- Edited mark (coordinator default 2026-11-17 11:47 CST, owner may change; the marks themselves are set by the 18:05 and 2026-11-18 11:08 CST rulings below): autosave makes the first edit the switch.
 - Follow again (coordinator default 2026-11-17 11:47 CST, owner may change): `Follow <setup> Again` stays, on the scene card's menu.
 - Built-in scenes (coordinator default 2026-11-17 11:47 CST, owner may change): built-in scenes keep their own layout per setup, like any scene (item 5).
 - Save (coordinator default 2026-11-17 11:47 CST, owner may change): Save stays for a scene's name and triggers only. Layouts autosave.
@@ -47,7 +47,7 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - 18:05 CST: a failed GET /layouts or GET /config shows on the strip.
 - 18:05 CST: card marks follow the mockup, and show only while some scene follows another setup.
 - 18:05 CST: a monitor with no grid gets an "Add a Grid" button.
-- 18:09 CST: a card mark is an icon beside Built-In, with a title and aria-label, and no visible words. This answers item 16.
+- 2026-11-18 11:08 CST (owner ruling; the coordinator picked the all-three option, reversible): every card kind is an icon, Built-in, Custom and Not saved, with no visible words. Its title and aria-label are the bare kind word. Edited is a separate amber dot with its own label, "Edited". PR 41 (card kind icon) makes it. This answers the mockup notes' item 16, the card marker.
 - 18:28 CST: GET /layouts returns, per scene, {layout, follows, closest}. `follows` comes from `Get-TileFollows` and `closest` from `Get-TileClosestName` (`config.ps1`); both pick through `Get-TileClosestSetup`, the one home for the closest-setup pick.
 - 20:26 CST: "Follow Desk Again" removes a scene's own layout for the current setup, through POST /layout/remove {scene,key}. It takes the /layout lock, re-reads config under it, answers 409 for a setup not plugged in and 404 for an unknown scene. A repeat is a no-op.
 - 20:33 CST: the dialog's routes are POST /rename {kind,id,name} and POST /forget {kind,id}. Renaming any setup or monitor is allowed, plugged in or not, since a name is not a layout edit.

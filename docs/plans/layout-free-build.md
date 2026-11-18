@@ -103,6 +103,9 @@ One fact drives L1. On the 1365px test area, five columns are 273px wide (`[int]
 - Tests: the guard refusal; a hand-moved neighbour stays put; a restore shrinks neighbours from their last rect; no new window is pulled in.
 
 **L5b. Tray: close and minimize hook** (`tray.ps1`; no designer)
+
+Status: built in PR 43 (the gap-watch pull request), merged at commit ee47541. Until lane L5a lands, gap-fill only logs.
+
 - `tray.ps1 -Lib` returns at its `if ($Lib) { return }` line, before the `TileInput` class. So the pure parts live in PowerShell above that line, where `-Lib` tests reach them:
   - `Test-GapEvent` (the filter);
   - `Step-GapFill` (state plus events in, a GapFill run or nothing out).
@@ -110,7 +113,7 @@ One fact drives L1. On the 1365px test area, five columns are 273px wide (`[int]
   - It hooks 0x8001, 0x8002, 0x8003, 0x0016 and 0x0017, out of context and skipping its own process.
   - Its callback keeps only idObject=0 and idChild=0 for a handle in a static tiled set, which the tray sets after each apply. It drops everything else in C# and records the handle and event with a time.
 - The existing 1 s tick reads that record, as it reads MoveEndTicks. There is no new timer, so the space is taken up to 1 s after the event.
-- Hook cost: Windows sends every create, show and hide event in the session to the tray's thread, often hundreds a second. Each costs one call into C# and a lookup in a set; PowerShell never sees them.
+- Hook cost: Windows sends every create, show and hide event in the session to the tray's thread, often hundreds a second. Each costs one C# call, two compares and one set lookup under a lock; PowerShell never sees them. Only a tiled handle's last event is stored, so the store is bounded by the tiled set. The existing 1 s tick drains it. No polling, no new timer. The tray's own process is skipped.
 - Tests:
   - an untiled handle does nothing;
   - a burst in one tick gives one run;
