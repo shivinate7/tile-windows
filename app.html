@@ -410,11 +410,12 @@ dialog form{display:grid;gap:10px}
 @media (hover:none){.tile:hover .lk{visibility:hidden}.tile.sel .lk,.tile.lock .lk{visibility:visible}}
 /* The hit areas reach 24px (WCAG 2.5.8) while the drawn chip stays small. */
 .tile .lk::after,.tile .stk::after{content:"";position:absolute;inset:-3px}
-/* A split half under 40px wide (1024): the tag is the app's initial and the title, lock, grip and badge give way (split-cell notes S5). The initial keeps its room: a selected or hovered tile's tag cap leaves 20px for the lock, and there is none here. A selected half keeps its Stay Put, drawn inside the tile. */
+/* A split half under 40px wide (1024): the tag is the app's initial and the title, lock, grip and badge give way (split-cell notes S5). The initial is a 15px square, never cut by the tag cap that leaves 20px for a lock (there is none here). A selected half keeps its Stay Put inside the tile when the tile is 24px wide or more (class spin), and drops it when narrower. */
 .tile.tiny .lk,.tile.tiny .stayput,.tile.tiny .rsz,.tile.tiny .stk,.tile.tiny span,.tile.tiny .pinmark{display:none}
 .tile.tiny{padding-left:6px;padding-right:2px}
-.tile.tiny b,.tile.tiny:hover b,.tile.tiny:focus-within b,.tile.tiny.sel b,.tile.tiny.lock b{padding:1px 3px;max-width:100%}
+.tile.tiny b,.tile.tiny:hover b,.tile.tiny:focus-within b,.tile.tiny.sel b,.tile.tiny.lock b{display:grid;place-items:center;width:15px;height:15px;padding:0;font-size:10px;max-width:none}
 .tile.tiny.sel .stayput.ico{display:grid;left:auto;right:2px;bottom:3px;width:18px;height:18px}
+.tile.tiny.sel:not(.spin) .stayput.ico{display:none}
 .tile .lk:hover{background:color-mix(in srgb,var(--ink) 12%,transparent);color:var(--ink)}
 .tile.lock{cursor:default}
 .tile.lock .lk{background:var(--ink);color:var(--panel)}
@@ -1150,7 +1151,7 @@ function render(){
     // Stay Put reads in words from 84px across; a narrower tile shows the icon alone, named by its tooltip and label.
     const ico=parseFloat(pr.width)<84;e.classList.toggle("narrow",ico);
     // Under 40px (a half at 1024) the tag is the app's first letter; its name stays in the label and the inspector (split-cell notes S5).
-    const tg0=LIVE?gridOf(monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2)||snap.monitors[0]):null,tiny=!!tg0&&MXY(tg0).some(v=>v>1)&&parseFloat(pr.width)<40;e.classList.toggle("tiny",tiny);const tg=e.firstChild,tn=tiny?appName(w.app).charAt(0):appName(w.app);if(tg.textContent!==tn)tg.textContent=tn;
+    const tg0=LIVE?gridOf(monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2)||snap.monitors[0]):null,tiny=!!tg0&&MXY(tg0).some(v=>v>1)&&parseFloat(pr.width)<40;e.classList.toggle("tiny",tiny);e.classList.toggle("spin",tiny&&parseFloat(pr.width)>=24);const tg=e.firstChild,tn=tiny?appName(w.app).charAt(0):appName(w.app);if(tg.textContent!==tn)tg.textContent=tn;
     // The badge names the window right behind ("Chrome", "Chrome +1"). A narrow tile has no room for a name, so it shows that app's initial; the label and tooltip keep the true count.
     if(sb&&back.length){const bn=appName(back[0].app);
       sb.innerHTML=ico?`<i class="ini cat-${catOf(back[0].app)}">${esc(bn.charAt(0))}</i>`:`${parseFloat(pr.width)>=140?BEHIND:""}<span>${esc(bn)}</span>${back.length>1?`<span class="n"><i class="sp"> </i>+${back.length-1}</span>`:""}`;
