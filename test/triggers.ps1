@@ -343,6 +343,63 @@ Check 'migration: a note asks the owner to pick a setup for that scene' ([regex]
 $moved = @($co.PSObject.Properties | ? { $_.Name -ne 'auto' } | ? { (ConvertTo-Json -Depth 10 -Compress $_.Value) -ne (ConvertTo-Json -Depth 10 -Compress $cs.($_.Name)) } | % { $_.Name })
 $moved += @($co.auto.PSObject.Properties | ? { $_.Name -ne 'monitors' -and [bool]$_.Value -ne [bool]$cs.auto.($_.Name) } | % { "auto.$($_.Name)" })
 Check 'migration: nothing else in that scene changes' ($null -ne $cs -and $moved.Count -eq 0) ("changed: " + ($moved -join ','))
+# ---- Gap watch (L5b): the tray's close and minimize hook. Two pure functions, defined above tray.ps1's -Lib return. ----
+# Contract the builder meets:
+#   Test-GapEvent(event, idObject, idChild, hwnd, tiledSet): tiledSet is an array of handles. True only for 0x8001, 0x8002,
+#     0x8003, 0x0016, 0x0017 with idObject 0 and idChild 0 on a handle in tiledSet. Otherwise $false.
+#   Step-GapFill(state, events, now): state = scene, tiled ([{hwnd, mon}]), absent (handles), grids ({mon: {free: {areas}}}),
+#     lastApply (the tray's own last apply, or $null), quietMs. events = [{event, idObject, idChild, hwnd, time}].
+#     Returns one run { scene; absent } where absent is the absent set after this tick, or nothing.
+# A name that is not defined (the base commit) gives $null through Invoke-IfDefined, so each check fails on its value. run.ps1 stops on
+# an error, so a call that throws would hide every later check. Times are synthetic: no check reads the clock.
+function Invoke-IfDefined([string]$name, [object[]]$a) { if (Get-Command $name -ErrorAction SilentlyContinue) { & $name @a } }
+function Invoke-TestGapEvent($ev, $io, $ic, $hwnd, $set) { Invoke-IfDefined 'Test-GapEvent' @($ev, $io, $ic, $hwnd, $set) }
+function Invoke-StepGapFill($state, $events, $now) { Invoke-IfDefined 'Step-GapFill' @($state, $events, $now) }
+function GapEvt($ev, $hwnd, [datetime]$t, $io = 0, $ic = 0) { [pscustomobject]@{ event = $ev; idObject = $io; idChild = $ic; hwnd = $hwnd; time = $t } }
+function GapTile($hwnd, $mon = 'A') { [pscustomobject]@{ hwnd = $hwnd; mon = $mon } }
+function GapState($tiled, $absent, $grids, $last) { [pscustomobject]@{ scene = 'work'; tiled = @($tiled); absent = @($absent); grids = $grids; lastApply = $last; quietMs = $gwQuiet } }
+function GapDesc($r) { if ($null -eq $r) { 'no run' } else { "run absent=[$(@($r.absent) -join ',')] scene=$($r.scene)" } }
+$gwQuiet = 1500; $gwNow = [datetime]'2026-10-21 10:00:00'; $gwLast = $gwNow.AddMinutes(-10)  # the tray's own last apply, long before the events
+$gwHide = 0x8003; $gwGapEvents = @(0x8001, 0x8002, 0x8003, 0x0016, 0x0017)
+$gwFree = [pscustomobject]@{ free = [pscustomobject]@{ areas = @([pscustomobject]@{ x = 0; y = 0; w = 1; h = 1 }) } }
+$gwPlain = [pscustomobject]@{ c = 2; r = 1 }
+
+# Test-GapEvent. Each check compares with the strict boolean, so an undefined name ($null) fails it.
+$gwTiled = @(1001, 1002)
+$gwMissed = @($gwGapEvents | ? { (Invoke-TestGapEvent $_ 0 0 1001 $gwTiled) -ne $true })
+Check 'gap-watch: the five gap events on a tiled handle (object 0, child 0) pass' ($gwMissed.Count -eq 0) "not accepted: $($gwMissed -join ' ')"
+$gwWrong = @(@(0x800B, 0x8000, 0x0003) | ? { (Invoke-TestGapEvent $_ 0 0 1001 $gwTiled) -ne $false })
+Check 'gap-watch: location change, create and foreground events do not pass, even on a tiled handle' ($gwWrong.Count -eq 0) "not false for: $($gwWrong -join ' ')"
+Check 'gap-watch: a gap event on an untiled handle does not pass' ((Invoke-TestGapEvent $gwHide 0 0 9999 $gwTiled) -eq $false) 'accepted a handle that is not tiled'
+Check 'gap-watch: a gap event on a non-window object (idObject -4) does not pass' ((Invoke-TestGapEvent $gwHide (-4) 0 1001 $gwTiled) -eq $false) 'accepted idObject -4'
+Check 'gap-watch: a gap event on a child element (idChild 1) does not pass' ((Invoke-TestGapEvent $gwHide 0 1 1001 $gwTiled) -eq $false) 'accepted idChild 1'
+Check 'gap-watch: with no tiled handles, no gap event passes' ((Invoke-TestGapEvent $gwHide 0 0 1001 @()) -eq $false) 'accepted with an empty tiled set'
+$gwFull = @(1001..1040)
+Check 'gap-watch: the last of 40 tiled handles passes' ((Invoke-TestGapEvent $gwHide 0 0 1040 $gwFull) -eq $true) 'not accepted for handle 1040 in a 40-handle set'
+
+# Step-GapFill. Each "nothing" check sits with a tiled or Free Layout handle that must act, so it cannot pass on an empty result.
+$r = Invoke-StepGapFill (GapState @((GapTile 1001 'A')) @() @{ A = $gwFree } $gwLast) @((GapEvt $gwHide 9999 $gwNow), (GapEvt $gwHide 1001 $gwNow)) $gwNow
+Check 'gap-watch: an untiled handle does nothing; the tiled handle in the same tick goes absent alone' ($null -ne $r -and (@($r.absent) -join ',') -eq '1001') (GapDesc $r)
+$gwBurst = @(1001..1040)
+$r = Invoke-StepGapFill (GapState @($gwBurst | % { GapTile $_ 'A' }) @() @{ A = $gwFree } $gwLast) @($gwBurst | % { GapEvt $gwHide $_ $gwNow }) $gwNow
+Check 'gap-watch: a burst of 40 hides in one tick gives one run' ($null -ne $r -and @($r).Count -eq 1) (GapDesc $r)
+Check 'gap-watch: that one run holds all 40 absent handles and no others' ($null -ne $r -and ((@($r.absent) | Sort-Object) -join ',') -eq ($gwBurst -join ',')) (GapDesc $r)
+# One event lands 1000 ms after the tray's own apply (inside quietMs), one 2000 ms after (outside it).
+$r = Invoke-StepGapFill (GapState @((GapTile 1001 'A'), (GapTile 1002 'A')) @() @{ A = $gwFree } $gwNow) @((GapEvt $gwHide 1001 $gwNow.AddMilliseconds($gwQuiet - 500)), (GapEvt $gwHide 1002 $gwNow.AddMilliseconds($gwQuiet + 500))) $gwNow.AddMilliseconds($gwQuiet + 500)
+Check 'gap-watch: an event inside quietMs after the tray''s own apply is ignored; one outside it is not' ($null -ne $r -and (@($r.absent) -join ',') -eq '1002') (GapDesc $r)
+$r = Invoke-StepGapFill (GapState @((GapTile 1001 'A')) @(1001) @{ A = $gwFree } $gwLast) @((GapEvt 0x0017 1001 $gwNow)) $gwNow
+Check 'gap-watch: a restore (0x0017) of an absent handle gives a run with it no longer absent' ($null -ne $r -and -not (@($r.absent) -contains 1001)) (GapDesc $r)
+$r = Invoke-StepGapFill (GapState @((GapTile 1001 'A')) @(1001) @{ A = $gwFree } $gwLast) @((GapEvt 0x8002 1001 $gwNow)) $gwNow
+Check 'gap-watch: a show (0x8002) of an absent handle gives a run with it no longer absent' ($null -ne $r -and -not (@($r.absent) -contains 1001)) (GapDesc $r)
+# Scope first: the Free Layout monitor's run is for the active scene, then the monitor with no free.areas is checked.
+$r = Invoke-StepGapFill (GapState @((GapTile 1001 'A'), (GapTile 2001 'B')) @() @{ A = $gwFree; B = $gwPlain } $gwLast) @((GapEvt $gwHide 1001 $gwNow), (GapEvt $gwHide 2001 $gwNow)) $gwNow
+Check 'gap-watch: a hide on a Free Layout monitor gives a run for the active scene (scope)' ($null -ne $r -and $r.scene -eq 'work') (GapDesc $r)
+Check 'gap-watch: a monitor whose layout has no free.areas stays out of the run' ((@($r.absent) -join ',') -eq '1001') (GapDesc $r)
+# No tiled handles, then one: the same tick gives no run, and gives one once a handle is tiled.
+$rNone = Invoke-StepGapFill (GapState @() @() @{} $gwLast) @((GapEvt $gwHide 1001 $gwNow)) $gwNow
+$rOne = Invoke-StepGapFill (GapState @((GapTile 1001 'A')) @() @{ A = $gwFree } $gwLast) @((GapEvt $gwHide 1001 $gwNow)) $gwNow
+Check 'gap-watch: with no tiled handles a tick gives no run; with one tiled handle it gives one' ($null -eq $rNone -and $null -ne $rOne) "no tiled: $(GapDesc $rNone); one tiled: $(GapDesc $rOne)"
+
 Remove-Item -Recurse -Force $runDir -ErrorAction SilentlyContinue
 
 if ($standalone) { if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { 'All trigger checks passed.' } }
