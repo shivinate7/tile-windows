@@ -410,9 +410,11 @@ dialog form{display:grid;gap:10px}
 @media (hover:none){.tile:hover .lk{visibility:hidden}.tile.sel .lk,.tile.lock .lk{visibility:visible}}
 /* The hit areas reach 24px (WCAG 2.5.8) while the drawn chip stays small. */
 .tile .lk::after,.tile .stk::after{content:"";position:absolute;inset:-3px}
-.tile.tiny .lk,.tile.tiny .stayput,.tile.tiny .rsz,.tile.tiny .stk{display:none}
+/* A split half under 40px wide (1024): the tag is the app's initial and the title, lock, grip and badge give way (split-cell notes S5). The initial keeps its room: a selected or hovered tile's tag cap leaves 20px for the lock, and there is none here. A selected half keeps its Stay Put, drawn inside the tile. */
+.tile.tiny .lk,.tile.tiny .stayput,.tile.tiny .rsz,.tile.tiny .stk,.tile.tiny span,.tile.tiny .pinmark{display:none}
 .tile.tiny{padding-left:6px;padding-right:2px}
-.tile.tiny b{padding:1px 3px}
+.tile.tiny b,.tile.tiny:hover b,.tile.tiny:focus-within b,.tile.tiny.sel b,.tile.tiny.lock b{padding:1px 3px;max-width:100%}
+.tile.tiny.sel .stayput.ico{display:grid;left:auto;right:2px;bottom:3px;width:18px;height:18px}
 .tile .lk:hover{background:color-mix(in srgb,var(--ink) 12%,transparent);color:var(--ink)}
 .tile.lock{cursor:default}
 .tile.lock .lk{background:var(--ink);color:var(--panel)}
@@ -1148,7 +1150,7 @@ function render(){
     // Stay Put reads in words from 84px across; a narrower tile shows the icon alone, named by its tooltip and label.
     const ico=parseFloat(pr.width)<84;e.classList.toggle("narrow",ico);
     // Under 40px (a half at 1024) the tag is the app's first letter; its name stays in the label and the inspector (split-cell notes S5).
-    const tiny=LIVE&&parseFloat(pr.width)<40;e.classList.toggle("tiny",tiny);const tg=e.firstChild,tn=tiny?appName(w.app).charAt(0):appName(w.app);if(tg.textContent!==tn)tg.textContent=tn;
+    const tg0=LIVE?gridOf(monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2)||snap.monitors[0]):null,tiny=!!tg0&&MXY(tg0).some(v=>v>1)&&parseFloat(pr.width)<40;e.classList.toggle("tiny",tiny);const tg=e.firstChild,tn=tiny?appName(w.app).charAt(0):appName(w.app);if(tg.textContent!==tn)tg.textContent=tn;
     // The badge names the window right behind ("Chrome", "Chrome +1"). A narrow tile has no room for a name, so it shows that app's initial; the label and tooltip keep the true count.
     if(sb&&back.length){const bn=appName(back[0].app);
       sb.innerHTML=ico?`<i class="ini cat-${catOf(back[0].app)}">${esc(bn.charAt(0))}</i>`:`${parseFloat(pr.width)>=140?BEHIND:""}<span>${esc(bn)}</span>${back.length>1?`<span class="n"><i class="sp"> </i>+${back.length-1}</span>`:""}`;
@@ -1741,6 +1743,9 @@ function commitResize(r,pl){
 // A window's block now: its placed entry, grid, monitor and cells (fine cells on a split grid). Null when it has no cell.
 function cellOfWin(id){const P=prev(),p=LIVE&&P&&P.placed.find(q=>q.id===id&&!q.behind),g=p&&scene().grids[p.mon];
   return g?{p,g,role:p.mon,mon:snap.monitors.find(q=>mk(q)===p.mon),b:pbox(p,g)}:null}
+// The cells the owner sees a block as, by base cell number ("2", or "1+2" across two), never fine-cell numbers: a split makes the board's own numbers new, and a note names the cell as it was (item 13).
+function baseCells(b,g){const[mx,my]=MXY(g),c0=Math.floor(b.c/mx),c1=Math.ceil((b.c+b.cs)/mx)-1,r0=Math.floor(b.r/my),r1=Math.ceil((b.r+b.rs)/my)-1,a=[];
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)a.push(r*g.c+c+1);return a.join("+")}
 const SPDIR={side:{name:"Side by Side",k:["Left","Right"],x:true},stack:{name:"Stacked",k:["Top","Bottom"],x:false}};
 // How a cut of block b along dir lands. dbl: the grid doubles on that axis, because the cut is not on a line the grid has (item 7). ok:false says why not.
 function splitPlan(g,b,dir){const X=SPDIR[dir].x,[mx,my]=MXY(g),u=X?mx:my,n=X?b.cs:b.rs;
@@ -1762,7 +1767,7 @@ function splitCell(id,dir,keep){
   const c=cellOfWin(id),w=winById(id);if(!c||!w||isBusy){status("That window has no cell to split.");return false}
   if(isLockedId(id)){status(`${w.title} is locked. Unlock it first.`);return false}
   const pl=splitPlan(c.g,c.b,dir);if(!pl.ok){status(pl.why);return false}
-  const X=SPDIR[dir].x,role=c.role,mon=c.mon,was=c.p.slots.join("+"),A=appName(w.app),nb=keptBlock(c.b,dir,keep,pl.dbl);
+  const X=SPDIR[dir].x,role=c.role,mon=c.mon,was=baseCells(c.b,c.g),A=appName(w.app),nb=keptBlock(c.b,dir,keep,pl.dbl);
   curMon=mon;selWin=id;
   const ok=edit(x=>{const g=x.grids[role],self=pinNow(x,id);
     if(pl.dbl){const fx=X?2:1,fy=X?1:2,ofc=GC(g),ofr=GR(g),[mx,my]=MXY(g),
@@ -1799,7 +1804,7 @@ function joinCell(id){
   if(!j.split){status("This cell is not split.");return false}
   const pl=planResize(id,j.mon,j.c0,j.r0,j.cs,j.rs);
   if(pl.stopped){status("A locked tile is in the way. Nothing changed.");return false}
-  const role=j.role,mon=j.mon,self=pinNow(scene(),id),was=j.p.slots.join("+"),n=pl.list.length,[ox,oy]=MXY(j.g);let halved=false;
+  const role=j.role,mon=j.mon,self=pinNow(scene(),id),was=baseCells({c:j.c0,r:j.r0,cs:j.cs,rs:j.rs},j.g),n=pl.list.length,[ox,oy]=MXY(j.g);let halved=false;
   curMon=mon;selWin=id;
   const lead=()=>`Joined cell ${was}.${halved?` The grid is ${GC(scene().grids[role])}×${GR(scene().grids[role])} again.`:""}`;
   const ok=edit(x=>{
@@ -1824,10 +1829,10 @@ function splitMenuHTML(id){
     return `<p class="mg"><span>${D.name}</span><small>${off?"Off":esc(`Grid ${pl.dbl?"goes to":"stays"} ${pl.grid}`)}</small></p>`+
       [0,1].map(k=>`<button type="button" role="menuitem" class="mi cat-${catOf(w.app)}" data-sp="${dir}:${k}"${off?` aria-disabled="true" title="${esc(off)}"`:""}>${glyph(dir,k)}<b>${A} Keeps ${D.k[k]}</b></button>`).join("")+
       (off&&!locked?`<p class="mwhy">${esc(off)}</p>`:"")};
-  return `<div class="menu split" role="menu" id="smenu" aria-labelledby="smh"><p class="mh" id="smh">Split Cell ${esc(c.p.slots.join("+"))}</p>`+
+  return `<div class="menu split" role="menu" id="smenu" aria-labelledby="smh"><p class="mh" id="smh">Split Cell ${esc(baseCells(c.b,c.g))}</p>`+
     (locked?`<button type="button" role="menuitem" class="mi" data-sp="unlock">${GLOCK}<b>Unlock ${A}</b><kbd>L</kbd></button><p class="mwhy">${LOCKWHY}</p>`:"")+
     grp("side")+grp("stack")+
-    (j&&j.split?`<hr><button type="button" role="menuitem" class="mi" data-sp="join"${locked?` aria-disabled="true" title="${LOCKWHY}"`:""}>${GJOIN}<b>Join Halves</b><kbd>J</kbd></button>`:"")+
+    (j&&j.split?`<hr><button type="button" role="menuitem" class="mi cat-${catOf(w.app)}" data-sp="join"${locked?` aria-disabled="true" title="${LOCKWHY}"`:""}>${GJOIN}<b>Join Halves</b><kbd>J</kbd></button>`:"")+
     `<p class="mf">${locked?"Esc closes.":"Enter splits. Esc closes."}</p></div>`}
 function clearSplitPreview(){for(const e of stage.querySelectorAll(".sprev,.sdiv"))e.remove()}
 // The focused item on the board: a dashed line on the cut and a hatched open half (item S2 of the notes). It draws the grid the cut would make, so nothing moves.
@@ -1853,7 +1858,7 @@ function openSplit(id,at){
   if(T+h+8>innerHeight)T=r?r.top-4-h:at.y-h;
   m.style.left=clamp(L,8,Math.max(8,innerWidth-w-8))+"px";m.style.top=Math.max(8,T)+"px";
   const tile=()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true})};
-  smenu={id,back:at.el&&at.el.id==="splitbtn"?()=>{const b=$("splitbtn");if(b)b.focus();else tile()}:tile};
+  smenu={id,at:!at.el,back:at.el&&at.el.id==="splitbtn"?()=>{const b=$("splitbtn");if(b)b.focus();else tile()}:tile};
   for(const b of document.querySelectorAll("#splitbtn"))b.setAttribute("aria-expanded","true");
   const show=ev=>{const t=ev.target.closest&&ev.target.closest("[data-sp]");if(!t){clearSplitPreview();return}const[dir,k]=String(t.dataset.sp).split(":");if(SPDIR[dir]&&t.getAttribute("aria-disabled")!=="true")splitPreview(id,dir,+k);else clearSplitPreview()};
   m.addEventListener("focusin",show);m.addEventListener("mouseover",show);
@@ -1869,7 +1874,8 @@ function splitPick(t){if(!smenu||t.getAttribute("aria-disabled")==="true")return
   if(v==="unlock")toggleLock(id);else if(v==="join")joinCell(id);else{const[dir,k]=v.split(":");splitCell(id,dir,+k)}
   requestAnimationFrame(()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true});else back()})}
 document.addEventListener("pointerdown",ev=>{if(smenu&&!ev.target.closest("#smenu,#splitbtn"))closeSplit(false)},true);
-addEventListener("scroll",()=>{if(smenu)closeSplit(false)},true);addEventListener("resize",()=>{if(smenu)closeSplit(false)});
+// A menu at the pointer stays when the inspector scrolls: the right-click selected the window, and redrawing the inspector scrolls it. The board and the page still close it.
+addEventListener("scroll",ev=>{if(smenu&&!(smenu.at&&ev.target.closest&&ev.target.closest(".insp")))closeSplit(false)},true);addEventListener("resize",()=>{if(smenu)closeSplit(false)});
 // Zones: a rectangle of cells, filled with one app's or category's windows.
 function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort((a,b)=>appName(a).localeCompare(appName(b)));
   return `<optgroup label="Category">${cfg.categories.map(([c,l])=>`<option value="cat:${c}"${cur==="cat:"+c?" selected":""}>${esc(l)}</option>`).join("")}</optgroup><optgroup label="App">${apps.map(a=>`<option value="app:${esc(a)}"${cur==="app:"+a?" selected":""}>${esc(appName(a))}</option>`).join("")}</optgroup>`}
