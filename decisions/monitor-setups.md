@@ -23,7 +23,7 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - Coordinator 19:03 CST: a direct `tile.ps1 -Proc` run with `-Monitor wide` (default or explicit) and no monitor holding the wide role falls back to the widest screen, as main did. Scenes and the role path keep item 14 (a wide pin with no wide monitor goes to `left`).
 - Edit only the plugged-in setup (coordinator default, owner may change). Monitors and Setups (item 13) is a dialog from the strip; a setup not plugged in cannot be edited. The rail option is not taken. This answers the critique's question on editing an unplugged setup.
 - Item 7, closest known setup (coordinator default 2026-11-17 11:47 CST, owner may change): the known setup sharing the most monitors. A tie goes to the one used last. This is item 6's pick, and it is what "closest known setup" means.
-- Edited mark (coordinator default 2026-11-17 11:47 CST, owner may change): a scene card shows `follows <setup>` while it follows, and `own layout` once any edit lands on this setup. Autosave makes the first edit the switch. This replaces the mockup's Edited mark and its tag.
+- Edited mark (coordinator default 2026-11-17 11:47 CST, owner may change; the marks themselves are set by the 18:05 and 18:09 CST rulings below): autosave makes the first edit the switch.
 - Follow again (coordinator default 2026-11-17 11:47 CST, owner may change): `Follow <setup> Again` stays, on the scene card's menu.
 - Built-in scenes (coordinator default 2026-11-17 11:47 CST, owner may change): built-in scenes keep their own layout per setup, like any scene (item 5).
 - Save (coordinator default 2026-11-17 11:47 CST, owner may change): Save stays for a scene's name and triggers only. Layouts autosave.
@@ -41,6 +41,14 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - 17:35 CST: on the role path, a window pinned to a role no plugged monitor holds goes to `left` as "Its screen is unplugged", not `missing` (extends the 15:30 ruling and owner item 9, where an unplugged monitor's windows go).
 - 16:18 CST: POST /config never writes layouts, for any key; only POST /layout does.
 - 18:07 CST: a lone monitor holding several roles seeds its grid in the role order wide, tall, laptop (`Get-TileRoleOrder`, `config.ps1`, the one home).
+- 18:05 CST: a save the server refuses after a setup change (409) shows an amber "setup changed" strip with Refresh, not Try Again.
+- 18:05 CST: Apply or Refresh onto a new setup clears Undo.
+- 18:05 CST, closed 19:46 CST: autosave keeps every Windows That Stay Put and held entry. Save writes only a scene's name and triggers (POST /config never writes layouts, 16:18 CST), so no Save drops them either.
+- 18:05 CST: a failed GET /layouts or GET /config shows on the strip.
+- 18:05 CST: card marks follow the mockup, and show only while some scene follows another setup.
+- 18:05 CST: a monitor with no grid gets an "Add a Grid" button.
+- 18:09 CST: a card mark is an icon beside Built-In, with a title and aria-label, and no visible words. This answers item 16.
+- 18:28 CST: GET /layouts returns, per scene, {layout, follows}. `follows` comes from `Get-TileClosestSetup` (`config.ps1`), the one home for the closest-setup pick.
 
 **Built.**
 - Identity, PR 27 (monitor ids): built and merged.
@@ -48,9 +56,10 @@ Plan: docs/design/mockups/monitor-setups-notes.md#monitor-setups (windows)
 - Engine, PR 28 (engine layouts): built and merged.
 - Server and tray, PR 29 (setup plumbing): built and merged.
 - Item 17, the count triggers, PR 31 (setup-trigger, open draft): built. "Use This Scene on This Setup" replaces the `monitors` extra ("For N screens"), with flag `setup` and `scene.setupKey`. The old `monitors` flag migrates off, with a note. The grid trigger uses the wide-role monitor by id.
+- Item 8, autosave and the setup strip, PR 33 (board setups, open draft): built.
+  Departs from: the mockup. An unplugged monitor is drawn dashed beside the plugged ones, since config keeps only its size.
 
 **Open, not ruled.**
 - Item 7: the `Follow <setup> Again` control (`cd-own`) stays (coordinator default 2026-11-17 11:47 CST). What it links to is not ruled. The notes' items 11 and 16 still name Desk in their examples; rewording them is not ruled.
-- Item 16, the scene card's words against its icon: the default has the card show `follows <setup>` and `own layout`, while the icon pick keeps the word in the mark's title and label. Whether the card shows the words is not ruled.
 
 **Why.** The owner's ask, 2026-11-16 14:46 CST: "just like how windows remembers monitors and their layouts depending on whats plugged in cant we store that in memory too but act more dynamically than that". The item 9 answer lets the owner make a new arrangement while the ultrawide is unplugged.

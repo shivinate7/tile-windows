@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Monitor Setups</title>
 <style>
-/* Tokens copied from app.html :root (lines 13-23). No web fonts: this page opens from disk with no network, so the stacks fall back to Segoe UI. */
+/* Tokens copied from app.html :root (lines 13-23), checked against main 656a8cf. No web fonts: this page opens from disk with no network, so the stacks fall back to Segoe UI. */
 :root{
   --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
   --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
@@ -72,6 +72,7 @@ button{cursor:pointer}
 .abox.today{outline-color:var(--ann-today)}
 .abox>em{top:-19px;left:-4px;z-index:2}
 .abox.inl{margin-top:0;outline-offset:1px}
+h3.grp+.abox,.rail h2+.abox{margin-top:24px}
 .nolabels .ann{display:none}.nolabels .abox{outline:0;margin-top:0}.nolabels .abox>em{display:none}
 
 /* ---------- Product UI: copied from app.html ---------- */
@@ -96,9 +97,6 @@ button{cursor:pointer}
 .switch input{appearance:none;width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;margin:0;cursor:pointer;flex:none}
 .switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel)}
 .switch input:checked{background:var(--ink)} .switch input:checked::after{left:14px}
-.toast{position:absolute;right:16px;top:calc(100% + 6px);z-index:30;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;max-width:min(460px,calc(100vw - 32px));
-  padding:9px 10px 9px 14px;border-radius:8px;background:var(--ink);color:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent);font-weight:500}
-.toast .btn{min-height:28px;background:transparent;color:inherit;border-color:color-mix(in srgb,currentColor 40%,transparent)}
 .rail,.insp{min-width:0;min-height:0;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:auto}
 .rail{grid-area:rail;border-right:1px solid var(--line)}
 .insp{grid-area:insp;border-left:1px solid var(--line);gap:0;padding-top:4px}
@@ -115,7 +113,10 @@ button{cursor:pointer}
 .pick small{color:var(--muted);font-size:12px}
 .live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
 .crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.crow .acts2{display:flex;gap:4px;align-items:center}
 .tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);min-width:0}
+.chips{display:flex;flex-wrap:wrap;gap:3px}
+.chips i{font:normal 11px var(--f);border:1px solid var(--line);border-radius:10px;padding:0 6px;color:var(--ink)}
 .mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden;display:block}
 .mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
 .mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
@@ -125,6 +126,7 @@ button{cursor:pointer}
 .lg{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;border:0;background:transparent;padding:4px 6px;border-radius:4px;text-align:left}
 .lg .ct{margin-left:auto;font:12px var(--f-mono);color:var(--muted)}
 .note{font-size:12px;color:var(--muted);margin:0}
+.why{font-size:12px;color:var(--muted);margin:0;display:grid;gap:2px}
 .canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
 .canvas>*{width:100%;flex:none}
 .canvas>.stage{width:auto}
@@ -171,12 +173,47 @@ input[type=text]{width:100%}
 .step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .step button{border:0;background:transparent;width:30px;height:30px;font-size:15px}
 .step span{min-width:26px;text-align:center;font:500 12.5px var(--f-mono)}
+/* The Scene section's buttons and triggers, from app.html (.acts, .callout, details.xtras, .xrow, .xopt, h3.grp, fieldset.trig). */
+.acts{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;background:var(--panel);padding:8px 0;border-top:1px solid var(--line)}
+.callout{display:grid;font-size:12px;color:var(--muted);margin:0;padding:8px 10px;border-left:3px solid var(--line);border-radius:4px}
+.callout b{color:var(--ink);font-weight:600}
+.callout.warn{background:var(--hi-bg);border-left-color:var(--hi);color:var(--ink)}
+details.xtras{border-top:1px solid var(--line);margin-top:6px}
+details.xtras>summary{display:flex;align-items:center;gap:8px;min-height:36px;cursor:pointer;list-style:none;font-size:12.5px;white-space:nowrap}
+details.xtras>summary::-webkit-details-marker{display:none}
+details.xtras>summary::before{content:"";width:6px;height:6px;border:solid var(--ink);border-width:0 1.5px 1.5px 0;transform:rotate(-45deg);margin:0 4px 0 2px;flex:none}
+details.xtras[open]>summary::before{transform:rotate(45deg)}
+.xsum{margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:12px}
+h3.grp{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:12px 0 2px}
+.xrow{display:grid;gap:2px;padding:4px 0;border-top:1px solid var(--line)}
+.xrow .switch{align-items:flex-start;white-space:normal;min-height:36px;padding:4px 0;gap:10px;width:100%}
+.xrow .switch input{margin-top:2px;box-shadow:inset 0 0 0 1px var(--muted)}
+.xrow .switch input:checked{box-shadow:none}
+.xt{display:grid;flex:1;min-width:0}
+.xt small{color:var(--muted);font-size:12px}
+.xon{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--ink);align-self:center}
+.xopt{display:grid;gap:2px;padding:0 0 6px 40px;font-size:12px;color:var(--ink)}
+.xopt label{display:grid;gap:3px;line-height:1.5}
+.xopt select{width:100%}
+/* At 1024 the inspector's scroll bar leaves about 212px: the two button columns tighten their padding to fit Save As New. */
+.w1024 .acts .btn{padding:5px 8px}
+fieldset.trig{border:0;margin:0;padding:0;display:grid;gap:2px}
+fieldset.trig legend{padding:0;margin-bottom:4px;color:var(--muted)}
+.ropt label{display:flex;gap:10px;align-items:flex-start;min-height:32px;padding:3px 0}
+.ropt label span{display:grid}
+.ropt small{color:var(--muted);font-size:12px}
+.trig input[type=radio]{appearance:none;width:16px;height:16px;margin:2px 0 0;flex:none;border:1.5px solid var(--muted);border-radius:50%;background:var(--panel)}
+.trig input[type=radio]:checked{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 3px var(--panel)}
+@media (forced-colors:active){.trig input[type=radio]:checked{background:CanvasText}}
+/* Windows That Stay Put, in Flowing Columns (app.html .bay, .bcol, .bh, .chip; decision bay-list). Here each category is one column; the app packs them by height. */
 .bay{display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel))}
 .bay h2{margin:0;justify-content:flex-start;gap:10px}
 .bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
-.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
-.bgrp h3{display:flex;gap:6px;align-items:center;margin:0 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-.bgrp ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:0 12px;align-items:start}
+.bcol{--bhrow:15px;list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:4px;align-content:start}
+.bh{display:flex;gap:0 6px;align-items:center;margin:0;white-space:nowrap;font:600 11px/var(--bhrow) var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.bh .why{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font:400 11px/var(--bhrow) var(--f);text-transform:none;letter-spacing:0}
+.bh .ct{margin-left:auto;font:12px/var(--bhrow) var(--f-mono);letter-spacing:0}
 .chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;font-size:12px}
 .chip b{font-weight:600;white-space:nowrap}
 .chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -206,13 +243,12 @@ input[type=text]{width:100%}
 .setbar.warn{background:var(--hi-bg);border-color:color-mix(in srgb,var(--hi) 60%,var(--line));border-left:3px solid var(--hi)}
 .smap{position:relative;flex:none;width:58px;height:30px;border-radius:4px;background:var(--canvas)}
 .smap i{position:absolute;background:var(--screen);border:1.5px solid color-mix(in srgb,var(--ink) 70%,var(--canvas));border-radius:2px}
+/* A remembered monitor of this setup's source that is unplugged: dashed, no fill. */
 .smap i.gone{background:transparent;border:1.5px dashed var(--muted)}
 .sid{display:grid;gap:0;min-width:0;flex:1 1 260px}
 .sid b{font:700 14px var(--f-disp);letter-spacing:-.01em}
 .sid span{font-size:12px;color:var(--muted)}
 .sid span strong{color:var(--ink);font-weight:600}
-.sfold{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}
-.sfold select{color:var(--ink)}
 .sbtns{display:flex;gap:6px;flex-wrap:wrap}
 .sbtns .btn svg{width:14px;height:14px}
 .w1024 .setbar{gap:6px 10px;padding:6px 8px}
@@ -220,12 +256,26 @@ input[type=text]{width:100%}
 /* At 1024 Monitors and Setups keeps its icon and gives up its words (title and label keep them), so the strip stays two rows. */
 .w1024 .sbtns .btn.mg{padding:5px 8px}
 .w1024 .sbtns .btn.mg .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-/* A marker on each scene card: does this scene follow the source setup here, or has its own layout? Icon only; the word is in its title and label, and the setup strip says it once for the selected scene. */
+/* A marker on each scene card: does this scene follow another setup here, or has it its own layout? Icon form: the words are in its title and label. */
 .lay{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:3px;flex:none;color:var(--muted)}
 .lay svg{width:13px;height:13px}
 .lay.own{background:var(--ink);color:var(--panel)}
+/* Word form: one line under the scene name, so the tag beside Apply never wraps. */
+.layw{display:flex;gap:5px;align-items:center;font-size:12px;color:var(--ink)}
+.layw .lay{width:14px;height:14px}
+.layw .lay svg{width:11px;height:11px}
 /* A scene that follows another setup draws its mini map's windows as outlines: borrowed, not set here. */
 .mini.follow b{background:transparent;border:1.5px dashed color-mix(in srgb,var(--cat) 85%,var(--panel))}
+/* The card's menu button and its open menu. The menu is placed on the frame by script, so the 1024 rail's scroll box does not clip it. */
+/* It sits in the mini map's top right corner: the map is drawn centred and aria-hidden, so the corner is empty, and the row beside Apply has no room at 1024. */
+.cmenu{position:absolute;top:9px;right:10px;z-index:1;min-height:26px;width:28px;height:26px;padding:0;font-size:15px;line-height:1;letter-spacing:.05em}
+.cmenu[aria-expanded="true"]{border-color:var(--ink)}
+.menu{position:absolute;z-index:50;display:grid;gap:2px;width:236px;padding:4px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent)}
+.menu button{display:grid;gap:2px;text-align:left;border:0;background:transparent;border-radius:5px;padding:7px 9px;min-height:32px}
+.menu button:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.menu button b{font-weight:600;font-size:12.5px}
+.menu button small{font-size:12px;color:var(--muted)}
+@media (forced-colors:active){.menu{border-color:CanvasText}}
 /* The monitor's own name field in the inspector. */
 .mname{display:grid;gap:4px}
 .mname .note b{color:var(--ink);font-weight:600}
@@ -248,15 +298,6 @@ input[type=text]{width:100%}
 .lrow details code{font:11.5px var(--f-mono);overflow-wrap:anywhere}
 .lrow .btn{min-height:28px;padding:3px 10px;font-size:12px}
 .dempty{margin:0;padding:10px 0 4px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
-/* The rail option: a Setups section under Scenes. */
-.srow{display:grid;grid-template-columns:44px minmax(0,1fr);gap:2px 8px;align-items:center;width:100%;padding:5px 6px;border:0;border-radius:6px;background:transparent;text-align:left}
-.srow:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
-.srow .smap{width:44px;height:24px;grid-row:span 2}
-.srow b{font-weight:600;font-size:12.5px;display:flex;gap:6px;align-items:center}
-.srow small{font-size:11.5px;color:var(--muted)}
-.srow[aria-current="true"]{box-shadow:inset 0 0 0 1px var(--ink)}
-.srow[aria-current="true"] b::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok)}
-.w1024 .slist{display:grid;grid-auto-flow:column;grid-auto-columns:150px;gap:4px}
 @media (forced-colors:active){.lay.own{border:1px solid CanvasText}.smap i{border-color:CanvasText}.mini.follow b{border-color:CanvasText}.setbar.warn{border-left-color:CanvasText}}
 </style>
 </head>
@@ -264,8 +305,8 @@ input[type=text]{width:100%}
 <div class="mk">
   <p class="banner" role="note"><b>Sample.</b><span>Every monitor, serial, window, title, date and count on this page is invented. No figure here is real.</span></p>
   <header class="mkhead">
-    <h1>Monitor Setups</h1>
-    <p>Owner's ask, 2026-11-16 14:46 CST: remember monitors and their layouts by what is plugged in, like Windows does, but act more dynamically. Each monitor is known by its hardware, not its size rank. Each set of plugged-in monitors is a setup. Each scene keeps a layout per setup; a new setup starts from the closest one it has seen. Dashed pink labels mark what is new; dashed grey labels mark what exists today. Each option has a switch below that hides it.</p>
+    <h1>Monitor Setups: the Board</h1>
+    <p>Drawn to the owner's rulings of 2026-11-17 (decision monitor-setups). Each set of plugged-in monitors is a setup. A scene's layout on a new setup follows the closest known one until you change it. Every board change is saved at once for the setup in use, so layouts have no Save or Revert; Save keeps a scene's name and triggers. Windows from an unplugged monitor wait in Windows That Stay Put and go back to their cells when it returns. Designer kind: informed. Dashed pink labels mark what is new; dashed grey labels mark what exists today.</p>
   </header>
   <nav class="mkbar" aria-label="Mockup controls">
     <div class="mkgrp"><span id="lblState">State</span><div class="mkseg" id="segState" role="group" aria-labelledby="lblState"></div></div>
@@ -274,15 +315,9 @@ input[type=text]{width:100%}
       <div class="mkgrp"><span id="lblT">Theme</span><div class="mkseg" id="segT" role="group" aria-labelledby="lblT"></div></div>
     </div>
     <div class="mkopts" role="group" aria-label="Show options">
-      <span class="sep">Options:</span>
-      <label><input type="checkbox" data-o="setups" checked>Setup Strip</label>
-      <label><input type="checkbox" data-o="laptop" checked>Fold Onto the Laptop</label>
-      <label><input type="checkbox" data-o="portrait" checked>Fold Onto the Portrait</label>
-      <label><input type="checkbox" data-o="stay" checked>Send to Windows That Stay Put</label>
-      <label><input type="checkbox" data-o="dialog" checked>Monitors and Setups Dialog</label>
-      <label><input type="checkbox" data-o="rail" checked>Setups in the Rail</label>
-      <label><input type="checkbox" data-o="icon" checked>Card Marker as Icon</label>
-      <label><input type="checkbox" data-o="word" checked>Card Marker as Word</label>
+      <span class="sep">Open options:</span>
+      <label><input type="checkbox" data-o="icon" checked>Card Mark as Icon</label>
+      <label><input type="checkbox" data-o="word" checked>Card Mark as Words</label>
       <span class="sep">Overlays:</span>
       <label><input type="checkbox" id="oLabels" checked>Today and New Labels</label>
     </div>
@@ -307,10 +342,10 @@ const GEO={
   home:{lap:[0,560,1536,912],h27:[1536,0,2560,1400]},
   noid:{lap:[0,240,1536,912],m2:[1536,0,1920,1040]}};
 const SETUP={
-  desk:{name:"Desk",mons:["lap","uw","por"],when:"Last used today 08:12",own:"7 scenes"},
-  lp:{name:"Laptop + Portrait",mons:["lap","por"],when:"New today 14:31",own:"1 scene"},
-  solo:{name:"Laptop Only",mons:["lap"],when:"Last used Nov 14",own:"2 scenes"},
-  home:{name:"Home",mons:["lap","h27"],when:"Last used Nov 9",own:"none"}};
+  desk:{name:"Desk",mons:["lap","uw","por"],when:"Last used today 08:12"},
+  lp:{name:"Laptop + Portrait",mons:["lap","por"],when:"New today 14:31"},
+  solo:{name:"Laptop Only",mons:["lap"],when:"Last used Nov 14"},
+  home:{name:"Home",mons:["lap","h27"],when:"Last used Nov 9"}};
 const W={
   ca:{app:"Claude",cat:"code",title:"Refactor the grid solver"},
   cb:{app:"Claude",cat:"code",title:"Monitor setups lane"},
@@ -321,8 +356,11 @@ const W={
   fe:{app:"File Explorer",cat:"other",title:"Projects"},
   ou:{app:"Outlook",cat:"comms",title:"Inbox - Outlook"},
   tm:{app:"Teams",cat:"comms",title:"Team chat"},
-  on:{app:"Outlook (new)",cat:"comms",title:"Calendar"}};
+  on:{app:"Outlook (new)",cat:"comms",title:"Calendar"},
+  pa:{app:"Paint",cat:"other",title:"sketch.png - Paint"}};
 const CATN={code:"Code",browse:"Browse",comms:"Comms",other:"Other"};
+// Reasons a window has no cell (app.html BAYWHY). UNPLUGGED is new: the coordinator default's words.
+const UNPLUGGED="Its screen is unplugged",KEPT="You kept it here",NOWHY="Not in this scene";
 
 /* ---------- Icons ---------- */
 const I={
@@ -333,27 +371,28 @@ const I={
   own:'<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="2.5" width="10.4" height="7" rx="1"/><path d="M5 12h4M7 9.5V12"/></svg>',
   screens:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="3" width="9" height="6" rx="1"/><rect x="11.5" y="1.5" width="3.5" height="9" rx="1"/><path d="M4 12.5h3M5.5 9v3.5"/></svg>'};
 
-/* ---------- View state, from the URL hash ---------- */
-const OPTS=["setups","laptop","portrait","stay","dialog","rail","icon","word"];
-/* [key, item, option, name, caption] */
+/* ---------- States ---------- */
+// Item 16 is still open, so its two forms keep a switch that hides each. Everything else on this page is ruled or a coordinator default.
+const OPTS=["icon","word"];
+/* [key, item, option ("today" | "new" | an OPTS key), name, caption] */
 const STATES=[
   ["bd-today",1,"today","Today: the Laptop Is Called Ultrawide","The ultrawide is unplugged. Today the widest screen left takes the Ultrawide role, so the laptop gets the 5×2 grid and seven windows. The Laptop role has no screen, so Outlook (new) is skipped."],
-  ["bd-new",1,"setups","Unplugged: a New Setup, Built From Desk","Each screen keeps its own name. A strip above the board names the setup and says the scene follows Desk; no toast, so nothing covers the strip. The board shows Default's layout for this setup; Apply moves the windows, unless a trigger does it."],
-  ["bd-back",1,"setups","Plugged Back In: Desk Returns As It Was","Desk is a setup it has seen, so its layout comes back untouched. Nothing done on Laptop + Portrait wrote to Desk. The strip names Desk and says other setups follow it."],
-  ["bd-noid",1,"setups","A Monitor With No ID","A hotel monitor reports no maker or serial, so it cannot be told apart next time. The strip says so and offers to remember it by its size. Until then the layout follows Desk and edits last only while it is plugged in."],
-  ["fd-laptop",2,"laptop","Fold Onto the Laptop","The ultrawide's seven windows go to the remaining screen closest in shape: the laptop, landscape like the ultrawide. Its grid grows to 2×2, its own window keeps cell 1, and each category of folded window takes one cell, stacked in fill order."],
-  ["fd-portrait",2,"portrait","Fold Onto the Portrait","The seven windows go to the portrait, the larger screen by area. Its grid grows from 1×2 to 1×5: one row per category under Outlook and Teams. The rows are short."],
-  ["fd-stay",2,"stay","Send to Windows That Stay Put","The ultrawide's part of the scene waits. Its windows go to Windows That Stay Put, where Windows left them (on the laptop). The laptop and portrait keep their own layout."],
-  ["mg-dialog",3,"dialog","Monitors and Setups, in a Dialog","The strip's Monitors and Setups button opens one dialog. Each monitor and setup has a name field and a Forget button. A plugged-in monitor and the setup in use cannot be forgotten, and say why."],
-  ["mg-first",3,"dialog","First Run: One Setup So Far","After the update, the setup plugged in at first launch is the only one. The list says what will fill it."],
-  ["mg-rail",3,"rail","Setups in the Rail","Other option: a Setups section under Scenes in the left rail. A click opens that setup's layouts on the board, so the owner can edit a setup that is not plugged in. Renaming a monitor stays in the inspector."],
-  ["cd-follow",4,"icon","Scene Cards: Following Desk","On Laptop + Portrait, Default and Meetings follow Desk: their cards show a link mark and their mini maps draw windows as outlines. Focus has its own layout here: a filled screen mark and filled windows. The strip says the word once, for the selected scene."],
-  ["cd-own",4,"icon","Scene Cards: Own Layout","Focus is selected. It was changed and saved on this setup, so it no longer follows Desk. The strip says so and offers Follow Desk Again."],
-  ["cd-word",4,"word","Other Option: the Marker as a Word","Each card's tag says it in words. The tag wraps to two or three lines beside Apply, at 1440 and at 1024, so each card grows, and the word repeats on every card."]];
-const ITEMS={1:["1. The Board When a Screen Is Unplugged","Laptop and portrait only. Which setup is on, and where its layout came from."],
-  2:["2. Where the Missing Screen's Windows Go","The ultrawide held seven of Default's windows. Three options; the owner can change it per setup in the strip."],
+  ["bd-new",1,"new","Unplugged: a New Setup That Follows Desk","Laptop and portrait only. The strip names the setup and says Default follows Desk until you change it. Desk's laptop and portrait cells hold; the ultrawide's seven windows wait in Windows That Stay Put, with the reason said once per category."],
+  ["bd-own",1,"new","After the First Change: Its Own Layout, Saved at Once","The owner dragged Claude, Chrome and VS Code onto the laptop and made it 2×2. That first change gave Default its own layout here; the strip and the card mark say so. Nothing to save, and no toast: the board is the answer. Undo steps back."],
+  ["bd-back",1,"new","Plugged Back In: Windows Return to Their Cells","Desk is a setup the app has seen. Its layout comes back as it was, and the ultrawide's windows leave Windows That Stay Put for their remembered cells. Nothing done on Laptop + Portrait reached Desk."],
+  ["bd-noid",1,"new","A Monitor With No ID","A hotel monitor reports no maker or serial, so this setup cannot be remembered. The strip turns amber and offers Remember It by Its Size. Default follows Desk; Monitor 2 is not in Desk, so it starts empty, and the windows of the missing ultrawide and portrait stay put."],
+  ["sv-scene",2,"new","Save Keeps the Name and Triggers","Focus, a custom scene, is selected. Its board saves itself; the Save button is for the name and triggers only, so Revert is gone. A trigger switch was just turned on, so Save is on and the Edited mark shows. Extra Triggers shows Use This Scene on This Setup in place of For N Screens."],
+  ["sv-failed",2,"new","A Change That Could Not Be Saved","The app server stopped answering. The strip turns amber, says the last two board changes are only in this page, and offers Try Again. It never says saved when the write failed."],
+  ["sv-offline",2,"new","The Offline Page Does Not Save","Opened from disk (file://), the page has no scenes and no setups. It draws no strip and claims no saving: its edits stay in the page, and Apply downloads a place file, as today."],
+  ["mg-dialog",3,"new","Monitors and Setups, in a Dialog","The strip's Monitors and Setups button opens one dialog. Each monitor and setup has a name field and a Forget button. A plugged-in monitor and the setup in use cannot be forgotten, and say why."],
+  ["mg-first",3,"new","First Run: One Setup So Far","After the update, the setup plugged in at first launch is the only one. The list says what fills the next one."],
+  ["cd-follow",4,"icon","Scene Cards: the Mark as an Icon","On Laptop + Portrait, Default and Meetings follow Desk: a link mark, and windows drawn as outlines in the mini map. Focus has its own layout here: a filled screen mark and filled windows. The words are in each mark's title and label; the strip says them once for the selected scene."],
+  ["cd-own",4,"icon","Follow Desk Again, on the Card's Menu","Focus has its own layout here, so its card has a menu. Follow Desk Again drops that layout and follows Desk once more. A scene that follows has nothing to undo, so its card has no menu."],
+  ["cd-word",4,"word","Scene Cards: the Mark in Words","Each card says it in words on one line under the name, so the tag beside Apply never wraps. The cost: the words repeat on every card, and each card grows one line."]];
+const ITEMS={1:["1. The Board When a Screen Is Unplugged","Which setup is on, where its layout came from, and where the missing screen's windows wait."],
+  2:["2. Autosave, and What Save Still Does","Board changes save at once. Save keeps a scene's name and triggers."],
   3:["3. See, Rename and Forget Monitors and Setups","Where the owner sees what Tile Windows remembers."],
-  4:["4. A Scene Card on This Setup","How a card shows that its layout for this setup follows another setup, or is its own."]};
+  4:["4. A Scene Card on This Setup","How a card shows that its layout for this setup follows another setup, or is its own. Open: whether the card shows the words."]};
 const V={s:"bd-new",w:"1440",t:"",labels:true,off:new Set()};
 function readHash(){const h=new URLSearchParams(location.hash.slice(1));
   V.s=[...STATES.map(s=>s[0]),"all"].includes(h.get("s"))?h.get("s"):"bd-new";
@@ -368,39 +407,59 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 const css=b=>`left:${b.l.toFixed(1)}px;top:${b.t.toFixed(1)}px;width:${b.w.toFixed(1)}px;height:${b.h.toFixed(1)}px`;
 const ann=(b,text,o={})=>`<div class="ann${o.today?" today":""}${o.up?" up":""}${o.end?" end":""}" style="${css({l:b.l-3,t:b.t-3,w:b.w+6,h:b.h+6})}"><em>${o.today?"Today":"New"}: ${esc(text)}</em></div>`;
 const abox=(html,text,o={})=>`<div class="abox${o.today?" today":""}${o.inl?" inl":""}"${o.id?` id="${o.id}"`:""}><em>${o.today?"Today":"New"}: ${esc(text)}</em>${html}</div>`;
-// A small map of a setup's monitors; gone = monitors of another setup drawn dashed.
-function smap(setupKey,gone=[],W0=58,H0=30){const g={...GEO[setupKey]};const all=Object.entries(g);
+const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
+// A small map of a setup's monitors; gone = remembered monitors that are unplugged, drawn dashed.
+function smap(setupKey,gone=[],W0=58,H0=30){const all=Object.entries(GEO[setupKey]);
   const x0=Math.min(...all.map(([,r])=>r[0])),y0=Math.min(...all.map(([,r])=>r[1])),x1=Math.max(...all.map(([,r])=>r[0]+r[2])),y1=Math.max(...all.map(([,r])=>r[1]+r[3]));
   const S=Math.min((W0-6)/(x1-x0),(H0-6)/(y1-y0)),ox=(W0-(x1-x0)*S)/2,oy=(H0-(y1-y0)*S)/2;
   return `<span class="smap" style="width:${W0}px;height:${H0}px" aria-hidden="true">${all.map(([k,r])=>`<i class="${gone.includes(k)?"gone":""}" style="left:${(ox+(r[0]-x0)*S).toFixed(1)}px;top:${(oy+(r[1]-y0)*S).toFixed(1)}px;width:${Math.max(r[2]*S,3).toFixed(1)}px;height:${Math.max(r[3]*S,3).toFixed(1)}px"></i>`).join("")}</span>`}
 
+/* ---------- Per state: setup, selected scene, and which scenes have their own layout here ---------- */
+function ctx(st){
+  const c={setup:"lp",sel:"default",own:new Set(["focus"]),live:true,edited:false,undo:false};
+  if(st==="bd-today")Object.assign(c,{own:new Set(),today:true});
+  if(st==="bd-new"||st==="bd-noid")c.own=new Set();
+  if(st==="bd-own"||st==="sv-failed"||st.startsWith("mg-"))Object.assign(c,{own:new Set(["default","focus"]),undo:true});
+  if(st==="bd-back"||st==="mg-first")Object.assign(c,{setup:"desk",own:new Set(["default","focus","meetings"])});
+  if(st==="bd-noid")c.setup="noid";
+  if(st==="sv-scene")Object.assign(c,{sel:"focus",own:new Set(["default","focus"]),edited:true,undo:true});
+  if(st==="cd-own")Object.assign(c,{sel:"focus",menu:true});
+  if(st==="sv-offline")Object.assign(c,{live:false});
+  return c}
+
 /* ---------- Layouts per state: grid per monitor and the windows on it ---------- */
-// A tile: [win, mon, c, r, cs, rs, behind[]]
+// A tile: [win, mon, c, r, cs, rs, behind[]]. off: windows with no cell, and why.
 function layout(st){
+  const unpl=ids=>ids.map(id=>[id,UNPLUGGED]);
   const desk={geo:"desk",grids:{lap:[1,1],uw:[5,2],por:[1,2]},fills:"uw",
-    tiles:[["on","lap",0,0],["ca","uw",0,0],["cb","uw",1,0],["vs","uw",2,0],["ch","uw",3,0,2,1],["te","uw",0,1],["ex","uw",1,1],["fe","uw",4,1],["ou","por",0,0],["tm","por",0,1]]};
-  const foldLap={geo:"lp",grids:{lap:[2,2],por:[1,2]},fills:"lap",
-    tiles:[["on","lap",0,0],["ca","lap",1,0,1,1,["cb","vs","te"]],["ch","lap",0,1],["ex","lap",1,1,1,1,["fe"]],["ou","por",0,0],["tm","por",0,1]]};
+    tiles:[["on","lap",0,0],["ca","uw",0,0],["cb","uw",1,0],["vs","uw",2,0],["ch","uw",3,0,2,1],["te","uw",0,1],["ex","uw",1,1],["fe","uw",4,1],["ou","por",0,0],["tm","por",0,1]],
+    off:[["pa",KEPT]]};
+  const follow={geo:"lp",grids:{lap:[1,1],por:[1,2]},fills:null,
+    tiles:[["on","lap",0,0],["ou","por",0,0],["tm","por",0,1]],
+    off:[...unpl(["ca","cb","vs","te","ch","ex","fe"]),["pa",KEPT]]};
+  const own={geo:"lp",grids:{lap:[2,2],por:[1,2]},fills:null,
+    tiles:[["on","lap",0,0],["ca","lap",1,0],["ch","lap",0,1],["vs","lap",1,1],["ou","por",0,0],["tm","por",0,1]],
+    off:[...unpl(["cb","te","ex","fe"]),["pa",KEPT]]};
+  const focus={geo:"lp",grids:{lap:[1,1],por:[1,2]},fills:null,
+    tiles:[["ca","lap",0,0,1,1,["cb"]],["ch","por",0,0],["tm","por",0,1]],
+    off:[["vs",NOWHY],["te",NOWHY],["on",NOWHY],["ou",NOWHY],["ex",NOWHY],["fe",NOWHY],["pa",KEPT]]};
   if(st==="bd-today")return{geo:"lp",grids:{lap:[5,2],por:[1,2]},fills:"lap",names:{lap:"Ultrawide",por:"Portrait"},
-    tiles:[["ca","lap",0,0],["cb","lap",1,0],["vs","lap",2,0],["ch","lap",3,0,2,1],["te","lap",0,1],["ex","lap",1,1],["fe","lap",4,1],["ou","por",0,0],["tm","por",0,1]]};
-  if(st==="bd-back")return desk;
-  if(st==="fd-portrait")return{geo:"lp",grids:{lap:[1,1],por:[1,5]},fills:"por",
-    tiles:[["on","lap",0,0],["ou","por",0,0],["tm","por",0,1],["ca","por",0,2,1,1,["cb","vs","te"]],["ch","por",0,3],["ex","por",0,4,1,1,["fe"]]]};
-  if(st==="fd-stay")return{geo:"lp",grids:{lap:[1,1],por:[1,2]},fills:null,
-    tiles:[["on","lap",0,0],["ou","por",0,0],["tm","por",0,1]]};
-  if(st==="bd-noid")return{geo:"noid",grids:{lap:[1,1],m2:[2,2]},fills:"m2",
-    tiles:[["on","lap",0,0],["ca","m2",0,0,1,1,["cb","vs","te"]],["ch","m2",1,0],["ou","m2",0,1,1,1,["tm"]],["ex","m2",1,1,1,1,["fe"]]]};
-  if(st==="cd-own")return{geo:"lp",grids:{lap:[1,1],por:[1,2]},fills:"lap",
-    tiles:[["ca","lap",0,0,1,1,["cb"]],["ch","por",0,0],["tm","por",0,1]]};
-  return foldLap}
+    tiles:[["ca","lap",0,0],["cb","lap",1,0],["vs","lap",2,0],["ch","lap",3,0,2,1],["te","lap",0,1],["ex","lap",1,1],["fe","lap",4,1],["ou","por",0,0],["tm","por",0,1]],off:[["pa",KEPT]]};
+  if(st==="bd-back"||st==="mg-first")return desk;
+  if(st==="bd-noid")return{geo:"noid",grids:{lap:[1,1],m2:[1,1]},fills:null,
+    tiles:[["on","lap",0,0]],off:[...unpl(["ca","cb","vs","te","ch","ex","fe","ou","tm"]),["pa",KEPT]]};
+  if(st==="sv-scene"||st==="cd-own")return focus;
+  if(st==="bd-own"||st==="sv-failed"||st==="mg-dialog")return own;
+  if(st==="sv-offline")return{...own,tiles:own.tiles.map(t=>t.slice(0,4)),off:[]};
+  return follow}
 
 /* ---------- Board ---------- */
 // Scales: each board fits the canvas at its artboard width with room left for the strip, the hint and the list.
 function scaleFor(geo,w){const g=Object.values(GEO[geo]),x0=Math.min(...g.map(r=>r[0])),y0=Math.min(...g.map(r=>r[1])),x1=Math.max(...g.map(r=>r[0]+r[2])),y1=Math.max(...g.map(r=>r[1]+r[3]));
-  const maxW=w==="1440"?880:700,maxH=w==="1440"?(geo==="desk"?380:400):(geo==="desk"?290:300);
+  const maxW=w==="1440"?880:700,maxH=w==="1440"?(geo==="desk"?360:380):(geo==="desk"?270:280);
   return{S:Math.min(maxW/(x1-x0),maxH/(y1-y0)),x0,y0,bw:x1-x0,bh:y1-y0}}
 const TOP=22;
-function board(st,F,L,w){
+function board(st,F,L,w,live){
   const {S,x0,y0,bw,bh}=scaleFor(L.geo,w);
   const mb=k=>{const r=GEO[L.geo][k];return{l:(r[0]-x0)*S+3,t:(r[1]-y0)*S+TOP,w:r[2]*S-6,h:r[3]*S}};
   const cb=(k,c,r,cs=1,rs=1)=>{const b=mb(k),[gc,gr]=L.grids[k],iw=b.w-10,ih=b.h-10,cw=(iw-(gc-1)*2)/gc,ch=(ih-(gr-1)*2)/gr;
@@ -408,79 +467,134 @@ function board(st,F,L,w){
   let mons="",tiles="",anns="";
   const names=L.names||{};
   for(const k of Object.keys(GEO[L.geo])){const b=mb(k),[gc,gr]=L.grids[k];let cells="";for(let i=0;i<gc*gr;i++)cells+=`<div class="cell"><i>${i+1}</i></div>`;
-    const nm=names[k]||HW[k].name,cur=k===(L.cur||"lap");
-    const tgt=(st==="fd-laptop"&&k==="lap")||(st==="fd-portrait"&&k==="por")?` id="${F}-target"`:"";
-    mons+=`<div class="mon${cur?" cur":""}"${tgt} style="${css(b)};grid-template-columns:repeat(${gc},minmax(0,1fr));grid-template-rows:repeat(${gr},minmax(0,1fr))">${cells}</div><div class="mlab" style="left:${b.l}px;top:${b.t}px"><button type="button" aria-pressed="${cur}">${esc(nm)}</button><span class="num">${gc}×${gr}${L.fills===k?" · fills":""}</span></div>`}
-  for(const [id,k,c,r,cs=1,rs=1,beh=[]] of L.tiles){const x=W[id],b0=cb(k,c,r,cs,rs),b={l:b0.l+1,t:b0.t+1,w:b0.w-2,h:b0.h-2},nar=b.w<84,stk=beh.length>0;
+    const nm=names[k]||HW[k].name,cur=k==="lap";
+    mons+=`<div class="mon${cur?" cur":""}" style="${css(b)};grid-template-columns:repeat(${gc},minmax(0,1fr));grid-template-rows:repeat(${gr},minmax(0,1fr))">${cells}</div><div class="mlab" style="left:${b.l}px;top:${b.t}px"><button type="button" aria-pressed="${cur}">${esc(nm)}</button><span class="num">${gc}×${gr}${L.fills===k?" · fills":""}</span></div>`}
+  for(const [id,k,c,r,cs=1,rs=1,beh=[]] of L.tiles){const x=W[id],b0=cb(k,c,r,cs,rs),b={l:b0.l+1,t:b0.t+1,w:b0.w-2,h:b0.h-2},nar=b.w<84,stk=beh.length>0,pin=live;
     const tb=stk?{l:b.l,t:b.t+3,w:b.w-3,h:b.h-3}:b;
     if(stk)tiles+=`<div class="stkedge cat-${x.cat}" style="${css({l:b.l+3,t:b.t,w:b.w-3,h:b.h-3})}"></div>`;
     const badge=stk?`<button type="button" class="stk" title="Behind it: ${esc(beh.map(q=>W[q].app).join(", "))}">${tb.w>=140?I.behind:""}<span>${esc(W[beh[0]].app)}</span>${beh.length>1?`<span class="n"> +${beh.length-1}</span>`:""}</button>`:"";
-    tiles+=`<div class="tile cat-${x.cat} pin${stk?" stacked":""}${nar?" narrow":""}" style="${css(tb)}" tabindex="0" aria-label="${esc(x.title)}, ${esc(x.app)}, pinned${stk?`, ${beh.length} behind`:""}"><b>${esc(x.app)}</b><span>${esc(x.title)}</span>${I.pin}${badge}</div>`}
+    tiles+=`<div class="tile cat-${x.cat}${pin?" pin":""}${stk?" stacked":""}${nar?" narrow":""}" style="${css(tb)}" tabindex="0" aria-label="${esc(x.title)}, ${esc(x.app)}${pin?", pinned":""}${stk?`, ${beh.length} behind`:""}"><b>${esc(x.app)}</b><span>${esc(x.title)}</span>${pin?I.pin:""}${badge}</div>`}
   // Labels
-  if(st==="bd-today"){const b=mb("lap");anns+=ann(b,"Laptop Called Ultrawide, Gets Its 5×2 Grid",{today:true,up:false})}
-  if(st==="bd-new"||st==="fd-laptop"){const b=mb("lap");anns+=ann(b,st==="fd-laptop"?"Grows to 2×2; One Cell per Category":"Laptop Keeps Its Name",{})}
-  if(st==="fd-portrait"){const b=mb("por");anns+=ann(b,"Grows to 1×5",{end:true})}
-  if(st==="fd-stay"){const b=mb("lap");anns+=ann(b,"Laptop Keeps 1×1",{})}
-  if(st==="bd-noid"){const b=mb("m2");anns+=ann(b,"No ID: Named by Order",{end:true})}
-  if(st==="bd-back"){const b=mb("uw");anns+=ann(b,"Desk Layout Comes Back Untouched",{})}
+  if(st==="bd-today"){anns+=ann(mb("lap"),"Laptop Called Ultrawide, Gets Its 5×2 Grid",{today:true})}
+  if(st==="bd-new"){anns+=ann(mb("lap"),"Laptop Keeps Its Name and Desk's Cell",{})}
+  if(st==="bd-own"){anns+=ann(mb("lap"),"Made 2×2 Here: Saved at Once",{})}
+  if(st==="bd-noid"){anns+=ann(mb("m2"),"No ID: Named by Order, Starts Empty",{end:true})}
+  if(st==="bd-back"){anns+=ann(mb("uw"),"Back in Their Remembered Cells",{})}
   return `<div class="stage" style="width:${(bw*S).toFixed(0)}px;height:${(bh*S+TOP).toFixed(0)}px">${mons}${tiles}${anns}</div>`}
 
 /* ---------- The setup strip ---------- */
-function setbar(st,F){
-  const fold=sel=>`<label class="sfold">Ultrawide's windows go to <select aria-label="Where the Ultrawide's windows go on this setup"><option${sel==="lap"?" selected":""}>Laptop</option><option${sel==="por"?" selected":""}>Portrait</option><option${sel==="stay"?" selected":""}>Windows That Stay Put</option></select></label>`;
-  const mgBtn=`<button type="button" class="btn mg" title="Monitors and Setups">${I.screens}<span class="t">Monitors and Setups</span></button>`;
-  let id,sub,extra="",cls="setbar",map;
-  const sceneName=st==="cd-own"?"Focus":"Default";
-  if(st==="bd-back"){map=smap("desk");id="Desk";sub=`<strong>${sceneName}</strong> has its own layout here. Setups that follow Desk get your changes.`}
-  else if(st==="bd-noid"){cls+=" warn";map=smap("noid");id="Laptop + Monitor 2";sub=`Monitor 2 gave Windows no ID, so this setup is not remembered. <strong>${sceneName}</strong> follows Desk; changes last until it is unplugged.`;
-    extra=`<label class="sfold">Ultrawide's and Portrait's windows go to <select aria-label="Where the missing monitors' windows go"><option selected>Monitor 2</option><option>Laptop</option><option>Windows That Stay Put</option></select></label><div class="sbtns"><button type="button" class="btn">Remember It by Its Size</button></div>`}
-  else if(st==="cd-own"){map=smap("lp",[]);id="Laptop + Portrait";sub=`<strong>Focus</strong> has its own layout here, saved today at 14:40. Desk's changes no longer reach it.`;extra=`<div class="sbtns"><button type="button" class="btn">Follow Desk Again</button></div>`}
-  else{map=smap("lp");id="Laptop + Portrait";sub=`New setup, first seen today at 14:31. <strong>${sceneName}</strong> follows Desk until you change it and Save.`;
-    extra=fold(st==="fd-portrait"?"por":st==="fd-stay"?"stay":"lap")}
-  const html=`<div class="${cls}" id="${F}-setbar">${map}<div class="sid"><b>${esc(id)}</b><span>${sub}</span></div>${extra}<div class="sbtns">${mgBtn}</div></div>`;
-  return abox(html,st==="bd-noid"?"Setup Strip: No ID Warning":"Setup Strip")}
+const SNAME={default:"Default",focus:"Focus",meetings:"Meetings"};
+function setbar(st,F,C){
+  const mgBtn=`<button type="button" class="btn mg" title="Monitors and Setups" aria-label="Monitors and Setups">${I.screens}<span class="t">Monitors and Setups</span></button>`;
+  const sc=`<strong>${SNAME[C.sel]}</strong>`,ownHere=C.own.has(C.sel);
+  let id="Laptop + Portrait",sub,extra="",cls="setbar",map=smap("desk",["uw"]),lab="Setup Strip";
+  if(st==="bd-back"){map=smap("desk");id="Desk";sub=`${sc} has its own layout here. The Ultrawide's windows are back in their cells.`}
+  else if(st==="bd-noid"){cls+=" warn";map=smap("noid");id="Laptop + Monitor 2";lab="Setup Strip: No ID";
+    sub=`Monitor 2 gave Windows no ID, so this setup cannot be remembered. ${sc} follows Desk; changes last until it is unplugged.`;
+    extra=`<div class="sbtns"><button type="button" class="btn">Remember It by Its Size</button></div>`}
+  else if(st==="sv-failed"){cls+=" warn";lab="Setup Strip: Not Saved";
+    sub=`<strong>Not saved.</strong> The app server stopped answering, so your last 2 board changes are only in this page. Undo still works.`;
+    extra=`<div class="sbtns"><button type="button" class="btn">Try Again</button></div>`}
+  else if(st==="bd-new")sub=`New setup, first seen today at 14:31. ${sc} follows Desk until you change it.`;
+  else sub=ownHere?`${sc} has its own layout here. Board changes save as you make them.`:`${sc} follows Desk until you change it.`;
+  const html=`<div class="${cls}" id="${F}-setbar"${cls.includes("warn")?' role="status"':""}>${map}<div class="sid"><b>${esc(id)}</b><span>${sub}</span></div>${extra}<div class="sbtns">${mgBtn}</div></div>`;
+  return abox(html,lab)}
 
 /* ---------- Rail ---------- */
-function miniFor(scene,follow,w){
-  // app.html miniHTML(): the plugged-in monitors to scale in a 196×28 box (here the card's own width), each scene's windows on them.
-  const g=GEO.lp,x0=0,y0=0,x1=2736,y1=1872,BW=w==="1024"?150:182,BH=28,S=Math.min(BW/(x1-x0),BH/(y1-y0)),ox=(BW-(x1-x0)*S)/2+3,oy=(BH-(y1-y0)*S)/2+2;
+// The scene's windows in its mini map, per monitor: [mon, c, r, gc, gr, cat, cs, rs]. "a" is the laptop, "b" the other monitor of a two-monitor setup.
+const MINI={
+  desk:{default:[["lap",0,0,1,1,"comms"],["uw",0,0,5,2,"code"],["uw",1,0,5,2,"code"],["uw",2,0,5,2,"code"],["uw",3,0,5,2,"browse",2],["uw",0,1,5,2,"code"],["uw",1,1,5,2,"other"],["uw",4,1,5,2,"other"],["por",0,0,1,2,"comms"],["por",0,1,1,2,"comms"]],
+    focus:[["uw",0,0,3,1,"code"],["uw",1,0,3,1,"code"],["uw",2,0,3,1,"code"],["por",0,0,1,2,"browse"],["por",0,1,1,2,"comms"]],
+    meetings:[["lap",0,0,1,1,"code"],["uw",0,0,2,1,"comms"],["uw",1,0,2,1,"browse"],["por",0,0,1,1,"comms"]]},
+  follow:{default:[["a",0,0,1,1,"comms"],["b",0,0,1,2,"comms"],["b",0,1,1,2,"comms"]],focus:[["b",0,0,1,2,"browse"],["b",0,1,1,2,"comms"]],meetings:[["a",0,0,1,1,"code"],["b",0,0,1,1,"comms"]]},
+  own:{default:[["a",0,0,2,2,"comms"],["a",1,0,2,2,"code"],["a",0,1,2,2,"browse"],["a",1,1,2,2,"code"],["b",0,0,1,2,"comms"],["b",0,1,1,2,"comms"]],focus:[["a",0,0,1,1,"code"],["b",0,0,1,2,"browse"],["b",0,1,1,2,"comms"]],
+    meetings:[["a",0,0,2,2,"comms",2],["a",0,1,2,2,"code"],["a",1,1,2,2,"browse"],["b",0,0,1,1,"comms"]]}};
+function miniFor(scene,C,w){
+  // app.html miniHTML(): the plugged-in monitors to scale in the card's width by 28, each scene's windows on them.
+  const g=GEO[C.setup],keys=Object.keys(g),xs=Object.values(g),x0=Math.min(...xs.map(r=>r[0])),y0=Math.min(...xs.map(r=>r[1])),x1=Math.max(...xs.map(r=>r[0]+r[2])),y1=Math.max(...xs.map(r=>r[1]+r[3]));
+  const BW=w==="1024"?150:182,BH=28,S=Math.min(BW/(x1-x0),BH/(y1-y0)),ox=(BW-(x1-x0)*S)/2+3,oy=(BH-(y1-y0)*S)/2+2;
   const box=k=>({l:ox+(g[k][0]-x0)*S,t:oy+(g[k][1]-y0)*S,w:g[k][2]*S,h:g[k][3]*S});
+  const own=C.own.has(scene),follow=C.setup!=="desk"&&!own&&!C.today;
+  let blocks=C.setup==="desk"?MINI.desk[scene]:(own?MINI.own:MINI.follow)[scene].map(a=>[a[0]==="a"?"lap":keys[1],...a.slice(1)]);
+  if(C.setup==="noid")blocks=blocks.filter(a=>a[0]==="lap");
   const blk=(k,c,r,gc,gr,cat,cs=1,rs=1)=>{const m=box(k),cw=m.w/gc,ch=m.h/gr;return `<b class="cat-${cat}" style="left:${(m.l+c*cw+1).toFixed(1)}px;top:${(m.t+r*ch+1).toFixed(1)}px;width:${Math.max(cs*cw-2,2).toFixed(1)}px;height:${Math.max(rs*ch-2,2).toFixed(1)}px"></b>`};
-  const S2={default:[["lap",0,0,2,2,"comms"],["lap",1,0,2,2,"code"],["lap",0,1,2,2,"browse"],["lap",1,1,2,2,"other"],["por",0,0,1,2,"comms"],["por",0,1,1,2,"comms"]],
-    focus:[["lap",0,0,1,1,"code"],["por",0,0,1,2,"browse"],["por",0,1,1,2,"comms"]],
-    meetings:[["lap",0,0,2,2,"comms",2,1],["lap",0,1,2,2,"code"],["lap",1,1,2,2,"browse"],["por",0,0,1,1,"comms"]]}[scene];
-  const scr=["lap","por"].map(k=>{const m=box(k);return `<i style="left:${m.l.toFixed(1)}px;top:${m.t.toFixed(1)}px;width:${(m.w-1).toFixed(1)}px;height:${(m.h-1).toFixed(1)}px"></i>`}).join("");
-  return `<span class="mini${follow?" follow":""}" aria-hidden="true">${scr}${S2.map(a=>blk(...a)).join("")}</span>`}
-function rail(st,F,w){
-  const wordOpt=st==="cd-word";
-  const own=id=>id==="focus";
-  const selId=st==="cd-own"?"focus":"default";
-  const showMark=st.startsWith("cd-")||st.startsWith("fd-")||st==="bd-new"||st==="mg-rail";
-  const mark=id=>{if(!showMark)return"";if(wordOpt)return"";const o=own(id);const t=o?"Own layout for Laptop + Portrait":"Follows Desk on Laptop + Portrait";
-    return `<span class="lay${o?" own":""}" title="${t}" role="img" aria-label="${t}">${o?I.own:I.link}</span>`};
-  const tagTxt=id=>wordOpt?`Built-in · ${own(id)?"own layout":"follows Desk"}`:"Built-in";
-  const card=(id,name,blurb)=>{const sel=id===selId,on=id==="default";const follow=showMark&&!own(id);
-    return `<article class="card${sel?" sel":""}"${id==="focus"&&st==="cd-own"?` id="${F}-card"`:""}><button type="button" class="pick" aria-pressed="${sel}">${miniFor(id,follow,w)}<strong>${name}${on?'<span class="live">On screen</span>':""}</strong><small>${blurb}</small></button><div class="crow"><span class="tag">${mark(id)}${tagTxt(id)}</span><button type="button" class="btn">Apply</button></div></article>`};
-  let cards=card("default","Default","Claude and Chrome fill the big screen.")+card("focus","Focus","Claude only, three wide.")+card("meetings","Meetings","Teams big, mail beside it.");
-  if(st.startsWith("cd-"))cards=abox(`<div class="cards" id="${F}-cards">${cards}</div>`,wordOpt?"Marker as a Word":"Link or Screen Mark");
+  const scr=keys.map(k=>{const m=box(k);return `<i style="left:${m.l.toFixed(1)}px;top:${m.t.toFixed(1)}px;width:${(m.w-1).toFixed(1)}px;height:${(m.h-1).toFixed(1)}px"></i>`}).join("");
+  return `<span class="mini${follow&&C.live?" follow":""}" aria-hidden="true">${scr}${blocks.map(a=>blk(...a)).join("")}</span>`}
+function rail(st,F,w,C){
+  if(!C.live)return `<aside class="rail" aria-label="Scenes and categories"><section><h2>Scenes</h2><p class="note">Scenes need the app server. Open Tile Windows from the Start menu, or run <code>serve.ps1</code>.</p></section>${legend()}</aside>`;
+  const today=st==="bd-today",word=st==="cd-word",sname=SETUP[C.setup]?SETUP[C.setup].name:"Laptop + Monitor 2";
+  const markTxt=id=>C.own.has(id)?`Own layout for ${sname}`:"Follows Desk";
+  const mark=id=>{const o=C.own.has(id),t=markTxt(id);return `<span class="lay${o?" own":""}" title="${t}" role="img" aria-label="${t}">${o?I.own:I.link}</span>`};
+  // On Desk every scene has its own layout and none follows, so the mark says nothing new there: no mark.
+  const showMark=!today&&C.setup!=="desk";
+  const blurb={default:"Claude and Chrome fill the big screen.",focus:"Claude only, three wide.",meetings:"Teams big, mail beside it."};
+  const card=id=>{const sel=id===C.sel,on=id==="default",built=id==="default",ed=C.edited&&sel;
+    const tag=`${built?"Built-in":"Custom"}${ed?" · edited":""}`;
+    const chips=st==="sv-scene"&&id==="focus"?`<span class="chips" aria-label="Extra triggers on"><i title="Use This Scene on This Setup">Laptop + Portrait</i></span>`:"";
+    const wl=showMark&&word?`<span class="layw">${mark(id)}<span>${C.own.has(id)?"Own layout here":"Follows Desk"}</span></span>`:"";
+    // The menu shows only where it has something to do: a scene with its own layout on a setup that follows another.
+    const menuBtn=!today&&C.own.has(id)&&C.setup!=="desk"?`<button type="button" class="btn cmenu" aria-haspopup="menu" aria-expanded="${!!(C.menu&&sel)}" aria-label="More for ${SNAME[id]}" title="More for ${SNAME[id]}"${C.menu&&sel?` data-menu="${F}"`:""}>⋯</button>`:"";
+    return `<article class="card${sel?" sel":""}"${sel&&C.menu?` id="${F}-card"`:""}><button type="button" class="pick" aria-pressed="${sel}">${miniFor(id,C,w)}<strong>${SNAME[id]}${on?'<span class="live">On screen</span>':""}</strong><small>${blurb[id]}</small>${chips}${wl}</button><div class="crow"><span class="tag">${showMark&&!word?mark(id):""}${tag}</span><span class="acts2">${menuBtn}<button type="button" class="btn">Apply</button></span></div></article>`};
+  let cards=["default","focus","meetings"].map(card).join("");
+  if(st.startsWith("cd-"))cards=abox(`<div class="cards" id="${F}-cards">${cards}</div>`,word?"Mark in Words":st==="cd-own"?"Card Menu":"Link or Screen Mark");
+  else if(st==="bd-own")cards=abox(`<div class="cards">${cards}</div>`,"Default: Own Layout Mark");
   else cards=`<div class="cards">${cards}</div>`;
-  const setups=st==="mg-rail"?abox(`<section id="${F}-setups"><h2>Setups</h2><div class="slist">${["lp","desk","solo","home"].map(k=>`<button type="button" class="srow"${k==="lp"?' aria-current="true"':""}>${smap(k,[],44,24)}<b>${esc(SETUP[k].name)}</b><small>${k==="lp"?"Plugged in now":esc(SETUP[k].when)}</small></button>`).join("")}</div></section>`,"Setups Section"):"";
-  return `<aside class="rail" aria-label="Scenes and categories"><section><h2>Scenes</h2>${cards}</section>${setups}
-    <section><h2>Categories</h2><div class="legend">${[["code","Code",4],["browse","Browse",1],["comms","Comms",3],["other","Other",2]].map(([c,l,n])=>`<button type="button" class="lg cat-${c}" aria-pressed="true"><i class="sw"></i>${l}<span class="ct">${n}</span></button>`).join("")}</div><p class="note">Click a category to fade it on the board.</p></section></aside>`}
+  return `<aside class="rail" aria-label="Scenes and categories"><section><h2>Scenes</h2>${cards}</section>${legend()}</aside>`}
+const legend=()=>`<section><h2>Categories</h2><div class="legend">${[["code","Code",4],["browse","Browse",1],["comms","Comms",3],["other","Other",3]].map(([c,l,n])=>`<button type="button" class="lg cat-${c}" aria-pressed="true"><i class="sw"></i>${l}<span class="ct">${n}</span></button>`).join("")}</div><p class="note">Click a category to fade it on the board.</p></section>`;
+// The card menu, placed on the frame beside its button after render.
+const menuHTML=F=>`<div class="menu" role="menu" id="${F}-menu" data-for="${F}"><button type="button" role="menuitem"><b>Follow Desk Again</b><small>Drops Focus's layout for Laptop + Portrait. Undo brings it back.</small></button></div>`;
 
 /* ---------- Inspector ---------- */
 const stepper=(lbl,val)=>`<span class="step"><button type="button" aria-label="Fewer ${lbl}">−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" aria-label="More ${lbl}">+</button></span>`;
-function insp(st,F,L){
+const TRIG=[["manual","Only When I Click Apply","I apply it myself."],["time","On a Schedule","On set days at a set time."],["display","When the Monitors Change","When a monitor is added or removed."],["call","When a Teams Call Starts","When Teams starts using the microphone."]];
+function sceneBox(st,F,C){
+  if(!C.live)return "";
+  const today=st==="bd-today",built=C.sel==="default",sname=SNAME[C.sel],ed=C.edited;
+  // Save is on only while the name or a trigger has an unsaved change; board changes are already saved.
+  // The reason names what Save covers, so it never reads as a claim about board changes (sv-failed shows both at once).
+  const why={save:ed?"":"No name or trigger changes to save.",del:built?"Built-in scenes cannot be deleted.":""};
+  const off=(k,t)=>why[k]?` disabled title="${why[k]}" aria-describedby="${F}-whyoff"`:"";
+  const name=`<div class="field stack"><label for="${F}-sn">Name</label><input type="text" id="${F}-sn" value="${sname}" maxlength="40"${built?' disabled title="Built-in scenes keep their name."':""}></div>`;
+  if(today){
+    const acts=`<div class="acts"><button type="button" class="btn pri" disabled title="Built-in scenes keep their layout. Use Save As New to change it.">Save</button><button type="button" class="btn">Save As New</button><button type="button" class="btn" disabled title="No changes to revert.">Revert</button><button type="button" class="btn danger" disabled title="Built-in scenes cannot be deleted.">Delete</button></div>`;
+    return `<section class="isec" aria-label="Scene"><h2>Scene</h2>${name}<p class="note">Triggers sit here as today.</p>${abox(acts,"Save and Revert",{today:true})}</section>`}
+  let trig;
+  if(st==="sv-scene"){
+    const xrow=(on,l,h,opt)=>`<div class="xrow"><label class="switch"><input type="checkbox" ${on?"checked":""}><span class="xt"><b>${l}</b><small>${h}</small></span>${on?'<span class="xon">On</span>':""}</label>${on&&opt?`<div class="xopt">${opt}</div>`:""}</div>`;
+    const setSel=`<label>Setup <select aria-label="Use This Scene on This Setup: which setup"><option selected>Laptop + Portrait</option><option>Desk</option><option>Laptop Only</option><option>Home</option></select></label>`;
+    const rowNew=abox(xrow(true,"Use This Scene on This Setup","When this setup is plugged in.",setSel),"Replaces For N Screens",{id:`${F}-trig`});
+    trig=`<h2>Triggers</h2><p class="callout warn"><span><b>Triggers that are on move your windows without asking.</b> They run once you Save, and only while the tray agent runs. Applying by hand always works.</span></p>
+      <fieldset class="trig"><legend>Main Trigger (Pick One)</legend>${TRIG.map(([v,l,h])=>`<div class="ropt"><label><input type="radio" name="${F}-trig" ${v==="manual"?"checked":""}><span>${l}<small>${h}</small></span></label></div>`).join("")}</fieldset>
+      <details class="xtras" open><summary><b>Extra Triggers</b><span class="xsum">1 on</span></summary><p class="note">Any number, each with its own switch. Other groups as today.</p><h3 class="grp">Monitors</h3>${rowNew}${xrow(false,"Use This Scene When the External Monitors Go","When only the laptop screen has been left for a while.")}</details>`}
+  else trig=`<p class="note">Triggers sit here as today; Extra Triggers has Use This Scene on This Setup in place of For N Screens.</p>`;
+  const acts=`<div class="acts"${st==="sv-scene"?` id="${F}-acts"`:""}><button type="button" class="btn pri"${off("save")}>Save</button><button type="button" class="btn">Save As New</button><button type="button" class="btn danger"${off("del")}>Delete</button></div>`;
+  const whys=[why.save,why.del].filter(Boolean);
+  const tail=`${abox(acts,"Save for Name and Triggers")}<p class="note">Save keeps the name and triggers.</p><p class="why" id="${F}-whyoff">${whys.map(x=>`<span>${esc(x)}</span>`).join("")}</p>`;
+  return `<section class="isec" aria-label="Scene"><h2>Scene</h2>${name}${trig}${tail}</section>`}
+function insp(st,F,L,C){
   const today=st==="bd-today";
-  const sname=st==="cd-own"?"Focus":"Default";
-  const scene=`<section class="isec" aria-label="Scene"><h2>Scene</h2><div class="field stack"><label>Name</label><input type="text" value="${sname}" disabled title="Built-in scenes keep their name."></div><p class="note">Triggers, extras, Save and Revert sit here as today.</p></section>`;
-  const mons=Object.keys(GEO[L.geo]),cur=L.cur||"lap",names=L.names||{};
+  const mons=Object.keys(GEO[L.geo]),cur="lap",names=L.names||{};
   const seg=`<div class="seg" role="group" aria-label="Monitor">${mons.map(k=>`<button type="button" aria-pressed="${k===cur}">${esc(names[k]||HW[k].name)}</button>`).join("")}</div>`;
   const [gc,gr]=L.grids[cur];
-  const setsOf={lap:"In 4 setups",uw:"In 1 setup",por:"In 2 setups",m2:"Not remembered",h27:"In 1 setup"};
-  const nameF=today?"":abox(`<div class="mname"><div class="field stack"><label for="${F}-mn">Name</label><input type="text" id="${F}-mn" value="${esc(HW[cur].name)}" maxlength="24" autocomplete="off"></div><p class="note"><b>${esc(HW[cur].det)}.</b> ${setsOf[cur]}.</p></div>`,"Monitor Name");
+  const setsOf={lap:"In 4 setups"};
+  const nameF=today||!C.live?"":`<div class="mname"><div class="field stack"><label for="${F}-mn">Name</label><input type="text" id="${F}-mn" value="${esc(HW[cur].name)}" maxlength="24" autocomplete="off"></div><p class="note"><b>${esc(HW[cur].det)}.</b> ${setsOf[cur]}.</p></div>`;
   const mon=`<section class="isec"><h2>Monitor</h2>${seg}${nameF}<div class="field"><span>Columns</span>${stepper("columns",gc)}</div><div class="field"><span>Rows</span>${stepper("rows",gr)}</div></section>`;
-  return `${scene}${mon}<section class="isec"><h2>Window</h2><p class="note">Click a window on the board to change it here.</p></section>`}
+  return `${sceneBox(st,F,C)}${mon}<section class="isec"><h2>Window</h2><p class="note">Click a window on the board to change it here.</p></section>`}
+
+/* ---------- Windows That Stay Put ---------- */
+// app.html renderBay(): one or two windows per category until Show More; a reason more than half of a category's shown windows share shows once in its heading (Reason Said Once), and those windows drop their own line.
+function bay(st,F,L,C){
+  if(!C.live||!L.off.length)return "";
+  const cap=2;let more=0;
+  const by=["code","browse","comms","other"].map(c=>[c,L.off.filter(([id])=>W[id].cat===c)]).filter(([,l])=>l.length);
+  const cols=by.map(([c,l])=>{const shown=l.slice(0,cap);more+=l.length-shown.length;
+    const tally={};for(const [,y] of shown)if(y!==NOWHY)tally[y]=(tally[y]||0)+1;
+    const sh=Object.keys(tally).find(y=>tally[y]*2>shown.length)||null;
+    const head=`<h3 class="bh cat-${c}"><i class="sw"></i>${CATN[c]}${sh?`<span class="why" title="${esc(sh)}">${esc(sh)}</span>`:""}<span class="ct">${l.length}</span></h3>`;
+    const chips=shown.map(([id,y])=>{const x=W[id];return `<li><button type="button" class="chip cat-${c}" aria-label="${esc(x.app)}: ${esc(x.title)}. ${esc(y)}. Stays put. Drag onto a cell, or press Enter and pick a cell in the inspector."><b>${esc(x.app)}</b><span>${esc(x.title)}</span>${y!==NOWHY&&y!==sh?`<small>${esc(y)}</small>`:""}</button></li>`}).join("");
+    return `<ul class="bcol"><li>${head}</li>${chips}</ul>`}).join("");
+  const html=`<section class="bay" aria-label="Windows That Stay Put" id="${F}-list"><h2>Windows That Stay Put <span class="note">${plural(L.off.length,"window")}. Apply leaves them where they are.</span></h2><div class="bgrps">${cols}</div><div class="bfoot">${more?`<button type="button" class="btn ghost">Show ${more} More</button>`:""}<div class="dropslot">Drag a window here to keep it where it is</div></div></section>`;
+  return L.off.some(([,y])=>y===UNPLUGGED)?abox(html,"Unplaced: Its Screen Is Unplugged"):html}
 
 /* ---------- Monitors and Setups dialog ---------- */
 function dialog(st,F){
@@ -495,7 +609,7 @@ function dialog(st,F){
   let body;
   if(first){
     body=`<section class="dsec"><h3>Monitors <span>All 3 plugged in</span></h3>${mrow("lap",true)}${mrow("uw",true)}${mrow("por",true)}</section>
-      <section class="dsec" id="${F}-setups"><h3>Setups <span>1 so far, in use</span></h3>${srow("desk",true)}<p class="dempty">Plug in a different set of monitors and it is added here, with a layout built from Desk.</p></section>`}
+      <section class="dsec" id="${F}-setups"><h3>Setups <span>1 so far, in use</span></h3>${srow("desk",true)}<p class="dempty">Plug in a different set of monitors and it is added here. Its layouts follow Desk until you change them.</p></section>`}
   else{
     body=`<section class="dsec"><h3>Monitors <span>4 known. A dot marks the 2 plugged in; the rest show when last seen.</span></h3>${mrow("lap",true)}${mrow("por",true)}${mrow("uw",false,"Today 14:30")}${mrow("h27",false,"Nov 9")}</section>
       <section class="dsec"><h3>Setups <span>4 known. A dot marks the one in use; the rest show when last used.</span></h3>${srow("lp",true)}${srow("desk",false)}${srow("solo",false)}${srow("home",false)}</section>`}
@@ -506,35 +620,29 @@ function smapOne(k){const r=Object.values(GEO).find(g=>g[k])[k],S=Math.min(56/r[
   return `<span class="smap" style="width:62px;height:30px" aria-hidden="true"><i style="left:${((62-w)/2).toFixed(1)}px;top:${((30-h)/2).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px"></i></span>`}
 
 /* ---------- Whole app frame ---------- */
-function frame(st,w){const F=st,L=layout(st),opt=STATES.find(s=>s[0]===st)[2],today=opt==="today";
-  const toastBox="";
-  const strip=today?"":setbar(st,F);
-  const hint=`<p class="hint">Drag to a cell to pin, or to the list to keep put.</p>`;
-  const stayList=st==="fd-stay";
-  const chips=stayList?["ca","cb","vs","te","ch","ex","fe"]:[];
-  const bayItems=[...chips.map(id=>({...W[id],why:"Its screen is unplugged"})),{app:"Paint",cat:"other",title:"sketch.png - Paint",why:"You kept it here"}];
-  const per=w==="1024"?2:4;let more=0;
-  const groups=["code","browse","comms","other"].map(c=>{const l=bayItems.filter(b=>b.cat===c);if(!l.length)return"";
-    return `<div class="bgrp"><h3><i class="sw cat-${c}"></i>${CATN[c]}</h3><ul>${l.map((b,k)=>{if(k>=per){more++;return""}return `<li><button type="button" class="chip cat-${b.cat}"><b>${esc(b.app)}</b><span>${esc(b.title)}</span><small>${esc(b.why)}</small></button></li>`}).join("")}</ul></div>`}).join("");
-  let bay=`<section class="bay" aria-label="Windows That Stay Put"${stayList?` id="${F}-list"`:""}><h2>Windows That Stay Put <span class="note">${bayItems.length===1?"1 window":bayItems.length+" windows"}. Apply leaves them where they are.</span></h2><div class="bgrps">${groups}</div><div class="bfoot">${more?`<button type="button" class="btn ghost">Show ${more} More</button>`:""}<div class="dropslot">Drag a window here to keep it where it is</div></div></section>`;
-  if(stayList)bay=abox(bay,"Reason: Its Screen Is Unplugged");
-  const msg=st==="bd-today"?"Outlook (new): no laptop monitor, so it was skipped."
-    :st==="bd-back"?"Read 10 windows on Desk."
-    :st==="fd-stay"?"Read 10 windows. 7 wait in Windows That Stay Put until the Ultrawide is back."
-    :st==="bd-noid"?"Read 10 windows on Laptop + Monitor 2."
-    :"Read 10 windows on Laptop + Portrait.";
-  const msgBox=today?`<span class="abox inl today msg" role="status">${esc(msg)}</span>`:`<span class="msg" role="status">${esc(msg)}</span>`;
+function frame(st,w){const F=st,L=layout(st),C=ctx(st),today=st==="bd-today";
+  const strip=today||!C.live?"":setbar(st,F,C);
+  const hintTxt=C.live?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind.":"Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
+  const hint=C.live?`<p class="hint">${hintTxt}</p>`:`<p class="hint" id="${F}-hint"><span class="abox inl today">${esc(hintTxt)}<em>Today: Offline Hint</em></span></p>`;
+  const sname=SETUP[C.setup]?SETUP[C.setup].name:"Laptop + Monitor 2";
+  const msg=today?"Outlook (new): no laptop monitor, so it was skipped.":!C.live?"Offline snapshot: 10 windows.":`Read ${L.tiles.length+L.off.length} windows on ${sname}.`;
+  const msgBox=today?`<span class="abox inl today msg" role="status">${esc(msg)}<em>Today: Skipped</em></span>`:`<span class="msg" role="status">${esc(msg)}</span>`;
   const dlg=st==="mg-dialog"||st==="mg-first"?abox(dialog(st,F),st==="mg-first"?"First Run":"Monitors and Setups Dialog",{inl:true}).replace('class="abox inl"','class="abox inl dlgbox"'):"";
+  const undo=C.undo?`<button class="btn" type="button" title="Undo the last change or Apply.">Undo</button>`:`<button class="btn" type="button" disabled title="Nothing to undo yet.">Undo</button>`;
+  const crumb=C.live?`Scene: <b>${SNAME[C.sel]}</b>${C.edited?'<span class="edited">Edited</span>':""}`:"Scene: <b>Offline snapshot</b>";
   return `<div class="art w${w}${V.labels?"":" nolabels"}" data-state="${st}"><div class="app">
-    <header class="top"><p class="brand">${I.logo}Tile Windows</p><span class="crumb">Scene: <b>${st==="cd-own"?"Focus":"Default"}</b></span>
-      <div class="tools"><label class="switch"><input type="checkbox" checked>Grid Lines</label><label class="switch">Theme <select class="themesel"><option value="">Match Windows</option><option value="light"${V.t==="light"?" selected":""}>Light</option><option value="dark"${V.t==="dark"?" selected":""}>Dark</option></select></label><button class="btn" type="button" disabled title="Nothing to undo yet.">Undo</button><button class="btn pri" type="button">Apply</button></div>${toastBox}</header>
-    ${rail(st,F,w)}
-    <main class="canvas">${strip}${board(st,F,L,w)}<div class="boardbar">${hint}<button type="button" class="btn">Draw Zone</button><button type="button" class="btn">Clear Board</button></div>${bay}</main>
-    <aside class="insp" aria-label="Inspector">${insp(st,F,L)}</aside>
-    <footer class="status">${msgBox}</footer>${dlg}</div></div>`}
+    <header class="top"><p class="brand">${I.logo}Tile Windows</p><span class="crumb">${crumb}</span>
+      <div class="tools"><label class="switch"><input type="checkbox" checked>Grid Lines</label><label class="switch">Theme <select class="themesel"><option value="">Match Windows</option><option value="light"${V.t==="light"?" selected":""}>Light</option><option value="dark"${V.t==="dark"?" selected":""}>Dark</option></select></label>${undo}<button class="btn pri" type="button">Apply</button></div></header>
+    ${rail(st,F,w,C)}
+    <main class="canvas">${strip}${board(st,F,L,w,C.live)}<div class="boardbar">${hint}${C.live?'<button type="button" class="btn">Draw Zone</button><button type="button" class="btn">Clear Board</button>':""}</div>${bay(st,F,L,C)}</main>
+    <aside class="insp" aria-label="Inspector">${insp(st,F,L,C)}</aside>
+    <footer class="status">${msgBox}</footer>${dlg}</div>${C.menu?menuHTML(F):""}</div>`}
 
 /* ---------- Render ---------- */
-function visible(){return STATES.filter(s=>s[2]==="today"||!V.off.has(s[2]))}
+function visible(){return STATES.filter(s=>!OPTS.includes(s[2])||!V.off.has(s[2]))}
+// Put each open card menu under its button, on the frame (the 1024 rail is a scroll box and would clip it).
+function placeMenus(){for(const m of document.querySelectorAll(".menu")){const art=m.closest(".art"),b=art.querySelector(`[data-menu="${m.dataset.for}"]`);if(!b)continue;
+  const a=art.getBoundingClientRect(),r=b.getBoundingClientRect();m.style.top=(r.bottom-a.top+4)+"px";m.style.left=Math.max(8,r.right-a.left-236)+"px"}}
 function render(){
   if(V.t)document.documentElement.dataset.theme=V.t;else delete document.documentElement.dataset.theme;
   const vis=visible();if(V.s!=="all"&&!vis.some(s=>s[0]===V.s))V.s=vis[0][0];
@@ -546,9 +654,11 @@ function render(){
   let html="",cur=0;
   for(const [k,item,o,name,cap] of list){
     if(item!==cur){if(cur)html+="</section>";cur=item;html+=`<section class="item" aria-labelledby="i-${item}"><h2 id="i-${item}">${ITEMS[item][0]}</h2><p>${ITEMS[item][1]}</p>`}
-    html+=`<section class="shot" id="f-${k}" aria-labelledby="h-${k}"><h3 class="cap" id="h-${k}">${name}<span class="kind${o==="today"?" today":""}">${o==="today"?"Today":"Option"}</span> <span class="note">at ${V.w}</span></h3><p class="capn">${cap}</p><div class="scroll">${frame(k,V.w)}</div></section>`}
+    const kind=o==="today"?"Today":OPTS.includes(o)?"Open Option":"Ruled";
+    html+=`<section class="shot" id="f-${k}" aria-labelledby="h-${k}"><h3 class="cap" id="h-${k}">${name}<span class="kind${o==="today"?" today":""}">${kind}</span> <span class="note">at ${V.w}</span></h3><p class="capn">${cap}</p><div class="scroll">${frame(k,V.w)}</div></section>`}
   if(cur)html+="</section>";
   document.getElementById("frames").innerHTML=html;
+  placeMenus();
   writeHash()}
 document.addEventListener("click",e=>{const b=e.target.closest(".mkseg button");if(!b)return;V[b.dataset.k]=b.dataset.v;render()});
 document.addEventListener("change",e=>{const t=e.target;

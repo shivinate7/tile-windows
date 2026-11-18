@@ -11,7 +11,9 @@
 #   no display trigger, and neither does the good read after it, for the same monitors.
 #   Server (serve.ps1, -From snapshot, config in a case's own TILE_HOME):
 #     GET  /snapshot  {monitors, windows, setup: {key, name, follows}}; the plugged-in setup is registered in config (first setup: Desk).
-#     GET  /config    the config; GET /layouts: {<scene id>: Resolve-TileLayout's layout of that scene for the plugged-in setup}.
+#     GET  /config    the config. GET /layouts: {<scene id>: {layout, follows}}. layout is Resolve-TileLayout's layout of that scene for the
+#                     plugged-in setup; follows is the name of the closest known setup whose layout the scene holds while the plugged-in
+#                     setup has none of its own there, else ''. The page takes both from here (it keeps no copy of the setup pick).
 #     POST /layout    body {scene, key, layout}: 200 and stored when key is plugged in; 409 and no change when not.
 #     POST /config    a whole config. The server keeps its monitors, setups and its layouts for every key, plugged in or not, whatever
 #                     the body carries: POST /config writes no layout. Layouts are written only by POST /layout (409 for a key not plugged in).
@@ -304,7 +306,7 @@ try {
     } finally { Stop-Server $s }
   }
 
-  # GET /layouts: one entry per scene, each the layout Resolve-TileLayout gives that scene for the plugged-in setup (the product's own resolve).
+  # GET /layouts: one entry per scene, its layout the product's own Resolve-TileLayout gives for the plugged-in setup.
   Case 'layouts: GET /layouts gives each scene the layout Resolve-TileLayout gives for the plugged-in setup' {
     [void](Write-SeedConfig (Join-Path $runDir 'home-layouts'))
     $s = Start-Server (Join-Path $runDir 'home-layouts') $snapFile
@@ -314,10 +316,47 @@ try {
       if ($r.code -eq 200) {
         $got = ConvertFrom-Json $r.text
         $cfg = ConvertFrom-Json (Get-Reply "$($s.url)config").text
-        $differ = @($cfg.scenes | ? { (Canon $got.PSObject.Properties[$_.id].Value) -cne (Canon (Resolve-TileLayout $cfg $_ $keyDesk)) } | % { $_.id })
+        $differ = @($cfg.scenes | ? { (Canon $got.PSObject.Properties[$_.id].Value.layout) -cne (Canon (Resolve-TileLayout $cfg $_ $keyDesk)) } | % { $_.id })
         Check 'layouts: each scene gets the layout Resolve-TileLayout gives for the plugged-in setup' ($differ.Count -eq 0 -and (Keys-Of $got) -ceq (Sorted @($cfg.scenes.id))) "differ: $($differ -join ',')"
       }
     } finally { Stop-Server $s }
+  }
+
+  # GET /layouts, the follows name. Focus has no layout of its own on Desk and holds Office's, which shares two monitors with Desk. Ridge
+  # shares one and holds a Focus layout too, so Office is the closer. Review holds no layout on any setup. The names are written out here.
+  # A missing field reads as $null, so it never matches the empty name.
+  function Follows-Of($entry) { if ($null -eq $entry) { return $null }; $p = $entry.PSObject.Properties['follows']; if ($p) { $p.Value } else { $null } }
+  Case 'layouts: each scene gives the name of the setup it follows, or none' {
+    $home1 = Join-Path $runDir 'home-follows'
+    [void](Write-SeedConfig $home1)
+    $c = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $home1 'config.json'), $utf8))
+    Add-Member -InputObject $c.setups -NotePropertyName 'LEN3' -NotePropertyValue ([pscustomobject]@{ name = 'Ridge'; ids = @('LEN3'); lastUsed = '2026-11-16T09:00:00' })
+    $fc = @($c.scenes | ? { $_.id -eq 'focus' })[0]
+    Add-Member -InputObject $fc.layouts -NotePropertyName 'LEN3' -NotePropertyValue (ConvertFrom-Json $officeLayout)
+    [IO.File]::WriteAllText((Join-Path $home1 'config.json'), (ConvertTo-Json -Depth 20 -Compress -InputObject $c), $utf8)
+    $s = Start-Server $home1 $snapFile
+    try {
+      $r = Get-Reply "$($s.url)layouts"
+      Check 'layouts: GET /layouts answers 200 (scope)' ($r.code -eq 200) "status $($r.code)"
+      if ($r.code -eq 200) {
+        $got = ConvertFrom-Json $r.text
+        $f = Follows-Of $got.focus; $rv = Follows-Of $got.review
+        Check 'layouts: Focus follows Office, the closer setup (Desk has no layout of its own there)' ($f -ceq 'Office') "follows: $(if ($null -eq $f) { 'missing' } else { "'$f'" })"
+        Check 'layouts: Review, with no layout on any setup, follows none' ($rv -ceq '') "follows: $(if ($null -eq $rv) { 'missing' } else { "'$rv'" })"
+      }
+    } finally { Stop-Server $s }
+    # Desk has its own layout on Focus: Focus follows none.
+    $home2 = Join-Path $runDir 'home-follows-own'
+    [void](Write-SeedConfig $home2 $layoutBody)
+    $s2 = Start-Server $home2 $snapFile
+    try {
+      $r2 = Get-Reply "$($s2.url)layouts"
+      Check 'layouts: GET /layouts answers 200 with Desk''s own layout on Focus (scope)' ($r2.code -eq 200) "status $($r2.code)"
+      if ($r2.code -eq 200) {
+        $f2 = Follows-Of (ConvertFrom-Json $r2.text).focus
+        Check 'layouts: Focus follows none once Desk has its own layout there' ($f2 -ceq '') "follows: $(if ($null -eq $f2) { 'missing' } else { "'$f2'" })"
+      }
+    } finally { Stop-Server $s2 }
   }
 
   # ---- Tray: a failed monitor read is not a change ----
