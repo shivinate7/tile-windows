@@ -445,8 +445,10 @@ function Test-GapEvent($event, $idObject, $idChild, $hwnd, $tiledSet) {
 # The run is { scene; absent }, absent being the set after this tick; nothing when the set did not change. A burst gives one run, the
 # last event per handle winning. An event within quietMs after the tray's own apply is ignored (that apply moved those windows).
 # Only a monitor whose grid has free.areas (Free Layout on) takes part; a handle on any other monitor stays out of the run.
-function Step-GapFill($state, $events, [datetime]$now) {
-  $mon = @{}; foreach ($t in @($state.tiled)) { $mon["$($t.hwnd)"] = [string]$t.mon }
+# $pidOf (optional): a scriptblock that gives the process id that owns a handle now, 0 when the window is gone. A tiled entry that carries procId (taken at apply)
+# skips an event when the handle now belongs to another process: Windows reuses a closed window's handle. A gone window reads 0, which is no mismatch.
+function Step-GapFill($state, $events, [datetime]$now, $pidOf = $null) {
+  $mon = @{}; $own = @{}; foreach ($t in @($state.tiled)) { $mon["$($t.hwnd)"] = [string]$t.mon; $own["$($t.hwnd)"] = $t.procId }
   $set = @($state.tiled | % { $_.hwnd })
   $free = @{}
   foreach ($m in @($mon.Values | Select-Object -Unique)) {
@@ -458,6 +460,7 @@ function Step-GapFill($state, $events, [datetime]$now) {
     if (-not (Test-GapEvent $e.event $e.idObject $e.idChild $e.hwnd $set)) { continue }
     if ($state.lastApply -and ($e.time - $state.lastApply).TotalMilliseconds -lt $state.quietMs) { continue }
     if (-not $free[$mon["$($e.hwnd)"]]) { continue }
+    if ($pidOf -and $own["$($e.hwnd)"]) { $livePid = [uint32](& $pidOf $e.hwnd); if ($livePid -and $livePid -ne [uint32]$own["$($e.hwnd)"]) { continue } }
     $last["$($e.hwnd)"] = [pscustomobject]@{ hwnd = $e.hwnd; gone = ($e.event -in $TileGapHide) }
   }
   $abs = @{}; foreach ($h in @($state.absent)) { $abs["$h"] = $h }
@@ -468,19 +471,37 @@ function Step-GapFill($state, $events, [datetime]$now) {
   }
   if ($changed) { [pscustomobject]@{ scene = $state.scene; absent = @($abs.Values) } }
 }
-# What the tray keeps about the scene it applied last, for Step-GapFill. grids: the scene's own grids by monitor key (role or id), plus each
-# layout's grids by monitor id, so a Free Layout grid is found whichever way the scene names its monitors.
-function New-GapState($sc, $placed, [datetime]$at) {
-  $grids = @{}
-  foreach ($src in @($sc.grids) + @(if ($sc.layouts) { $sc.layouts.PSObject.Properties | % { $_.Value.grids } })) { if ($src) { foreach ($p in $src.PSObject.Properties) { $grids[$p.Name] = $p.Value } } }
-  [pscustomobject]@{ scene = [string]$sc.id; tiled = @($placed | ? { $_.id -and $_.mon } | % { [pscustomobject]@{ hwnd = [int64]$_.id; mon = [string]$_.mon } }); absent = @(); grids = $grids; lastApply = $at; quietMs = 1500 }
+# What the tray keeps about the scene it applied last, for Step-GapFill and Invoke-GapFill. grids: the grids the run used, by monitor key (role or id).
+# The run's own scene is found as the engine finds it: $mode (the grid mode, dense or roomy) swaps the wide grid through Get-GridSceneJson, the same
+# function the apply uses; the setup key of $plugged (Get-TileKnownSetupKey) then picks layouts[key], whose grids are named by monitor id, else the
+# scene's role grids are the run's. With no setup key known (no $plugged), each layout's grids count, and a monitor two layouts both give is left out:
+# it cannot be told which the run used. arg: what Apply-Scene passed to tile.ps1 -Scene. last: handle -> the rect the tray last gave it (for -Last).
+function New-GapState($sc, $placed, [datetime]$at, $plugged = $null, [string]$mode = '', $arg = $null) {
+  $use = $sc
+  if ($mode -and $sc.claudeGrid -and $sc.claudeGrid.$mode) { try { $use = ConvertFrom-Json (Get-GridSceneJson $sc $sc.claudeGrid.$mode $plugged) } catch { } }
+  $key = Get-TileKnownSetupKey $plugged
+  $own = if ($key -and $use.layouts) { $use.layouts.PSObject.Properties[$key] }
+  $srcs = if ($own) { @($own.Value.grids) } elseif ($key) { @($use.grids) } else { @($use.grids) + @(if ($use.layouts) { $use.layouts.PSObject.Properties | % { $_.Value.grids } }) }
+  $grids = @{}; $seen = @{}
+  foreach ($src in $srcs) { if ($src) { foreach ($p in $src.PSObject.Properties) { $seen[$p.Name] = 1 + [int]$seen[$p.Name]; $grids[$p.Name] = $p.Value } } }
+  if (-not $key) { foreach ($k in @($seen.Keys | ? { $seen[$_] -gt 1 })) { $grids.Remove($k) } }
+  $last = @{}; foreach ($p in @($placed | ? { $_.id -and $null -ne $_.x })) { $last["$([int64]$p.id)"] = [pscustomobject]@{ id = [int64]$p.id; x = $p.x; y = $p.y; w = $p.w; h = $p.h } }
+  [pscustomobject]@{ scene = [string]$sc.id; tiled = @($placed | ? { $_.id -and $_.mon } | % { [pscustomobject]@{ hwnd = [int64]$_.id; mon = [string]$_.mon } }); absent = @(); grids = $grids; lastApply = $at; quietMs = 1500; arg = $arg; last = $last }
+}
+# The process id that owns a window handle now, 0 when the window is gone or the type is not loaded (a caller that loaded only the functions).
+function Get-WinPid($hwnd) {
+  if (-not ('TileWinId1' -as [type])) { return 0 }
+  try { [uint32][TileWinId1]::Pid([long]$hwnd) } catch { 0 }
 }
 # The gap watch's tray-side steps. Set-GapWatch runs after each apply: it keeps the scene's tiled windows and hands their handles to the
 # hook. Clear-GapWatch drops them, so no event is read against a layout that is no longer on screen. They sit above the -Lib return because
 # Apply-Scene calls Set-GapWatch, and a caller that loads only the functions has no TileWinWatch1: there both do nothing.
-function Set-GapWatch($sc, $placed) {
+# $arg, $plugged and $mode are what the apply ran with: the scene text it gave tile.ps1, the monitors read, and the grid mode. Each tiled window keeps
+# the process id that owned its handle at apply (procId), so a recycled handle is not taken for it.
+function Set-GapWatch($sc, $placed, $arg = $null, $plugged = $null, [string]$mode = '') {
   if (-not ('TileWinWatch1' -as [type])) { return }
-  $script:gap = New-GapState $sc $placed (Get-Date)
+  $script:gap = New-GapState $sc $placed (Get-Date) $plugged $mode $arg
+  foreach ($t in @($script:gap.tiled)) { $t | Add-Member -NotePropertyName procId -NotePropertyValue ([uint32](Get-WinPid $t.hwnd)) -Force }
   try { [TileWinWatch1]::SetTiled([long[]]@($script:gap.tiled | % { $_.hwnd })) } catch {}
 }
 function Clear-GapWatch {
@@ -595,6 +616,15 @@ public static class TileWinWatch1 {
 }
 '@
 }
+# The owner of a window handle, for the gap watch (a new type: the two above keep their text). 0 when the handle is not a window now.
+if (-not ('TileWinId1' -as [type])) { Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class TileWinId1 {
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  public static uint Pid(long h) { uint p; GetWindowThreadProcessId(new IntPtr(h), out p); return p; }
+}
+'@
+}
 try { [TileWinWatch1]::Start() } catch { Write-Warning "The gap watch is off: $($_.Exception.Message)" }
 $tile = Join-Path $PSScriptRoot 'tile.ps1'; $serve = Join-Path $PSScriptRoot 'serve.ps1'
 $srv = $null; $url = ''; $state = New-TrayState; $dirtyAt = $null; $tick = 0; $first = $true
@@ -615,15 +645,25 @@ function Read-Monitors {
   $null
 }
 function Read-Windows { try { @((((& $tile -Json 3>$null) -join '') | ConvertFrom-Json).windows) } catch { $null } }
-# The gap-fill run. STUB: the engine's -GapFill (lane L5a) does not exist yet, so this calls nothing that moves a window; it logs one line.
-# Gap-fill acts only on a monitor whose layout has Free Layout on (free.areas), so today no tick reaches it. L5a replaces this body.
+# The gap-fill run: tile.ps1 -GapFill on the scene as the last apply gave it, with the windows that are away and the rect the tray last gave each tiled
+# window. The engine moves only a window that still sits where the tray put it; the rects it moves to become the new last rects. Gap-fill acts only on a
+# monitor whose layout has Free Layout on (free.areas). No toast, no run-undo record, one log line: a failed run is that line too. -NoApply runs it dry.
 function Invoke-GapFill($run) {
-  if (-not $NoApply) { Add-TileLog $run.scene "Gap-fill: $(@($run.absent).Count) window(s) away. Nothing moved: the engine's gap-fill is not built yet." }
+  $g = $script:gap
+  try {
+    $arg = if ($g -and $g.arg) { $g.arg } else { [string]$run.scene }
+    $last = ConvertTo-Json -InputObject @(if ($g -and $g.last) { $g.last.Values }) -Depth 4 -Compress
+    $r = (& $tile -Scene $arg -GapFill -Absent @($run.absent) -Last $last -Json -DryRun:$NoApply 3>$null) -join '' | ConvertFrom-Json
+    $moved = @($r.placed)
+    if ($g -and -not $NoApply) { foreach ($p in $moved) { $g.last["$($p.id)"] = [pscustomobject]@{ id = [int64]$p.id; x = $p.x; y = $p.y; w = $p.w; h = $p.h } } }
+    $line = "Gap-fill: $(@($run.absent).Count) window(s) away. Moved $($moved.Count)."
+  } catch { $line = "Gap-fill failed: $($_.Exception.Message)" }
+  if (-not $NoApply) { Add-TileLog $run.scene $line }
 }
 # $prev: the scene on screen before this run ('' when unknown), so Undo can put it back.
 function Apply-Scene($s, [string]$why, [string]$prev = '') {
   try {
-    $arg = $s.id; $gridLine = ''
+    $arg = $s.id; $gridLine = ''; $mode = ''
     # Grid follows the Claude count: the scene runs from its JSON with the ultrawide grid swapped.
     if ((Test-Auto $s 'grid') -and $s.claudeGrid) {
       $cn = @(Read-Windows | ? { $_.app -eq 'claude' -and -not $_.min }).Count
@@ -634,7 +674,7 @@ function Apply-Scene($s, [string]$why, [string]$prev = '') {
     $r = (& $tile -Scene $arg -Json -DryRun:$NoApply 3>$null) -join '' | ConvertFrom-Json
     # A window counts as moved only when its rect changed: a run that puts every window where it already sits moves nothing.
     $moved = @($r.placed | ? { $_.note -eq 'moved' -and -not ($_.from -and $_.from.x -eq $_.x -and $_.from.y -eq $_.y -and $_.from.w -eq $_.w -and $_.from.h -eq $_.h) })
-    Set-GapWatch $s $r.placed
+    Set-GapWatch $s $r.placed $arg $script:plugged $mode
     $n = $moved.Count
     $msg = "$($s.name) applied $why. Moved $n window(s)."
     if (-not $NoApply) { Add-TileLog $s.id $msg }
@@ -762,7 +802,7 @@ $timer.add_Tick({
   $gw = try { [TileWinWatch1]::Drain() } catch { @() }
   if ($gap -and $gw.Count -and $active -eq $gap.scene) {
     $ge = for ($i = 0; $i -lt $gw.Count; $i += 3) { [pscustomobject]@{ event = [int]$gw[$i + 1]; idObject = 0; idChild = 0; hwnd = $gw[$i]; time = (New-Object DateTime $gw[$i + 2], 'Utc').ToLocalTime() } }
-    $run = Step-GapFill $gap $ge (Get-Date)
+    $run = Step-GapFill $gap $ge (Get-Date) { param($h) Get-WinPid $h }
     if ($run) { $gap.absent = @($run.absent); Invoke-GapFill $run }
   }
   foreach ($a in (Step-Tray $state (Get-Date) $cfg $key $call $active $sig)) { $sc = @($cfg.scenes | ? { $_.id -eq $a.id })[0]; if ($sc) { if ($a.offer) { Offer-Scene $sc $a.why } else { Apply-Scene $sc $a.why (Get-ActiveId) } } }
