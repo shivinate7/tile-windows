@@ -27,6 +27,10 @@
 #     The Forget of a setup that holds a plugged-in monitor is refused by the server (409, setup-plumbing.ps1), not checked here.
 #   Size id (item 3, coordinator ruling 21:04 CST): a monitor whose id is size-WxH is remembered by that id. The strip is the normal one, and
 #     no Remember It by Its Size button is on the page. Two shapes: every monitor with a size id, and only the ultrawide.
+#   Monitors and Setups, reads and names: a rename that returns keeps the text typed in another name field; a forget answered 200 whose config
+#     re-read fails says Could not forget; a rename that landed whose re-read fails shows the failed read; the Monitor picker shows a renamed
+#     monitor once its inspector Name field is left; the built-in monitor reads Built-in screen, with no maker or product code (dialog and
+#     inspector).
 #   Offline, dialog: the offline page shows no Monitors and Setups button and sends no request. A guard: green on the old commit, and a
 #     mutant with the button turns it red (run on a scratch copy).
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
@@ -174,13 +178,19 @@ function Posts-Under($posts, [string]$key) { @(@($posts) | ? { $_ -and (ConvertF
 function Posts-Carrying($posts, [string]$key, [string]$canon) { @(@($posts) | ? { $_ -and ((ConvertFrom-Json $_.body).key -ceq $key) -and ((Canon (ConvertFrom-Json $_.body).layout) -ceq $canon) }) }
 # The autosave strip as the page shows it: hidden or not, amber or not, its text, and its buttons.
 $stripJs = 'const b = document.getElementById("setbar"); return { hidden: b.hidden, warn: b.classList.contains("warn"), text: b.textContent.replace(/\s+/g, " ").trim(), buttons: [...b.querySelectorAll("button")].map(x => x.textContent.trim()) }'
+# Clicks OK on the page's confirm dialog once it is open. The one home of that step: Delete-Scene and the dialog's Forget both use it.
+function Confirm-Ask($sock) {
+  [void](WaitFor $sock 'document.getElementById("dlg").open && !!document.querySelector("#dlgform button[value=ok]")')
+  [void](Js $sock 'document.querySelector("#dlgform button[value=ok]").click(); return true')
+}
 # Deletes the scene on the page through its Delete button and the confirm dialog, and waits until its card is gone.
 function Delete-Scene($sock, [string]$scene) {
   [void](Js $sock 'document.getElementById("del").click(); return true')
-  [void](WaitFor $sock 'document.getElementById("dlg").open && !!document.querySelector("#dlgform button[value=ok]")')
-  [void](Js $sock 'document.querySelector("#dlgform button[value=ok]").click(); return true')
+  Confirm-Ask $sock
   WaitFor $sock ('!document.querySelector("[data-pick=__S__]")'.Replace('__S__', $scene))
 }
+# The read-failure words a page message uses (the strip's and the dialog's). One home for the failed-read checks.
+$readFailRx = 'could not|couldn.t|failed|did not|didn.t|unable|not read'
 
 # Opens the live page on a scene: the card is clicked, as a user would. $snapText, when given, is the snapshot the server shows instead of A.
 function Open-Page($sock, [string]$url, [string]$scene, [string]$snapText = '') {
@@ -397,8 +407,13 @@ try {
   }
 
   # A re-read whose GET /layouts or GET /config fails: the strip says so in amber, instead of showing the old copy as if it were current.
+  # One route answers 500 to a GET until the page is reloaded. A POST to it still goes through, so a save is not failed by it.
+  function Fail-Route($sock, [string]$route) {
+    [void](Js $sock ('const f = window.fetch; window.fetch = (u, o) => String(u) === "__R__" && !(o && String(o.method || "").toUpperCase() === "POST") ? Promise.resolve(new Response("read failed", { status: 500 })) : f(u, o); return true'.Replace('__R__', $route)))
+  }
   function Fail-Read($sock, [string]$route) {
-    [void](Js $sock ('const f = window.fetch; window.fetch = (u, o) => String(u) === "__R__" ? Promise.resolve(new Response("read failed", { status: 500 })) : f(u, o); await document.getElementById("refresh").onclick(); await window.__h.settle(); return true'.Replace('__R__', $route)))
+    Fail-Route $sock $route
+    [void](Js $sock 'await document.getElementById("refresh").onclick(); await window.__h.settle(); return true')
   }
   Case 'a failed GET /layouts on a re-read leaves the strip amber, with a message' {
     Put-Config (New-Config)
@@ -408,7 +423,7 @@ try {
     $bar = Js $ws $stripJs
     Check 'the strip is on the page (scope)' ($null -ne $bar -and -not $bar.hidden) 'the strip is missing or hidden'
     Check 'the strip is amber after a failed GET /layouts' ($null -ne $bar -and $bar.warn -eq $true) "strip text: '$($bar.text)'"
-    Check 'the strip says the read failed' ([string]$bar.text -match 'could not|couldn.t|failed|did not|didn.t|unable|not read') "strip text: '$($bar.text)'"
+    Check 'the strip says the read failed' ([string]$bar.text -match $readFailRx) "strip text: '$($bar.text)'"
   }
   Case 'a failed GET /config on a re-read leaves the strip amber, with a message' {
     Put-Config (New-Config)
@@ -418,7 +433,7 @@ try {
     $bar = Js $ws $stripJs
     Check 'the strip is on the page (scope)' ($null -ne $bar -and -not $bar.hidden) 'the strip is missing or hidden'
     Check 'the strip is amber after a failed GET /config' ($null -ne $bar -and $bar.warn -eq $true) "strip text: '$($bar.text)'"
-    Check 'the strip says the read failed' ([string]$bar.text -match 'could not|couldn.t|failed|did not|didn.t|unable|not read') "strip text: '$($bar.text)'"
+    Check 'the strip says the read failed' ([string]$bar.text -match $readFailRx) "strip text: '$($bar.text)'"
   }
 
   # Delete a scene whose save was refused: the strip must not keep the deleted scene's save state.
@@ -515,6 +530,118 @@ try {
       Check "size id ($($v.label)): the strip is not amber" ($bar.warn -ne $true) "strip text: '$($bar.text)'"
       $remembers = Js $ws 'return [...document.querySelectorAll("button")].filter(b => /Remember It by Its Size/.test(b.textContent)).length'
       Check "size id ($($v.label)): no Remember It by Its Size button anywhere on the page" ($remembers -eq 0) "buttons with that name: $remembers"
+    }
+  }
+
+  # A rename whose save returns while the user types in another name field of the dialog: the typed text is kept. The save is held until the
+  # test releases it, so the typing happens while it is in flight. The rename is sent from the Laptop's field without focus, so the field the
+  # test types in is the only one with focus. Its redraw is what the case checks.
+  Case 'Monitors and Setups: a rename that returns while another name field holds typed text keeps that text' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    $st = Open-Dialog $ws
+    Check 'the Monitors and Setups dialog opens (scope)' ($st -eq 'open') "dialog: $st"
+    if ($st -ne 'open') { return }
+    # Holds each rename POST (counted in __held) until the test opens the gate.
+    [void](Js $ws 'window.__gate = new Promise(r => { window.__open = r }); const g = window.fetch; window.fetch = (u, o) => { if (String(u) !== "rename" || !o || String(o.method || "").toUpperCase() !== "POST") return g(u, o); window.__held = (window.__held || 0) + 1; return window.__gate.then(() => g(u, o)); }; return true')
+    [void](Js $ws 'const a = document.querySelector("#mgdlg input[data-rk=monitor][data-rid=L1]"); a.value = "Built-in"; a.dispatchEvent(new Event("change", { bubbles: true })); return true')
+    $held = WaitFor $ws 'window.__held === 1' 30
+    Check 'the rename save is held in flight (control)' $held 'no rename POST was held'
+    if (-not $held) { return }
+    [void](Js $ws 'const b = document.querySelector("#mgdlg input[data-rk=setup]"); b.focus(); b.value = "Typed name"; b.dispatchEvent(new Event("input", { bubbles: true })); return true')
+    [void](Js $ws 'window.__open(); return true')
+    $replied = WaitFor $ws '/Renamed to/.test((document.getElementById("mgsay") || {}).textContent || "")' 30
+    Check 'the rename returns once released (control)' $replied 'no "Renamed to" after the gate opened'
+    $field = Js $ws 'const b = document.querySelector("#mgdlg input[data-rk=setup]"); return b ? b.value : null'
+    Check 'the setup name field keeps the text typed while the rename was in flight' ([string]$field -ceq 'Typed name') "field now: '$field'"
+  }
+
+  # A forget the server answered 200 whose config re-read then fails: the dialog says it could not forget, and does not say it forgot.
+  Case 'Monitors and Setups: a forget answered 200 whose config re-read fails says Could not forget' {
+    $cfg = New-Config
+    $cfg.monitors | Add-Member -NotePropertyName 'H27' -NotePropertyValue ([pscustomobject]@{ name = 'Home 27'; builtin = $false; lastSeen = $stamp; bw = 2560; bh = 1440 })
+    Put-Config $cfg
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus with the unplugged monitor known (control)' $opened 'the page did not open on Focus in time'
+    $st = Open-Dialog $ws
+    Check 'the Monitors and Setups dialog opens (scope)' ($st -eq 'open') "dialog: $st"
+    if ($st -ne 'open') { return }
+    Fail-Route $ws 'config'
+    [void](Js $ws 'document.querySelector("#mgdlg button[data-fk=monitor][data-fid=H27]").click(); return true')
+    Confirm-Ask $ws
+    [void](WaitFor $ws '/Could not forget|Forgot/.test((document.getElementById("mgsay") || {}).textContent || "")' 30)
+    $text = Js $ws 'return (document.getElementById("mgsay") || {}).textContent.replace(/\s+/g, " ").trim()'
+    $sent = Js $ws 'return window.__h.posts("forget").length'
+    Check 'the forget was sent and answered (control)' ($sent -eq 1 -and [string]$text -notmatch '^\s*$') "POST /forget count: $sent, dialog: '$text'"
+    Check 'a forget answered 200 whose config re-read fails says Could not forget' ([string]$text -match 'Could not forget') "dialog: '$text'"
+  }
+
+  # A rename that landed, then a re-read of the config that fails: the dialog or the strip says the read failed. It is not swallowed.
+  Case 'Monitors and Setups: a failed re-read after a rename that landed is shown, not swallowed' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    $st = Open-Dialog $ws
+    Check 'the Monitors and Setups dialog opens (scope)' ($st -eq 'open') "dialog: $st"
+    if ($st -ne 'open') { return }
+    Fail-Route $ws 'config'
+    [void](Js $ws 'const a = document.querySelector("#mgdlg input[data-rk=monitor][data-rid=U1]"); a.value = "Wide 49"; a.dispatchEvent(new Event("change", { bubbles: true })); return true')
+    $answered = WaitFor $ws '/Renamed to|Could not rename/.test((document.getElementById("mgsay") || {}).textContent || "")' 30
+    $dialog = Js $ws 'return (document.getElementById("mgsay") || {}).textContent.replace(/\s+/g, " ").trim()'
+    $bar = Js $ws $stripJs
+    $sent = Js $ws 'return window.__h.posts("rename").length'
+    Check 'the rename was sent and landed (control)' ($answered -and $sent -eq 1 -and [string]$dialog -match 'Renamed to Wide 49') "POST /rename count: $sent, dialog: '$dialog'"
+    $shown = ([string]$dialog -match $readFailRx) -or ([string]$bar.text -match $readFailRx)
+    Check 'a failed re-read after the rename is shown in the dialog or the strip' $shown "dialog: '$dialog' | strip: '$($bar.text)'"
+  }
+
+  # An inspector Name field: a monitor renamed there shows its new name on the Monitor picker once the field is left. The picker is not
+  # redrawn while the field has focus, so the change has to show when the field is left.
+  Case 'the inspector: a monitor renamed in its Name field shows the new name on the Monitor picker once the field is left' {
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus'
+    Check 'the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    [void](Js $ws 'const b = [...document.querySelectorAll("#mon [data-mon]")].find(x => x.textContent.trim() === "Ultrawide"); if (b) b.click(); return true')
+    $picked = WaitFor $ws 'document.getElementById("monName") && document.getElementById("monName").value === "Ultrawide"' 20
+    Check 'the Name field holds Ultrawide, the monitor picked (scope)' $picked 'no Name field for Ultrawide after the pick'
+    if (-not $picked) { return }
+    [void](Js $ws 'const f = document.getElementById("monName"); f.focus(); f.value = "Wide 49"; f.dispatchEvent(new Event("change", { bubbles: true })); return true')
+    $saved = WaitFor $ws 'cfg.monitors.U1.name === "Wide 49"' 30
+    Check 'the rename was saved to config (control)' $saved 'the monitor was not renamed in config'
+    [void](Js $ws 'document.getElementById("monName").blur(); return true')
+    $shown = WaitFor $ws '[...document.querySelectorAll(".seg[aria-label=Monitor] button")].some(b => b.textContent.trim() === "Wide 49")' 20
+    $names = Js $ws 'return [...document.querySelectorAll(".seg[aria-label=Monitor] button")].map(b => b.textContent.trim())'
+    Check 'the Monitor picker shows Wide 49 once the Name field is left' $shown "the picker shows: $($names -join ', ')"
+  }
+
+  # The dialog's monitor line and the inspector's line say what the monitor is in plain words: Built-in screen for the built-in one. They give
+  # no maker or product code, though Windows reports one (the snapshot's maker and product, as tile.ps1 -Json gives them).
+  Case 'Monitors and Setups and the inspector: the built-in monitor is named in plain words, with no maker or product code' {
+    $withCodes = ConvertFrom-Json $snapAText
+    $laptop = @($withCodes.monitors | ? { $_.id -eq 'L1' })[0]
+    $laptop | Add-Member -Force -NotePropertyName maker -NotePropertyValue 'BOE'
+    $laptop | Add-Member -Force -NotePropertyName product -NotePropertyValue '0A1F'
+    Put-Config (New-Config)
+    $opened = Open-Page $ws $url 'focus' (ConvertTo-Json -Depth 10 -Compress -InputObject $withCodes)
+    Check 'the page opens on Focus with the maker and product in the snapshot (control)' $opened 'the page did not open on Focus in time'
+    $st = Open-Dialog $ws
+    Check 'the Monitors and Setups dialog opens (scope)' ($st -eq 'open') "dialog: $st"
+    if ($st -eq 'open') {
+      $det = Js $ws 'const i = document.querySelector("#mgdlg input[data-rk=monitor][data-rid=L1]"); const row = i && i.closest(".lrow"); const s = row && row.querySelector("small"); return s ? s.textContent.replace(/\s+/g, " ").trim() : null'
+      Check 'the Laptop row has its detail line (scope)' ($null -ne $det -and [string]$det -ne '') "detail: '$det'"
+      Check 'the dialog detail line says Built-in screen' ([string]$det -match 'Built-in screen') "detail: '$det'"
+      Check 'the dialog detail line gives no maker or product code' ([string]$det -notmatch 'BOE|0A1F') "detail: '$det'"
+      [void](Js $ws 'document.getElementById("mgdone").click(); return true')
+      [void](WaitFor $ws '!document.getElementById("mgdlg").open' 10)
+    }
+    [void](Js $ws 'const b = [...document.querySelectorAll("#mon [data-mon]")].find(x => x.textContent.trim() === "Laptop"); if (b) b.click(); return true')
+    $notes = Js $ws 'return [...document.querySelectorAll("#mon p.note")].map(p => p.textContent.replace(/\s+/g, " ").trim())'
+    $line = @(@($notes) | ? { $_ -match 'pixels' })
+    Check 'the inspector line for the Laptop is shown (scope)' ($line.Count -eq 1) "notes: $(@($notes) -join ' | ')"
+    if ($line.Count -eq 1) {
+      Check 'the inspector line says Built-in screen' ([string]$line[0] -match '(?i)built-in screen') "inspector: '$($line[0])'"
+      Check 'the inspector line gives no maker or product code' ([string]$line[0] -notmatch 'BOE|0A1F') "inspector: '$($line[0])'"
     }
   }
 
