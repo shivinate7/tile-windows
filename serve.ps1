@@ -8,6 +8,10 @@
 #   GET  /<token>/layouts   {scene id: {layout, follows}}. layout is what Resolve-TileLayout gives that scene for the plugged-in setup; follows is the
 #                           name of the setup it follows there (Get-TileFollows), '' when it has its own layout or none to follow.
 #   POST /<token>/layout    body = {scene, key, layout}; saves that scene's layout for key. 409 and no change when key is not the plugged-in setup.
+#   POST /<token>/rename    body = {kind: monitor|setup, id, name}; saves that monitor's or setup's name (decision monitor-setups, item 13). Allowed whether or not it is
+#                           plugged in. 404 for an unknown kind or id; 400 for a missing or empty name.
+#   POST /<token>/forget    body = {kind, id}; removes a monitor, or a setup with its layout in every scene. Forgetting a monitor also forgets each setup it is in.
+#                           409 and no change for a monitor plugged in or the setup in use; 404 for an unknown kind or id.
 #   GET  /<token>/state     state.json (scene last applied, recent log)
 #   GET  /<token>/appnames  the display name of each app (appNames in scenes.json)
 #   POST /<token>/preview   body = scene; answers tile.ps1 -Scene -From <last snapshot> -Json (moves nothing)
@@ -124,6 +128,45 @@ function Save-SceneLayout($b, $mons) {
     return 200
   }
 }
+# POST /rename: the answer's status code. The config is read again under the lock, so only the name changes, whatever else another writer saved.
+function Rename-Known($b) {
+  $coll = switch ([string]$b.kind) { 'monitor' { 'monitors' } 'setup' { 'setups' } default { return 404 } }
+  Use-TileLock {
+    $cfg = ConvertFrom-Json (Get-TileConfigText)
+    $hold = $cfg.PSObject.Properties[$coll]; $p = if ($hold) { $hold.Value.PSObject.Properties[[string]$b.id] }
+    if (-not $p) { return 404 }
+    $p.Value | Add-Member -Force name ([string]$b.name).Trim()
+    Save-TileConfigObject $cfg
+    return 200
+  }
+}
+# POST /forget: the answer's status code. $mons is the plugged-in monitors (read before the lock, as for /layout). A setup goes with its layout in every
+# scene; a monitor goes with each setup it is in. A scene's setupKey is left alone: the setup is added again, under the same key, when it is plugged in.
+function Forget-Known($b, $mons) {
+  $kind = [string]$b.kind; $id = [string]$b.id
+  if ($kind -ne 'monitor' -and $kind -ne 'setup') { return 404 }
+  Use-TileLock {
+    $cfg = ConvertFrom-Json (Get-TileConfigText)
+    $inUse = Get-TileKnownSetupKey $mons
+    $drop = @()
+    if ($kind -eq 'monitor') {
+      if (-not $cfg.monitors -or -not $cfg.monitors.PSObject.Properties[$id]) { return 404 }
+      if (@($mons | ? { $_ } | % { [string]$_.id }) -ccontains $id) { return 409 }
+      $drop = @($cfg.setups.PSObject.Properties | ? { @($_.Value.ids) -ccontains $id } | % { $_.Name })
+    } else {
+      if (-not $cfg.setups -or -not $cfg.setups.PSObject.Properties[$id]) { return 404 }
+      if ($inUse -and $id -ceq $inUse) { return 409 }
+      $drop = @($id)
+    }
+    foreach ($k in $drop) {
+      $cfg.setups.PSObject.Properties.Remove($k)
+      foreach ($sc in @($cfg.scenes)) { if ($sc.layouts -and $sc.layouts.PSObject.Properties[$k]) { $sc.layouts.PSObject.Properties.Remove($k) } }
+    }
+    if ($kind -eq 'monitor') { $cfg.monitors.PSObject.Properties.Remove($id) }
+    Save-TileConfigObject $cfg
+    return 200
+  }
+}
 $snap = '{"monitors":[],"windows":[]}'
 
 try {
@@ -167,6 +210,25 @@ try {
             200 { Send $ctx 200 'text/plain' 'Saved' }
             404 { Send $ctx 404 'text/plain' "No scene '$($b.scene)'." }
             default { Send $ctx 409 'text/plain' 'That setup is not the one plugged in.' }
+          }
+        }
+        'POST rename' {
+          if (-not ($body = Body $ctx $req '{')) { continue }
+          $b = ConvertFrom-Json $body
+          if (-not $b.kind -or -not $b.id -or $b.name -isnot [string] -or -not $b.name.Trim()) { Send $ctx 400 'text/plain' 'Body needs kind, id and a name.'; continue }
+          switch (Rename-Known $b) {
+            200 { Send $ctx 200 'text/plain' 'Saved' }
+            default { Send $ctx 404 'text/plain' "No $($b.kind) '$($b.id)'." }
+          }
+        }
+        'POST forget' {
+          if (-not ($body = Body $ctx $req '{')) { continue }
+          $b = ConvertFrom-Json $body
+          if (-not $b.kind -or -not $b.id) { Send $ctx 400 'text/plain' 'Body needs kind and id.'; continue }
+          switch (Forget-Known $b @(Get-Plugged)) {
+            200 { Send $ctx 200 'text/plain' 'Forgotten' }
+            409 { Send $ctx 409 'text/plain' 'That monitor is plugged in, or that setup is the one in use.' }
+            default { Send $ctx 404 'text/plain' "No $($b.kind) '$($b.id)'." }
           }
         }
         'POST preview' {
