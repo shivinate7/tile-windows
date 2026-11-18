@@ -135,7 +135,7 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
   .sbtns .btn.mg{padding:5px 8px}.sbtns .btn.mg .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 @media (forced-colors:active){.smap i{border-color:CanvasText}.setbar.warn{border-left-color:CanvasText}}
 /* Monitors and Setups: the dialog's rows, and the monitor's own name field in the inspector. */
-#mgdlg{width:min(600px,calc(100vw - 32px));max-height:calc(100vh - 32px);padding:16px;overflow:auto}
+#mgdlg{width:min(600px,calc(100vw - 32px));max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);padding:16px;overflow:auto}
 #mgdlg>div{display:grid;gap:10px}
 .dsec{display:grid;gap:0}
 .dsec>h3{margin:4px 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
@@ -674,7 +674,7 @@ const PIN='<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hid
 let snap=null,cfg={scenes:[],cats:LIVE?{}:OFFLINE_CATS,categories:CATS0},work={},selId=null,prevs={},pseq={},selWin=null,curMon=null,hist=[],isBusy=false,serverDry=false,
   st={active:"",log:[]},hidden=new Set(),showGrid=true,G={x0:0,y0:0,S:1},els=new Map(),drawn={},optim=null,drag=null,raf=0,
   offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zanchor=null,selZone=null,xOpen=false,rz=null,hdl=null,noteEl=null,noteT=0,flashId=null,flashT=0,picks=null,lockAsk=null,bayFlash=new Set(),bayFlashT=0,
-  plug=null,layoutsOk=false,noId=false,mgSay="",lays={},lsaved={},lq={},unsaved={},failed={},stale={},readErr="",svT={},svBusy={},svAgain={},lastKey="";
+  plug=null,layoutsOk=false,mgSay="",lays={},lsaved={},lq={},unsaved={},failed={},stale={},readErr="",svT={},svBusy={},svAgain={},lastKey="";
 const clone=o=>JSON.parse(JSON.stringify(o));
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
@@ -795,7 +795,7 @@ async function refresh(){if(isBusy)return;status("Reading your windows…");
 async function readLayouts(sj){
   const p=LIVE&&sj.setup&&sj.setup.key?sj.setup:null;let l={},ok=false;
   if(p){const r=await fetch("layouts",{cache:"no-store"});if(r.ok){l=await r.json();ok=true}else if(r.status!==404)throw new Error(await r.text())}
-  plug=p;lays=l;layoutsOk=ok;noId=LIVE&&!!sj.setup&&!sj.setup.key}
+  plug=p;lays=l;layoutsOk=ok}
 const LAYKEYS=["grids","pins","zones","fill","bay"];
 const layoutOf=s=>{const o={};for(const k of LAYKEYS)if(k in s)o[k]=s[k];return o};
 // A scene without its layout: what POST /config and Save compare (name, triggers, extras).
@@ -880,18 +880,10 @@ function smapKnown(ids,W0=62,H0=30){let x=0;const boxes=[];
 // A save the server refused because the setup changed offers Refresh and no retry: sending it again would write this layout under the setup that is no longer plugged in.
 const MGI='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="3" width="9" height="6" rx="1"/><rect x="11.5" y="1.5" width="3.5" height="9" rx="1"/><path d="M4 12.5h3M5.5 9v3.5"/></svg>';
 const MGBTN=`<button type="button" class="btn mg" id="mgopen" title="Monitors and Setups" aria-label="Monitors and Setups">${MGI}<span class="t">Monitors and Setups</span></button>`;
-// A live snapshot whose monitors carry no id (bd-noid, decision monitor-setups item 3): nothing to remember the setup by, so the strip says so (amber).
-function noIdBar(){
-  const bare=snap.monitors.filter(m=>!m.id),who=bare.length===1?monName(bare[0]):`${bare.length} monitors`;
-  return{cls:"setbar warn",title:snap.monitors.map(monName).join(" + "),
-    sub:`<strong>${esc(who)} gave Windows no ID</strong>, so this setup cannot be remembered. Board changes do not save as you make them.`,
-    extra:`<div class="sbtns"><button type="button" class="btn" id="remsize">Remember It by Its Size</button></div>`}}
 function renderSetbar(){
-  const el=$("setbar"),nid=LIVE&&noId&&!!snap&&!!scene();
-  if(!nid&&(!idm()||!snap||!scene())){el.hidden=true;if(el.dataset.h){el.dataset.h="";el.innerHTML=""}return}
-  let html,cls="setbar";
-  if(nid){const b=noIdBar();cls=b.cls;html=`${smapHTML([])}<div class="sid"><b>${esc(b.title)}</b><span>${b.sub}</span></div>${b.extra}<div class="sbtns">${MGBTN}</div>`}
-  else{const b=idBar();cls=b.cls;html=b.html}
+  const el=$("setbar");
+  if(!idm()||!snap||!scene()){el.hidden=true;if(el.dataset.h){el.dataset.h="";el.innerHTML=""}return}
+  const b=idBar(),cls=b.cls,html=b.html;
   if(el.dataset.h!==cls+html){el.dataset.h=cls+html;el.className=cls;el.innerHTML=html;if(cls.includes("warn"))el.setAttribute("role","status");else el.removeAttribute("role")}
   el.hidden=false}
 function idBar(){
@@ -914,16 +906,15 @@ const mgKnown=(kind)=>(kind==="setup"?cfg.setups:cfg.monitors)||{};
 const mgQ=v=>String(v).replace(/["\\]/g,"\\$&");
 function mgWhen(iso){const d=new Date(iso);if(!iso||isNaN(d))return"";
   return d.toDateString()===new Date().toDateString()?`Today ${d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",hour12:false})}`:d.toLocaleDateString([],{month:"short",day:"numeric"})}
-// What Windows reports about a monitor config knows: maker and product while it is plugged in, its native size, and the built-in screen.
-function mgDetail(id,c){const m=snap&&snap.monitors.find(q=>q.id===id);
-  return[m&&[m.maker,m.product].filter(Boolean).join(" "),c.bw&&c.bh?`${c.bw}×${c.bh}`:"",c.builtin?"built-in screen":""].filter(Boolean).join(" · ")}
+// What config knows about a monitor, in plain words: its native size, and whether it is the built-in screen. No maker or product codes.
+function mgDetail(c){return[c.bw&&c.bh?`${c.bw}×${c.bh}`:"",c.builtin?"Built-in screen":""].filter(Boolean).join(" · ")}
 const mgSetupCount=id=>Object.values(cfg.setups||{}).filter(x=>(x.ids||[]).includes(id)).length;
 function mgHTML(){
   const have=new Set(snap?snap.monitors.map(m=>m.id).filter(Boolean):[]),key=plug?plug.key:"",byDate=f=>(a,b)=>String(b[1][f]||"").localeCompare(String(a[1][f]||""))||a[1].name.localeCompare(b[1].name);
   const mons=Object.entries(cfg.monitors||{}).sort((a,b)=>(have.has(b[0])-have.has(a[0]))||byDate("lastSeen")(a,b));
   const sets=Object.entries(cfg.setups||{}).sort((a,b)=>((b[0]===key)-(a[0]===key))||byDate("lastUsed")(a,b));
   const nOn=mons.filter(([id])=>have.has(id)).length,inUse=sets.some(([k])=>k===key);
-  const mrow=([id,c])=>{const on=have.has(id),det=mgDetail(id,c);
+  const mrow=([id,c])=>{const on=have.has(id),det=mgDetail(c);
     return`<div class="lrow">${smapKnown([id])}<div class="nm"><input type="text" value="${esc(c.name)}" aria-label="Name of the monitor ${esc(det||id)}" maxlength="24" autocomplete="off" data-rk="monitor" data-rid="${esc(id)}"><small>${esc(det)}</small></div>
       <div class="rt">${on?`<span class="st now" role="img" aria-label="Plugged in" title="Plugged in"></span>`:`<span class="st" title="Last seen">${esc(mgWhen(c.lastSeen))}</span>`}<button type="button" class="btn" data-fk="monitor" data-fid="${esc(id)}"${on?` disabled aria-describedby="mgwhy" title="Plugged in now. Unplug it to forget it."`:""}>Forget</button></div>
       <details><summary>What Windows calls it</summary><code>${esc(id)}</code></details></div>`};
@@ -942,9 +933,13 @@ function mgHTML(){
 // Redraws the open dialog and keeps the scroll place and the focused control (or $focus, a selector, when given).
 function mgRender($focus){
   const d=$("mgdlg"),ae=document.activeElement,top=d.scrollTop;let sel=$focus||"";
+  // Text typed in a name field, and the caret in the focused one, survive the redraw (a rename or forget that returns while the user types).
+  const typed=[...d.querySelectorAll("input[data-rk]")].filter(i=>i.value!==i.defaultValue).map(i=>[i.dataset.rk,i.dataset.rid,i.value]),
+    caret=ae&&ae.closest&&ae.closest("#mgdlg")&&ae.selectionStart!=null?[ae.selectionStart,ae.selectionEnd]:null;
   if(!sel&&ae&&ae.closest&&ae.closest("#mgdlg")){if(ae.dataset.rk)sel=`[data-rk="${ae.dataset.rk}"][data-rid="${mgQ(ae.dataset.rid)}"]`;else if(ae.dataset.fk)sel=`[data-fk="${ae.dataset.fk}"][data-fid="${mgQ(ae.dataset.fid)}"]`;else if(ae.id)sel="#"+ae.id}
   d.innerHTML=mgHTML();d.scrollTop=top;
-  if(sel){const e=d.querySelector(sel);if(e&&!e.disabled)e.focus()}}
+  for(const[k,i,v]of typed){const e=d.querySelector(`input[data-rk="${k}"][data-rid="${mgQ(i)}"]`);if(e)e.value=v}
+  if(sel){const e=d.querySelector(sel);if(e&&!e.disabled){e.focus();if(caret&&e.selectionStart!=null)try{e.setSelectionRange(caret[0],caret[1])}catch(_){}}}}
 function mgOpen(){mgSay="";mgRender();const d=$("mgdlg");if(!d.open)d.showModal();$("mgh").focus()}
 const mgFail=e=>e instanceof TypeError?"The app server stopped answering":String(e.message||e).replace(/\.\s*$/,"");
 function mgSaid(t){mgSay=t;status(t);if($("mgdlg").open)mgRender()}
@@ -952,10 +947,11 @@ async function mgRename(t){
   const kind=t.dataset.rk,id=t.dataset.rid,cur=mgKnown(kind)[id];if(!cur)return;
   const name=t.value.trim().slice(0,kind==="setup"?32:24);
   if(!name||name===cur.name){t.value=cur.name;return}
-  try{const r=await post("rename",{kind,id,name});if(!r.ok)throw new Error((await r.text())||`The server said ${r.status}.`);
-    cur.name=name;try{await readKnown()}catch(_){}
-    render();mgSaid(`Renamed to ${name}.`)}
-  catch(e){t.value=cur.name;mgSaid(`Could not rename: ${mgFail(e)}.`)}}
+  try{const r=await post("rename",{kind,id,name});if(!r.ok)throw new Error((await r.text())||`The server said ${r.status}.`)}
+  catch(e){t.value=cur.name;return mgSaid(`Could not rename: ${mgFail(e)}.`)}
+  cur.name=name;t.value=name;
+  const bad=await mgReread(readKnown);render();
+  mgSaid(bad?`Renamed to ${name}. Could not read the names again: ${bad}.`:`Renamed to ${name}.`)}
 // The warning names what goes with it: for a monitor, each setup it is in; for each setup, how many scenes had their own layout there.
 async function mgForget(t){
   const kind=t.dataset.fk,id=t.dataset.fid,cur=mgKnown(kind)[id];if(!cur)return;
@@ -965,12 +961,16 @@ async function mgForget(t){
   const body=kind==="setup"?`<p class="note">${esc(cur.name)} is no longer remembered. ${lay}</p>`
     :`<p class="note">${esc(cur.name)} is no longer remembered${gone.length?`, and neither ${gone.length===1?"is the setup it is in":"are the setups it is in"}: ${esc(gone.map(k=>sets[k].name).join(", "))}`:""}. ${gone.length?lay:"No setup holds it."}</p>`;
   if(!await ask(`Forget ${cur.name}?`,body,"Forget",true))return;
-  try{const r=await post("forget",{kind,id});
-    if(r.status===409){await mgReload();return mgSaid(`${cur.name} is ${kind==="setup"?"in use":"plugged in"} now, so it stays.`)}
-    if(r.status===404){await mgReload();return mgSaid(`${cur.name} was already gone.`)}
-    if(!r.ok)throw new Error((await r.text())||`The server said ${r.status}.`);
-    await mgReload();mgSay=`Forgot ${cur.name}.`;status(mgSay);mgRender("#mgh")}
-  catch(e){mgSaid(`Could not forget ${cur.name}: ${mgFail(e)}.`)}}
+  let r;
+  try{r=await post("forget",{kind,id});if(!r.ok&&r.status!==409&&r.status!==404)throw new Error((await r.text())||`The server said ${r.status}.`)}
+  catch(e){return mgSaid(`Could not forget ${cur.name}: ${mgFail(e)}.`)}
+  // The answer is in; a failed re-read after it is shown on its own and never turns a forget that landed into "Could not forget".
+  const bad=await mgReread(mgReload);
+  const say=r.status===409?`${cur.name} is ${kind==="setup"?"in use":"plugged in"} now, so it stays.`:r.status===404?`${cur.name} was already gone.`:`Forgot ${cur.name}.`,
+    full=bad?`${say} Could not read the names again: ${bad}.`:say;
+  if(r.ok){mgSay=full;status(full);mgRender("#mgh")}else mgSaid(full)}
+// A read after a write that landed: "" when it worked, else why it failed. The strip says so too (readErr), until a read lands.
+async function mgReread(read){try{await read();return""}catch(e){readErr=mgFail(e);render();return readErr}}
 // After a forget: names, setups and the layouts the scenes follow are read again. Edits that are only in this page, and Undo, stay.
 async function mgReload(){
   await readKnown();if(plug){await readLayouts({setup:plug});reseed()}
@@ -1271,7 +1271,7 @@ function renderInsp(V){
   else $("zonebox").innerHTML="";
   const mons=LIVE?snap.monitors.filter(x=>mk(x)):snap.monitors;
   let h=`<div class="seg" role="group" aria-label="Monitor">${mons.map(x=>`<button type="button" data-mon="${snap.monitors.indexOf(x)}" aria-pressed="${x===m}">${esc(monName(x))}</button>`).join("")}</div>
-    ${monNameField(m)}<p class="note">${m.w}×${m.h} pixels.${idm()&&(cfg.monitors||{})[m.id]?` In ${plural(mgSetupCount(m.id),"setup")}.`:""}</p>`;
+    ${monNameField(m)}<p class="note">${m.w}×${m.h} pixels.${idm()&&(cfg.monitors||{})[m.id]?`${(cfg.monitors[m.id].builtin||m.builtin)?" Built-in screen.":""} In ${plural(mgSetupCount(m.id),"setup")}.`:""}</p>`;
   if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
     if(s&&s.fill&&s.fill.mon===mk(m)){const off=!!s.fill.off;
       h+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="fillSw" ${off?"":"checked"}><span class="xt"><b>Fill Empty Cells</b><small>${off?"Windows stay where they are. A new window waits in Windows That Stay Put.":"Windows that are not pinned fill the free cells."}</small></span></label>
@@ -1279,8 +1279,9 @@ function renderInsp(V){
     else if(s)h+=`<p class="note">This monitor does not fill itself. Drag windows here to pin them.</p>`;
 }
   else if(LIVE)h+=`<p class="note">This monitor has no grid in this scene.</p>${idm()&&s?`<button type="button" class="btn" id="addgrid">Add a Grid</button>`:""}`;
-  // A name being typed is not redrawn under the cursor.
+  // A name being typed is not redrawn under the cursor; the picker's labels are still patched in place, so a rename shows there before the field is left.
   if(!(document.activeElement&&document.activeElement.id==="monName"))$("mon").innerHTML=h;
+  else $("mon").querySelectorAll(".seg button[data-mon]").forEach(b=>{b.textContent=monName(snap.monitors[+b.dataset.mon])});
   const w=selWin&&winById(selWin),x=w&&V[w.id];
   if(!w){inspKey="";$("win").innerHTML=`<p class="note">Click a window on the board to change it here.</p>`}
   else{const p=x.p,pin=LIVE&&p&&p.pin>=0&&!p.behind?s.pins[p.pin]:null,box=pin?bbox(pin.slots,s.grids[pin.mon]):null,lockd=!!(pin&&pin.lock),stk=pin?stackOf(p.pin):[],onBoard=LIVE&&!inBay(x)&&x.kind!=="behind"&&!!x.r;
@@ -2014,7 +2015,6 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="mgopen")mgOpen();
   else if(t.id==="mgdone")$("mgdlg").close();
   else if(t.dataset.fk)mgForget(t);
-  else if(t.id==="remsize")status("Remembering a monitor by its size is not built yet, so this setup is not remembered.");
   else if(t.dataset.bay){selWin=+t.dataset.bay;render();requestAnimationFrame(()=>{const m=$("moveto");if(m)m.focus()})}
   else if(t.dataset.zone!==undefined){selZone=+t.dataset.zone;render()}
   else if(t.id==="zdone"){selZone=null;render()}
