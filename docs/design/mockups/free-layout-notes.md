@@ -162,7 +162,8 @@ F14. **Errors.** Two, both from real paths:
 
 F15. **The switch on a 1×1 monitor (item 15, owned by L4).** Off, with item 15's words, "One
      window fills this monitor. Split it first." (plan L4's test reads them), and a Split Cell button beside it,
-     which opens the split menu on that window (`ux-no-dead-end`). After a split the switch turns on.
+     which opens the split menu on that window (`ux-no-dead-end`). A split makes the Free Layout switch
+     available. It does not turn it on (item 28, Split in Free Layout, `layout-free-notes.md`).
      Gain: the reason leads straight to the fix. Loss: none. Pick: as drawn.
 
 F16. **Empty state.** A Free Layout monitor whose spaces are all empty keeps its lines; each space
