@@ -753,7 +753,12 @@ function Invoke-Link {
       if (-not $NoApply) { Add-TileLog (Get-ActiveId) "Undo of $(if ($name) { $name } else { 'a run' }) did nothing: $($res.text)" }
       Show-Toast (New-NoUndoToast $name $res.text $TileOpenAction)
     }
-  } catch { Show-Toast (New-RunToast 'Undo failed' $_.Exception.Message) }
+  } catch {
+    $err = $_.Exception.Message
+    # The log shows every Undo. A log write that throws must not hide the toast.
+    if (-not $NoApply) { try { $n = Get-RunIdName $rid; Add-TileLog (Get-ActiveId) "Undo of $(if ($n) { $n } else { 'a run' }) failed: $err" } catch {} }
+    Show-Toast (New-RunToast 'Undo failed' $err)
+  }
 }
 function Open-App {
   if (-not $srv -or $srv.HasExited) {
