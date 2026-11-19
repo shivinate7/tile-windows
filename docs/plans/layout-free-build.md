@@ -1,6 +1,6 @@
 ## layout-free-build
 
-**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L3 (PR 50, free areas), L5a (PR 54, gap-fill run) and L5b (PR 43, gap watch) are merged. L2 and L4 are not built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
+**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L2 (PR 51, Split Cell board), L3 (PR 50, free areas), L5a (PR 54, gap-fill run) and L5b (PR 43, gap watch) are merged. L4 is not built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
 
 **Source.** The Plan agent's build plan (opus), revised after a refuter, 2026-11-18 11:20 CST. It was first checked against origin/main 9e6ae0a. The symbols that replace its line numbers were checked against origin/main b6bc537 by 2026-11-18 11:23 CST. Its other claims, such as the columns cap of 8 and the span stepper following `g.c`, were not re-checked. Main has no docs/map/.
 
@@ -30,6 +30,9 @@ Status: built in PR 46 (finer grid), merged at commit fce4790. Its engine and re
   - with no `mult`, the output is exactly today's.
 
 **L2. Page: Split Cell** (`app.html`; designer yes; needs L1)
+
+Status: built in PR 51 (Split Cell board), merged at commit b1735e7. Records: notes `split-cell-deferred-items`, `split-cell-dblclick-edges`, `split-cell-stripe-initial`, `split-cell-logic-inline`, `split-cell-fast-k1`.
+
 - `cellRect` learns `mult` and reuses `bround`, which rounds half to even as `[int]` does in `Pass` (136.5 becomes 136). It takes each edge from `EdgeX` and `EdgeY` in `Pass`, not from span times sub-width. Base step: `bround(m.w/g.c)`. Sub-step: `bround(base/mx)`. Edge: `floor(i/mx)*base + (i%mx)*sub`. A window's width is its end edge minus its start edge. Span times sub-width puts base column 1 at 272 px on 1365 px; the engine puts it at 273. Rows work the same with `my`, `r` and `h`. The L0 `mult` case turns green.
 - A pure `splitLayout()` keeps the base `c` and `r` and sets `mult`. A 5×2 board split side by side posts `c` 5 and `mult` [2,1], not `c` 10. A stacked split posts `mult` [1,2] (5×2 becomes 5×4). The engine doubles the slots from `mult`, as `test/golden-layouts.ps1` on branch `finer-grid` posts it. It remaps every pin, zone and held entry, and sets `fill.unit`.
 - The columns cap of 8 rises to a proposed 24. The rows cap of 4 rises to a proposed 8, so a stacked split is possible. The span stepper already follows `g.c`, so it needs no change.
