@@ -2129,10 +2129,10 @@ stage.addEventListener("keydown",ev=>{
 // A right-click on the board never shows the browser's own menu; on a window it opens the split menu at the pointer.
 stage.addEventListener("contextmenu",ev=>{ev.preventDefault();const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev())return;
   const id=+e.dataset.id;selWin=id;render();openSplit(id,{x:ev.clientX,y:ev.clientY})});
-// A double-click splits only a tile that was already selected: the first click of a pair selects, so the selection is read at that press (split-cell notes S3).
-let selAtPress=null;
-stage.addEventListener("mousedown",ev=>{if(ev.detail<2)selAtPress=selWin},true);
-stage.addEventListener("dblclick",ev=>{const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev()||ev.target.closest("button"))return;ev.preventDefault();if(+e.dataset.id===selAtPress)splitFast(+e.dataset.id)});
+// A double-click splits only a tile that was already selected. The tile's pointerdown handler cancels the mouse events, so the selection is read from a pointerdown capture, before that handler selects: [0] is the first press of the pair, [1] the second.
+const selAtPress=[null,null];
+stage.addEventListener("pointerdown",ev=>{if(ev.button===0){selAtPress[0]=selAtPress[1];selAtPress[1]=selWin}},true);
+stage.addEventListener("dblclick",ev=>{const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev()||ev.target.closest("button"))return;ev.preventDefault();if(+e.dataset.id===selAtPress[0])splitFast(+e.dataset.id)});
 
 function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.");return}
   if(pp.pin.lock){status(`${winById(id).title} is locked. Unlock it first.`);return}
