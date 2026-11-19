@@ -38,6 +38,15 @@ Plan: docs/plans/layout-free-build.md#layout-free-build (windows)
 - The Shift key is the coordinator's pick, 2026-11-18 11:14 CST, open to the owner's change. Reason: it matches the `edges-drag` caption in layout-free.html, so the mockup needs no change.
 - With the key pick above, the drag half of question (b) is closed.
 
+**Ruling (owner, 2026-11-19 13:10 CST; owner's words):**
+
+> F5: Go Around · F10: Lent Space · F4/F6/F12: yes to all three
+
+- F5 (choice in `free-layout-notes.md`, the Shift-drag across a locked row): Go Around. Shift moves every part of the line that can move and leaves the part beside the locked window.
+- F10 (choice in `free-layout-notes.md`, a gone window's space on the board): Lent Space. The board keeps the saved layout and hatches the space in each window's colour.
+- F4 (the size floor, shown at 400 × 300 px), F6 (keys) and F12 (Close Gap shares the space at the middle): yes to all three. Each is a choice in `free-layout-notes.md`.
+- Notes item 20 (the size floor: a drag stops when a window would be under 400 × 300 px) is ruled: yes, at the same time.
+
 Asked 2026-11-18 11:15 CST, open: (c) the fast action's trigger, direction and share (plan questions 1 and 3, keys S and K). S stays with the menu, as drawn, until the owner rules on it.
 
 Asked 2026-11-18 11:15 CST, open: how a closed window's space divides when more than one neighbour takes it (plan question 4, key M).

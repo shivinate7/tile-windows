@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Layout</title>
+<style>
+/* Tokens copied from app.html :root on main (74f87cb; the same as b6bc537, which split-cell.html copied). No web fonts: this page opens from disk with no network, so the stacks fall back to Segoe UI. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --tmix:26%; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D; --ok:#17754B; --bad:#B42318;
+  /* Mockup chrome only, never product UI: the dashed Today and New labels. */
+  --ann-new:#C0267A; --ann-today:#4F574F;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- Mockup shell (not product UI): the same as split-cell.html ---------- */
+.mk{display:grid;gap:12px;padding:16px}
+.banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
+.banner b{color:var(--ann-new)}
+.mkhead{display:grid;gap:2px}
+.mkhead h1{margin:0;font:700 20px var(--f-disp);letter-spacing:-.01em}
+.mkhead p{margin:0;color:var(--muted);max-width:76ch}
+.mkbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.mkgrp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkgrp>span{color:var(--muted);font-size:12px}
+.mkseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.mkseg button{min-height:32px;border:0;background:transparent;padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.mkseg button+button{border-left:1px solid var(--line)}
+.mkseg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.mkopts{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;font-size:12.5px}
+.mkopts label{display:inline-flex;gap:6px;align-items:center;min-height:32px;cursor:pointer}
+.mkopts input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.mkopts>span{color:var(--muted);font-size:12px}
+.shot{display:grid;gap:6px}
+.shot h2.cap{margin:12px 0 0;font:700 16px var(--f-disp);letter-spacing:-.01em;color:var(--ink);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.shot h2.cap .opt{font:600 12px var(--f);color:var(--panel);background:var(--ink);padding:1px 7px;border-radius:3px}
+.shot h2.cap .opt.shared{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.shot h2.cap .note{font:12px var(--f);color:var(--muted)}
+.shot .capn{margin:0;color:var(--muted);max-width:90ch}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.saves{display:grid;gap:4px;max-width:900px}
+.saves summary{cursor:pointer;font-weight:600;font-size:12.5px;width:max-content}
+.saves pre{margin:0;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;white-space:pre;overflow-x:auto;font:12px/1.45 var(--f-mono)}
+.art{position:relative}
+.art.w1440{width:1440px}.art.w1440 .app{height:900px}
+.art.w1024{width:1024px}.art.w1024 .app{height:768px}
+.ann{position:absolute;border:1.5px dashed var(--ann-new);border-radius:4px;pointer-events:none;z-index:40}
+.ann.today{border-color:var(--ann-today)}
+.ann>em,.abox>em{position:absolute;left:-2px;font:600 10.5px/1 var(--f);font-style:normal;white-space:nowrap;padding:2px 5px;border-radius:3px;background:var(--panel);color:var(--ann-new);border:1px dashed var(--ann-new)}
+.ann>em{top:calc(100% + 3px)}.ann.up>em{top:auto;bottom:calc(100% + 3px)}.ann.end>em{left:auto;right:-2px}
+.ann.today>em,.abox.today>em{color:var(--ann-today);border-color:var(--ann-today)}
+.ann.prop{border-style:dotted;border-color:var(--hi)}
+.ann.prop>em{color:var(--ink);border:1px dotted var(--hi);background:var(--hi-bg)}
+.abox{position:relative;outline:1.5px dashed var(--ann-new);outline-offset:3px;border-radius:2px;margin-top:14px}
+.abox.today{outline-color:var(--ann-today)}
+.abox>em{top:-19px;left:-4px}
+.abox.inl{margin-top:0;outline-offset:1px}
+.abox.prop{outline-style:dotted;outline-color:var(--hi)}
+.nolabels .ann{display:none}.nolabels .abox{outline:0;margin-top:0}.nolabels .abox>em{display:none}
+
+/* ---------- Product UI: copied from app.html on main ---------- */
+.app{display:grid;grid-template-columns:232px minmax(0,1fr) 268px;grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"top top top" "rail canvas insp" "status status status";background:var(--panel)}
+.top{grid-area:top;position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:9px 16px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font:700 15px var(--f-disp);letter-spacing:-.01em;margin:0}
+.brand svg{width:20px;height:20px;color:var(--select)}
+.crumb{color:var(--muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crumb b{color:var(--ink);font-weight:600}
+.tools{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;border:1px solid var(--line);background:var(--panel);padding:5px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:color-mix(in srgb,var(--ink) 40%,var(--line))}
+.btn.pri{background:var(--select);color:var(--select-ink);border-color:var(--select);font-weight:600}
+.btn:disabled{cursor:not-allowed;color:var(--muted);background:transparent;border-style:dashed;border-color:var(--line)}
+.btn.foc{outline:2px solid var(--select);outline-offset:2px}
+.switch{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 6px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.switch input{appearance:none;width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;margin:0;cursor:pointer;flex:none}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel)}
+.switch input:checked{background:var(--ink)} .switch input:checked::after{left:14px}
+.switch input:disabled{cursor:not-allowed;background:transparent;box-shadow:inset 0 0 0 1.5px var(--line)}
+.switch input:disabled::after{background:var(--line)}
+@media (forced-colors:active){.switch input{border:1px solid ButtonText;background:Canvas;forced-color-adjust:none}.switch input::after{top:1px;left:1px;background:ButtonText}
+  .switch input:checked{background:Highlight}.switch input:checked::after{left:13px;background:HighlightText}.switch input:disabled{border-color:GrayText}.switch input:disabled::after{background:GrayText}}
+.rail,.insp{min-width:0;min-height:0;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:auto}
+.rail{grid-area:rail;border-right:1px solid var(--line)}
+.insp{grid-area:insp;border-left:1px solid var(--line);gap:0;padding-top:4px}
+.isec{display:grid;gap:8px;padding:12px 0 16px;border-bottom:1px solid var(--line)}
+.isec:last-child{border-bottom:0}
+.app h2{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:10px 0 0;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.app h2:first-child{margin-top:0}
+.insp h2{margin:0;color:var(--ink);font-size:12px;font-weight:700}
+.cards{display:grid;gap:6px}
+.card{position:relative;display:grid;gap:4px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.card.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.pick{display:grid;gap:5px;border:0;background:transparent;padding:0;text-align:left;min-width:0;border-radius:4px}
+.pick strong{font:700 15px var(--f-disp);letter-spacing:-.01em;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pick small{color:var(--muted);font-size:12px}
+.live{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--hi);color:var(--hi-ink)}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.tag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.mini{position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden;display:block}
+.mini i{position:absolute;background:var(--screen);border:1px solid var(--line);border-radius:1px}
+.mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
+.cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--cat);flex:none}
+.legend{display:grid;gap:2px}
+.lg{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;border:0;background:transparent;padding:4px 6px;border-radius:4px;text-align:left}
+.lg .ct{margin-left:auto;font:12px var(--f-mono);color:var(--muted)}
+.note{font-size:12px;color:var(--muted);margin:0}
+.why{font-size:12px;color:var(--muted);margin:0;display:grid;gap:2px}
+.canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.canvas>*{width:100%;flex:none}
+.canvas>.stage{width:auto}
+.stage{position:relative;user-select:none}
+.mon{position:absolute;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
+.mon.free{display:block}
+.mon .cell{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);background:color-mix(in srgb,var(--ink) 6%,transparent);border-radius:2px;position:relative;min-width:0;min-height:0}
+.mon .cell i{position:absolute;right:3px;bottom:1px;font:normal 11px var(--f-mono);color:var(--muted)}
+.mlab{position:absolute;display:flex;gap:6px;align-items:baseline;font-size:11px;color:var(--muted);white-space:nowrap;transform:translateY(-100%);padding-bottom:3px}
+.mlab button{border:0;background:transparent;padding:0;font-weight:600;color:var(--ink);font-size:11.5px}
+.mlab button[aria-pressed="true"]{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.tile{position:absolute;display:flex;flex-direction:column;align-items:flex-start;gap:2px;overflow:hidden;padding:3px 5px 3px 8px;border-radius:3px;
+  border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);background:color-mix(in srgb,var(--cat) var(--tmix),var(--panel));color:var(--ink);font-size:12px;line-height:1.2;cursor:grab;contain:layout paint}
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
+.tile b{font:600 11px var(--f);padding:1px 5px;border-radius:2px;background:var(--cat);color:var(--panel);max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:normal;overflow-wrap:normal;max-width:100%}
+.tile .pinmark{position:absolute;top:22px;right:5px;width:12px;height:12px;color:var(--cat)}
+.tile.pin span{max-width:calc(100% - 12px)}
+.tile.pin{border-width:2px;border-color:var(--cat);background:color-mix(in srgb,var(--cat) 34%,var(--panel))}
+.tile.pin,.tile.fill{z-index:2}
+.tile.sel{outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent);z-index:4}
+.tile.narrow .pinmark,.tile.narrow span{display:none}
+.tile .lk{position:absolute;top:2px;right:2px;width:18px;height:18px;display:grid;place-items:center;border:0;border-radius:3px;background:transparent;color:var(--muted);padding:0;cursor:pointer;z-index:1}
+.tile .lk svg{width:12px;height:12px}
+.tile.lock{cursor:default}
+.tile.lock .lk{background:var(--ink);color:var(--panel)}
+.tile.narrow .lk{display:none}
+.tile.drag{opacity:.45}
+.ghost{position:absolute;z-index:50;pointer-events:none;max-width:240px;padding:3px 8px;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);color:var(--ink);font:600 12px var(--f);white-space:nowrap}
+.cursor{position:absolute;z-index:51;pointer-events:none}
+.dest{position:absolute;border:2px dashed var(--select);border-radius:3px;pointer-events:none;z-index:8;background:color-mix(in srgb,var(--select) 8%,transparent)}
+.dest span{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);display:inline-block;width:max-content;max-width:calc(100% - 8px);text-align:center;padding:2px 8px;border-radius:999px;background:var(--select);color:var(--select-ink);font:600 12px var(--f);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dest.sm span{font-size:10.5px;padding:1px 4px;bottom:3px}
+.boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
+.boardbar .hint{margin:0;flex:1 1 300px;font-size:12px;color:var(--muted)}
+.keys{font-size:12px;color:var(--muted)}
+.keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
+.keys ul{margin:4px 0 0;padding-left:18px;display:grid;gap:6px}
+.keys kbd,.tip kbd,.menu kbd{font:600 11px var(--f-mono);padding:0 4px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);border-radius:3px}
+.status{grid-area:status;display:flex;flex-wrap:wrap;gap:4px 18px;padding:7px 16px;border-top:1px solid var(--line);font:12px var(--f-mono);color:var(--muted);align-items:center}
+.status .msg{color:var(--ink)}
+select{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-height:32px;min-width:0;max-width:100%}
+.field{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px}
+.field>label,.field>span:first-child{color:var(--muted)}
+.field.stack{flex-direction:column;align-items:stretch;gap:4px}
+.field .ro{font:500 12.5px var(--f-mono)}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.step button{border:0;background:transparent;width:30px;height:30px;font-size:15px}
+.step button:disabled{color:var(--muted);cursor:not-allowed}
+.step span{min-width:26px;text-align:center;font:500 12.5px var(--f-mono)}
+.step.off{border-style:dashed}
+.win{display:grid;gap:7px;padding:9px;border:1px solid var(--line);border-radius:8px}
+.win .t{font-weight:600;font-size:13px;word-break:break-word}
+.win .m{color:var(--muted);font-size:12px}
+.xt{display:grid;flex:1;min-width:0;white-space:normal}
+.xt small{display:block;color:var(--muted);font-size:12px}
+.lockrow{align-items:flex-start;white-space:normal;padding:4px 0;gap:10px;width:100%}
+.lockrow input{margin-top:2px;box-shadow:inset 0 0 0 1px var(--muted)}
+.lockrow input:checked{box-shadow:none}
+.callout{font-size:12px;color:var(--ink);margin:0;padding:8px 10px;border-left:3px solid var(--select);border-radius:4px;background:color-mix(in srgb,var(--select) 8%,var(--panel))}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;min-height:30px;border:0;background:transparent;padding:5px 2px;font-size:12px;min-width:0;white-space:nowrap}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.bay{display:grid;gap:6px;align-content:start;padding:8px 12px;border:1px dashed var(--line);border-radius:8px;background:color-mix(in srgb,var(--canvas) 70%,var(--panel))}
+.bay h2{margin:0;justify-content:flex-start;gap:10px}
+.bay h2 .note{text-transform:none;letter-spacing:0;font-weight:400}
+.bgrps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
+.bh{display:flex;gap:6px;align-items:center;margin:0 0 4px;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.bgrp ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.chip{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:0 6px;width:100%;min-height:32px;padding:4px 8px;text-align:left;border:1px solid var(--line);border-left:4px solid var(--cat);border-radius:5px;background:var(--panel);cursor:grab;font-size:12px}
+.chip b{font-weight:600;white-space:nowrap}
+.chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip.drag{opacity:.45;border-style:dashed}
+.dnote{position:absolute;z-index:30;display:flex;align-items:center;gap:8px;width:max-content;max-width:240px;padding:5px 5px 5px 10px;border-radius:6px;background:var(--ink);color:var(--panel);font:500 12px/1.3 var(--f);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent)}
+.dnote::before{content:"";position:absolute;left:var(--ax,14px);top:-5px;width:10px;height:10px;background:var(--ink);transform:rotate(45deg);border-radius:1px}
+.dnote .btn{min-height:26px;padding:2px 8px;font-size:12px;background:transparent;color:inherit;border-color:color-mix(in srgb,currentColor 40%,transparent)}
+@media (forced-colors:active){.dnote{border:1px solid CanvasText}}
+/* The setup strip, from app.html .setbar: the setup plugged in, and the save state. Its warn look carries a failed save. */
+.setbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.setbar.warn{background:var(--hi-bg);border-color:color-mix(in srgb,var(--hi) 60%,var(--line));border-left:3px solid var(--hi)}
+.smap{position:relative;flex:none;width:58px;height:30px;border-radius:4px;background:var(--canvas)}
+.smap i{position:absolute;background:var(--screen);border:1.5px solid color-mix(in srgb,var(--ink) 70%,var(--canvas));border-radius:2px}
+.sid{display:grid;gap:0;min-width:0;flex:1 1 260px}
+.sid b{font:700 14px var(--f-disp);letter-spacing:-.01em}
+.sid span{font-size:12px;color:var(--muted)}
+.sid span strong{color:var(--ink);font-weight:600}
+.sbtns{display:flex;gap:6px;flex-wrap:wrap}
+.sbtns .btn svg{width:14px;height:14px}
+.w1024 .setbar{gap:6px 10px;padding:6px 8px}.w1024 .sid{flex-basis:200px}
+.w1024 .sbtns .btn.mg{padding:5px 8px}.w1024 .sbtns .btn.mg .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (forced-colors:active){.smap i{border-color:CanvasText}.setbar.warn{border-left-color:CanvasText}}
+/* Apply results, from app.html .panel and #reslist. */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.phead{display:flex;align-items:center;gap:8px}
+.phead b{font-weight:600}
+.phead .btn{margin-left:auto}
+.reslist{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:6px;font-size:12px}
+.reslist li{display:grid;grid-template-columns:1.2em minmax(0,1fr);gap:4px;overflow-wrap:anywhere}
+.reslist .ok{color:var(--ok)} .reslist .bad{color:var(--bad)}
+.reslist .rb{display:grid;gap:4px;justify-items:start}
+.reslist details{font-size:12px;color:var(--muted)}
+.reslist details summary{cursor:pointer}
+.reslist code{font:12px var(--f-mono)}
+.menu{position:absolute;z-index:50;display:grid;gap:0;width:244px;padding:4px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 12px 30px -12px color-mix(in srgb,#000 55%,transparent)}
+.menu button{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;text-align:left;border:0;background:transparent;border-radius:5px;padding:7px 9px;min-height:32px;white-space:normal}
+.menu button:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.menu button b{font-weight:600;font-size:12.5px}
+.menu button.foc{background:color-mix(in srgb,var(--select) 12%,transparent);box-shadow:inset 0 0 0 2px var(--select)}
+.menu .mh{margin:0;padding:6px 9px 4px;font:700 13px var(--f)}
+.menu .mg{margin:0;padding:6px 9px 2px;display:flex;justify-content:space-between;gap:8px;align-items:baseline;font:600 12px var(--f);color:var(--muted)}
+.menu .mg small{font:400 11.5px var(--f)}
+.menu .mf{margin:4px 0 0;padding:6px 9px 4px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line)}
+.gl{width:26px;height:18px;flex:none}
+.gl .k{fill:color-mix(in srgb,var(--cat) 55%,var(--panel));stroke:var(--cat);stroke-width:1.5}
+.gl .o{fill:none;stroke:var(--muted);stroke-width:1.2;stroke-dasharray:2 1.6}
+@media (forced-colors:active){.menu{border:1px solid CanvasText}.gl .k{fill:Highlight;stroke:CanvasText}.gl .o{stroke:CanvasText}.menu button.foc{outline:2px solid Highlight}}
+.tip{position:absolute;z-index:31;max-width:260px;padding:5px 8px;border-radius:6px;background:var(--ink);color:var(--panel);font:500 11.5px/1.35 var(--f);pointer-events:none;white-space:nowrap}
+.tip kbd{color:inherit}
+.tip.wrap{white-space:normal;width:220px}
+/* The empty space and split preview: from split-cell.html .area and .divider. */
+.area{position:absolute;z-index:1;display:grid;place-items:center;border:1.5px dashed color-mix(in srgb,var(--muted) 70%,transparent);border-radius:3px;background:color-mix(in srgb,var(--ink) 4%,var(--screen));color:var(--muted);font:600 11px var(--f);overflow:hidden;text-align:center;line-height:1.25;padding:2px}
+.area.sel{outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent);z-index:4;color:var(--ink)}
+.area.prevw{z-index:5;border-color:var(--select);color:var(--select);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--select) 18%,var(--screen)) 0 4px,var(--screen) 4px 8px)}
+.area small{display:block;font:400 10.5px var(--f);color:var(--muted)}
+.area.tiny .lab,.area.tiny small{display:none}
+.divider{position:absolute;z-index:6;width:12px;transform:translateX(-50%);pointer-events:none}
+.divider::before{content:"";position:absolute;top:0;bottom:0;left:5px;border-left:2px dashed var(--select)}
+@media (pointer:coarse){.btn,.switch,.mkseg button,select,.seg button,.menu button{min-height:44px}.seam.v{width:24px}.seam.h{height:24px}}
+
+/* ---------- Free Layout: the approved Shared Edges look, from layout-free.html (state edges-drag) ---------- */
+.seam{position:absolute;z-index:6;display:grid;place-items:center}
+.seam.v{width:12px;transform:translateX(-50%);cursor:ew-resize}
+.seam.h{height:12px;transform:translateY(-50%);cursor:ns-resize}
+.seam i{display:block;border-radius:2px;background:var(--select);box-shadow:0 0 0 2px var(--screen)}
+.seam.v i{width:4px;height:22px}
+.seam.h i{height:4px;width:22px}
+.seam.on::before{content:"";position:absolute;background:var(--select)}
+.seam.v.on::before{left:5px;width:2px;top:0;bottom:0}
+.seam.h.on::before{top:5px;height:2px;left:0;right:0}
+.seam.on i{box-shadow:0 0 0 2px var(--screen),0 0 0 4px var(--select)}
+.seam.stuck{cursor:not-allowed}
+.seam.stuck i{display:none}
+.seam.v.stuck::before{content:"";position:absolute;left:5px;top:0;bottom:0;border-left:2px dotted var(--muted)}
+.seam.h.stuck::before{content:"";position:absolute;top:5px;left:0;right:0;border-top:2px dotted var(--muted)}
+.seam.small.v i{height:12px}.seam.small.h i{width:12px}
+@media (forced-colors:active){.seam i,.seam.on::before{background:Highlight;forced-color-adjust:none}.seam.v.stuck::before,.seam.h.stuck::before{border-color:CanvasText}}
+.guide{position:absolute;z-index:5;border-left:1.5px dashed var(--muted);pointer-events:none}
+.sz{position:absolute;z-index:31;padding:1px 6px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px/1.4 var(--f-mono);white-space:nowrap;pointer-events:none}
+.sz.l{transform:translateX(-100%)}
+/* The floor: the side that stopped reads in ink, with a bar where the line stopped. */
+.sz.stop{background:var(--ink);color:var(--panel)}
+.stopbar{position:absolute;z-index:7;width:6px;transform:translateX(-50%);border-left:2px solid var(--ink);border-right:2px solid var(--ink);pointer-events:none}
+.prev{position:absolute;z-index:8;border:2px dashed var(--select);border-radius:3px;pointer-events:none}
+.prev span{position:absolute;left:4px;top:4px;padding:1px 5px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px var(--f);white-space:nowrap}
+.prev.sm span{font-size:10px;padding:0 3px}
+.pop{display:grid;gap:8px;padding:10px 12px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);box-shadow:0 10px 24px -14px color-mix(in srgb,#000 50%,transparent)}
+.pop h3{margin:0;font:700 13px var(--f)}
+.pacts{display:flex;gap:6px;flex-wrap:wrap}
+.pacts .btn{flex:1}
+.ropt{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer}
+.ropt input{appearance:none;width:16px;height:16px;margin:2px 0 0;flex:none;border:1.5px solid var(--muted);border-radius:50%;background:var(--panel)}
+.ropt input:checked{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 3px var(--panel)}
+.ropt small{display:block;color:var(--muted);font-size:12px}
+@media (forced-colors:active){.pop{border:1px solid CanvasText}.ropt input:checked{background:Highlight}}
+
+/* ---------- New in this mockup ---------- */
+/* Lent space: a closed or minimized window's space, on loan to the windows beside it. Each part is tinted in the colour of the window that has it, with a solid edge on that window's side. */
+.lent{position:absolute;z-index:3;display:flex;border:1.5px dashed var(--muted);border-radius:3px;overflow:hidden;background:var(--screen)}
+.lent>i{flex:none;height:100%;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--cat) 30%,var(--screen)) 0 4px,var(--screen) 4px 8px)}
+.lent>i.fromL{border-left:3px solid var(--cat)}
+.lent>i.fromR{border-right:3px solid var(--cat)}
+.lent>i+i{border-left:1.5px dashed var(--muted)}
+.lent .lab{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;gap:1px;padding:3px 7px;border-radius:4px;background:var(--panel);border:1px solid var(--line);font:600 11px/1.25 var(--f);color:var(--ink);text-align:center;width:max-content;max-width:calc(100% - 16px)}
+.lent .lab small{font:400 10.5px var(--f);color:var(--muted)}
+.lent.sel{outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent);z-index:4}
+/* The gone window's outline over grown neighbours (Grown option). */
+.gone{position:absolute;z-index:5;border:2px dashed var(--ink);border-radius:3px;pointer-events:none}
+.gone span{position:absolute;left:4px;top:4px;padding:1px 5px;border-radius:3px;background:var(--panel);border:1px dashed var(--ink);color:var(--ink);font:600 11px var(--f);white-space:nowrap}
+.gone.sel{outline:3px solid var(--ink);outline-offset:1px}
+/* A gap that stays: yellow hatch, the same as layout-free.html .hatch.gap, with a dashed edge that forced colours keep. */
+.area.gapx{border:2px dashed var(--hi);color:var(--ink);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--hi) 34%,var(--screen)) 0 4px,var(--screen) 4px 8px)}
+.area.gapx .lab,.area.gapx small{background:var(--panel);padding:0 4px;border-radius:2px}
+.area.gapx small{color:var(--ink)}
+/* Close Gap preview: the strip each neighbour takes, hatched in its colour. */
+.grow{position:absolute;z-index:5;border:2px solid var(--cat);border-radius:2px;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--cat) 34%,transparent) 0 4px,transparent 4px 8px);pointer-events:none}
+/* The empty-state line on a cleared Free Layout monitor: it takes the hint's place under the board, so every empty space stays in view. */
+.emptyline{flex:1 1 300px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:12px}
+.emptyline p{margin:0;color:var(--ink);flex:1 1 220px}
+
+/* 1024: app.html's @media (max-width:1180px) rules, keyed on the artboard instead of the viewport. */
+.w1024 .app{grid-template-columns:minmax(0,1fr) 252px;grid-template-rows:auto auto minmax(0,1fr) auto;grid-template-areas:"top top" "rail rail" "canvas insp" "status status"}
+.w1024 .rail{flex-direction:row;align-items:stretch;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;padding:8px 12px;gap:12px}
+.w1024 .rail>section{display:flex;flex-direction:column;gap:6px;flex:none}
+.w1024 .cards{grid-auto-flow:column;grid-auto-columns:176px}
+.w1024 .card .pick small,.w1024 .legend+.note{display:none}
+.w1024 .legend{grid-template-columns:repeat(2,auto);column-gap:6px}
+.w1024 .canvas{padding:18px 14px}
+</style>
+</head>
+<body>
+<div class="mk">
+  <p class="banner" role="note"><b>Sample.</b><span>Every window, title, pixel size and count on this page is invented. No figure here is real.</span></p>
+  <header class="mkhead">
+    <h1>Free Layout on the Board</h1>
+    <p>Lane L4 of Layout Free. Free Layout is a switch per monitor (and the F key). It keeps every window where it is and swaps the grid for the lines where windows meet. A plain drag moves one row's part of a line; Shift moves the whole line. Dashed pink labels mark what is new, dashed grey labels what exists today, and dotted yellow labels what is only proposed. Each option has a switch under "Show" that hides it.</p>
+  </header>
+  <nav class="mkbar" aria-label="Mockup controls">
+    <div class="mkgrp"><span id="lblState">State</span><div class="mkseg" id="segState" role="group" aria-labelledby="lblState"></div></div>
+    <div class="mkgrp"><span id="lblW">Width</span><div class="mkseg" id="segW" role="group" aria-labelledby="lblW"></div></div>
+    <div class="mkgrp"><span id="lblT">Theme</span><div class="mkseg" id="segT" role="group" aria-labelledby="lblT"></div></div>
+    <div class="mkopts" role="group" aria-label="Show options"><span>Show</span>
+      <label><input type="checkbox" data-opt="around" checked>Lock: Go Around</label>
+      <label><input type="checkbox" data-opt="refuse" checked>Lock: Refuse Shift</label>
+      <label><input type="checkbox" data-opt="lent" checked>Gone Window: Lent Space</label>
+      <label><input type="checkbox" data-opt="grown" checked>Gone Window: Grown Neighbours</label>
+      <label><input type="checkbox" id="oLabels" checked>Today and New Labels</label>
+    </div>
+  </nav>
+  <div id="frames"></div>
+</div>
+<script>
+"use strict";
+/* ---------- Sample (invented). The board of split-cell.html: a 5x2 ultrawide with 2x1 spans. Rects are fractions of the monitor: [x, y, w, h]. ---------- */
+const MON={laptop:{x:-1536,y:769,w:1536,h:912,g:[1,1]},wide:{x:0,y:0,w:4096,h:1680,g:[5,2]},tall:{x:4096,y:-1354,w:1200,h:1872,g:[1,2]}};
+const ROLE={wide:"Ultrawide",tall:"Portrait",laptop:"Laptop"};
+const VIEW={x0:-1536,y0:-1354,bw:6832,bh:3035,mons:["laptop","wide","tall"]};
+const TOP=22,PXW=4096,PXH=1680;
+const BASE=[
+  {id:"ca",app:"Claude",cat:"code",title:"Refactor the grid solver",f:[0,0,.2,.5]},
+  {id:"cb",app:"Claude",cat:"code",title:"Pin parser edge cases",f:[.2,0,.2,.5]},
+  {id:"ch",app:"Chrome",cat:"browse",title:"Quarterly roadmap",f:[.4,0,.4,.5],pin:true},
+  {id:"te",app:"Terminal",cat:"code",title:"pwsh - tiler",f:[.8,0,.2,.5],pin:true,lock:true},
+  {id:"c2",app:"Chrome",cat:"browse",title:"Release notes draft",f:[0,.5,.4,.5],pin:true},
+  {id:"cc",app:"Claude",cat:"code",title:"Fill order tests",f:[.4,.5,.2,.5]},
+  {id:"ex",app:"File Explorer",cat:"other",title:"Projects",f:[.6,.5,.2,.5]},
+  {id:"xl",app:"Excel",cat:"other",title:"Q3 budget",f:[.8,.5,.2,.5]},
+  {id:"ou",app:"Outlook",cat:"comms",title:"Inbox - Outlook",mon:"tall",f:[0,0,1,.5],pin:true},
+  {id:"tm",app:"Teams",cat:"comms",title:"Team chat",mon:"tall",f:[0,.5,1,.5],pin:true},
+  {id:"ol",app:"Outlook (new)",cat:"comms",title:"Calendar",mon:"laptop",f:[0,0,1,1],pin:true}];
+const BAY0=[{app:"Notepad",cat:"other",title:"todo.txt - Notepad",why:"Kept put"}];
+const STEP=1/48, FLOOR_W=400/PXW;
+// Item G for "Claude, Pin parser edge cases" gone, from Get-CollapsedAreas in tile.ps1 on main (74f87cb), run on these areas at 4096 x 1680 with Terminal locked.
+const MID=0.300048828125;
+
+// [key, title, option key ("" = shared), option name, caption, focus id]
+const STATES=[
+  ["free-on","Switch On: Nothing Moves","","Every option","F, or the Free Layout switch in the Monitor section. Every window keeps its rect on the board and on the screen; no Apply runs. The grid lines go, the monitor label reads Free Layout, and a grip sits on each line where two windows meet. The line beside the locked Terminal is dotted and has no grip.","free-on-seams"],
+  ["drag-segment","Plain Drag: One Row","","Every option","The owner's approved drag (state edges-drag). The line between Claude and Chrome in the top row moves right: Claude grows and Chrome shrinks in the same move, so no gap opens. The lower row keeps its line (the dashed guide). The size of each side reads at the line.","drag-segment-seam"],
+  ["drag-line","Shift-Drag: The Whole Line","","Every option","The same line with Shift held. Both rows move: four windows change size. The tip under the pointer names the key on every drag, so the Shift move is found without the keyboard list.","drag-line-seam"],
+  ["drag-floor","A Drag Stops at the Floor","","Every option","The line between the two Claude windows is dragged right until the right one is 400 px wide, the smallest a window gets (400 × 300 px). The line stops there and the size that stopped it turns ink. Owner grant: yes (layout-free notes item 20).","drag-floor-seam"],
+  ["lock-around","Shift-Drag Across a Locked Row","around","Go Around (ruled)","The line between File Explorer and Excel runs on above, beside the locked Terminal. Shift moves every part of the line that can move and leaves the part beside Terminal. On two rows this is the plain drag; on three or more rows it moves every free row. The tip says what stayed.","lock-around-seam"],
+  ["lock-refuse","Shift-Drag Across a Locked Row","refuse","Refuse Shift","The same Shift-drag is refused: the pointer shows no entry and nothing moves. The tip says why and how to move the lower part: let go of Shift.","lock-refuse-seam"],
+  ["keys","Keyboard: Move a Line","","Every option","Claude is selected. Shift+Right moved its right edge 85 px (1/48 of the monitor), in its row only, as the plain drag does. Alt+Shift+Right would move the whole line, as the Shift-drag does. On a grid monitor Shift+arrows still resize by whole cells, as today.","keys-seam"],
+  ["assign-drop","Assign: Drop on an Empty Space","","Every option","File Explorer went to Windows That Stay Put, so its space is empty. Notepad is dragged from the list onto it: the space lights and says what happens. A drop pins Notepad to the space. A drop on a space a window holds offers today's Swap circle and Put Behind.","assign-drop-area"],
+  ["assign-fill","Assign: A New Window Fills","","Every option","Fill Empty Cells is on. Two spaces are empty. Notepad opened and took the first empty space in reading order (top row first, then left to right). The other space fills next.","assign-fill-area"],
+  ["gap-lent","A Window Minimizes: Lent Space","lent","Lent Space (ruled)","Claude (Pin parser edge cases) was minimized. On the screen its neighbours grow into its space at once and meet in the middle: the left Claude grows 410 px and Chrome 409 px. The board keeps the saved layout and draws the space as lent: each part tinted in the colour of the window that has it. Restore gives Claude its space back. A closed window's space is lent the same way, until that app opens again.","gap-lent-area"],
+  ["gap-grown","A Window Minimizes: Grown Neighbours","grown","Grown Neighbours","The same minimize, with the board drawing what is on the screen: the neighbours grown to the middle, and the gone window's saved space as a dashed outline over them.","gap-grown-area"],
+  ["gap-stays","A Gap That Stays","","Every option","Excel closed. Terminal above it and File Explorer beside it are both locked, and nothing else touches it, so no neighbour can take the space. It stays empty on the screen and reads as a gap on the board. Unlock File Explorer leads on: then File Explorer takes the space.","gap-stays-area"],
+  ["close-gap","Close Gap on an Empty Space","","Every option","File Explorer was kept put; its space is selected. Close Gap removes the space from the layout: the neighbours on both sides take it and meet in the middle, the same rule a closed window follows. The board previews the strip each one takes while the button has focus.","close-gap-preview"],
+  ["split-area","Split in Free Layout","","Every option","Right-click on Chrome, or S. The split menu of split-cell.html, halves only: Split cuts Chrome's space in two and adds one line. No grid doubles, so each group says Adds a Line. The empty half is a space; the fill takes it as any empty space.","split-area-menu"],
+  ["one-by-one","A 1×1 Monitor","","Every option","The laptop is selected. One window fills it, so it has no line to move: the Free Layout switch is off and says why. Split Cell beside the reason opens the split menu on Outlook (new); after a split, the switch turns on.","one-by-one-switch"],
+  ["empty","Empty Free Layout Monitor","","Every option","Fill Empty Cells is off and Clear Board sent every ultrawide window to Windows That Stay Put. The lines stay; each space reads Empty with its size. One sentence says what fills the spaces, and one control fills them.","empty-board"],
+  ["back","Back to the Grid","","Every option","Free Layout was switched off after the Shift-drag. The popover at the switch offers Snap to Cells (the default) or Restore the Grid Layout, and counts the windows that change size. The board previews the snap. Nothing moves until Back to Grid; Undo covers it.","back-popover"],
+  ["err-save","Error: The Layout Did Not Save","","Every option","The plain drag autosaved, and the save failed: the app server stopped answering. The setup strip turns amber and says the change is only in this page; Try Again sends it again. This is today's save-failure strip, unchanged.","err-save-bar"],
+  ["err-apply","Error: An App Will Not Fit Its Space","","Every option","Apply after Go Around left File Explorer 410 px wide. File Explorer will not go under 500 px, so the engine's size check reports it off size. The result row says it in words, leads on with Give It 500 px (moves the line), and keeps the engine's words behind What the Server Said. A pin that no space holds (the engine's \"not in a free area\") gets a row of the same form.","err-apply-results"]];
+const OPTS=["around","refuse","lent","grown"];
+
+/* ---------- Icons ---------- */
+const I={
+  lockC:'<svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M3.5 5V3.6a2.5 2.5 0 0 1 5 0V5H9.5v6h-7V5h1zm1.3 0h2.4V3.6a1.2 1.2 0 0 0-2.4 0V5z"/></svg>',
+  lockO:'<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2.6" y="5.6" width="6.8" height="5" rx=".8"/><path d="M4.4 5.6V3.6a1.9 1.9 0 0 1 3.7-.6"/></svg>',
+  pin:'<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M4 1h4l-.6 3.2L9.5 6v1H6.6L6 11.5 5.4 7H2.5V6l2.1-1.8z"/></svg>',
+  arrow:'<svg class="cursor" viewBox="0 0 16 20" width="16" height="20" aria-hidden="true"><path d="M1 1v15l4-4 3 7 2.5-1-3-7h6z" fill="var(--panel)" stroke="var(--ink)" stroke-width="1.3" stroke-linejoin="round"/></svg>',
+  ew:'<svg class="cursor" viewBox="0 0 22 12" width="22" height="12" aria-hidden="true"><path d="M1 6l4.5-4.5v3h11v-3L21 6l-4.5 4.5v-3h-11v3z" fill="var(--ink)" stroke="var(--panel)" stroke-width="1.2" stroke-linejoin="round"/></svg>',
+  no:'<svg class="cursor" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="7" fill="var(--panel)" stroke="var(--ink)" stroke-width="2"/><path d="M4.2 13.8 13.8 4.2" stroke="var(--ink)" stroke-width="2"/></svg>',
+  logo:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="7" height="6" rx="1"/><rect x="11" y="3" width="7" height="6" rx="1"/><rect x="2" y="11" width="16" height="6" rx="1"/></svg>',
+  mg:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.5" y="3" width="8" height="6" rx="1"/><rect x="11" y="2" width="3.5" height="9" rx="1"/><path d="M4 12.5h3"/></svg>'};
+function glyph(dir,keep){const k=dir==="side"?(keep===0?[1,1,12,16]:[13,1,12,16]):(keep===0?[1,1,24,8]:[1,9,24,8]),o=dir==="side"?(keep===0?[13,1,12,16]:[1,1,12,16]):(keep===0?[1,9,24,8]:[1,1,24,8]);
+  return `<svg class="gl" viewBox="0 0 26 18" aria-hidden="true"><rect class="o" x="${o[0]+.6}" y="${o[1]+.6}" width="${o[2]-1.2}" height="${o[3]-1.2}" rx="1.5"/><rect class="k" x="${k[0]+.6}" y="${k[1]+.6}" width="${k[2]-1.2}" height="${k[3]-1.2}" rx="1.5"/></svg>`}
+
+/* ---------- View state, from the URL hash ---------- */
+const V={s:"free-on",w:"1440",t:"",labels:true,hide:new Set()};
+function readHash(){const h=new URLSearchParams(location.hash.slice(1));
+  V.s=[...STATES.map(s=>s[0]),"all"].includes(h.get("s"))?h.get("s"):"free-on";
+  V.w=["1440","1024"].includes(h.get("w"))?h.get("w"):"1440";
+  V.t=["light","dark"].includes(h.get("t"))?h.get("t"):"";
+  V.hide=new Set((h.get("hide")||"").split(",").filter(x=>OPTS.includes(x)))}
+function writeHash(){const p=[`s=${V.s}`];if(V.w!=="1440")p.push(`w=${V.w}`);if(V.t)p.push(`t=${V.t}`);if(V.hide.size)p.push(`hide=${[...V.hide].join(",")}`);history.replaceState(null,"","#"+p.join("&"))}
+
+/* ---------- Geometry: app.html layout() and the .mon grid. One function draws cells and free rects, so a rect at switch-on is the cell it was. ---------- */
+const SCALE={"1440":.1323,"1024":.0755};
+function monBox(G,k){const m=MON[k];return{l:(m.x-VIEW.x0)*G.S+3,t:(m.y-VIEW.y0)*G.S+TOP,w:m.w*G.S-6,h:m.h*G.S}}
+function R(G,mon,fx,fy,fw,fh){const b=monBox(G,mon),iw=b.w-10,ih=b.h-10;return{l:b.l+5+fx*(iw+2),t:b.t+5+fy*(ih+2),w:fw*(iw+2)-2,h:fh*(ih+2)-2}}
+const inset=(b,n=1)=>({l:b.l+n,t:b.t+n,w:b.w-2*n,h:b.h-2*n});
+const css=b=>`left:${b.l.toFixed(1)}px;top:${b.t.toFixed(1)}px;width:${b.w.toFixed(1)}px;height:${b.h.toFixed(1)}px`;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+// A line's pixel: each line is rounded once (Get-AreaPixelRects), so a width is the end line minus the start line.
+const px=f=>Math.round(f*PXW), pw=(a,b)=>px(b)-px(a);
+const ann=(b,text,o={})=>`<div class="ann${o.today?" today":""}${o.prop?" prop":""}${o.up?" up":""}${o.end?" end":""}" style="${css({l:b.l-3,t:b.t-3,w:b.w+6,h:b.h+6})}"><em>${o.today?"Today":o.prop?"Proposed":"New"}: ${esc(text)}</em></div>`;
+const at=(svg,x,y)=>svg.replace('class="cursor"',`class="cursor" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px"`);
+const focusBox=(id,b)=>`<div id="${id}" style="position:absolute;${css(b)};pointer-events:none;z-index:7"></div>`;
+const dnote=(t,html,ax)=>`<div class="dnote" role="status" style="left:${(t.l+2).toFixed(1)}px;top:${(t.t+t.h+9).toFixed(1)}px;--ax:${(ax==null?Math.min(14,t.w/2-5):ax).toFixed(1)}px"><span>${html}</span><button type="button" class="btn">Undo</button></div>`;
+
+/* ---------- Seams: the lines where two spaces meet, worked out from the spaces. A line runs between two crossings where both sides have an edge (layout-free notes item 16), so each run between such crossings is one segment: the part a plain drag moves. ---------- */
+const E=1e-6;
+function seamList(areas){const out=[];
+  for(const dir of ["v","h"]){const A=dir==="v"?0:1,B=1-A;
+    const pos=[...new Set(areas.flatMap(a=>[a.f[A],a.f[A]+a.f[A+2]]).map(x=>+x.toFixed(6)))].filter(x=>x>E&&x<1-E);
+    for(const p of pos){const L=areas.filter(a=>Math.abs(a.f[A]+a.f[A+2]-p)<E),Rr=areas.filter(a=>Math.abs(a.f[A]-p)<E);
+      let iv=[];for(const l of L)for(const r of Rr){const lo=Math.max(l.f[B],r.f[B]),hi=Math.min(l.f[B]+l.f[B+2],r.f[B]+r.f[B+2]);if(hi-lo>E)iv.push([lo,hi])}
+      iv.sort((x,y)=>x[0]-y[0]);const runs=[];for(const v of iv){const z=runs[runs.length-1];if(z&&v[0]<=z[1]+E)z[1]=Math.max(z[1],v[1]);else runs.push([...v])}
+      const edges=s=>new Set(s.flatMap(a=>[a.f[B],a.f[B]+a.f[B+2]]).map(x=>+x.toFixed(6)));const eL=edges(L),eR=edges(Rr);
+      for(const [a,b] of runs){const cuts=[a,...[...eL].filter(y=>eR.has(y)&&y>a+E&&y<b-E).sort((x,y)=>x-y),b];
+        for(let i=0;i<cuts.length-1;i++){const s0=cuts[i],s1=cuts[i+1],touch=[...L,...Rr].filter(x=>Math.min(x.f[B]+x.f[B+2],s1)-Math.max(x.f[B],s0)>E),lk=touch.find(x=>x.lock);
+          out.push({dir,pos:p,a:s0,b:s1,stuck:lk?`${lk.app} is locked, so this line does not move.`:""})}}}}
+  return out}
+function seamEl(G,s,o={}){const b=monBox(G,"wide"),iw=b.w-10,ih=b.h-10,cls=`seam ${s.dir}${o.on?" on":""}${s.stuck?" stuck":""}${G.S<.1?" small":""}`;
+  const t=s.stuck?s.stuck:s.dir==="v"?"Drag to resize the windows on both sides. Shift moves the whole line.":"Drag to resize the windows above and below. Shift moves the whole line.",id=o.id?` id="${o.id}"`:"";
+  if(s.dir==="v"){const x=b.l+5+s.pos*(iw+2)-1,y=b.t+5+s.a*(ih+2),h=(s.b-s.a)*(ih+2)-2;return{html:`<div class="${cls}"${id} title="${esc(t)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;height:${h.toFixed(1)}px"><i></i></div>`,x,y,h,w:0}}
+  const y=b.t+5+s.pos*(ih+2)-1,x=b.l+5+s.a*(iw+2),w=(s.b-s.a)*(iw+2)-2;return{html:`<div class="${cls}"${id} title="${esc(t)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${w.toFixed(1)}px"><i></i></div>`,x,y,w,h:0}}
+
+/* ---------- Each state ---------- */
+function scenario(st,G,F){
+  const W=BASE.map(w=>({mon:"wide",...w,f:[...w.f]}));const by=Object.fromEntries(W.map(w=>[w.id,w]));
+  const sc={wins:W,free:true,empties:[],extra:"",anns:"",sel:null,bay:BAY0.map(b=>({...b})),msg:"Free Layout is on for the ultrawide.",
+    hint:"Drag the line between two windows to resize both. Hold Shift to move the whole line.",keysOpen:false,fillOff:false,mon:"wide",insp:"win",edited:false,
+    on:[],setbar:"ok",results:null,callout:false,back:false,seamAreas:null,noSeams:false};
+  const wr=f=>inset(R(G,"wide",...f));
+  const tipAt=(x,y,html,wrap)=>{sc.extra+=`<div class="tip${wrap?" wrap":""}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px">${html}</div>`};
+  const pills=(s,yFrac,lt,rt,stopR)=>{const y=s.y+s.h*yFrac-9;sc.extra+=`<span class="sz l" style="left:${(s.x-6).toFixed(1)}px;top:${y.toFixed(1)}px">${lt}</span><span class="sz${stopR?" stop":""}" style="left:${(s.x+6).toFixed(1)}px;top:${y.toFixed(1)}px">${rt}</span>`};
+  const sv=(pos,a)=>seamEl(G,{dir:"v",pos,a,b:a+.5});
+  const kept=(w)=>{w.hide=true;sc.bay.unshift({app:w.app,cat:w.cat,title:w.title,why:"Kept put"})};
+
+  if(st==="free-on"){sc.callout=true;sc.keysOpen=true;sc.msg="Free Layout is on for the ultrawide. Nothing moved.";
+    const mb=monBox(G,"wide");sc.extra+=focusBox(`${F}-seams`,mb);
+    const s1=sv(.4,0);sc.anns+=ann({l:s1.x-6,t:s1.y,w:12,h:s1.h},"Grip on Each Shared Line",{up:true});
+    const s2=sv(.8,0);sc.anns+=ann({l:s2.x-6,t:s2.y,w:12,h:s2.h},"Locked Line",{up:true,end:true});
+    sc.anns+=ann({l:mb.l,t:mb.t-TOP+4,w:110,h:16},"Label Reads Free Layout",{up:true,end:false})}
+
+  if(st==="drag-segment"||st==="err-save"){const x=2100/PXW;by.cb.f=[.2,0,x-.2,.5];by.ch.f=[x,0,.8-x,.5];sc.edited=true;sc.sel="cb";sc.on=[{pos:x,a:0,id:`${F}-seam`}];
+    const s=sv(x,0),g=sv(.4,.5);
+    if(st==="drag-segment"){pills(s,.5,`${pw(.2,x)} px`,`${pw(x,.8)} px`);
+      sc.extra+=`<div class="guide" style="left:${g.x.toFixed(1)}px;top:${s.y.toFixed(1)}px;height:${s.h.toFixed(1)}px"></div>`;
+      sc.extra+=at(I.ew,s.x-11,s.y+s.h*.5);tipAt(s.x+14,s.y+s.h*.5+12,`This row only. <kbd>Shift</kbd> moves the whole line.`);
+      sc.anns+=ann({l:s.x-6,t:s.y,w:12,h:s.h},"One Row's Part Moves",{up:true});
+      sc.anns+=ann({l:g.x-6,t:g.y,w:12,h:g.h},"Lower Row Keeps Its Line",{today:false});}
+    sc.msg=`Claude ${pw(.2,x)} px wide, Chrome ${pw(x,.8)} px.`;
+    if(st==="err-save"){sc.setbar="warn";sc.msg="Not saved: the app server stopped answering.";}}
+
+  if(st==="drag-line"||st==="back"){const x=.45;by.cb.f=[.2,0,.25,.5];by.ch.f=[x,0,.35,.5];by.c2.f=[0,.5,x,.5];by.cc.f=[x,.5,.15,.5];sc.edited=true;
+    if(st==="drag-line"){sc.sel="cb";sc.on=[{pos:x,a:0,id:`${F}-seam`},{pos:x,a:.5}];const s=sv(x,0),s2=sv(x,.5);
+      pills(s,.5,`${pw(.2,x)} px`,`${pw(x,.8)} px`);pills(s2,.3,`${pw(0,x)} px`,`${pw(x,.6)} px`);
+      sc.extra+=at(I.ew,s2.x-11,s2.y+s2.h*.62);tipAt(s2.x+14,s2.y+s2.h*.62+12,`<kbd>Shift</kbd>: the whole line, 2 rows`);
+      sc.anns+=ann({l:s.x-6,t:s.y,w:12,h:s.h+s2.h+2},"Whole Line Moves",{up:true});
+      sc.msg="Moved the whole line: 4 windows in 2 rows.";}
+    else{sc.back=true;sc.free=true;sc.noSeams=true;sc.msg="Back to the grid? Nothing moves until you choose.";
+      const P=[["cb",[.2,0,.2,.5],"Claude 1×1"],["ch",[.4,0,.4,.5],"Chrome 2×1"],["c2",[0,.5,.4,.5],"Chrome 2×1"],["cc",[.4,.5,.2,.5],"Claude 1×1"]];
+      for(const [,f,l] of P){const p=wr(f);sc.extra+=`<div class="prev${G.S<.1?" sm":""}" style="${css(p)}"><span>${l}</span></div>`}
+      const a=wr([0,0,.8,1]);sc.anns+=ann(a,"Snap Preview",{up:true});}}
+
+  if(st==="drag-floor"){const x=.4-FLOOR_W;by.ca.f=[0,0,x,.5];by.cb.f=[x,0,.4-x,.5];sc.edited=true;sc.sel="cb";sc.on=[{pos:x,a:0,id:`${F}-seam`}];
+    const s=sv(x,0);pills(s,.42,`${pw(0,x)} px`,`${pw(x,.4)} px`,true);
+    sc.extra+=`<div class="stopbar" style="left:${s.x.toFixed(1)}px;top:${s.y.toFixed(1)}px;height:${s.h.toFixed(1)}px"></div>`;
+    sc.extra+=at(I.ew,s.x+8,s.y+s.h*.74);tipAt(s.x-10,s.y+s.h*.74+14,"Smallest size: 400 × 300 px. The line stops here.");
+    sc.anns+=ann({l:s.x-6,t:s.y,w:12,h:s.h},"Stops at the Floor",{up:true});
+    sc.msg="Claude is at its smallest, 400 px wide.";}
+
+  if(st==="lock-around"||st==="err-apply"){const x=.7;by.ex.f=[.6,.5,.1,.5];by.xl.f=[x,.5,.3,.5];sc.edited=true;
+    if(st==="lock-around"){sc.sel="ex";sc.on=[{pos:x,a:.5,id:`${F}-seam`}];const s=sv(x,.5),top=sv(.8,0);
+      pills(s,.3,`${pw(.6,x)} px`,`${pw(x,1)} px`);
+      sc.extra+=at(I.ew,s.x-11,s.y+s.h*.55);tipAt(s.x-180,s.y+s.h*.55+14,`<kbd>Shift</kbd>: moved below Terminal only. Terminal is locked.`,true);
+      sc.anns+=ann({l:top.x-6,t:top.y,w:12,h:top.h},"Locked Part Stays",{up:true,end:true});
+      sc.msg="Moved the line below Terminal only. Terminal is locked.";}
+    else{sc.results=true;sc.msg="Moved 2 windows for Default. 1 did not fit.";}}
+
+  if(st==="lock-refuse"){sc.sel="ex";sc.on=[{pos:.8,a:.5,id:`${F}-seam`}];const s=sv(.8,.5),top=sv(.8,0);
+    sc.extra+=at(I.no,s.x-9,s.y+s.h*.5);tipAt(s.x-236,s.y+s.h*.5+16,"Terminal is locked, so the whole line cannot move. Let go of <kbd>Shift</kbd> to move the lower part.",true);
+    sc.anns+=ann({l:top.x-6,t:top.y,w:12,h:top.h+s.h+2},"Shift Refused at the Lock",{up:true,end:true});
+    sc.msg="Terminal is locked, so the whole line cannot move.";}
+
+  if(st==="keys"){const x=.4+STEP;by.cb.f=[.2,0,x-.2,.5];by.ch.f=[x,0,.8-x,.5];sc.edited=true;sc.sel="cb";sc.keysOpen=true;sc.on=[{pos:x,a:0,id:`${F}-seam`}];
+    const s=sv(x,0);pills(s,.5,`${pw(.2,x)} px`,`${pw(x,.8)} px`);
+    const t=wr(by.cb.f);tipAt(t.l,t.t+t.h+8,`<kbd>Shift</kbd>+<kbd>→</kbd> moved the right edge ${pw(.4,x)} px`);
+    sc.anns+=ann({l:s.x-6,t:s.y,w:12,h:s.h},"Shift+Arrows Move a Line by 1/48",{up:true});
+    sc.msg=`Claude ${pw(.2,x)} px wide, Chrome ${pw(x,.8)} px. Alt+Shift+arrows move the whole line.`;}
+
+  if(st==="assign-drop"){kept(by.ex);const f=[.6,.5,.2,.5],a=wr(f);sc.empties.push({f,lab:"Empty space",sub:`${pw(.6,.8)} × ${PXH/2}`});
+    sc.extra+=`<div class="dest${G.S<.1?" sm":""}" id="${F}-area" style="${css(a)}"><span>Notepad goes here</span></div>`;
+    sc.extra+=`<div class="ghost cat-other" style="left:${(a.l+a.w*.3).toFixed(1)}px;top:${(a.t+a.h*.38).toFixed(1)}px">Notepad</div>`+at(I.arrow,a.l+a.w*.28,a.t+a.h*.3);
+    sc.dragChip="Notepad";sc.anns+=ann(a,"Drop on Empty Space Pins It",{up:true});
+    sc.msg="Drop Notepad to pin it to this space.";sc.hint="Drag a window to a space to pin it, or to the list to keep it put. On a taken space, the circle swaps and the rest puts it behind.";}
+
+  if(st==="assign-fill"){kept(by.cb);kept(by.ex);sc.bay=sc.bay.filter(b=>b.app!=="Notepad");
+    sc.wins.push({id:"np",mon:"wide",app:"Notepad",cat:"other",title:"todo.txt - Notepad",f:[.2,0,.2,.5]});sc.sel="np";
+    const f=[.6,.5,.2,.5],a=wr(f);sc.empties.push({f,lab:"Empty space",sub:"Fills next"});
+    const t=wr([.2,0,.2,.5]);sc.extra+=focusBox(`${F}-area`,t);
+    sc.anns+=ann(t,"First in Reading Order",{up:true});sc.anns+=ann(a,"Fills Next",{});
+    sc.msg="Notepad fills the first empty space on the ultrawide.";}
+
+  if(st==="gap-lent"){by.cb.hide=true;by.cb.gone="minimized";sc.insp="lent";
+    const a=wr([.2,0,.2,.5]),lw=(MID-.2)/.2;
+    sc.extra+=`<div class="lent sel" id="${F}-area" tabindex="0" style="${css(a)}" aria-label="Claude, Pin parser edge cases, minimized. Its space is lent to the windows beside it."><i class="cat-code fromL" style="width:${(lw*100).toFixed(2)}%"></i><i class="cat-browse fromR" style="flex:1"></i><span class="lab">${G.S<.1?"Lent":"Claude minimized"}<small>${G.S<.1?"":"Space lent"}</small></span></div>`;
+    sc.seamAreas=W.filter(w=>w.mon==="wide").map(w=>({...w,hide:false}));
+    sc.anns+=ann(a,"Lent Space on the Saved Layout",{up:true});
+    sc.msg="Claude (Pin parser edge cases) is minimized. The windows beside it use its space.";}
+
+  if(st==="gap-grown"){by.cb.hide=true;by.cb.gone="minimized";sc.insp="lent";by.ca.f=[0,0,MID,.5];by.ch.f=[MID,0,.8-MID,.5];
+    const a=wr([.2,0,.2,.5]);sc.extra+=`<div class="gone sel" id="${F}-area" style="${css(a)}"><span>${G.S<.1?"Claude":"Claude, minimized"}</span></div>`;
+    sc.anns+=ann(a,"Gone Window's Outline",{up:true});
+    sc.msg="Claude (Pin parser edge cases) is minimized. The windows beside it use its space.";}
+
+  if(st==="gap-stays"){by.ex.lock=true;by.xl.hide=true;by.xl.gone="closed";sc.insp="stays";
+    const f=[.8,.5,.2,.5];sc.empties.push({f,lab:"Excel closed",sub:"Stays empty",cls:"gapx sel",id:`${F}-area`,lock:false});
+    sc.seamAreas=W.filter(w=>w.mon==="wide").map(w=>({...w,hide:false}));
+    sc.anns+=ann(wr(f),"No Neighbour Can Take It",{up:true,end:true});
+    sc.msg="Excel closed. No window beside it can take its space.";}
+
+  if(st==="close-gap"){kept(by.ex);sc.insp="empty";const f=[.6,.5,.2,.5],a=wr(f);sc.empties.push({f,lab:"Empty space",sub:`${pw(.6,.8)} × ${PXH/2}`,cls:"sel"});
+    const gl=wr([.6,.5,.1,.5]),gr=wr([.7,.5,.1,.5]);
+    sc.extra+=`<div class="grow cat-code" style="${css(gl)}"></div><div class="grow cat-other" style="${css(gr)}"></div><div class="divider" style="left:${(a.l+a.w/2).toFixed(1)}px;top:${a.t.toFixed(1)}px;height:${a.h.toFixed(1)}px"></div>`;
+    sc.extra+=focusBox(`${F}-preview`,a);sc.anns+=ann(a,"Close Gap Preview: Both Sides Meet",{up:true});
+    sc.msg="File Explorer stays put. Its space is empty.";}
+
+  if(st==="split-area"){sc.sel="ch";const t=wr(by.ch.f),p={x:t.l+t.w*.45,y:t.t+t.h*.6};
+    const hb={l:t.l+t.w/2+1,t:t.t,w:t.w/2-1,h:t.h};
+    sc.extra+=`<div class="area prevw" style="${css(hb)}"><span class="lab">Empty half</span></div><div class="divider" style="left:${(t.l+t.w/2).toFixed(1)}px;top:${t.t.toFixed(1)}px;height:${t.h.toFixed(1)}px"></div>`;
+    const item=(dir,k,l,foc)=>`<button type="button" role="menuitem" class="cat-browse${foc?" foc":""}">${glyph(dir,k)}<b>Chrome Keeps ${l}</b></button>`;
+    const ml=Math.min(p.x+2,monBox(G,"wide").l+monBox(G,"wide").w-200);
+    sc.extra+=`<div class="menu" role="menu" id="${F}-menu" aria-labelledby="${F}-mh" style="left:${ml.toFixed(1)}px;top:${(p.y+2).toFixed(1)}px">
+      <p class="mh" id="${F}-mh">Split Chrome's Space</p>
+      <p class="mg" role="presentation"><span>Side by Side</span><small>Adds a line</small></p>${item("side",0,"Left",true)}${item("side",1,"Right")}
+      <p class="mg" role="presentation"><span>Stacked</span><small>Adds a line</small></p>${item("stacked",0,"Top")}${item("stacked",1,"Bottom")}
+      <p class="mf">Enter splits. Esc closes.</p></div>`+at(I.arrow,p.x-1,p.y-1);
+    sc.anns+=ann(t,"Preview of the Focused Item",{up:true});sc.msg="Split Chrome's space: choose how.";}
+
+  if(st==="one-by-one"){sc.mon="laptop";sc.free=false;sc.noSeams=true;sc.insp="none";sc.msg="Laptop: one window fills it.";sc.hint="Drag a window to a cell to pin it, or to the list to keep it put.";
+    sc.anns+=ann(inset(R(G,"laptop",0,0,1,1)),"One Window, No Line",{});}
+
+  if(st==="empty"){sc.fillOff=true;sc.insp="none";for(const w of W)if(w.mon==="wide"){w.hide=true;sc.bay.push({app:w.app,cat:w.cat,title:w.title,why:"Kept put"})}
+    for(const w of BASE.filter(b=>!b.mon))sc.empties.push({f:w.f,lab:"Empty",sub:`${pw(w.f[0],w.f[0]+w.f[2])} × ${PXH/2}`});
+    sc.emptyLine=`<div class="emptyline abox" id="${F}-board"><em>New: Empty State, One Sentence and One Control</em><p>No window is placed on the ultrawide. Drag one here from Windows That Stay Put, or let windows fill the spaces.</p><button type="button" class="btn pri">Turn On Fill Empty Cells</button></div>`;
+    sc.msg="Cleared the ultrawide. Every window stays put.";}
+
+  // No Drop Note after a line drag: the sizes read at the line while it moves, and Undo in the top bar takes it back, as a resize does today.
+  return sc}
+
+/* ---------- Board ---------- */
+function board(sc,G,F){
+  let mons="";
+  for(const k of VIEW.mons){const m=MON[k],b=monBox(G,k),free=k==="wide"&&sc.free,g=m.g;let cells="";
+    if(!free)for(let i=0;i<g[0]*g[1];i++)cells+=`<div class="cell"><i>${i+1}</i></div>`;
+    const lab=free?"Free Layout":`${g[0]}×${g[1]}`;
+    mons+=`<div class="mon${free?" free":""}" style="${css(b)};grid-template-columns:repeat(${g[0]},minmax(0,1fr));grid-template-rows:repeat(${g[1]},minmax(0,1fr))">${cells}</div><div class="mlab" style="left:${b.l}px;top:${b.t}px"${k==="laptop"&&sc.mon==="laptop"?` id="${F}-mon"`:""}><button type="button" aria-pressed="${k===sc.mon}">${ROLE[k]}</button><span class="num">${lab}${k==="wide"?(sc.fillOff?" · held":" · fills"):""}</span></div>`}
+  let tiles="";
+  for(const w of sc.wins){if(w.hide)continue;const b=inset(R(G,w.mon,...w.f)),n=b.w<64;
+    const cls=["tile",`cat-${w.cat}`,w.pin?"pin":"fill",w.lock?"lock":"",w.id===sc.sel?"sel":"",n?"narrow":""].filter(Boolean).join(" ");
+    const lk=`<button type="button" class="lk" aria-pressed="${!!w.lock}" title="${w.lock?"Unlock: it can move again":"Lock: it never moves"}" aria-label="${w.lock?"Unlock":"Lock"} ${esc(w.app)}">${w.lock?I.lockC:I.lockO}</button>`;
+    tiles+=`<div class="${cls}" style="${css(b)}" tabindex="0" aria-label="${esc(w.title)}, ${esc(w.app)}${w.pin?", pinned":""}${w.lock?", locked":""}"><b>${esc(w.app)}</b><span>${esc(w.title)}</span>${w.pin?I.pin:""}${lk}</div>`}
+  for(const a of sc.empties){const b=inset(R(G,"wide",...a.f)),tiny=b.w<40;
+    tiles+=`<div class="area${a.cls?" "+a.cls:""}${tiny?" tiny":""}"${a.id?` id="${a.id}"`:""} tabindex="0" style="${css(b)}" aria-label="${esc(a.lab)}${a.sub?", "+esc(a.sub):""}"><span><span class="lab">${esc(a.lab)}</span>${a.sub?`<small class="num">${esc(a.sub)}</small>`:""}</span></div>`}
+  let seams="";
+  if(sc.free&&!sc.noSeams){const src=(sc.seamAreas||[...sc.wins.filter(w=>w.mon==="wide"&&!w.hide),...sc.empties.map(e=>({f:e.f,lock:false}))]);
+    for(const s of seamList(src)){const o=sc.on.find(q=>s.dir==="v"&&Math.abs(q.pos-s.pos)<E&&Math.abs(q.a-s.a)<E);seams+=seamEl(G,s,{on:!!o,id:o&&o.id}).html}}
+  const Wd=Math.round(VIEW.bw*G.S),H=Math.round(VIEW.bh*G.S+TOP+4);
+  return `<div class="stage" style="width:${Wd}px;height:${H}px" aria-label="Monitors and windows">${mons}${tiles}${seams}${sc.extra}${sc.anns}</div>`}
+
+/* ---------- Inspector ---------- */
+const stepper=(lbl,val,off)=>`<span class="step${off?" off":""}"${off?` title="${esc(off)}"`:""}><button type="button" aria-label="Fewer ${lbl}"${off?" disabled":""}>−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" aria-label="More ${lbl}"${off?" disabled":""}>+</button></span>`;
+function sceneSec(){
+  return `<section class="isec" aria-label="Scene"><h2>Scene</h2><div class="abox today"><em>Today: Scene Editor</em>
+    <p class="note">Name and triggers sit here as today. The layout saves as the board changes.</p>
+    <div class="acts"><button type="button" class="btn pri" disabled title="No name or trigger changes to save.">Save</button><button type="button" class="btn">Save As New</button></div></div></section>`}
+function monSec(sc,F){
+  if(sc.mon==="laptop"){const why="One window fills this monitor. Split it first.";
+    return `<section class="isec"><h2>Monitor</h2><div class="seg" role="group" aria-label="Monitor"><button type="button" aria-pressed="true">Laptop</button><button type="button" aria-pressed="false">Ultrawide</button><button type="button" aria-pressed="false">Portrait</button></div><p class="note num">1536×912 pixels.</p>
+      <div class="field"><span>Columns</span>${stepper("columns",1)}</div><div class="field"><span>Rows</span>${stepper("rows",1)}</div>
+      <div class="abox" id="${F}-switch"><em>New: Free Layout Switch, Off With Its Reason</em><label class="switch lockrow"><input type="checkbox" role="switch" disabled aria-describedby="${F}-why"><span class="xt"><b>Free Layout</b><small id="${F}-why">${why}</small></span></label>
+      <button type="button" class="btn" aria-haspopup="menu">Split Cell</button></div></section>`}
+  const free=sc.free&&!sc.back,why="Free Layout is on. Turn it off to change the grid.";
+  let h=`<section class="isec"><h2>Monitor</h2><div class="seg" role="group" aria-label="Monitor"><button type="button" aria-pressed="false">Laptop</button><button type="button" aria-pressed="true">Ultrawide</button><button type="button" aria-pressed="false">Portrait</button></div><p class="note num">4096×1680 pixels.</p>`;
+  h+=`<div class="field"><span>Columns</span>${stepper("columns",5,free?why:"")}</div><div class="field"><span>Rows</span>${stepper("rows",2,free?why:"")}</div>`;
+  h+=`<div class="abox"${sc.back?` id="${F}-popover"`:""}><em>New: Free Layout Switch (F)</em><label class="switch lockrow"><input type="checkbox" role="switch"${free?" checked":""}><span class="xt"><b>Free Layout</b><small>${free?"Drag the line between two windows to resize both. No gap opens.":"Windows keep their cells. Turn it on to resize off the grid."}</small></span></label>`;
+  if(sc.callout)h+=`<p class="callout" role="status">Free Layout is on. Nothing moved.</p>`;
+  if(sc.back)h+=`<div class="pop" role="dialog" aria-labelledby="${F}-bh"><h3 id="${F}-bh">Back to the Grid</h3>
+    <label class="ropt"><input type="radio" name="${F}-back" checked><span>Snap to Cells<small>Each edge moves to the nearest 5×2 cell line.</small></span></label>
+    <label class="ropt"><input type="radio" name="${F}-back"><span>Restore the Grid Layout<small>Each window goes back to the cells it had before Free Layout.</small></span></label>
+    <p class="note">4 windows change size: 2 Claude and 2 Chrome. The board shows where.</p>
+    <div class="pacts"><button type="button" class="btn pri">Back to Grid</button><button type="button" class="btn">Keep Free Layout</button></div></div>`;
+  h+=`</div><div class="abox today"><em>Today: Fill Empty Cells</em><label class="switch lockrow"><input type="checkbox" role="switch"${sc.fillOff?"":" checked"}><span class="xt"><b>Fill Empty Cells</b><small>${sc.fillOff?"Windows stay where they are. A new window waits in Windows That Stay Put.":free?"A new window fills the first empty space, else it waits in Windows That Stay Put.":"Windows that are not pinned fill the free cells."}</small></span></label></div></section>`;
+  return h}
+function winSec(sc,F){
+  if(sc.insp==="none")return `<section class="isec"><h2>Window</h2><p class="note">Click a window on the board to change it here.</p></section>`;
+  if(sc.insp==="empty")return `<section class="isec"><h2>Empty Space</h2><div class="abox"><em>New: Close Gap Uses the Gone-Window Rule</em><div class="win"><div class="t num">819 × 840 px</div><div class="m">Fill Empty Cells is on, so the next new window fills it.</div>
+    <button type="button" class="btn foc" aria-describedby="${F}-cg">Close Gap</button><p class="note" id="${F}-cg">Claude and Excel, on both sides, meet in the middle: Claude grows ${pw(.6,.7)} px and Excel ${pw(.7,.8)} px.</p></div></div></section>`;
+  if(sc.insp==="lent")return `<section class="isec"><h2>Window</h2><div class="abox"><em>New: A Gone Window's Space</em><div class="win cat-code"><div class="field" style="min-height:0"><span style="display:flex;gap:6px;align-items:center;color:var(--ink)"><i class="sw"></i>Claude</span></div><div class="t">Pin parser edge cases</div>
+    <div class="m">Minimized. Its space is lent to the windows beside it: Claude gets ${pw(.2,MID)} px and Chrome ${pw(MID,.4)} px. Restore it and it gets its space back.</div>
+    <p class="note">The saved layout does not change.</p></div></div></section>`;
+  if(sc.insp==="stays")return `<section class="isec"><h2>Window</h2><div class="abox"><em>New: A Gap That Stays</em><div class="win cat-other"><div class="field" style="min-height:0"><span style="display:flex;gap:6px;align-items:center;color:var(--ink)"><i class="sw"></i>Excel</span></div><div class="t">Q3 budget</div>
+    <div class="m">Closed. No window beside it can take its space: Terminal and File Explorer are locked. The space stays empty until Excel opens again.</div>
+    <button type="button" class="btn">Unlock File Explorer</button><p class="note">File Explorer then takes the space.</p></div></div></section>`;
+  const w=sc.sel&&sc.wins.find(x=>x.id===sc.sel);
+  if(!w)return `<section class="isec"><h2>Window</h2><p class="note">Click a window on the board to change it here.</p></section>`;
+  const lockd=!!w.lock,wpx=pw(w.f[0],w.f[0]+w.f[2]),hpx=Math.round(w.f[3]*PXH);
+  const head=`<div class="field" style="min-height:0"><span style="display:flex;gap:6px;align-items:center;color:var(--ink)"><i class="sw"></i>${esc(w.app)}</span><select aria-label="Category of ${esc(w.app)}"><option>${w.cat==="other"?"Other":w.cat==="browse"?"Browse":"Code"}</option></select></div><div class="t">${esc(w.title)}</div>`;
+  const where=sc.free?"Ultrawide, Free Layout":"Ultrawide";
+  const m=w.pin?`Pinned · ${where}.`:`Fills ${where}.`;
+  const lock=`<label class="switch lockrow"><input type="checkbox" role="switch"${lockd?" checked":""}><span class="xt"><b>Lock</b><small>${lockd?"It moves only after a warning.":"It never moves."} Swaps, zones and fill go around it.</small></span></label>`;
+  const size=sc.free?`<div class="abox"><em>New: Size in Pixels</em><div class="field"><span>Width</span><span class="ro num">${wpx} px</span></div><div class="field"><span>Height</span><span class="ro num">${hpx} px</span></div><p class="note">Drag a line on the board, or press Shift+arrows.</p></div>`:"";
+  const split=`<button type="button" class="btn" aria-haspopup="menu"${sc.sel==="ch"&&V.s==="split-area"?' aria-expanded="true"':""}>Split Cell</button>`;
+  const tail=`<div class="field stack"><label>Move to</label><select${lockd?" disabled":""}><option>${sc.free?"Choose a Space":"Choose a Cell"}</option></select></div><button type="button" class="btn">Keep Where It Is</button>`;
+  return `<section class="isec"><h2>Window</h2><div class="win cat-${w.cat}">${head}<div class="m">${m}</div>${lock}${size}${split}${tail}</div></section>`}
+
+/* ---------- Whole app frame ---------- */
+function frame(st,w){const G={S:SCALE[w]},F=st,sc=scenario(st,G,F);
+  const mini=bs=>`<span class="mini" aria-hidden="true"><i style="left:2%;top:40%;width:22%;height:56%"></i><i style="left:26%;top:6%;width:52%;height:58%"></i><i style="left:80%;top:4%;width:18%;height:92%"></i>${bs.map(([cat,l,t,ww,h])=>`<b class="cat-${cat}" style="left:${l}%;top:${t}%;width:${ww}%;height:${h}%"></b>`).join("")}</span>`;
+  const card=(name,blurb,sel,bs)=>`<article class="card${sel?" sel":""}"><button type="button" class="pick" aria-pressed="${sel}">${mini(bs)}<strong>${name}${sel?'<span class="live">On screen</span>':""}</strong><small>${blurb}</small></button><div class="crow"><span class="tag">Built-in</span><button type="button" class="btn">Apply</button></div></article>`;
+  const rail=`<aside class="rail" aria-label="Scenes and categories"><section><h2>Scenes</h2><div class="cards">
+    ${card("Default","Claude and Chrome fill the ultrawide.",true,[["code",27,8,10,26],["code",38,8,10,26],["browse",49,8,20,26],["browse",27,36,20,26],["comms",81,6,16,44],["comms",81,52,16,44]])}
+    ${card("Focus","Claude only, three wide.",false,[["code",27,8,16,54],["code",44,8,16,54],["browse",61,8,16,54]])}
+    ${card("Meetings","Teams big on the ultrawide.",false,[["comms",27,8,25,56],["code",53,8,12,27],["comms",81,6,16,44]])}</div></section>
+    <section><h2>Categories</h2><div class="legend">${[["code","Code",5],["browse","Browse",2],["comms","Comms",3],["other","Other",3]].map(([c,l,n])=>`<button type="button" class="lg cat-${c}" aria-pressed="true"><i class="sw"></i>${l}<span class="ct">${n}</span></button>`).join("")}</div><p class="note">Click a category to fade it on the board.</p></section></aside>`;
+  const freeKeys=sc.free&&!sc.back;
+  const keys=`<details class="keys"${sc.keysOpen?" open":""}><summary>Keyboard</summary><ul><li>Tab to a window, then arrows move it${freeKeys?" to the next space (a window there swaps with it)":" one cell"}.</li>
+    ${freeKeys?`<li><span class="abox inl">On a Free Layout monitor, Shift+arrows move the window's right or bottom line by 1/48 of the monitor, in its row only; Ctrl+Shift+arrows its left or top line. Add Alt to move the whole line.</span></li>`:`<li>Shift+arrows resize it; Ctrl+Shift+arrows from its top or left edge.</li>`}
+    <li><span class="abox inl">F turns Free Layout on or off for the selected window's monitor.</span></li>
+    <li>S or Shift+F10 opens Split Cell. <span class="abox inl prop">Proposed: Shift+S splits at once.</span></li>
+    <li>Delete unpins it. K keeps it where it is (off the board). L locks it.</li><li>Esc cancels a drag, a resize or a split.</li></ul></details>`;
+  const groups={};for(const b of sc.bay)(groups[b.cat]||(groups[b.cat]=[])).push(b);
+  const CATN={code:"Code",browse:"Browse",comms:"Comms",other:"Other"};
+  const bayH=`<section class="bay" aria-label="Windows That Stay Put"><h2>Windows That Stay Put <span class="note">${sc.bay.length===1?"1 window":sc.bay.length+" windows"}</span></h2><div class="bgrps">${Object.entries(groups).map(([c,l])=>`<div class="bgrp"><h3 class="bh"><i class="sw cat-${c}"></i>${CATN[c]}</h3><ul>${l.map(b=>`<li><button type="button" class="chip cat-${b.cat}${sc.dragChip===b.app?" drag":""}" title="${esc(b.why)}"><b>${esc(b.app)}</b><span>${esc(b.title)}</span></button></li>`).join("")}</ul></div>`).join("")}</div></section>`;
+  const smap=`<span class="smap" aria-hidden="true"><i style="left:3px;top:15px;width:12px;height:9px"></i><i style="left:17px;top:9px;width:26px;height:12px"></i><i style="left:45px;top:3px;width:9px;height:24px"></i></span>`;
+  const setbar=sc.setbar==="warn"
+    ?`<div class="setbar warn abox today" role="status" id="${F}-bar"><em>Today: Save Failure Strip</em>${smap}<div class="sid"><b>Desk, three monitors</b><span><strong>Not saved.</strong> The app server stopped answering, so your last board change is only in this page. Undo still works.</span></div><div class="sbtns"><button type="button" class="btn">Try Again</button></div><div class="sbtns"><button type="button" class="btn mg" aria-label="Monitors and Setups">${I.mg}<span class="t">Monitors and Setups</span></button></div></div>`
+    :`<div class="setbar">${smap}<div class="sid"><b>Desk, three monitors</b><span><strong>Default</strong> has its own layout here. Board changes save as you make them.</span></div><div class="sbtns"><button type="button" class="btn mg" aria-label="Monitors and Setups">${I.mg}<span class="t">Monitors and Setups</span></button></div></div>`;
+  const results=sc.results?`<section class="panel" id="${F}-results" aria-label="Apply results"><div class="phead"><b>Moved 2 windows for Default. 1 did not fit.</b><button type="button" class="btn">Close</button></div><ul class="reslist">
+      <li><span class="ok">✓</span><span>Excel: Q3 budget — moved</span></li>
+      <li><span class="bad">✗</span><span class="rb abox"><em>New: Off Size in Words, With a Way On</em><span>File Explorer: Projects — will not go under 500 px wide, so it covers 90 px of Excel.</span><button type="button" class="btn">Give It 500 px</button><details><summary>What the server said</summary><code>off size: is 500x840, restore rect 500x840</code></details></span></li></ul></section>`:"";
+  const zoneWhy="Zones pause in Free Layout. Turn it off to draw a zone.";
+  const zbtn=sc.free&&!sc.back?`<span class="abox inl"><button type="button" class="btn" disabled title="${zoneWhy}" aria-describedby="${F}-zw">Draw Zone</button></span><span class="why" id="${F}-zw">${zoneWhy}</span>`:`<button type="button" class="btn">Draw Zone</button>`;
+  return `<div class="art w${w}${V.labels?"":" nolabels"}" data-state="${st}"><div class="app">
+    <header class="top"><p class="brand">${I.logo}Tile Windows</p><span class="crumb">Scene: <b>Default</b></span>
+      <div class="tools"><label class="switch"><input type="checkbox" checked>Grid Lines</label><label class="switch">Theme <select class="themesel" aria-label="Theme"><option value="">Match Windows</option><option value="light"${V.t==="light"?" selected":""}>Light</option><option value="dark"${V.t==="dark"?" selected":""}>Dark</option></select></label><button class="btn" type="button"${sc.edited?"":' disabled title="Nothing to undo yet."'}>Undo</button><button class="btn pri" type="button">Apply</button></div></header>
+    ${rail}
+    <main class="canvas">${setbar}${board(sc,G,F)}<div class="boardbar">${sc.emptyLine||`<p class="hint">${sc.hint}</p>`}${zbtn}${keys}</div>${results}${bayH}</main>
+    <aside class="insp" aria-label="Inspector">${sceneSec()}${monSec(sc,F)}${winSec(sc,F)}</aside>
+    <footer class="status"><span class="msg" role="status">${sc.msg}</span></footer></div></div>`}
+
+/* ---------- How each state saves in the layout (grids[mon].free.areas, the L3 engine's shape; the builder owns it) ---------- */
+const SAVES={
+"free-on":`"grids": { "wide": { "c": 5, "r": 2, "free": { "areas": [
+  { "rect": [0, 0, 0.2, 0.5], "app": "claude", "title": "Refactor the grid solver" },
+  { "rect": [0.2, 0, 0.2, 0.5], "app": "claude", "title": "Pin parser edge cases" },
+  { "rect": [0.4, 0, 0.4, 0.5], "pin": 0 },
+  { "rect": [0.8, 0, 0.2, 0.5], "pin": 1 },
+  { "rect": [0, 0.5, 0.4, 0.5], "pin": 2 },
+  { "rect": [0.4, 0.5, 0.2, 0.5], "app": "claude", "title": "Fill order tests" },
+  { "rect": [0.6, 0.5, 0.2, 0.5], "app": "explorer", "title": "Projects" },
+  { "rect": [0.8, 0.5, 0.2, 0.5], "app": "excel", "title": "Q3 budget" }
+] } } }
+// c and r stay, for Back to the Grid. A pinned window's area points at its pin (lock and back windows stay on the pin);
+// a filled window's area names its app and title, as the held layout does. Get-AreaPixelRects gives each the same pixel rect as its cell.`,
+"drag-segment":`  { "rect": [0.2, 0, 0.312695, 0.5], "app": "claude", "title": "Pin parser edge cases" },
+  { "rect": [0.512695, 0, 0.287305, 0.5], "pin": 0 },
+// Only the two areas beside the dragged part change. 0.512695 is the line at 2100 px of 4096.`,
+"drag-line":`  { "rect": [0.2, 0, 0.25, 0.5], ... }, { "rect": [0.45, 0, 0.35, 0.5], "pin": 0 },
+  { "rect": [0, 0.5, 0.45, 0.5], "pin": 2 }, { "rect": [0.45, 0.5, 0.15, 0.5], ... }
+// Four areas change: the whole line moved.`,
+"gap-lent":`// Nothing saves. Item G is worked out at apply time (Get-CollapsedAreas), and the tray gives:
+//   Claude, Refactor the grid solver: [0, 0, 0.300049, 0.5]   (819 px to 1229 px)
+//   Chrome, Quarterly roadmap:        [0.300049, 0, 0.499951, 0.5]   (1639 px to 2048 px)
+// On restore each window gets its saved rect back.`,
+"gap-stays":`// Nothing saves. Get-CollapsedAreas returns Excel's area as null and every other area as it was:
+// Terminal (above) and File Explorer (left) are locked, so no side qualifies.`,
+"close-gap":`  { "rect": [0.4, 0.5, 0.3, 0.5], "app": "claude", "title": "Fill order tests" },
+  { "rect": [0.7, 0.5, 0.3, 0.5], "app": "excel", "title": "Q3 budget" }
+// The empty area is removed. This one does save: Close Gap is an edit, not a gone window.`,
+"split-area":`  { "rect": [0.4, 0, 0.2, 0.5], "pin": 0 },
+  { "rect": [0.6, 0, 0.2, 0.5] }
+// Chrome keeps the left half. The right half is an area with no pin and no app: empty space. No grid doubles.`,
+"back":`"grids": { "wide": { "c": 5, "r": 2 } }
+// free goes. Snap to Cells rewrites each pin's slots from the snapped edges; filled windows fill again.`};
+
+/* ---------- Render ---------- */
+function visible(){return STATES.filter(s=>!s[2]||!V.hide.has(s[2]))}
+function render(){
+  if(V.t)document.documentElement.dataset.theme=V.t;else delete document.documentElement.dataset.theme;
+  const vis=visible();if(V.s!=="all"&&!vis.some(s=>s[0]===V.s))V.s=vis.length?vis[0][0]:"all";
+  const segs=[["segState",[...vis.map(s=>[s[0],s[1]+(s[2]?` (${s[3].replace(" (ruled)","")})`:"")]),["all","All"]],"s"],["segW",[["1440","1440"],["1024","1024"]],"w"],["segT",[["","Match Windows"],["light","Light"],["dark","Dark"]],"t"]];
+  for(const [id,opts,k] of segs)document.getElementById(id).innerHTML=opts.map(([v,l])=>`<button type="button" data-k="${k}" data-v="${v}" aria-pressed="${V[k]===v}">${esc(l)}</button>`).join("");
+  document.querySelectorAll("[data-opt]").forEach(c=>c.checked=!V.hide.has(c.dataset.opt));
+  const list=V.s==="all"?vis:vis.filter(s=>s[0]===V.s);
+  document.getElementById("frames").innerHTML=list.map(([k,name,opt,optName,cap])=>`<section class="shot" id="f-${k}" aria-labelledby="h-${k}"><h2 class="cap" id="h-${k}">${name} <span class="opt${opt?"":" shared"}">${optName}</span><span class="note">at ${V.w}</span></h2><p class="capn">${cap}</p><div class="scroll">${frame(k,V.w)}</div>${SAVES[k]?`<details class="saves"><summary>Saves in the layout as</summary><pre>${esc(SAVES[k])}</pre></details>`:""}</section>`).join("");
+  writeHash()}
+document.addEventListener("click",e=>{const b=e.target.closest(".mkseg button");if(!b)return;V[b.dataset.k]=b.dataset.v;render()});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.classList.contains("themesel")){V.t=t.value;render();return}
+  if(t.dataset.opt){if(t.checked)V.hide.delete(t.dataset.opt);else V.hide.add(t.dataset.opt);render();return}
+  if(t.id==="oLabels"){V.labels=t.checked;render()}});
+addEventListener("hashchange",()=>{readHash();render()});
+readHash();render();
+</script>
+</body>
+</html>
