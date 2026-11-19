@@ -78,17 +78,18 @@ F3. **The Shift move is found at the drag.** Every drag shows a tip at the point
 F4. **The size floor shows where it stopped.** At 400 × 300 px (item 20) the line stops, a stop bar
     marks it, and the size that stopped it turns ink. The tip says "Smallest size: 400 × 300 px. The
     line stops here." Gain: the stop reads as a rule, not a stuck control. Loss: none. Pick: as drawn.
-    Owner grant: yes (the floor itself, item 20, still waits on the owner).
+    Owner grant: yes, 2026-11-19 13:10 CST (owner: "F4/F6/F12: yes to all three"). The floor itself
+    is item 20 of `layout-free-notes.md`, ruled at the same time (decision `layout-free`).
 
 F5. **Shift-drag across a locked row (item 18, owned by L4).** Two options, each with its switch:
-    - Go Around (pick, state `lock-around`): Shift moves every part of the line that can move and
+    - Go Around (ruled, state `lock-around`): Shift moves every part of the line that can move and
       leaves the part beside the locked window. The tip and status bar say what stayed. Gain: the
       lock rule reads as today's ("Swaps, zones and fill go around it"), and Shift never dead-ends.
       Loss: the "whole line" ends with a jog; on this two-row board it moves what a plain drag moves.
     - Refuse Shift (state `lock-refuse`): the Shift-drag does nothing, with a no-entry pointer and
       "Terminal is locked, so the whole line cannot move. Let go of Shift to move the lower part."
       Gain: the whole line stays straight. Loss: a refusal where a partial move was possible.
-    Pick: Go Around.
+    Ruled: Go Around, 2026-11-19 13:10 CST (owner: "F5: Go Around").
 
 F6. **Keys (item 19, owned by L4).** The monitor decides: on a Free Layout monitor, Shift+arrows move
     the selected window's right or bottom line by 1/48 of the monitor (85 px on 4096), in its row
@@ -99,7 +100,8 @@ F6. **Keys (item 19, owned by L4).** The monitor decides: on a Free Layout monit
     as the pointer, and the whole-line move has a keyboard way (the plan named none). Loss: a key
     means two things by monitor; Alt+Shift+arrows is a three-key chord. Pick: as drawn.
     Departs from: plan L4 (Shift+arrows move lines by 1/48, no whole-line key) — adds Alt for the
-    whole line, and arrows swap with the next space. Owner grant: yes.
+    whole line, and arrows swap with the next space. Owner grant: yes, 2026-11-19 13:10 CST (owner:
+    "F4/F6/F12: yes to all three").
 
 F7. **Assign by drop, one home.** A drop on an empty space pins the window there; the space lights
     and says "Notepad goes here" (state `assign-drop`). A drop on a space a window holds uses today's
@@ -118,7 +120,7 @@ F9. **A new window fills the first empty space in reading order** (item 26; `Res
 
 F10. **Whether the board shows a gone window's space as lent (owned by L4).** The tray works out the
      gone window's space at apply time and never saves it (item G). Two options:
-     - Lent Space (pick, state `gap-lent`): the board keeps the saved layout and draws the space as
+     - Lent Space (ruled, state `gap-lent`): the board keeps the saved layout and draws the space as
        lent, each part hatched in the colour of the window that has it, with a solid edge on that
        window's side. Selecting it says who has how much and that restore gives it back. Gain: what
        you drag is what saves; the board never shows a layout that is not saved. Loss: the board and
@@ -128,7 +130,7 @@ F10. **Whether the board shows a gone window's space as lent (owned by L4).** Th
        the gone window's saved space as a dashed outline. Gain: the board matches the screen. Loss: a
        drag on a grown neighbour edits a rect that is not saved, so it is unclear what it changes.
      A closed window's space is lent the same way (ruling 2026-11-18 11:08 CST: closed and
-     minimized); its space fills again when that app opens and matches the area. Pick: Lent Space. The hatch carries meaning (space on loan), as `layout-free-notes.md` item 29
+     minimized); its space fills again when that app opens and matches the area. Ruled: Lent Space, 2026-11-19 13:10 CST (owner: "F10: Lent Space"). The hatch carries meaning (space on loan), as `layout-free-notes.md` item 29
      says of every hatch here; each part keeps a solid or dashed edge, so forced colours keep it.
 
 F11. **A gap that stays.** When no side qualifies (here: Terminal and File Explorer locked), the
@@ -142,7 +144,7 @@ F12. **Close Gap uses the gone-window rule.** Close Gap on an empty space remove
      window, this saves. Gain: one rule for every space that empties (plan: "Close Gap calls the same
      function"). Loss: an owner who wanted one neighbour to take it all drags the line after.
      Departs from: `layout-free-notes.md` item 17 (Close Gap grows the one neighbour that shares the
-     whole edge) — both qualifying sides meet in the middle, per the plan and M1. Owner grant: yes.
+     whole edge) — both qualifying sides meet in the middle, per the plan and M1. Owner grant: yes, 2026-11-19 13:10 CST (owner: "F4/F6/F12: yes to all three").
 
 F13. **Split in Free Layout** (item 28). The split menu of `split-cell.html` (S1, Menu List), halves
      only (S1 default). Each group says "Adds a line", since no grid doubles. The heading names the
@@ -193,9 +195,9 @@ mode they are monitor ids. The builder owns the shape.
 
 ## Input needed
 
-- Pick: Shift-drag across a locked row, Go Around or Refuse Shift (F5). Pick: Go Around.
-- Pick: a gone window's space on the board, Lent Space or Grown Neighbours (F10). Pick: Lent Space.
-- Pick: keys on a Free Layout monitor, with Alt+Shift+arrows for the whole line (F6).
-- Owner grant: yes. The size floor, 400 × 300 px (F4; `layout-free-notes.md` item 20).
-- Owner grant: yes. Close Gap shares the space at the middle, as a gone window does (F12).
+- Ruled: Go Around for the Shift-drag across a locked row (F5; owner, 2026-11-19 13:10 CST: "F5: Go Around").
+- Ruled: Lent Space for a gone window's space on the board (F10; owner, 2026-11-19 13:10 CST: "F10: Lent Space").
+- Ruled: yes, keys on a Free Layout monitor, with Alt+Shift+arrows for the whole line (F6; owner, 2026-11-19 13:10 CST: "F4/F6/F12: yes to all three").
+- Ruled: yes, the size floor, 400 × 300 px (F4; item 20 of `layout-free-notes.md`; owner, 2026-11-19 13:10 CST: "F4/F6/F12: yes to all three").
+- Ruled: yes, Close Gap shares the space at the middle, as a gone window does (F12; owner, 2026-11-19 13:10 CST: "F4/F6/F12: yes to all three").
 - Open, drawn at defaults: S1, G1, K1, M1, read as the plan's defaults (top of this file).
