@@ -1175,15 +1175,15 @@ function render(){
     e.title=`${appName(w.app)}: ${w.title}\n${where(x)}`;
   }
   for(const m of snap.monitors){
-    const g=gridOf(m),e=m.el;e.classList.toggle("cur",m===curMon);
-    const want=g?`${GC(g)}x${GR(g)}`:"";
+    const g=gridOf(m),e=m.el,fr=isFree(g);e.classList.toggle("cur",m===curMon);
+    const want=g?fr?"free":`${GC(g)}x${GR(g)}`:"";
     if(e.dataset.g!==want){e.dataset.g=want;e.innerHTML="";
-      if(g){e.style.gridTemplateColumns=`repeat(${GC(g)},minmax(0,1fr))`;e.style.gridTemplateRows=`repeat(${GR(g)},minmax(0,1fr))`;
+      if(g&&!fr){e.style.gridTemplateColumns=`repeat(${GC(g)},minmax(0,1fr))`;e.style.gridTemplateRows=`repeat(${GR(g)},minmax(0,1fr))`;
         for(let i=0;i<GC(g)*GR(g);i++){const c=document.createElement("div");c.className="cell";c.innerHTML=`<i>${i+1}</i>`;e.appendChild(c)}}
       const em=document.createElement("div");em.className="empty";e.appendChild(em)}
-    e.querySelector(".empty").textContent=used.has(m)?"":g?"Empty. Drag a window here.":"Empty. Not in this scene.";
+    e.querySelector(".empty").textContent=used.has(m)||fr?"":g?"Empty. Drag a window here.":"Empty. Not in this scene.";
     const fills=s&&s.fill&&s.fill.mon===mk(m);
-    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${GC(g)}×${GR(g)}`:""}${fills?s.fill.off?" · fill off":" · fills":""}</span>`;
+    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?fr?"Free Layout":`${GC(g)}×${GR(g)}`:""}${fills&&!fr?s.fill.off?" · fill off":" · fills":""}</span>${fills&&fr?`<span class="num">${s.fill.off?"fill off":"fills"}</span>`:""}`;
     m.lab.title=`${monName(m)}: ${m.w}×${m.h}`;
   }
   // Header
@@ -1383,8 +1383,9 @@ function renderInsp(V){
   const mons=LIVE?snap.monitors.filter(x=>mk(x)):snap.monitors;
   let h=`<div class="seg" role="group" aria-label="Monitor">${mons.map(x=>`<button type="button" data-mon="${snap.monitors.indexOf(x)}" aria-pressed="${x===m}">${esc(monName(x))}</button>`).join("")}</div>
     ${monNameField(m)}<p class="note">${monSize(idm()&&(cfg.monitors||{})[m.id]||{bw:m.bw||m.w,bh:m.bh||m.h})} pixels.${idm()&&(cfg.monitors||{})[m.id]?`${(cfg.monitors[m.id].builtin||m.builtin)?" Built-in screen.":""} In ${plural(mgSetupCount(m.id),"setup")}.`:""}</p>`;
-  if(g){const[mx,my]=MXY(g);
-    h+=`<div class="field"><span>Columns</span>${stepper("columns",GC(g),'data-g="c"',mx,baseMax(g,"c")*mx)}</div><div class="field"><span>Rows</span>${stepper("rows",GR(g),'data-g="r"',my,baseMax(g,"r")*my)}</div>${splitNote(g)}`;
+  if(g){const[mx,my]=MXY(g),fr=isFree(g);
+    h+=`<div class="field"><span>Columns</span>${stepper("columns",GC(g),'data-g="c"',mx,baseMax(g,"c")*mx,fr)}</div><div class="field"><span>Rows</span>${stepper("rows",GR(g),'data-g="r"',my,baseMax(g,"r")*my,fr)}</div>${fr?"":splitNote(g)}`;
+    if(LIVE&&s)h+=freeUI(m,g);
     if(s&&s.fill&&s.fill.mon===mk(m)){const off=!!s.fill.off;
       h+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="fillSw" ${off?"":"checked"}><span class="xt"><b>Fill Empty Cells</b><small>${off?"Windows stay where they are. A new window waits in Windows That Stay Put.":"Windows that are not pinned fill the free cells."}</small></span></label>
       <div class="field stack"><label for="sort">Fill order</label><select id="sort" ${off?'disabled title="Fill is off, so the fill order does nothing. Turn on Fill Empty Cells to use it." aria-describedby="fillwhy"':""}>${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note" id="fillwhy">${off?"Fill is off, so the fill order does nothing.":`Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.`}</p></div>`}
@@ -1451,7 +1452,7 @@ function heldOff(x,w,mon,cells){const f=x.fill;if(!f||!f.held)return;
 function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
   edit(x=>{x.fill=x.fill||{};x.fill.off=true;delete x.fill.held},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
 // id: the scene to change, by default the selected one. A caller that waits first passes the scene it started on.
-function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";const s=work[id];hist.push({k:"edit",id,s:clone(s)});fn(s);if(msg)status(typeof msg==="function"?msg():msg);layoutEdited(id);render();preview(id);return true}
+function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";freeNote=null;const s=work[id];hist.push({k:"edit",id,s:clone(s)});const tags=freeTags(s);fn(s);freeRelink(s,tags);if(msg)status(typeof msg==="function"?msg():msg);layoutEdited(id);render();preview(id);return true}
 /* ---------- Follow Again: the card menu drops a scene's own layout for this setup (decision monitor-setups, item 7) ---------- */
 let menuId=null;
 function closeMenu(back){const id=menuId;menuId=null;const m=$("cmenu");if(m)m.remove();
@@ -1920,6 +1921,61 @@ function setGrid(k,d){const m=curMon;
     if(s.zones){s.zones=s.zones.filter(z=>z.slots.length);selZone=null}},`${monName(m)} grid: ${nfc}×${nfr}.`)}
 function pinOf(id){const P=prev(),p=P&&P.placed.find(q=>q.id===id);return p&&p.pin>=0&&!p.behind?{p,pin:scene().pins[p.pin]}:null}
 
+/* ---------- Free Layout (layout-free items 14-29; mockup free-layout.html; notes free-layout-notes.md F1-F16) ---------- */
+// A Free Layout monitor keeps its windows in areas: scene grids[mon].free.areas, each a rect in fractions of the work area ([x, y, w, h]) with a pin (an index into the
+// scene's pins), an app and title, or nothing. tile.ps1 (Resolve-FreeAreas, Get-AreaPixelRects) places each window at its area's pixel rect, so the page draws a space with the
+// same rounding. The page writes areas only; the engine places the windows. A "space" on the screen is an area (F8).
+const FEPS=1e-6;
+const freeAreas=g=>g&&g.free&&Array.isArray(g.free.areas)?g.free.areas:[];
+const isFree=g=>freeAreas(g).length>0;
+const goodRect=r=>Array.isArray(r)&&r.length===4&&r.every(v=>typeof v==="number"&&isFinite(v))&&r[2]>0&&r[3]>0;
+// A line rounded once, as Get-AreaPixelRects does: the fraction to 9 places, then half to even.
+const fpx=(f,n)=>bround(Math.round(f*1e9)/1e9*n);
+function areaPx(m,a){const r=a.rect,x0=fpx(r[0],m.w),x1=fpx(r[0]+r[2],m.w),y0=fpx(r[1],m.h),y1=fpx(r[1]+r[3],m.h);return{x:m.x+x0,y:m.y+y0,w:x1-x0,h:y1-y0}}
+// One monitor's spaces in reading order (top line, then left line, as Resolve-FreeAreas sorts them). o.i is the area's place in the saved list, o.no its place in reading order.
+function freeInfo(m,g=gridOf(m)){
+  if(!isFree(g))return null;const s=scene(),key=mk(m),list=[];
+  g.free.areas.forEach((a,i)=>{if(!a||!goodRect(a.rect))return;
+    const pi=a.pin!=null&&a.pin!==""&&Number.isInteger(+a.pin)&&s.pins[+a.pin]&&s.pins[+a.pin].mon===key?+a.pin:-1;
+    list.push({i,a,pin:pi,lock:pi>=0&&!!s.pins[pi].lock,r:areaPx(m,a)})});
+  list.sort((p,q)=>p.r.y-q.r.y||p.r.x-q.r.x||p.i-q.i);list.forEach((o,k)=>{o.no=k});
+  return{m,g,key,list}}
+// A pin's index in an area follows the pin object through any edit that adds, removes or reorders pins (pinEdit puts a new pin first, leavePin splices).
+function freeTags(s){const t=[];for(const g of Object.values(s.grids||{}))for(const a of freeAreas(g)){if(a&&a.pin!=null&&s.pins[+a.pin])t.push([a,s.pins[+a.pin]])}return t}
+function freeRelink(s,tags){for(const[a,p]of tags){const i=s.pins.indexOf(p);if(i>=0)a.pin=i;else delete a.pin}}
+// Why the switch is off on a monitor, or "" when it can go on (item 15).
+const freeWhy=(m,g)=>GC(g)*GR(g)===1?"One window fills this monitor. Split it first.":"";
+// Switching on: one space per window block (a pin keeps its index, a fill or zone window is named by app and title), then one empty space per cell nothing holds. Each rect is its
+// cell block's exact pixels over the work area, so nothing moves (item 14).
+function freeFromGrid(m,g){
+  const s=scene(),key=mk(m),P=prev(),n=GC(g)*GR(g),used=new Set(),out=[],fr=r=>[(r.x-m.x)/m.w,(r.y-m.y)/m.h,r.w/m.w,r.h/m.h];
+  const add=(cells,extra)=>{const b=bbox(cells,g);b.cells.forEach(c=>used.add(c));out.push({r:b.r,c:b.c,a:{rect:fr(cellRect(m,g,b.c,b.r,b.cs,b.rs)),...extra}})};
+  s.pins.forEach((p,i)=>{if(p.mon!==key)return;const sl=p.slots.filter(v=>v<n);if(sl.length)add(sl,{pin:i})});
+  if(P)for(const p of P.placed){if(p.mon!==key||p.behind||p.pin>=0)continue;const sl=p.slots.map(v=>v-1).filter(v=>v>=0&&v<n);if(!sl.length||sl.some(v=>used.has(v)))continue;
+    const w=winById(p.id);if(w)add(sl,{app:w.app,title:w.title})}
+  for(let c=0;c<n;c++)if(!used.has(c))add([c],{});
+  return out.sort((p,q)=>p.r-q.r||p.c-q.c).map(o=>o.a)}
+let freeNote=null;  // {id, key}: the monitor just switched on, until the next edit (the callout "Nothing moved")
+function freeToggle(){
+  const m=curMon,s=LIVE&&scene(),g=s&&m&&gridOf(m);if(!g||isBusy)return;
+  if(isFree(g)){status("Free Layout is on. Use the switch to go back to the grid.");return}
+  const why=freeWhy(m,g);if(why){status(why);return}
+  const areas=freeFromGrid(m,g),id=selId,key=mk(m);
+  if(edit(x=>{x.grids[key].free={areas}},`${monName(m)} is Free Layout. Nothing moved.`))freeNote={id,key};
+  render()}
+// The Free Layout rows of the Monitor section: the switch, why it is off, and what it changed.
+function freeUI(m,g){
+  const fr=isFree(g),why=fr?"":freeWhy(m,g),P=prev(),one=why&&P&&P.placed.find(p=>p.mon===mk(m)&&!p.behind);
+  return `<label class="switch lockrow"><input type="checkbox" role="switch" id="freeSw" ${fr?"checked":""} ${why?'disabled aria-disabled="true" aria-describedby="freewhy"':""}><span class="xt"><b>Free Layout</b><small>${fr?"Windows meet at lines you move.":"Move the lines between windows, not whole cells."}</small></span></label>`+
+    (why?`<p class="why" id="freewhy"><span>${esc(why)}</span></p>${one?`<button type="button" class="btn" id="splitmon" data-w="${one.id}" aria-haspopup="menu">Split Cell</button>`:""}`:"")+
+    (fr?`<p class="note" id="freewhy">Free Layout is on. Turn it off to change the grid.</p>`:"")+
+    (fr&&freeNote&&freeNote.id===selId&&freeNote.key===mk(m)?`<p class="note" id="freecall">Free Layout is on. Nothing moved.</p>`:"")}
+// The F key: the switch of the selected monitor, as a click on it does.
+document.addEventListener("keydown",ev=>{
+  if((ev.key!=="f"&&ev.key!=="F")||ev.ctrlKey||ev.metaKey||ev.altKey||ev.shiftKey||ev.defaultPrevented||!LIVE||!snap)return;
+  const t=ev.target;if(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||(t.closest&&t.closest("dialog,[role=dialog],[role=menu]"))))return;
+  ev.preventDefault();freeToggle()});
+
 /* ---------- Drag: pointer capture, transform while moving, one rAF per frame ---------- */
 const stage=$("stage"),dropEl=$("drop");
 function target(d){
@@ -2350,6 +2406,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="srefresh")refresh();
   else if(t.id==="addgrid"){const m=curMon;edit(x=>{(x.grids||(x.grids={}))[mk(m)]={c:1,r:1}},`${monName(m)} has a 1×1 grid. Drag windows onto it.`)}
   else if(t.dataset.sp!==undefined)splitPick(t);
+  else if(t.id==="splitmon"){if(smenu&&smenu.id===+t.dataset.w)closeSplit(true);else openSplit(+t.dataset.w,{el:t})}
   else if(t.id==="splitbtn"){if(smenu&&smenu.id===selWin)closeSplit(true);else openSplit(selWin,{el:t})}
   else if(t.id==="joinbtn")joinCell(selWin);
   else if(t.dataset.menu!==undefined)toggleMenu(t.dataset.menu);
@@ -2382,6 +2439,7 @@ document.addEventListener("change",ev=>{const t=ev.target;
     (on?Promise.resolve(null):newestPrev(id)).then(P=>{let kept=0;
       edit(s=>{if(on){delete s.fill.off;delete s.fill.held}else{kept=holding(s,P);s.fill.off=true}},()=>on?"Fill Empty Cells is on. Windows that are not pinned fill the free cells.":`Fill Empty Cells is off. ${kept?`${plural(kept,"window")} ${kept===1?"is":"are"} held where ${kept===1?"it is":"they are"}.`:"Windows stay where they are."}`,id);
       requestAnimationFrame(()=>{const e=$("fillSw");if(e)e.focus()})})}
+  else if(t.id==="freeSw"){freeToggle()}
   else if(t.id==="lockSw"){toggleLock(selWin);requestAnimationFrame(()=>{const e=$("lockSw");if(e)e.focus()})}
   else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
   else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});
