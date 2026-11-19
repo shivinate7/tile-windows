@@ -606,6 +606,8 @@ dialog form{display:grid;gap:10px}
 .space.empty,.space.gap,.space.lent{pointer-events:auto;cursor:pointer;outline:2px dashed color-mix(in srgb,var(--muted) 70%,transparent);outline-offset:-2px}
 .space .lab{position:relative;font-weight:600;color:var(--ink)}
 .space small{position:relative;display:block;font-size:11px;color:var(--muted)}
+.space:not(.lent) small{white-space:nowrap}
+.space.nar{padding:6px 4px}.space.nar small{font-size:10px}.space.nar small.fn{white-space:normal}
 .space .fn{color:var(--select);font-weight:600}
 .space.gap{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--muted) 14%,transparent) 0 6px,transparent 6px 12px)}
 .space.lent{outline-color:var(--select)}
@@ -1933,7 +1935,11 @@ function openSplit(id,at){
 // A choice in the open split menu. A disabled item stays put and says why in its title.
 function splitPick(t){if(!smenu||t.getAttribute("aria-disabled")==="true")return;const id=smenu.id,v=t.dataset.sp,back=smenu.back;closeSplit(false);
   if(v==="unlock")toggleLock(id);else if(v==="join")joinCell(id);else{const[dir,k]=v.split(":");splitCell(id,dir,+k)}
-  requestAnimationFrame(()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true});else back()})}
+  // Focus goes back at once and again after the next frame (the board may redraw between): to the window's tile, else to where the menu opened from, else, when that button is gone (the Monitor section's
+  // Split Cell leaves with the 1×1 grid), to the Free Layout switch the split just made available. It never stays on the body.
+  const refocus=()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true});else back();
+    if(!document.activeElement||document.activeElement===document.body){const sw=$("freeSw");if(sw&&!sw.disabled)sw.focus({preventScroll:true})}};
+  refocus();requestAnimationFrame(refocus)}
 document.addEventListener("pointerdown",ev=>{if(smenu&&!ev.target.closest("#smenu,#splitbtn"))closeSplit(false)},true);
 // A menu at the pointer or under the tile (S, Shift+F10) stays when the inspector scrolls: selecting the window redraws the inspector, which scrolls it. The menu under the inspector's own button still closes. The board and the page still close it.
 addEventListener("scroll",ev=>{if(smenu&&!(smenu.at&&ev.target.closest&&ev.target.closest(".insp")))closeSplit(false)},true);addEventListener("resize",()=>{if(smenu)closeSplit(false)});
@@ -2243,7 +2249,8 @@ function renderSpaces(){
     const L=freeLent(info),s=scene(),fillNext=s.fill&&s.fill.mon===info.key&&!s.fill.off&&(s.fill.apps||[]).length?info.list.find(o=>!o.occ&&!o.gone&&o.pin<0):null;
     info.list.forEach((o,k)=>{const e=document.createElement("div"),parts=L.parts.get(k)||[],kind=o.occ?"held":o.gone?parts.length?"lent":"gap":"empty";
       e.className=`space ${kind}${sel&&sel.o.i===o.i&&sel.info.key===info.key?" sel":""}`;e.dataset.space=o.no;e.dataset.i=o.i;e.dataset.mon=info.key;Object.assign(e.style,px(o.r));
-      const size=`${o.r.w} × ${o.r.h}`;
+      // A space under 64 px wide on screen (the 1024 board) keeps its size on one line: the spaces drop to 4 px of padding and the size to 10 px, so "819×840" never wraps or clips.
+      const nar=o.r.w*G.S<64,size=nar?`${o.r.w}×${o.r.h}`:`${o.r.w} × ${o.r.h}`;if(nar)e.classList.add("nar");
       if(kind==="empty")e.innerHTML=`<span class="lab">Empty</span><small>${size}</small>${fillNext===o?`<small class="fn">Fills next</small>`:""}`;
       else if(kind==="gap")e.innerHTML=`<span class="lab">${esc(spaceWords(o))}</span><small>Stays empty</small>`;
       else if(kind==="lent"){
@@ -2415,9 +2422,13 @@ function openBack(m){
     <p class="mf">Nothing is saved until you press Back to Grid.</p>
     <div class="row2"><button type="button" class="btn" id="backcancel">Keep Free Layout</button><button type="button" class="btn pri" id="backgo">Back to Grid</button></div></div>`;
   const e=d.firstElementChild;document.body.appendChild(e);
-  const sw=$("freeSw"),r=sw?sw.closest("label").getBoundingClientRect():{left:16,bottom:60,top:60},w=e.offsetWidth,h=e.offsetHeight;
-  let T=r.bottom+4;if(T+h+8>innerHeight)T=Math.max(8,r.top-4-h);
-  e.style.left=clamp(r.left,8,Math.max(8,innerWidth-w-8))+"px";e.style.top=T+"px";
+  // The popover stays inside the inspector, so it never covers the board's controls (the Keyboard link at 1024). The switch is scrolled into view first: it can sit below the inspector's fold.
+  const sw=$("freeSw");if(sw)sw.scrollIntoView({block:"nearest"});
+  const lab=sw&&sw.closest("label"),r=lab?lab.getBoundingClientRect():{left:16,bottom:60,top:60},ir=lab&&lab.closest(".insp")?lab.closest(".insp").getBoundingClientRect():null;
+  if(ir)e.style.width=Math.min(300,Math.max(220,ir.width-16))+"px";
+  const w=e.offsetWidth,h=e.offsetHeight;
+  let T=r.bottom+4;if(T+h+8>innerHeight)T=r.top-4-h;T=clamp(T,8,Math.max(8,innerHeight-h-8));
+  e.style.left=clamp(ir?ir.left+8:r.left,8,Math.max(8,innerWidth-w-8))+"px";e.style.top=T+"px";
   e.addEventListener("keydown",ev=>{if(ev.key==="Escape"){ev.preventDefault();ev.stopPropagation();closeBack(true)}});
   const f=e.querySelector("input:checked");if(f)f.focus({preventScroll:true})}
 document.addEventListener("pointerdown",ev=>{if(backM&&!ev.target.closest("#backpop,#freeSw"))closeBack(false)},true);
