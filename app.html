@@ -1504,7 +1504,7 @@ function heldOff(x,w,mon,cells){const f=x.fill;if(!f||!f.held)return;
 function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
   edit(x=>{x.fill=x.fill||{};x.fill.off=true;delete x.fill.held},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
 // id: the scene to change, by default the selected one. A caller that waits first passes the scene it started on.
-function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";freeNote=null;const s=work[id];hist.push({k:"edit",id,s:clone(s)});const tags=freeTags(s);fn(s);freeRelink(s,tags);if(msg)status(typeof msg==="function"?msg():msg);layoutEdited(id);render();preview(id);return true}
+function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";freeNote=null;const s=work[id];hist.push({k:"edit",id,s:clone(s)});const tags=freeTags(s);freeMine.clear();fn(s);freeRelink(s,tags);if(msg)status(typeof msg==="function"?msg():msg);layoutEdited(id);render();preview(id);return true}
 /* ---------- Follow Again: the card menu drops a scene's own layout for this setup (decision monitor-setups, item 7) ---------- */
 let menuId=null;
 function closeMenu(back){const id=menuId;menuId=null;const m=$("cmenu");if(m)m.remove();
@@ -1995,9 +1995,12 @@ function freeInfo(m,g=gridOf(m)){
   list.sort((p,q)=>p.r.y-q.r.y||p.r.x-q.r.x||p.i-q.i);list.forEach((o,k)=>{o.no=k});
   return{m,g,key,list}}
 // A pin's index in an area follows the pin object through any edit that adds, removes or reorders pins (pinEdit puts a new pin first, leavePin splices).
-// An edit that sets an area's pin itself (a swap, a drop on a space) is left as it set it.
+// An edit that sets an area's pin itself (a swap, a drop on a space) names that area through freeSetPin, and relinking leaves it as the edit set it: a number alone cannot tell
+// "the edit set 8" from "the pin that was at 8", and a drop on the last pin sets the number it already had.
+const freeMine=new Set();
+function freeSetPin(a,i){if(i==null)delete a.pin;else a.pin=i;freeMine.add(a)}
 function freeTags(s){const t=[];for(const g of Object.values(s.grids||{}))for(const a of freeAreas(g)){if(a&&a.pin!=null&&s.pins[+a.pin])t.push([a,s.pins[+a.pin],a.pin])}return t}
-function freeRelink(s,tags){for(const[a,p,was]of tags){if(a.pin!==was)continue;const i=s.pins.indexOf(p);if(i>=0)a.pin=i;else delete a.pin}}
+function freeRelink(s,tags){for(const[a,p,was]of tags){if(freeMine.has(a)||a.pin!==was)continue;const i=s.pins.indexOf(p);if(i>=0)a.pin=i;else delete a.pin}}
 // Why the switch is off on a monitor, or "" when it can go on (item 15).
 const freeWhy=(m,g)=>GC(g)*GR(g)===1?"One window fills this monitor. Split it first.":"";
 // Switching on: one space per window block (a pin keeps its index, a fill or zone window is named by app and title), then one empty space per cell nothing holds. Each rect is its
@@ -2160,7 +2163,7 @@ function freeStep(w,ax,dir){
   selWin=w.p.id;
   edit(x=>{const areas=x.grids[w.info.key].free.areas,a=areas[w.o.i],b=areas[t.i];
     if(a.pin==null){x.pins.push({app:win.app,match:matchFor(win),mon:w.info.key,slots:[]});a.pin=x.pins.length-1;delete a.app;delete a.title}
-    const pa=a.pin,pb=b.pin;if(pb!=null)a.pin=pb;else delete a.pin;b.pin=pa;
+    const pa=a.pin,pb=b.pin;freeSetPin(a,pb);freeSetPin(b,pa);delete b.app;delete b.title;
     if(a.pin==null&&other&&!a.app){a.app=other.app;a.title=(winById(other.id)||{}).title}},
     other?`Swapped ${pairNames(win,winById(other.id)).join(" and ")}.`:`${appName(win.app)} moved to the next space.`);
   requestAnimationFrame(()=>{const e=els.get(w.p.id);if(e)e.focus({preventScroll:true})})}
@@ -2321,8 +2324,8 @@ function freeAssign(id,o,info,from){
     else if(mine.mon!==key){mine.mon=key;mine.slots=[]}
     const theirs=a.pin!=null&&a.pin!==""?x.pins[+a.pin]:null,swap=!!(theirs&&theirs!==mine&&src);
     if(theirs&&theirs!==mine&&!src){x.pins=x.pins.filter(q=>q!==theirs);if(oc){x.bay=bayOf(x).filter(b=>!sameWin(b,oc));x.bay.push({id:oc.id,app:oc.app,title:oc.title});heldOff(x,oc)}}
-    if(src){const sa=x.grids[skey].free.areas[src.i];if(swap)sa.pin=x.pins.indexOf(theirs);else delete sa.pin;delete sa.app;delete sa.title}
-    a.pin=x.pins.indexOf(mine);delete a.app;delete a.title},
+    if(src){const sa=x.grids[skey].free.areas[src.i];freeSetPin(sa,swap?x.pins.indexOf(theirs):null);delete sa.app;delete sa.title}
+    freeSetPin(a,x.pins.indexOf(mine));delete a.app;delete a.title},
     o.pin>=0&&src&&oc&&oc.id!==id?`Swapped ${pairNames(w,oc).join(" and ")}.`:`${appName(w.app)} goes to space ${o.no+1}.${oc&&oc.id!==id&&!from?` ${appName(oc.app)} stays where it is.`:""}`)}
 // Fill Empty Cells off with every space empty (F16): one sentence in the hint's place, and one control.
 function freeEmpty(){
@@ -2366,11 +2369,13 @@ function freeSplitPreview(id,dir,keep){
 function backPlan(m,g,mode){
   const info=freeFill(freeInfo(m,g)),s=scene(),P=prev(),W=GC(g),H=GR(g),cw=m.w/W,ch=m.h/H,used=new Set(),assign=[],drop=[];let n=0;
   const sizeOf=sl=>{const b=bbox(sl,g),r=cellRect(m,g,b.c,b.r,b.cs,b.rs);return[r.w,r.h]};
-  for(const o of info.list){if(o.pin<0)continue;let sl;
-    if(mode==="snap"){
-      const c0=clamp(Math.round((o.r.x-m.x)/cw),0,W-1),c1=clamp(Math.round((o.r.x+o.r.w-m.x)/cw),c0+1,W),r0=clamp(Math.round((o.r.y-m.y)/ch),0,H-1),r1=clamp(Math.round((o.r.y+o.r.h-m.y)/ch),r0+1,H);
-      sl=[];for(let r=r0;r<r1;r++)for(let c=c0;c<c1;c++)sl.push(r*W+c)}
-    else sl=(s.pins[o.pin].slots||[]).filter(v=>v>=0&&v<W*H);
+  const snapCells=o=>{const c0=clamp(Math.round((o.r.x-m.x)/cw),0,W-1),c1=clamp(Math.round((o.r.x+o.r.w-m.x)/cw),c0+1,W),r0=clamp(Math.round((o.r.y-m.y)/ch),0,H-1),r1=clamp(Math.round((o.r.y+o.r.h-m.y)/ch),r0+1,H),sl=[];
+    for(let r=r0;r<r1;r++)for(let c=c0;c<c1;c++)sl.push(r*W+c);return sl};
+  // A locked pin takes its cells first, so on a collision the unlocked neighbour is the one that gives its cells up (ruling item 24: a pin keeps its lock). In Restore a locked pin made in Free Layout
+  // has no cells of its own, so it snaps rather than losing its lock.
+  for(const o of info.list.filter(q=>q.pin>=0).sort((p,q)=>(q.lock?1:0)-(p.lock?1:0))){let sl;
+    if(mode==="snap")sl=snapCells(o);
+    else{sl=(s.pins[o.pin].slots||[]).filter(v=>v>=0&&v<W*H);if(!sl.length&&o.lock)sl=snapCells(o)}
     if(!sl.length||sl.some(v=>used.has(v))){drop.push(o.pin);continue}
     sl.forEach(v=>used.add(v));assign.push({pin:o.pin,slots:sl});
     const[w0,h0]=sizeOf(sl);if(Math.abs(w0-o.r.w)>1||Math.abs(h0-o.r.h)>1)n++}
@@ -2383,10 +2388,10 @@ function openBack(m){
   const say=n=>n?`${plural(n,"window")} will change size.`:"No window changes size.",sn=backPlan(m,g,"snap"),rs=backPlan(m,g,"restore");
   const d=document.createElement("div");
   d.innerHTML=`<div class="menu back" role="dialog" id="backpop" aria-labelledby="backh"><p class="mh" id="backh">Back to the Grid</p>
-    <label><input type="radio" name="backmode" value="snap" checked><span><b>Snap to Cells</b><small>Each window takes the cells its space is nearest to. ${say(sn.n)}${sn.drop.length?` ${plural(sn.drop.length,"window")} with no cell of its own stays put.`:""}</small></span></label>
-    <label><input type="radio" name="backmode" value="restore"><span><b>Restore the Grid Layout</b><small>The cells each window had before Free Layout. ${say(rs.n)}</small></span></label>
+    <label><input type="radio" name="backmode" value="snap" checked><span><b>Snap to Cells</b><small>Each window takes the cells its space is nearest to. ${say(sn.n)}${sn.drop.length?` ${plural(sn.drop.length,"window")} that would share a cell ${sn.drop.length===1?"goes":"go"} to Windows That Stay Put.`:""}</small></span></label>
+    <label><input type="radio" name="backmode" value="restore"><span><b>Restore the Grid Layout</b><small>The cells each window had before Free Layout. ${say(rs.n)} A pin made in Free Layout has no cells, so it goes to Windows That Stay Put.${rs.drop.length?` That is ${plural(rs.drop.length,"window")} now.`:""}</small></span></label>
     <p class="mf">Nothing is saved until you press Back to Grid.</p>
-    <div class="row2"><button type="button" class="btn" id="backcancel">Cancel</button><button type="button" class="btn pri" id="backgo">Back to Grid</button></div></div>`;
+    <div class="row2"><button type="button" class="btn" id="backcancel">Keep Free Layout</button><button type="button" class="btn pri" id="backgo">Back to Grid</button></div></div>`;
   const e=d.firstElementChild;document.body.appendChild(e);
   const sw=$("freeSw"),r=sw?sw.closest("label").getBoundingClientRect():{left:16,bottom:60,top:60},w=e.offsetWidth,h=e.offsetHeight;
   let T=r.bottom+4;if(T+h+8>innerHeight)T=Math.max(8,r.top-4-h);
