@@ -702,7 +702,12 @@ try {
     [pscustomobject]@{ id = 'G7'; size = @(1200, 900); areas = @((GArea $g1[0]), (GArea $g1[1]), (GArea $g1[2])); calls = @([pscustomobject]@{ absent = @(1); locked = @() }, [pscustomobject]@{ absent = @(); locked = @() }) },
     [pscustomobject]@{ id = 'G8'; size = @(1200, 900); areas = @((GArea @(0, 0, 1, 0.25)), (GArea @(0, 0.25, 1, 0.5)), (GArea @(0, 0.75, 1, 0.25))); calls = @([pscustomobject]@{ absent = @(1); locked = @() }) },
     [pscustomobject]@{ id = 'G9'; size = @(1200, 900); areas = $gGrid2; calls = $gSub2 },
-    [pscustomobject]@{ id = 'G10'; size = @(1200, 900); areas = $gGrid3; calls = $gSub3 }
+    [pscustomobject]@{ id = 'G10'; size = @(1200, 900); areas = $gGrid3; calls = $gSub3 },
+    # G11, G12: the centre area (3) is gone; the left (G11) or right (G12) neighbour was grown up into gone area 0 (top corner), so its midpoint
+    # share hits live area 1 above the centre. G13 is the mirror: the centre's above and below overlap, and left and right meet at the midpoint.
+    [pscustomobject]@{ id = 'G11'; size = @(1500, 1200); areas = @((GArea @(0, 0, (1 / 3), (1 / 3))), (GArea @((1 / 3), (1 / 6), (1 / 3), (1 / 6))), (GArea @(0, (1 / 3), (1 / 3), (1 / 3))), (GArea @((1 / 3), (1 / 3), (1 / 3), (1 / 3))), (GArea @((2 / 3), (1 / 3), (1 / 3), (1 / 3))), (GArea @((1 / 3), (2 / 3), (1 / 3), (1 / 3)))); calls = @([pscustomobject]@{ absent = @(0, 3); locked = @() }, [pscustomobject]@{ absent = @(3, 0); locked = @() }) },
+    [pscustomobject]@{ id = 'G12'; size = @(1500, 1200); areas = @((GArea @((2 / 3), 0, (1 / 3), (1 / 3))), (GArea @((1 / 3), (1 / 6), (1 / 3), (1 / 6))), (GArea @(0, (1 / 3), (1 / 3), (1 / 3))), (GArea @((1 / 3), (1 / 3), (1 / 3), (1 / 3))), (GArea @((2 / 3), (1 / 3), (1 / 3), (1 / 3))), (GArea @((1 / 3), (2 / 3), (1 / 3), (1 / 3)))); calls = @([pscustomobject]@{ absent = @(0, 3); locked = @() }, [pscustomobject]@{ absent = @(3, 0); locked = @() }) },
+    [pscustomobject]@{ id = 'G13'; size = @(1500, 1200); areas = @((GArea @(0, 0, (1 / 3), (1 / 3))), (GArea @((1 / 3), 0, (1 / 3), (1 / 3))), (GArea @((1 / 6), (1 / 3), (1 / 6), (1 / 3))), (GArea @((1 / 3), (1 / 3), (1 / 3), (1 / 3))), (GArea @((2 / 3), (1 / 3), (1 / 3), (1 / 3))), (GArea @((1 / 3), (2 / 3), (1 / 3), (1 / 3)))); calls = @([pscustomobject]@{ absent = @(0, 3); locked = @() }, [pscustomobject]@{ absent = @(3, 0); locked = @() }) }
   )
   $gOut = @(); $gRes = @{}
   try {
@@ -822,6 +827,28 @@ try {
   Case 'L3 item G: a side whose share would overlap is skipped for the next qualifying side, 2x2 absent {1,2} and its mirror {0,3}' {
     GCheck 'L3 item G: 2x2 absent {1,2}: area 0 takes the top line, area 3 the bottom line, no gap and no overlap (1200 x 900)' (GKey 'G9' $gSub2 @(1, 2)) @(@(0, 0, 1, 0.5), $null, $null, @(0, 0.5, 1, 0.5))
     GCheck 'L3 item G: 2x2 absent {0,3} (mirror): area 1 takes the top line, area 2 the bottom line (1200 x 900)' (GKey 'G9' $gSub2 @(0, 3)) @($null, @(0, 0, 1, 0.5), @(0, 0.5, 1, 0.5), $null)
+  }
+
+  # Midpoint fall-through (item G): when left and right both qualify but their midpoint share would overlap a live area, the pair is not taken
+  # and the above and below pair is tried at its midpoint. G11 (left neighbour grown up) and G12 (right neighbour grown up) are the two sides of
+  # one case. Both absent orders give the same result. Areas: 0 gone (top corner), 1 above the centre, 2 left, 3 centre gone, 4 right, 5 below.
+  # Expected (1500 x 1200): above and below meet at y 1/2, area 1 takes y 1/6..1/2 and area 5 takes 1/2..1. Left and right keep their rects,
+  # except the neighbour that grew into area 0, which keeps that growth. A pair that never gets its turn gives the centre to area 1 alone.
+  $wantG11 = @($null, @((1 / 3), (1 / 6), (1 / 3), (1 / 3)), @(0, 0, (1 / 3), (2 / 3)), $null, @((2 / 3), (1 / 3), (1 / 3), (1 / 3)), @((1 / 3), (1 / 2), (1 / 3), (1 / 2)))
+  $wantG12 = @($null, @((1 / 3), (1 / 6), (1 / 3), (1 / 3)), @(0, (1 / 3), (1 / 3), (1 / 3)), $null, @((2 / 3), 0, (1 / 3), (2 / 3)), @((1 / 3), (1 / 2), (1 / 3), (1 / 2)))
+  Case 'L3 item G: midpoint overlap on the left: above and below meet at the midpoint, not the left side (G11, both absent orders)' {
+    GCheck 'L3 item G: left neighbour grown up, left and right midpoint overlaps area 1: above and below meet at y 1/2, no gap, no overlap (G11, absent {0,3})' 'G11|0' $wantG11
+    GCheck 'L3 item G: same case, absent {3,0}: the same result (G11, absent order reversed)' 'G11|1' $wantG11
+  }
+  Case 'L3 item G: midpoint overlap on the right: above and below meet at the midpoint, not the right side (G12, both absent orders)' {
+    GCheck 'L3 item G: right neighbour grown up, left and right midpoint overlaps area 1: above and below meet at y 1/2, no gap, no overlap (G12, absent {0,3})' 'G12|0' $wantG12
+    GCheck 'L3 item G: same case, absent {3,0}: the same result (G12, absent order reversed)' 'G12|1' $wantG12
+  }
+  # Mirror (control): above and below overlap, and left and right both qualify. Left and right still meet at the midpoint; the pair order is unchanged.
+  $wantG13 = @($null, @(0, 0, (2 / 3), (1 / 3)), @((1 / 6), (1 / 3), (1 / 3), (1 / 3)), $null, @((1 / 2), (1 / 3), (1 / 2), (1 / 3)), @((1 / 3), (2 / 3), (1 / 3), (1 / 3)))
+  Case 'L3 item G: control: above and below overlap, left and right meet at the midpoint (G13, both absent orders)' {
+    GCheck 'L3 item G: control, mirror of G11: the above and below midpoint overlaps, so left and right meet at x 1/2 (G13, absent {0,3})' 'G13|0' $wantG13
+    GCheck 'L3 item G: control, same case, absent {3,0}: the same result (G13, absent order reversed)' 'G13|1' $wantG13
   }
 
   # ---- Gap fill (L5a, plan layout-free-build, L5a and item G; owner ruling 2026-11-18 11:08 CST: closed and minimized). ----

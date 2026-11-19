@@ -239,7 +239,8 @@ function Resolve-FreeAreas($areas, $scenePins, [string]$role, [int]$W, [int]$H) 
 # not depend on the order of $absent. Gone areas that touch and together make one rectangle are one region.
 # A side qualifies when the areas that touch the region's edge on that side cover the edge exactly: none sticks out past it, none is locked, no hole.
 # Left and right both qualifying meet at the midpoint; else above and below do; else the first qualifying side, in the order left, above, right, below,
-# takes it all. A midpoint share that leaves a window under 400 x 300 px gives it all to the first qualifying side instead.
+# takes it all. A midpoint share that leaves a window under 400 x 300 px, or overlaps a live area, does not count: the next pair is tried, and only
+# when neither pair can meet does the first single side take it all.
 function Get-CollapsedAreas($areas, $absent, $locked, $size) {
   $eps = 1e-7
   $list = @($areas); $n = $list.Count
@@ -320,7 +321,6 @@ function Get-CollapsedAreas($areas, $absent, $locked, $size) {
       foreach ($i in @($side[$pair[0]])) { $cur[$i][$ax + 2] = $m }
       foreach ($i in @($side[$pair[1]])) { $cur[$i][$ax] = $m }
       if ((Test-Floor $idx) -and (Test-NoOverlap $idx)) { $done = $true } else { foreach ($i in $save.Keys) { $cur[$i] = $save[$i] } }
-      break
     }
     if ($done) { continue }
     foreach ($s in 'left', 'above', 'right', 'below') {
