@@ -47,14 +47,12 @@ function Short($s) { $t = "$s".Trim(); $t.Substring(0, [Math]::Min(120, $t.Lengt
 function NoWarn($s) { (("$s" -split '\r?\n') | ? { $_ -notmatch '^WARNING:' }) -join "`n" }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root per repo. The first request of a run
-# removes sibling run folders older than a day and keeps newer ones. stack-lock.ps1 has the sweep, but it runs its own checks at
-# its top level, so this file keeps a copy of it (bay.ps1 does the same).
+# removes sibling run folders older than a day and keeps newer ones. The sweep and its delete are run-folders.ps1's, shared with the other
+# files, so each file still runs alone (stack-lock.ps1 runs its checks at its top level, so it is not dot-sourced here).
+. (Join-Path $PSScriptRoot 'run-folders.ps1')
 $tempRoot = Join-Path $env:TEMP 'tile-windows-test-runs'
 $runName = '^\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-function Remove-OldRuns([string]$dir, [TimeSpan]$olderThan) {
-  if (-not (Test-Path -LiteralPath $dir)) { return }
-  @(Get-ChildItem -LiteralPath $dir -Directory | Where-Object { $_.Name -match $runName -and $_.LastWriteTime -lt (Get-Date).Subtract($olderThan) }) | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
-}
+function Remove-OldRuns([string]$dir, [TimeSpan]$olderThan) { Invoke-RunFolderSweep $dir $runName $olderThan }
 New-Item -ItemType Directory -Force $tempRoot | Out-Null
 Remove-OldRuns $tempRoot ([TimeSpan]::FromDays(1))
 $run = Join-Path $tempRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item -ItemType Directory -Force $run | Out-Null

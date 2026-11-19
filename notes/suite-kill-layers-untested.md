@@ -1,0 +1,1 @@
+- suite-kill-layers-untested: In test/run.ps1 from PR 59 (branch faster-suite, merged to main), the share-read of a held child output file and the per-child catch have no red case. Both sit behind the job-object kill, which has one (test/suite-kill.ps1). Matters only if the job fails.

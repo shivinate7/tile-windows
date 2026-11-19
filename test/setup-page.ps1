@@ -141,7 +141,23 @@ function Add-Layout($cfg, [string]$scene, [string]$key, [string]$json) {
   $sc = @($cfg.scenes | ? { $_.id -eq $scene })[0]
   $sc.layouts | Add-Member -Force -NotePropertyName $key -NotePropertyValue (ConvertFrom-Json $json)
 }
-function Put-Config($cfg) { [IO.File]::WriteAllText((Join-Path $tileHome 'config.json'), (ConvertTo-Json -Depth 20 -Compress -InputObject $cfg), $utf8) }
+# Parks the page on about:blank before a config write. The page's own autosave is a timer (app.html saveLayout) and POSTs /layout, and
+# a previous case's page can still hold one: it would write config.json while this write runs. The page first settles the POSTs it has
+# sent, then navigates, which drops its timers. Every write here is followed by a page open, so nothing needs the old page.
+function Park-Page {
+  if (-not $script:ws) { return }
+  [void](Js $script:ws 'if (window.__h) { await window.__h.settle(); } return true')
+  [void](Cdp $script:ws 'Page.navigate' @{ url = 'about:blank' })
+  [void](WaitFor $script:ws 'location.href === "about:blank"' 20)
+}
+# config.ps1 is dot-sourced for its Retry-TileIO, the product's one home for the retry a reader holding config.json needs: the server reads
+# the file on every request, and a write that meets that read fails for a moment. The test's home is the one set just before.
+$env:TILE_HOME = $tileHome; try { . (Join-Path $root 'config.ps1') } finally { $env:TILE_HOME = $null }
+function Put-Config($cfg) {
+  Park-Page
+  $text = ConvertTo-Json -Depth 20 -Compress -InputObject $cfg
+  Retry-TileIO { [IO.File]::WriteAllText((Join-Path $tileHome 'config.json'), $text, $utf8) }
+}
 # The config as it is on disk, read after the server has written it.
 function Read-Config { [IO.File]::ReadAllText((Join-Path $tileHome 'config.json'), $utf8) | ConvertFrom-Json }
 # The setup Office: one unplugged monitor (O9) in a setup of its own. Focus is aimed at it with its setup switch on. The Office cases forget it.
@@ -345,13 +361,19 @@ $sizeOne = ConvertTo-Json -Depth 10 -Compress -InputObject $sizeOneObj
 $recordJs = '(() => { window.__sent = []; const f = window.fetch.bind(window); window.fetch = (u, o) => { window.__sent.push(((o && o.method) || "GET").toUpperCase() + " " + String(u)); return f(u, o); }; })();'
 
 try {
-  $probe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $probe.Start(); $port = $probe.LocalEndpoint.Port; $probe.Stop()
   $srv = Start-Child "-File `"$serve`" -NoBrowser -From `"$snapPath`""
   $url = $srv.StandardOutput.ReadLine()
-  # Edge starts with the real USERPROFILE: with it redirected, Edge never opens its DevTools port (checked on this machine). Its state
-  # lives in the run folder (--user-data-dir); the server child keeps the redirected profile and its own TILE_HOME.
-  $env:USERPROFILE = $saved.USERPROFILE
-  try { $edgeProc = Start-Process $edge -PassThru -WindowStyle Hidden -ArgumentList '--headless', '--disable-gpu', '--no-first-run', "--remote-debugging-port=$port", "--user-data-dir=$edgeProfile", '--host-resolver-rules="MAP fonts.googleapis.com 0.0.0.0, MAP fonts.gstatic.com 0.0.0.0"', 'about:blank' } finally { $env:USERPROFILE = $prof }
+  # Edge starts with the real user folders, as bay.ps1 and stack-lock.ps1 do: under a temp USERPROFILE it does not reliably open its
+  # DevTools port. Its state lives in the run folder (--user-data-dir); the server child keeps the temp profile and its own TILE_HOME.
+  $env:USERPROFILE = [Environment]::GetFolderPath('UserProfile'); $env:APPDATA = [Environment]::GetFolderPath('ApplicationData')
+  try { $edgeProc = Start-Process $edge -PassThru -WindowStyle Hidden -ArgumentList '--headless', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', "--user-data-dir=$edgeProfile", '--host-resolver-rules="MAP fonts.googleapis.com 0.0.0.0, MAP fonts.gstatic.com 0.0.0.0"', 'about:blank' } finally { $env:USERPROFILE = $prof; $env:APPDATA = Join-Path $prof 'AppData\Roaming' }
+  # Port 0: Edge picks a free port and writes it to DevToolsActivePort in its profile. A port picked here and freed before Edge starts
+  # can be taken by another file running at the same time, which is how a page used to fail to open. So the port is read from Edge.
+  $dtFile = Join-Path $edgeProfile 'DevToolsActivePort'; $portWait = Get-Date; $port = $null
+  while (-not $port) {
+    if (Test-Path -LiteralPath $dtFile) { $first = @(Get-Content -LiteralPath $dtFile -ErrorAction SilentlyContinue)[0]; if ("$first" -match '^\d+$') { $port = "$first" } }
+    if (-not $port) { if (((Get-Date) - $portWait).TotalSeconds -gt 60) { throw 'Edge did not write its DevTools port within 60 s' }; Start-Sleep -Milliseconds 100 }
+  }
 
   # The page target: DevTools answers once Edge is up. A wait on that answer, not a sleep.
   $targets = @(); $t0 = Get-Date; $lastErr = ''
