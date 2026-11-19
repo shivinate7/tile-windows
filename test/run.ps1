@@ -25,6 +25,23 @@ function Start-Child($prof, $argLine, $extra = @{}) {
   foreach ($k in $extra.Keys) { $psi.EnvironmentVariables[$k] = $extra[$k] }
   [Diagnostics.Process]::Start($psi)
 }
+# A child test file in its own powershell, started now and run at once with the others. Its profile is a folder under this run's temp
+# folder, so no child reads or writes another's profile. Its output goes to files, not pipes: a process the child starts (an Edge, a
+# tray) can inherit a pipe and hold it open after the child exits, which would hold the output back. cmd does the file redirection,
+# because Start-Process does not give a reliable exit code for a redirected child.
+function Start-Suite([string]$name, [string]$file) {
+  $prof = Profile "suite-$name"
+  $outFile = Join-Path $tmp "suite-$name.out"; $errFile = Join-Path $tmp "suite-$name.err"
+  $psi = New-Object Diagnostics.ProcessStartInfo 'cmd.exe', "/d /c powershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot $file)`" > `"$outFile`" 2> `"$errFile`""
+  $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+  $psi.EnvironmentVariables['USERPROFILE'] = $prof; $psi.EnvironmentVariables['APPDATA'] = Join-Path $prof 'AppData\Roaming'
+  [pscustomobject]@{ Name = $name; Proc = [Diagnostics.Process]::Start($psi); Out = $outFile; Err = $errFile }
+}
+# A child's output file as text, in the console code page the child wrote it in.
+function Read-SuiteFile([string]$path) {
+  if (-not (Test-Path -LiteralPath $path)) { return '' }
+  [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage).GetString([IO.File]::ReadAllBytes($path))
+}
 function Post($url, $body) { (Invoke-WebRequest -UseBasicParsing $url -Method Post -ContentType 'application/json; charset=utf-8' -Body ($utf8.GetBytes($body))).Content }
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
 # Run one of the page's #selftest-* hooks in headless Edge; returns its JSON, or $null.
@@ -32,14 +49,15 @@ function SelfTest($url, $hook) {
   $dom = Join-Path $tmp "dom-$hook.html"
   # Font hosts fail fast (a pending font fetch can stall virtual time); a hung Edge is killed, not waited on.
   $e = Start-Process $edge -PassThru -WindowStyle Hidden -RedirectStandardOutput $dom -RedirectStandardError (Join-Path $tmp "edge-$hook.log") -ArgumentList '--headless', '--disable-gpu', '--no-first-run', "--user-data-dir=$tmp\edge-$hook", '--host-resolver-rules="MAP fonts.googleapis.com 0.0.0.0, MAP fonts.gstatic.com 0.0.0.0"', '--virtual-time-budget=90000', '--dump-dom', "${url}#selftest-$hook"
-  if (-not $e.WaitForExit(120000)) { Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*edge-$hook*" } | % { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; return $null }
+  # The kill matches this run's own profile folder only, so a hung page never takes down another file's Edge.
+  if (-not $e.WaitForExit(120000)) { Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*$tmp\edge-$hook*" } | % { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; return $null }
   if ((Get-Content -Raw -Encoding UTF8 $dom) -match '<pre id="selftest">(.*?)</pre>') { [Net.WebUtility]::HtmlDecode($matches[1]) | ConvertFrom-Json }
 }
 # A starter scene as the page sends it: the scene plus the category map.
 $starters = [IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json
 function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $s | Add-Member -Force cats $starters.cats; $s | Add-Member -Force categories $starters.categories; ConvertTo-Json -Depth 10 -Compress $s }
 
-$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray = $null
+$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray = $null; $suites = @()
 
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
 # The run marks its children as the suite (TILE_TEST_SUITE): tile.ps1 refuses a live move under it unless TILE_TEST_ALLOW_LIVE is set.
@@ -78,6 +96,14 @@ try {
   $pf = Join-Path $tmp 'last-place.json'; [IO.File]::WriteAllText($pf, $js, $utf8)
   $out = @(Child $tile -PlaceFile $pf -DryRun 2>&1 | % { "$_" })
   Check 'title survives page -> file -> -PlaceFile' ($out[-1] -eq 'Placed 1 of 1 (0 unmatched).') ($out -join ' | ')
+
+  # The child files start here, after the snapshot and title checks (they read the real windows), and run at once. Their output is
+  # collected after the in-process sections below. The order of their starts is the order of the list.
+  $suites = @(
+    @('stack-lock', 'stack-lock.ps1'), @('run-undo', 'run-undo.ps1'), @('bay', 'bay.ps1'), @('fresh-screens', 'fresh-screens.ps1'),
+    @('golden-layouts', 'golden-layouts.ps1'), @('safe-moves', 'safe-moves.ps1'), @('setup-config', 'setup-config.ps1'),
+    @('engine-layouts', 'engine-layouts.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'), @('setup-page', 'setup-page.ps1')
+  ) | % { Start-Suite $_[0] $_[1] }
 
   # 4. Server: token required; snapshot and dry-run apply work through it.
   $srv = Start-Child (Profile 'srv') "-File `"$serve`" -NoBrowser -DryRun"
@@ -324,37 +350,6 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   Check 'tray tick: a change to the call scenes starts the call reading over' (($x -join '/') -eq '//' -and $ts.inCall -and $ts.streak -eq 0) ($x -join '/')
   # The automatic triggers (idle, new window, activity, meeting size, guards...) have their own file; a child scope keeps its variables out of this run.
   & { . (Join-Path $PSScriptRoot 'triggers.ps1') }
-  # Stack, lock, resize and the spanned drop: their own file, run in a child powershell (its FAIL lines count here).
-  $slOut = @(Child (Join-Path $PSScriptRoot 'stack-lock.ps1')); $slOut | % { "$_" }
-  $script:fail += [Math]::Max(@($slOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
-  # Run Undo (the run toast, Undo's puts and guards, the protocol registration): its own file, in a child powershell (its FAIL lines count here).
-  $ruOut = @(Child (Join-Path $PSScriptRoot 'run-undo.ps1')); $ruOut | % { "$_" }
-  $script:fail += [Math]::Max(@($ruOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
-  # The Windows That Stay Put list (decision bay-list): its own file, run in a child powershell like stack-lock.ps1.
-  $bayOut = @(Child (Join-Path $PSScriptRoot 'bay.ps1')); $bayOut | % { "$_" }
-  $script:fail += [Math]::Max(@($bayOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
-  # Fresh screens (tile.ps1 reads the monitor list on every call): its own file, in a child powershell (its FAIL lines count here).
-  $fsOut = @(Child (Join-Path $PSScriptRoot 'fresh-screens.ps1')); $fsOut | % { "$_" }
-  $script:fail += [Math]::Max(@($fsOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
-  # Golden layouts (missing coverage): today's rects for every starter scene on five snapshots, and the page's cellRect against them.
-  # Its own file, in a child powershell (its FAIL lines count here).
-  $glOut = @(Child (Join-Path $PSScriptRoot 'golden-layouts.ps1')); $glOut | % { "$_" }
-  $script:fail += [Math]::Max(@($glOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
-  # The live-move guard for tile.ps1 under the suite (TILE_TEST_SUITE): its own file, in a child powershell (its FAIL lines count here).
-  $smOut = @(Child (Join-Path $PSScriptRoot 'safe-moves.ps1')); $smOut | % { "$_" }
-  $script:fail += [Math]::Max(@($smOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
-  # Config v4 (decision monitor-setups): the v3 -> v4 migration, setup keys, setup registration and the layout a setup resolves to. Its own file, in a child powershell (its FAIL lines count here).
-  $suOut = @(Child (Join-Path $PSScriptRoot 'setup-config.ps1')); $suOut | % { "$_" }
-  $script:fail += [Math]::Max(@($suOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
-  # Engine layouts (decision monitor-setups, items 5 and 9): tile.ps1 places a scene by monitor id. Its own file, in a child powershell (its FAIL lines count here).
-  $elOut = @(Child (Join-Path $PSScriptRoot 'engine-layouts.ps1')); $elOut | % { "$_" }
-  $script:fail += [Math]::Max(@($elOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
-  # Monitor setups, the tray's display key (decision monitor-setups): its own file, in a child powershell (its FAIL lines count here).
-  $spOut = @(Child (Join-Path $PSScriptRoot 'setup-plumbing.ps1')); $spOut | % { "$_" }
-  $script:fail += [Math]::Max(@($spOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
-  # Monitor setups, the page (decision monitor-setups): the board autosaves, Undo, the unplugged window, the inspector and the cards. Its own file, in a child powershell (its FAIL lines count here).
-  $spgOut = @(Child (Join-Path $PSScriptRoot 'setup-page.ps1')); $spgOut | % { "$_" }
-  $script:fail += [Math]::Max(@($spgOut | ? { "$_" -like 'FAIL*' }).Count, [int]($LASTEXITCODE -ne 0))
   # Move-Win (tile.ps1): one window on a model, so no real window moves. Its variables stay in its child scope: none may appear in this script's scope.
   $seenBefore = @(Get-Variable -Scope Script | ForEach-Object { $_.Name })
   & { . (Join-Path $PSScriptRoot 'move.ps1') }
@@ -434,11 +429,27 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $b = ((Child $tile -Default -From $nominPath -Json) -notmatch '^WARNING:' -join '' | ConvertFrom-Json).placed | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }
   } finally { $env:TILE_HOME = $null }
   Check '-Default places windows as main does (fixture, no minimized windows)' ($a.Count -gt 0 -and ($a -join ' ') -ceq ($b -join ' ')) "main: $($a -join ' ') | this: $($b -join ' ')"
+
+  # The child files, collected in list order. Each is waited for, up to 25 minutes (well above the longest one), then its output is
+  # printed and its FAIL lines count here: each FAIL line, or 1 for a nonzero exit or a hang with none. Time per file goes to stderr.
+  foreach ($s in $suites) {
+    $hung = -not $s.Proc.WaitForExit(1500000)
+    if ($hung) { $s.Proc.Kill(); [void]$s.Proc.WaitForExit(5000) }
+    $out = @((Read-SuiteFile $s.Out) -split "`r?`n")
+    if ($out.Count -and $out[-1] -eq '') { $out = @($out | Select-Object -SkipLast 1) }
+    if ($hung) { $out += "FAIL  $($s.Name) did not finish within 25 min" }
+    $out | % { "$_" }
+    $script:fail += [Math]::Max(@($out | ? { "$_" -like 'FAIL*' }).Count, [int]($s.Proc.ExitCode -ne 0))
+    $errText = Read-SuiteFile $s.Err
+    if ($errText) { [Console]::Error.Write($errText) }
+    [Console]::Error.WriteLine("time  $($s.Name)  $([int]($s.Proc.ExitTime - $s.Proc.StartTime).TotalSeconds) s  exit $($s.Proc.ExitCode)")
+  }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
   if ($form -and -not $form.HasExited) { Stop-Process -Id $form.Id -Force }
   foreach ($p in $srv, $fsrv, $ssrv, $tsrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
+  foreach ($s in $suites) { if (-not $s.Proc.HasExited) { $s.Proc.Kill() } }
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
