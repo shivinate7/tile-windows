@@ -28,19 +28,99 @@ function Start-Child($prof, $argLine, $extra = @{}) {
 # A child test file in its own powershell, started now and run at once with the others. Its profile is a folder under this run's temp
 # folder, so no child reads or writes another's profile. Its output goes to files, not pipes: a process the child starts (an Edge, a
 # tray) can inherit a pipe and hold it open after the child exits, which would hold the output back. cmd does the file redirection,
-# because Start-Process does not give a reliable exit code for a redirected child.
+# because Start-Process does not give a reliable exit code for a redirected child. The child goes in a job object, so Stop-Suite
+# ends every process it started, including one that outlived it.
 function Start-Suite([string]$name, [string]$file) {
   $prof = Profile "suite-$name"
   $outFile = Join-Path $tmp "suite-$name.out"; $errFile = Join-Path $tmp "suite-$name.err"
   $psi = New-Object Diagnostics.ProcessStartInfo 'cmd.exe', "/d /c powershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot $file)`" > `"$outFile`" 2> `"$errFile`""
   $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
   $psi.EnvironmentVariables['USERPROFILE'] = $prof; $psi.EnvironmentVariables['APPDATA'] = Join-Path $prof 'AppData\Roaming'
-  [pscustomobject]@{ Name = $name; Proc = [Diagnostics.Process]::Start($psi); Out = $outFile; Err = $errFile }
+  # The job is made before the start: compiling the type takes seconds, and the child would run outside the job meanwhile.
+  Add-SuiteJobType
+  $job = [SuiteJob]::Create()
+  $proc = [Diagnostics.Process]::Start($psi)
+  # Assigned at once after the start. The child's own children are made later, so they land in the job with it.
+  if ($job.ToInt64() -ne 0) { [void][SuiteJob]::Assign($job, $proc.Handle) }
+  [pscustomobject]@{ Name = $name; Proc = $proc; Out = $outFile; Err = $errFile; Job = $job; Shown = $false }
 }
-# A child's output file as text, in the console code page the child wrote it in.
+# The job object type: P/Invoke in a new type of its own. A job made here ends its processes when it is stopped, and when this
+# run's process ends, so a child cannot outlive the run.
+function Add-SuiteJobType {
+  if ('SuiteJob' -as [type]) { return }
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class SuiteJob {
+  const int ExtendedLimitInfo = 9;
+  const uint KillOnJobClose = 0x2000;
+  [StructLayout(LayoutKind.Sequential)] public struct BasicLimit {
+    public long PerProcessUserTimeLimit; public long PerJobUserTimeLimit; public uint LimitFlags;
+    public UIntPtr MinimumWorkingSetSize; public UIntPtr MaximumWorkingSetSize; public uint ActiveProcessLimit;
+    public UIntPtr Affinity; public uint PriorityClass; public uint SchedulingClass; }
+  [StructLayout(LayoutKind.Sequential)] public struct IoCounters { public ulong A, B, C, D, E, F; }
+  [StructLayout(LayoutKind.Sequential)] public struct ExtendedLimit {
+    public BasicLimit Basic; public IoCounters Io; public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit;
+    public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed; }
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateJobObject(IntPtr attributes, string name);
+  [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
+  [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+  [DllImport("kernel32.dll", SetLastError = true)] static extern bool TerminateJobObject(IntPtr job, uint exitCode);
+  [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
+  // A job whose close ends every process in it. Zero when it could not be made.
+  public static IntPtr Create() {
+    IntPtr job = CreateJobObject(IntPtr.Zero, null);
+    if (job == IntPtr.Zero) return IntPtr.Zero;
+    ExtendedLimit info = new ExtendedLimit();
+    info.Basic.LimitFlags = KillOnJobClose;
+    int size = Marshal.SizeOf(typeof(ExtendedLimit));
+    IntPtr ptr = Marshal.AllocHGlobal(size);
+    try {
+      Marshal.StructureToPtr(info, ptr, false);
+      if (!SetInformationJobObject(job, ExtendedLimitInfo, ptr, (uint)size)) { CloseHandle(job); return IntPtr.Zero; }
+    } finally { Marshal.FreeHGlobal(ptr); }
+    return job;
+  }
+  public static bool Assign(IntPtr job, IntPtr process) { return AssignProcessToJobObject(job, process); }
+  // Ends every process in the job, then closes it.
+  public static void Stop(IntPtr job) {
+    if (job == IntPtr.Zero) return;
+    TerminateJobObject(job, 1);
+    CloseHandle(job);
+  }
+}
+'@
+}
+# Stops a child and every process under it. While its cmd wrapper stands, taskkill ends the tree by its parent links; the job then ends
+# what is left, including a process whose parent has gone (a grandchild that outlived its child).
+function Stop-Suite($s) {
+  if (-not $s.Proc.HasExited) { & cmd /d /c "taskkill /PID $($s.Proc.Id) /T /F >nul 2>&1" }
+  [SuiteJob]::Stop($s.Job)
+  $s.Job = [IntPtr]::Zero
+  # A child may end between the check and the kill; then there is nothing left to stop.
+  if (-not $s.Proc.HasExited) { try { $s.Proc.Kill() } catch [InvalidOperationException] { } }
+  [void]$s.Proc.WaitForExit(5000)
+}
+# A child's output file as text, in the console code page the child wrote it in. Read with the sharing a writer leaves open, so a
+# process that still holds the file does not stop the read.
 function Read-SuiteFile([string]$path) {
   if (-not (Test-Path -LiteralPath $path)) { return '' }
-  [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage).GetString([IO.File]::ReadAllBytes($path))
+  $fs = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+  try { $ms = New-Object IO.MemoryStream; $fs.CopyTo($ms); $bytes = $ms.ToArray() } finally { $fs.Dispose() }
+  [Text.Encoding]::GetEncoding([Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage).GetString($bytes)
+}
+# Prints one child's output, counts its FAIL lines, and prints its error text and run time to stderr. A child stopped at its cap
+# gets a FAIL line here.
+function Show-Suite($s, [bool]$hung) {
+  $s.Shown = $true
+  $out = @((Read-SuiteFile $s.Out) -split "`r?`n")
+  if ($out.Count -and $out[-1] -eq '') { $out = @($out | Select-Object -SkipLast 1) }
+  if ($hung) { $out += "FAIL  $($s.Name) did not finish inside its cap, so it was stopped" }
+  $out | % { "$_" }
+  $script:fail += [Math]::Max(@($out | ? { "$_" -like 'FAIL*' }).Count, [int]($s.Proc.ExitCode -ne 0))
+  $errText = Read-SuiteFile $s.Err
+  if ($errText) { [Console]::Error.Write($errText) }
+  [Console]::Error.WriteLine("time  $($s.Name)  $([int]($s.Proc.ExitTime - $s.Proc.StartTime).TotalSeconds) s  exit $($s.Proc.ExitCode)")
 }
 function Post($url, $body) { (Invoke-WebRequest -UseBasicParsing $url -Method Post -ContentType 'application/json; charset=utf-8' -Body ($utf8.GetBytes($body))).Content }
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
@@ -431,26 +511,26 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   } finally { $env:TILE_HOME = $null }
   Check '-Default places windows as main does (fixture, no minimized windows)' ($a.Count -gt 0 -and ($a -join ' ') -ceq ($b -join ' ')) "main: $($a -join ' ') | this: $($b -join ' ')"
 
-  # The child files, collected in list order. Each is waited for, up to 25 minutes (well above the longest one), then its output is
-  # printed and its FAIL lines count here: each FAIL line, or 1 for a nonzero exit or a hang with none. Time per file goes to stderr.
+  # The child files, collected in list order. Each is waited for up to $suiteCapMs (25 minutes, well above the longest one). A child
+  # still running then is stopped with its processes. Each child is stopped, then printed, and its FAIL lines count here: each FAIL
+  # line, or 1 for a nonzero exit or a stop with none. A child whose collection throws counts one FAIL; the children after it still run.
+  $suiteCapMs = 1500000
   foreach ($s in $suites) {
-    $hung = -not $s.Proc.WaitForExit(1500000)
-    if ($hung) { $s.Proc.Kill(); [void]$s.Proc.WaitForExit(5000) }
-    $out = @((Read-SuiteFile $s.Out) -split "`r?`n")
-    if ($out.Count -and $out[-1] -eq '') { $out = @($out | Select-Object -SkipLast 1) }
-    if ($hung) { $out += "FAIL  $($s.Name) did not finish within 25 min" }
-    $out | % { "$_" }
-    $script:fail += [Math]::Max(@($out | ? { "$_" -like 'FAIL*' }).Count, [int]($s.Proc.ExitCode -ne 0))
-    $errText = Read-SuiteFile $s.Err
-    if ($errText) { [Console]::Error.Write($errText) }
-    [Console]::Error.WriteLine("time  $($s.Name)  $([int]($s.Proc.ExitTime - $s.Proc.StartTime).TotalSeconds) s  exit $($s.Proc.ExitCode)")
+    try {
+      $hung = -not $s.Proc.WaitForExit($suiteCapMs)
+      Stop-Suite $s
+      Show-Suite $s $hung
+    } catch {
+      $script:fail++; "FAIL  $($s.Name)  could not be collected: $_"
+    }
   }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
   if ($form -and -not $form.HasExited) { Stop-Process -Id $form.Id -Force }
   foreach ($p in $srv, $fsrv, $ssrv, $tsrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
-  foreach ($s in $suites) { if (-not $s.Proc.HasExited) { $s.Proc.Kill() } }
+  # A child the loop did not collect (the run stopped first) is stopped, and its output printed, so none of it is dropped.
+  foreach ($s in $suites) { if (-not $s.Shown) { Stop-Suite $s; Show-Suite $s $false } }
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
