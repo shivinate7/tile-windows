@@ -518,9 +518,12 @@ if ($Lib) { return }
 
 $quitName = TrayName 'Quit'; $openName = TrayName 'Open'
 $created = $false; $mutex = New-Object Threading.Mutex($true, (TrayName 'Agent'), [ref]$created)
-$linkOk = '^tilewindows://(open|undo\?run=[0-9a-f]{1,32}(\.[0-9a-f]{2,300})?)/?$'
+# A link that fails $linkOk gets a visible note from the launcher (the agent never sees it), not a silent exit.
+function Show-BadLink { try { Send-RunToast (New-RunToast "Tile Windows can't use that link" 'It is not a link Tile Windows made.' $TileOpenAction) } catch {} }
+$linkOk = '^tilewindows://(open|undo/?\?run=[0-9a-f]{1,32}(\.[0-9a-f]{2,300})?)/?$'
 if (-not $created) {
   if ($Link -match $linkOk) { Write-TileFile (Join-Path $TileHome 'link.txt') $Link; $e = [Threading.EventWaitHandle]::OpenExisting((TrayName 'Link')); [void]$e.Set() }
+  elseif ($Link) { Show-BadLink }
   elseif ($Open) { $e = [Threading.EventWaitHandle]::OpenExisting($openName); [void]$e.Set() }
   return
 }
@@ -533,6 +536,7 @@ if ($Link) {
     $gone = New-NoUndoToast $name 'Tile Windows restarted since, so it lost the old places.' $TileOpenAction
     try { Send-RunToast $gone } catch {}
   }
+  else { Show-BadLink }
   return
 }
 $quitEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $quitName)
@@ -727,7 +731,8 @@ function Invoke-Link {
       $rec.done = $true
       if ($res.manualAt) { [TileInput]::MoveEndTicks = $res.manualAt.ToUniversalTime().Ticks; $script:state.manualApplyAt = $res.manualAt }
       Clear-GapWatch
-      if ($res.scene -and -not $NoApply) { Add-TileLog $res.scene "Undid $($rec.name): $($res.text)" }
+      # A run that left the scene as it was has no scene to name, so the log line names the scene now active.
+      if (-not $NoApply) { Add-TileLog $(if ($res.scene) { $res.scene } else { Get-ActiveId }) "Undid $($rec.name): $($res.text)" }
       # A partial Undo (a window stayed, closed or was refused) pops up and says why; a clean one updates quietly.
       $partial = [bool](@($res.stayed).Count -or @($res.closed).Count -or @($res.refused).Count)
       Show-Toast (New-RunToast "$($rec.name) $(if ($partial) { 'partly undone' } else { 'undone' })" $res.text @() (-not $partial -and $res.placed -gt 0))
