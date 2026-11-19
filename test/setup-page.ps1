@@ -6,6 +6,8 @@
 # whose page is not built answers no hook at all, and a case would fail for "no hook", which is not the named cause. Each case writes
 # its own config, opens the page on a dry-run server (-From: no window moves), wraps fetch before it acts, and reads what the page sent
 # and what it shows. Waits are on page conditions, never on a fixed time.
+# The page is shown at a fixed 1440 by 900 viewport. Fix-View sets it once the page is open, and every reset returns to it.
+# A case that needs another size sets its own with Set-View.
 #
 # The contract checked (the builder meets it):
 #   Board: a board edit on a scene sends one POST /layout with the plugged-in setup key and no POST /config. Default (built-in) too.
@@ -205,6 +207,10 @@ function Js($sock, [string]$body) {
   $v = [string]$r.result.result.value
   if ($v) { ConvertFrom-Json $v }
 }
+# The viewport. Set-View sets the page's size in CSS pixels at one device pixel each. Fix-View sets the default, 1440 by 900. A reset uses
+# Fix-View and never a clear: a cleared override falls back to the headless window's own size, which is too small for the page.
+function Set-View($sock, [int]$w, [int]$h) { [void](Cdp $sock 'Emulation.setDeviceMetricsOverride' @{ width = $w; height = $h; deviceScaleFactor = 1; mobile = $false }) }
+function Fix-View($sock) { Set-View $sock 1440 900 }
 # Waits until a page condition holds, up to a deadline. Not a sleep: it polls the page and stops as soon as the page is ready.
 function WaitFor($sock, [string]$cond, [int]$seconds = 120) {
   $t0 = Get-Date
@@ -351,6 +357,8 @@ try {
   if (-not $targets.Count) { throw "DevTools listed no page on port $port within 60 s: $lastErr" }
   $ws = New-Object Net.WebSockets.ClientWebSocket
   [void]$ws.ConnectAsync([Uri]$targets[0].webSocketDebuggerUrl, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+  # The default viewport, set before the first navigation. The override stays on this page target across every Page.navigate.
+  Fix-View $ws
 
   Case 'a board edit sends one POST /layout for the plugged-in setup' {
     Put-Config (New-Config)
@@ -953,7 +961,7 @@ try {
   # Two rects share some area. A touching edge is not an overlap.
   function Overlaps($a, $b) { return (($a.l -lt $b.r) -and ($b.l -lt $a.r) -and ($a.t -lt $b.b) -and ($b.t -lt $a.b)) }
   function Check-Menu-Placement([int]$height, [bool]$roomBelow, [string]$tag) {
-    [void](Cdp $ws 'Emulation.setDeviceMetricsOverride' @{ width = 1440; height = $height; deviceScaleFactor = 1; mobile = $false })
+    Set-View $ws 1440 $height
     try {
       $opened = Open-Page $ws $url 'focus'
       Check "${tag}: the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
@@ -967,7 +975,7 @@ try {
       Check "${tag}: the menu lies inside the window (control)" ($g.menu.t -ge 0 -and $g.menu.b -le $g.ih) "menu top $($g.menu.t), bottom $($g.menu.b), window height $($g.ih)"
       Check "${tag}: the menu does not cover its own More button" (-not (Overlaps $g.menu $g.more)) "menu $($g.menu.t) to $($g.menu.b); More $($g.more.t) to $($g.more.b)"
       Check "${tag}: the menu does not cover the card's Preview button" (-not (Overlaps $g.menu $g.apply)) "menu $($g.menu.t) to $($g.menu.b); Preview $($g.apply.t) to $($g.apply.b)"
-    } finally { [void](Cdp $ws 'Emulation.clearDeviceMetricsOverride') }
+    } finally { Fix-View $ws }
   }
   # The red case: no room below the More button, so the menu must open above it. Its control, in the same card at 900 high, has room below.
   Case 'card menu at 1440: with no room below its More button, the menu opens above and covers neither More nor Preview' {
@@ -1265,7 +1273,7 @@ return { cards: cardsOf().length, heights, cut, soloRow };
 
   Case 'at 1024 and 1440 no card bottom-row label is cut, and at 1024 every card has one height' {
     foreach ($w in 1440, 1024) {
-      [void](Cdp $ws 'Emulation.setDeviceMetricsOverride' @{ width = $w; height = 900; deviceScaleFactor = 1; mobile = $false })
+      Set-View $ws $w 900
       try {
         $opened = Open-Kind-Rail $ws
         Check "${w}: the kind rail opens on Focus (control)" $opened 'the page did not draw the rail in time'
@@ -1275,7 +1283,7 @@ return { cards: cardsOf().length, heights, cut, soloRow };
         Check "${w}: the Solo card's bottom row is measured (control)" ([bool]$m.soloRow) 'no bottom row on the Solo card'
         Check "${w}: no card's bottom-row label is cut" (@($m.cut).Count -eq 0) (@($m.cut) -join ' | ')
         if ($w -eq 1024) { Check '1024: every card has one height' (@(@($m.heights) | Sort-Object -Unique).Count -eq 1) "card heights: $(@($m.heights) -join ', ')" }
-      } finally { [void](Cdp $ws 'Emulation.clearDeviceMetricsOverride') }
+      } finally { Fix-View $ws }
     }
   }
 
@@ -1703,11 +1711,10 @@ return { title: h ? h.textContent.replace(/\s+/g, " ").trim() : "", join: fill('
   function Tile-Metrics($sock, [int]$id) { Js $sock $tileJs.Replace('__ID__', "$id") }
   # True when rect $a lies inside rect $b, with half a pixel of slack.
   function Inside($a, $b) { ($a.l -ge $b.l - 0.5) -and ($a.r -le $b.r + 0.5) -and ($a.t -ge $b.t - 0.5) -and ($a.b -le $b.b + 0.5) }
-  function Set-View($sock, [int]$w, [int]$h) { [void](Cdp $sock 'Emulation.setDeviceMetricsOverride' @{ width = $w; height = $h; deviceScaleFactor = 1; mobile = $false }) }
   # The page's own theme, set as its theme control sets it; nothing is stored.
   function Set-Theme($sock, [string]$t) { [void](Js $sock ("setTheme('" + $t + "'); return true")) }
   function Reset-Look($sock) {
-    try { [void](Cdp $sock 'Emulation.clearDeviceMetricsOverride') } catch { }
+    try { Fix-View $sock } catch { }
     try { [void](Js $sock "setTheme('system'); return true") } catch { }
   }
   # A right-click as a mouse makes it: pressed, then released, at the point.
