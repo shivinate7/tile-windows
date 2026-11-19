@@ -422,7 +422,7 @@ dialog form{display:grid;gap:10px}
 .tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 5px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1}
 .tile .stk svg{width:10px;height:10px}
 /* Named badge: it names the window right behind. A narrow tile shows that app's initial in its category colour. */
-.tile .stk .ini{display:inline-grid;place-items:center;width:13px;height:13px;border-radius:2px;background:var(--cat);color:var(--panel);font:700 9.5px/1 var(--f)}
+.tile .stk .ini,.peek .ini{display:inline-grid;place-items:center;width:13px;height:13px;border-radius:2px;background:var(--cat);color:var(--panel);font:700 9.5px/1 var(--f)}
 .tile .stk.ring{outline:2px solid var(--select);outline-offset:1px}
 /* A narrow stacked tile (about 50x55) has a 20px grip at the bottom right. The badge gives up its icon and most of its padding: 16px wide (the 13px initial and 1.5px a side) from 3px in, it ends where a selected tile's Stay Put begins, 28px short of the right edge, and clear of the grip. Its cap keeps that 3px + 28px budget, so the hit areas never meet and a press on the badge reaches it. */
 .tile.stacked.narrow .stk{left:3px;padding:1px 1.5px;max-width:calc(100% - 31px)}
@@ -632,7 +632,7 @@ dialog form{display:grid;gap:10px}
     <details id="keys" class="keys"><summary>Keyboard</summary><ul>
       <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
       <li>Ctrl+Shift+arrows resize it from its top or left edge.</li>
-      <li>S or Shift+F10 opens Split Cell on the selected window. Shift+S splits it in half side by side at once, and so does a double-click. J joins a split cell.</li>
+      <li>S or Shift+F10 opens Split Cell on the selected window. Shift+S or a double-click splits it side by side at once. J joins a split cell.</li>
       <li>Delete unpins it. K keeps it where it is (off the board).</li>
       <li>L locks or unlocks it. B brings the window behind it to the front.</li>
       <li>A locked window moves only after a warning.</li>
@@ -1159,7 +1159,7 @@ function render(){
     // The layered look: the back window is a layer under the front tile, whose top strip names the back app.
     const PK=ico?13:15,pk=back.length>0&&parseFloat(pr.height)>=PK+30;e.classList.toggle("peeked",pk);
     if(pk){const pe=peekOf(w.id);pe.className=`peek cat-${catOf(back[0].app)}${ico?" narrow":""}${flashId===w.id?" flash":""}`;
-      pe.innerHTML=`${ico?"":BEHIND}<span class="pn">${esc(appName(back[0].app))}</span>${back.length>1?`<span class="pc"><i class="sp"> </i>+${back.length-1}</span>`:""}`;pe.hidden=false;pe.dataset.id=w.id;
+      pe.innerHTML=tiny?`<span class="ini">${esc(appName(back[0].app).charAt(0))}</span>`:`${ico?"":BEHIND}<span class="pn">${esc(appName(back[0].app))}</span>${back.length>1?`<span class="pc"><i class="sp"> </i>+${back.length-1}</span>`:""}`;pe.hidden=false;pe.dataset.id=w.id;
       Object.assign(pe.style,{left:pr.left,top:pr.top,width:pr.width,height:PK+6+"px"});
       Object.assign(e.style,{top:parseFloat(pr.top)+PK+"px",height:parseFloat(pr.height)-PK+"px"})}
     // A word-form Stay Put sits 44px above the tile's inner bottom, so two title lines (to 53px) need a tile 101px tall; a shorter one keeps one line.
@@ -2129,7 +2129,10 @@ stage.addEventListener("keydown",ev=>{
 // A right-click on the board never shows the browser's own menu; on a window it opens the split menu at the pointer.
 stage.addEventListener("contextmenu",ev=>{ev.preventDefault();const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev())return;
   const id=+e.dataset.id;selWin=id;render();openSplit(id,{x:ev.clientX,y:ev.clientY})});
-stage.addEventListener("dblclick",ev=>{const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev()||ev.target.closest("button"))return;ev.preventDefault();splitFast(+e.dataset.id)});
+// A double-click splits only a tile that was already selected: the first click of a pair selects, so the selection is read at that press (split-cell notes S3).
+let selAtPress=null;
+stage.addEventListener("mousedown",ev=>{if(ev.detail<2)selAtPress=selWin},true);
+stage.addEventListener("dblclick",ev=>{const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev()||ev.target.closest("button"))return;ev.preventDefault();if(+e.dataset.id===selAtPress)splitFast(+e.dataset.id)});
 
 function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.");return}
   if(pp.pin.lock){status(`${winById(id).title} is locked. Unlock it first.`);return}
