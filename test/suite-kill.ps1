@@ -1,13 +1,18 @@
-# Checks test\run.ps1's collection of its child files. A child still running at its cap is stopped with its whole process tree, its
-# FAIL line prints, and the children after it are read and counted. A child whose output a grandchild still holds open does not stop
-# the children after it from being read, and that grandchild is stopped. The run's own collection loop runs in a host powershell,
-# taken from run.ps1's file, over fake children made in this run's folder. The guard (60 s) sits well above a run (about 20 s).
-# test\run.ps1 runs this file in a child powershell and counts its FAIL lines. Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\suite-kill.ps1
+# Checks how test\run.ps1 collects its child files. Three scenarios, each run by a host powershell that takes run.ps1's functions and
+# its loop from its file, over fake children made in this run's folder:
+#   hang:   a child still running at its cap is stopped with its whole process tree, its FAIL line prints, and the child after it is
+#           read and counted; no process of the stopped child survives.
+#   held:   a child exits while a grandchild still holds its output; the child after it is still read and counted, and the grandchild
+#           is stopped.
+#   parent: the run stops before its collection loop; the children it started are stopped and read in the finally.
+# The guard (60 s) sits well above a run (about 20 s). test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
+# Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\suite-kill.ps1
 param([string]$Scenario = '', [string]$Folder = '')
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
+# A failure's detail goes on one line, so a host's output shows whole in it.
+function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $(($detail -replace "`r?`n", ' | ').Trim())" } }
 # A text file's contents, read while another process may still hold it open (a child that was not stopped can).
 function Read-Text([string]$path) {
   if (-not (Test-Path -LiteralPath $path)) { return '' }
@@ -26,14 +31,17 @@ if ($Scenario) {
   $lib = Join-Path $Folder 'run-functions.ps1'
   [IO.File]::WriteAllText($lib, ($fnText -join "`r`n"), $utf8)
   . $lib
-  $loops = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.ForEachStatementAst] -and $n.Condition.Extent.Text -eq '$suites' -and $n.Extent.Text -match 'WaitForExit' }, $true))
+  # The collection loop waits on each child. The parent scenario runs the other loop over $suites: the one in the finally, which
+  # stops each child and prints what it left.
+  $waits = $Scenario -ne 'parent'
+  $loops = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.ForEachStatementAst] -and $n.Condition.Extent.Text -eq '$suites' -and (($n.Extent.Text -match 'WaitForExit') -eq $waits) }, $true))
   "LOOPS $($loops.Count)"
   if ($loops.Count -ne 1) { exit 1 }
-  $first = if ($Scenario -eq 'hang') { 'hang' } else { 'holder' }
-  $suites = @(
-    (Start-Suite $first "$($first)-child.ps1"),
-    (Start-Suite 'normal' 'normal-child.ps1')
-  )
+  switch ($Scenario) {
+    'hang' { $suites = @((Start-Suite 'hang' 'hang-child.ps1'), (Start-Suite 'normal' 'normal-child.ps1')) }
+    'held' { $suites = @((Start-Suite 'holder' 'holder-child.ps1'), (Start-Suite 'normal' 'normal-child.ps1')) }
+    'parent' { $suites = @(Start-Suite 'normal' 'normal-child.ps1'); [void]$suites[0].Proc.WaitForExit(30000) }
+  }
   $script:fail = 0
   . ([scriptblock]::Create($loops[0].Extent.Text))
   "COUNT $script:fail"
@@ -111,6 +119,15 @@ try {
   Check 'the child after it is read when a grandchild held the earlier output' ($held.Out -match 'PASS  normal child is read') "host output: $($held.Out)"
   Check 'the child after it is counted' ($held.Out -match '(?m)^COUNT 1') "host output: $($held.Out)"
   Check 'the grandchild that held the output is stopped with its child' (-not (Test-Alive $grandPid)) "pid $grandPid is still running"
+
+  # Parent throw: the run stops before its collection loop. The children it started are stopped and read in the finally, so their
+  # output is not dropped.
+  $pd = Join-Path $run 'parent'; New-Item -ItemType Directory $pd | Out-Null
+  [IO.File]::WriteAllText((Join-Path $pd 'normal-child.ps1'), $normalChild, $utf8)
+  $par = Start-Host 'parent' $pd 60000
+  Check 'run.ps1 has one finally loop over its children (parent)' ($par.Out -match '(?m)^LOOPS 1') "host output: $($par.Out)"
+  Check 'a child started before a throw is read and printed' ($par.Out -match 'PASS  normal child is read') "host output: $($par.Out)"
+  Check 'a child started before a throw is counted' ($par.Out -match '(?m)^COUNT 1') "host output: $($par.Out)"
 } finally {
   # Teardown: stop the fake children this case started, if they are still running (a red run leaves them), then remove the run folder.
   # Each is stopped only when its command line is one of the fake children's, so a pid reused by another process is left alone.
@@ -118,8 +135,10 @@ try {
     $id = Read-Pid $f
     if ($id -le 0) { continue }
     $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
-    if ($cim -and $cim.CommandLine -match 'hang-child\.ps1|Start-Sleep -Seconds 600') { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+    $proc = if ($cim -and $cim.CommandLine -match 'hang-child\.ps1|Start-Sleep -Seconds 600') { Get-Process -Id $id -ErrorAction SilentlyContinue }
+    if ($proc) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue; [void]$proc.WaitForExit(5000) }
   }
-  Remove-RunFolder $run
+  # A process that has just ended can still hold a file in the run folder for a moment, so the folder is removed after it has gone.
+  try { Remove-RunFolder $run } catch { $script:fail++; "FAIL  teardown could not remove the run folder  $($_.Exception.Message)" }
 }
 if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 }
