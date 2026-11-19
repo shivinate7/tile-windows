@@ -102,7 +102,8 @@ try {
   $suites = @(
     @('stack-lock', 'stack-lock.ps1'), @('run-undo', 'run-undo.ps1'), @('bay', 'bay.ps1'), @('fresh-screens', 'fresh-screens.ps1'),
     @('golden-layouts', 'golden-layouts.ps1'), @('safe-moves', 'safe-moves.ps1'), @('setup-config', 'setup-config.ps1'),
-    @('engine-layouts', 'engine-layouts.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'), @('setup-page', 'setup-page.ps1')
+    @('engine-layouts', 'engine-layouts.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'), @('setup-page', 'setup-page.ps1'),
+    @('suite-kill', 'suite-kill.ps1')
   ) | % { Start-Suite $_[0] $_[1] }
 
   # 4. Server: token required; snapshot and dry-run apply work through it.
