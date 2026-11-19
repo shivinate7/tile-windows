@@ -354,9 +354,9 @@ Check 'migration: nothing else in that scene changes' ($null -ne $cs -and $moved
 # an error, so a call that throws would hide every later check. Times are synthetic: no check reads the clock.
 function Invoke-IfDefined([string]$name, [object[]]$a) { if (Get-Command $name -ErrorAction SilentlyContinue) { & $name @a } }
 function Invoke-TestGapEvent($ev, $io, $ic, $hwnd, $set) { Invoke-IfDefined 'Test-GapEvent' @($ev, $io, $ic, $hwnd, $set) }
-function Invoke-StepGapFill($state, $events, $now) { Invoke-IfDefined 'Step-GapFill' @($state, $events, $now) }
+function Invoke-StepGapFill($state, $events, $now, $pidOf = $null) { Invoke-IfDefined 'Step-GapFill' @($state, $events, $now, $pidOf) }
 function GapEvt($ev, $hwnd, [datetime]$t, $io = 0, $ic = 0) { [pscustomobject]@{ event = $ev; idObject = $io; idChild = $ic; hwnd = $hwnd; time = $t } }
-function GapTile($hwnd, $mon = 'A') { [pscustomobject]@{ hwnd = $hwnd; mon = $mon } }
+function GapTile($hwnd, $mon = 'A', $procId = $null) { [pscustomobject]@{ hwnd = $hwnd; mon = $mon; procId = $procId } }
 function GapState($tiled, $absent, $grids, $last) { [pscustomobject]@{ scene = 'work'; tiled = @($tiled); absent = @($absent); grids = $grids; lastApply = $last; quietMs = $gwQuiet } }
 function GapDesc($r) { if ($null -eq $r) { 'no run' } else { "run absent=[$(@($r.absent) -join ',')] scene=$($r.scene)" } }
 $gwQuiet = 1500; $gwNow = [datetime]'2026-10-21 10:00:00'; $gwLast = $gwNow.AddMinutes(-10)  # the tray's own last apply, long before the events
@@ -400,6 +400,63 @@ $rNone = Invoke-StepGapFill (GapState @() @() @{} $gwLast) @((GapEvt $gwHide 100
 $rOne = Invoke-StepGapFill (GapState @((GapTile 1001 'A')) @() @{ A = $gwFree } $gwLast) @((GapEvt $gwHide 1001 $gwNow)) $gwNow
 Check 'gap-watch: with no tiled handles a tick gives no run; with one tiled handle it gives one' ($null -eq $rNone -and $null -ne $rOne) "no tiled: $(GapDesc $rNone); one tiled: $(GapDesc $rOne)"
 
+# Step-GapFill's process-id check (procId taken at apply): a handle whose owner changed is a recycled window, so its event is skipped.
+# The recycled handle sits beside a same-pid one, in each order, so the absent set is exactly the same-pid handle whatever the order.
+$gwPidRecycled = { param($h) if ($h -eq 1001) { [uint32]3333 } else { [uint32]2222 } }
+foreach ($ord in @(@(1001, 1002), @(1002, 1001))) {
+  $tiledOrd = @($ord | % { GapTile $_ 'A' $(if ($_ -eq 1001) { 1111 } else { 2222 }) })
+  $evOrd = @($ord | % { GapEvt $gwHide $_ $gwNow })
+  $rp = Invoke-StepGapFill (GapState $tiledOrd @() @{ A = $gwFree } $gwLast) $evOrd $gwNow $gwPidRecycled
+  Check "gap-watch pid: a recycled handle (its process id changed) is skipped; the same-pid handle goes absent (order $($ord -join ','))" ($null -ne $rp -and (@($rp.absent) -join ',') -eq '1002') (GapDesc $rp)
+}
+$gwPidSame = { param($h) [uint32]1111 }
+$rs = Invoke-StepGapFill (GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast) @((GapEvt $gwHide 1001 $gwNow)) $gwNow $gwPidSame
+Check 'gap-watch pid: a handle whose process id is unchanged acts (control)' ($null -ne $rs -and (@($rs.absent) -join ',') -eq '1001') (GapDesc $rs)
+$gwPidGone = { param($h) [uint32]0 }
+$rg = Invoke-StepGapFill (GapState @((GapTile 1002 'A' 2222)) @() @{ A = $gwFree } $gwLast) @((GapEvt $gwHide 1002 $gwNow)) $gwNow $gwPidGone
+Check 'gap-watch pid: a gone window (process id 0) is no mismatch, so its hide still goes absent' ($null -ne $rg -and (@($rg.absent) -join ',') -eq '1002') (GapDesc $rg)
+
+# Destroy is final (the ruling: a destroyed window never comes back). After a destroy (0x8001) of a tiled handle, every later event on that
+# handle is ignored until the next apply resets the tiled set. A minimize then restore of the same window still restores (control).
+# A multi-tick case copies each run's absent set back into its state, as the tray does, so a later tick reads what the earlier one left.
+$gdState = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast
+$gdDestroy = Invoke-StepGapFill $gdState @((GapEvt 0x8001 1001 $gwNow)) $gwNow $gwPidSame
+Check 'gap-watch destroy: a destroy of a tiled handle gives a run with it absent (scope, before the show)' ($null -ne $gdDestroy -and $gdDestroy.scene -eq 'work' -and (@($gdDestroy.absent) -join ',') -eq '1001') (GapDesc $gdDestroy)
+$gdState.absent = @($gdDestroy.absent)
+$gdShow = Invoke-StepGapFill $gdState @((GapEvt 0x8002 1001 $gwNow.AddSeconds(5))) $gwNow.AddSeconds(5) $gwPidSame
+Check 'gap-watch destroy: a show of that handle from the same pid gives no gap run' ($null -ne $gdDestroy -and $null -eq $gdShow) (GapDesc $gdShow)
+$gdAfter = if ($null -eq $gdShow) { @($gdState.absent) } else { @($gdShow.absent) }
+Check 'gap-watch destroy: after that show the absent set still holds the destroyed handle' (($gdAfter -join ',') -eq '1001') "absent: [$($gdAfter -join ',')]"
+$gdSameTick = Invoke-StepGapFill (GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast) @((GapEvt 0x8001 1001 $gwNow), (GapEvt 0x8002 1001 $gwNow.AddMilliseconds(200))) $gwNow $gwPidSame
+Check 'gap-watch destroy: a destroy and a show of one handle in the same tick leave it absent (the show is later, so ignored)' ($null -ne $gdSameTick -and (@($gdSameTick.absent) -join ',') -eq '1001') (GapDesc $gdSameTick)
+$gdOtherPid = { param($h) [uint32]3333 }  # the handle now belongs to another process: a window that reused it
+$gdOtherState = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast
+$gdOtherRun = Invoke-StepGapFill $gdOtherState @((GapEvt 0x8001 1001 $gwNow)) $gwNow $gwPidSame
+Check 'gap-watch destroy: a destroy from the owning pid gives a run with the handle absent (scope, before the other pid''s show)' ($null -ne $gdOtherRun -and (@($gdOtherRun.absent) -join ',') -eq '1001') (GapDesc $gdOtherRun)
+$gdOtherState.absent = @($gdOtherRun.absent)
+$gdOtherShow = Invoke-StepGapFill $gdOtherState @((GapEvt 0x8002 1001 $gwNow.AddSeconds(5))) $gwNow.AddSeconds(5) $gdOtherPid
+Check 'gap-watch destroy: a show of that handle from another pid gives no gap run (control: the process-id check already skips it)' ($null -ne $gdOtherRun -and $null -eq $gdOtherShow) (GapDesc $gdOtherShow)
+$gmState = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast
+$gmMin = Invoke-StepGapFill $gmState @((GapEvt 0x0016 1001 $gwNow)) $gwNow $gwPidSame
+Check 'gap-watch minimize: a minimize start of a tiled handle gives a run with it absent (scope, before the restore)' ($null -ne $gmMin -and (@($gmMin.absent) -join ',') -eq '1001') (GapDesc $gmMin)
+$gmState.absent = @($gmMin.absent)
+$gmRest = Invoke-StepGapFill $gmState @((GapEvt 0x0017 1001 $gwNow.AddSeconds(5))) $gwNow.AddSeconds(5) $gwPidSame
+Check 'gap-watch minimize: a restore of that window from the same pid gives a run with it back (control)' ($null -ne $gmRest -and -not (@($gmRest.absent) -contains 1001)) (GapDesc $gmRest)
+$gnState = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast
+$gnFirst = Invoke-StepGapFill $gnState @((GapEvt 0x8001 1001 $gwNow)) $gwNow $gwPidSame
+Check 'gap-watch destroy: a destroy before a new apply gives a run with the handle absent (scope)' ($null -ne $gnFirst -and (@($gnFirst.absent) -join ',') -eq '1001') (GapDesc $gnFirst)
+# The new apply makes a new state: the same handle is tiled again, and nothing is absent yet.
+$gnApplied = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } ($gwNow.AddSeconds(10))
+$gnAgain = Invoke-StepGapFill $gnApplied @((GapEvt 0x8001 1001 $gwNow.AddSeconds(20))) $gwNow.AddSeconds(20) $gwPidSame
+Check 'gap-watch destroy: after a new apply the handle is tracked again, so its destroy gives a run with it absent (control)' ($null -ne $gnAgain -and (@($gnAgain.absent) -join ',') -eq '1001') (GapDesc $gnAgain)
+# Full-size: all 40 tiled handles destroyed in one tick, then all 40 shown again from the same pid.
+$gbState = GapState @($gwBurst | % { GapTile $_ 'A' 1111 }) @() @{ A = $gwFree } $gwLast
+$gbDestroy = Invoke-StepGapFill $gbState @($gwBurst | % { GapEvt 0x8001 $_ $gwNow }) $gwNow $gwPidSame
+Check 'gap-watch destroy: the destroy of all 40 tiled handles gives one run with all 40 absent (scope)' ($null -ne $gbDestroy -and ((@($gbDestroy.absent) | % { [int64]$_ } | Sort-Object) -join ',') -eq ($gwBurst -join ',')) (GapDesc $gbDestroy)
+$gbState.absent = @($gbDestroy.absent)
+$gbShow = Invoke-StepGapFill $gbState @($gwBurst | % { GapEvt 0x8002 $_ $gwNow.AddSeconds(5) }) $gwNow.AddSeconds(5) $gwPidSame
+Check 'gap-watch destroy: the show of all 40 destroyed handles from the same pid gives no gap run' ($null -ne $gbDestroy -and $null -eq $gbShow) (GapDesc $gbShow)
+
 # ---- L5b cases: the gap-fill run (the stub until L5a) and New-GapState on a real scene shape. ----
 # Invoke-GapFill is the log-only stub. It is defined below tray.ps1's -Lib return, so -Lib does not define it. The case reads its definition
 # from tray.ps1 with the PowerShell parser and defines it here, so the case runs the file's own text on either side of the return.
@@ -408,25 +465,32 @@ $gwFn = [Management.Automation.Language.Parser]::ParseFile($Tray, [ref]$gwTok, [
 if ($gwFn) { Invoke-Expression $gwFn.Extent.Text }
 # GapFillRun calls Invoke-GapFill with the toast and log functions replaced by counters, and with the run-undo record set to $rec for the
 # call, then restored. So no toast shows and no log file is written. Ran is false when the name is not defined, and each check reads it.
-function GapFillRun($run, $rec) {
-  $toasts = @{ n = 0 }; $logs = [Collections.Generic.List[string]]::new()
+# The engine is a stub unless $opts.tile names another: it records each call (calls) and answers with $opts.placed as its moves, so no window moves.
+# $opts also sets the gap state the call sees ($opts.gap, restored after) and the dry-run flag ($opts.noApply).
+function GapFillRun($run, $rec, $opts = @{}) {
+  $toasts = @{ n = 0 }; $logs = [Collections.Generic.List[string]]::new(); $calls = [Collections.Generic.List[object]]::new()
+  $placed = @($opts['placed'] | ? { $null -ne $_ })
+  $stub = { param([string]$Scene, [switch]$GapFill, [string[]]$Absent = @(), [string]$Last = '', [switch]$Json, [switch]$DryRun)
+    $calls.Add([pscustomobject]@{ Scene = $Scene; GapFill = [bool]$GapFill; Absent = @($Absent); Last = $Last; Json = [bool]$Json; DryRun = [bool]$DryRun })
+    ConvertTo-Json -InputObject ([pscustomobject]@{ placed = $placed; missing = @(); left = @() }) -Depth 5 -Compress }.GetNewClosure()
+  $tile = if ($null -ne $opts['tile']) { $opts['tile'] } else { $stub }
   function Show-Toast($n) { $toasts['n'] += 1 }
   function Send-RunToast($n) { $toasts['n'] += 1 }
   function New-RunToast($t, $b, $a, $q, $d) { $toasts['n'] += 1 }
   function Note($text) { $toasts['n'] += 1 }
   function Offer-Scene($s, $why) { $toasts['n'] += 1 }
   function Add-TileLog([string]$active, [string]$text) { $logs.Add($text) }
-  $NoApply = $false; $keep = $script:runUndo; $err = ''
+  $NoApply = [bool]$opts['noApply']; $keep = $script:runUndo; $keepGap = $script:gap; $err = ''
   $ran = [bool](Get-Command Invoke-GapFill -ErrorAction SilentlyContinue)
   try {
-    $script:runUndo = $rec
+    $script:runUndo = $rec; $script:gap = $opts['gap']
     $before = ConvertTo-Json -InputObject $rec -Depth 6 -Compress
     try { Invoke-IfDefined 'Invoke-GapFill' @($run) } catch { $err = $_.Exception.Message }
     $after = ConvertTo-Json -InputObject $script:runUndo -Depth 6 -Compress
     $same = [object]::ReferenceEquals($rec, $script:runUndo) -and $before -eq $after
     $afterNull = $null -eq $script:runUndo
-  } finally { $script:runUndo = $keep }
-  [pscustomobject]@{ ran = $ran; err = $err; same = $same; after = $after; afterNull = $afterNull; toasts = $toasts['n']; logs = $logs.Count }
+  } finally { $script:runUndo = $keep; $script:gap = $keepGap }
+  [pscustomobject]@{ ran = $ran; err = $err; same = $same; after = $after; afterNull = $afterNull; toasts = $toasts['n']; logs = $logs.Count; logLines = @($logs); calls = @($calls) }
 }
 $gwRec = [pscustomobject]@{ id = 'a1b2c3d4e5f6.7365'; at = $gwLast; scene = 'work'; name = 'Work'; prev = 'plain'; changed = $true; done = $false; endedBy = ''; moved = @() }
 $gfFull = GapFillRun ([pscustomobject]@{ scene = 'work'; absent = @($gwBurst) }) $gwRec
@@ -438,12 +502,45 @@ $gfEmpty = GapFillRun ([pscustomobject]@{ scene = 'work'; absent = @() }) $null
 Check 'gap-fill: a run with no window away raises no toast' ($gfEmpty.ran -and $gfEmpty.toasts -eq 0) "ran: $($gfEmpty.ran), toast calls: $($gfEmpty.toasts)"
 Check 'gap-fill: with no undo record yet, the empty run leaves it null' ($gfEmpty.ran -and $gfEmpty.same -and $gfEmpty.afterNull) "record after: $($gfEmpty.after)"
 Check 'gap-fill: the empty run writes exactly one log line' ($gfEmpty.ran -and $gfEmpty.logs -eq 1) "log lines: $($gfEmpty.logs)"
+Check 'gap-fill: each stub run calls the engine once, so the checks above read one run' ($gfFull.calls.Count -eq 1 -and $gfEmpty.calls.Count -eq 1) "calls: $($gfFull.calls.Count), $($gfEmpty.calls.Count)"
+
+# The stub cases: the run passes its arguments, applies the moves the engine reports, and a dry run moves and logs nothing. Each case's
+# first check is that the stub ran once, so no real engine did. -Absent and -Last compare sorted: fixture order is not the contract.
+function GapIds($xs) { (@($xs) | % { [int64]$_ } | Sort-Object) -join ',' }
+$gfArgs = GapFillRun ([pscustomobject]@{ scene = 'work'; absent = @(1002, 1001) }) $gwRec @{ gap = @{ arg = 'work-json'; last = @{ '1001' = [pscustomobject]@{ id = 1001; x = 0; y = 0; w = 960; h = 1080 }; '1002' = [pscustomobject]@{ id = 1002; x = 960; y = 0; w = 960; h = 1080 } } } }
+$gfA = if ($gfArgs.calls.Count -eq 1) { $gfArgs.calls[0] } else { $null }
+$gfALast = if ($gfA) { @(ConvertFrom-Json $gfA.Last) } else { @() }
+Check 'gap-fill args: the stub engine runs once, as a live -GapFill -Json run' ($null -ne $gfA -and $gfA.GapFill -and $gfA.Json -and -not $gfA.DryRun) "calls: $($gfArgs.calls.Count)"
+Check 'gap-fill args: the scene passed is the gap state''s arg, not the run''s scene name' ($null -ne $gfA -and $gfA.Scene -ceq 'work-json') "scene: $(if ($gfA) { $gfA.Scene })"
+Check 'gap-fill args: -Absent carries the away handles' ($null -ne $gfA -and (GapIds $gfA.Absent) -eq '1001,1002') "absent: $(if ($gfA) { GapIds $gfA.Absent })"
+Check 'gap-fill args: -Last carries the rect the tray last gave each tiled window' ($null -ne $gfA -and (GapIds @($gfALast | % { $_.id })) -eq '1001,1002' -and @($gfALast | ? { $_.id -eq 1002 })[0].x -eq 960) "last: $(if ($gfA) { $gfA.Last })"
+$gfNoGap = GapFillRun ([pscustomobject]@{ scene = 'focus'; absent = @() }) $null
+Check 'gap-fill args: with no gap state the scene passed is the run''s scene name' ($gfNoGap.calls.Count -eq 1 -and $gfNoGap.calls[0].Scene -ceq 'focus') "calls: $($gfNoGap.calls.Count)"
+$gapMove = @{ arg = 'work-json'; last = @{ '1001' = [pscustomobject]@{ id = 1001; x = 0; y = 0; w = 960; h = 1080 } } }
+$gfMove = GapFillRun ([pscustomobject]@{ scene = 'work'; absent = @(1001) }) $gwRec @{ gap = $gapMove; placed = @([pscustomobject]@{ id = 1001; x = 10; y = 20; w = 300; h = 400 }) }
+Check 'gap-fill moves: the stub engine runs once' ($gfMove.calls.Count -eq 1) "calls: $($gfMove.calls.Count)"
+Check 'gap-fill moves: the rect the engine moved a window to becomes its last rect' ($gapMove.last['1001'].x -eq 10 -and $gapMove.last['1001'].y -eq 20 -and $gapMove.last['1001'].w -eq 300 -and $gapMove.last['1001'].h -eq 400) "last: $(ConvertTo-Json -InputObject $gapMove.last['1001'] -Compress)"
+Check 'gap-fill moves: the log line counts the windows away and the moves' (@($gfMove.logLines) -ccontains 'Gap-fill: 1 window(s) away. Moved 1.') "log: $(@($gfMove.logLines) -join ' | ')"
+$gapDry = @{ arg = 'work-json'; last = @{ '1001' = [pscustomobject]@{ id = 1001; x = 0; y = 0; w = 960; h = 1080 } } }
+$gfDry = GapFillRun ([pscustomobject]@{ scene = 'work'; absent = @(1001) }) $gwRec @{ gap = $gapDry; placed = @([pscustomobject]@{ id = 1001; x = 10; y = 20; w = 300; h = 400 }); noApply = $true }
+Check 'gap-fill dry run: the stub engine runs once, with -DryRun' ($gfDry.calls.Count -eq 1 -and $gfDry.calls[0].DryRun) "calls: $($gfDry.calls.Count)"
+Check 'gap-fill dry run: no log line is written' ($gfDry.logs -eq 0) "log lines: $($gfDry.logs)"
+Check 'gap-fill dry run: the tray''s last rects stay as they were' ($gapDry.last['1001'].x -eq 0 -and $gapDry.last['1001'].w -eq 960) "last: $(ConvertTo-Json -InputObject $gapDry.last['1001'] -Compress)"
+# The guard refusal: the real engine, under the suite, refuses a live -GapFill run, and the tray logs the refusal's reason. This is the one case
+# that runs the real tile.ps1. The suite flag is set here (a standalone run has none), the live switch is removed, and the profile is a temp one.
+$c4Saved = @{ TILE_TEST_SUITE = $env:TILE_TEST_SUITE; TILE_TEST_ALLOW_LIVE = $env:TILE_TEST_ALLOW_LIVE; USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA; TILE_HOME = $env:TILE_HOME }
+$c4Prof = Join-Path $runDir 'gapfill-refusal'; New-Item -ItemType Directory -Force (Join-Path $c4Prof 'AppData\Roaming') | Out-Null
+try {
+  $env:TILE_TEST_SUITE = '1'; $env:TILE_TEST_ALLOW_LIVE = $null; $env:USERPROFILE = $c4Prof; $env:APPDATA = Join-Path $c4Prof 'AppData\Roaming'; $env:TILE_HOME = Join-Path $c4Prof '.tile-windows'
+  $c4 = GapFillRun ([pscustomobject]@{ scene = 'work'; absent = @(1001) }) $gwRec @{ tile = (Join-Path $root 'tile.ps1') }
+} finally { foreach ($k in $c4Saved.Keys) { if ($null -eq $c4Saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $c4Saved[$k] } } }
+Check 'gap-fill guard: the real engine refuses a live -GapFill run under the suite, and the tray logs the refusal naming TILE_TEST_ALLOW_LIVE' (@($c4.logLines).Count -eq 1 -and @($c4.logLines)[0] -like 'Gap-fill failed:*TILE_TEST_ALLOW_LIVE*') "log: $(@($c4.logLines) -join ' | ')"
 
 # The real scene shape (config v4): role grids, then layouts keyed by setup, each with grids keyed by monitor id. A Free Layout monitor
 # carries free.areas; the other monitor in the setup carries none. GapSceneNoFree is the same scene with no free.areas anywhere.
 function GapSceneFree { ConvertFrom-Json '{"id":"work","name":"Work","trigger":{"type":"manual"},"grids":{"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1},"wide":{"c":3,"r":1}},"layouts":{"LEN3|AUO1":{"grids":{"AUO1":{"c":3,"r":1,"free":{"areas":[{"x":0,"y":0,"w":0.5,"h":1},{"x":0.5,"y":0,"w":0.5,"h":1}]}},"LEN3":{"c":1,"r":1}}}}}' }
 function GapSceneNoFree { ConvertFrom-Json '{"id":"plain","name":"Plain","trigger":{"type":"manual"},"grids":{"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1},"wide":{"c":3,"r":1}},"layouts":{"LEN3|AUO1":{"grids":{"AUO1":{"c":3,"r":1},"LEN3":{"c":1,"r":1}}}}}' }
-function Invoke-NewGapState($sc, $placed, [datetime]$at) { Invoke-IfDefined 'New-GapState' @($sc, $placed, $at) }
+function Invoke-NewGapState($sc, $placed, [datetime]$at, $plugged = $null, [string]$mode = '') { Invoke-IfDefined 'New-GapState' @($sc, $placed, $at, $plugged, $mode) }
 # The monitors whose grid carries at least one free area, sorted and joined. Empty when the state is missing.
 function GapFreeIds($gs) { if ($null -eq $gs) { return '' }; @($gs.grids.Keys | ? { $g = $gs.grids[$_]; $g -and $g.free -and @($g.free.areas).Count } | Sort-Object) -join ',' }
 $gsFree = Invoke-NewGapState (GapSceneFree) @([pscustomobject]@{ id = 1001; mon = 'AUO1' }) $gwNow
@@ -452,6 +549,39 @@ Check 'gap-watch: the Free Layout monitor AUO1 keeps its two free.areas from lay
 Check 'gap-watch: on that scene only AUO1 is a Free Layout monitor (LEN3 has no free.areas)' ((GapFreeIds $gsFree) -eq 'AUO1') "Free Layout monitors: [$(GapFreeIds $gsFree)]"
 $gsPlain = Invoke-NewGapState (GapSceneNoFree) @([pscustomobject]@{ id = 1001; mon = 'AUO1' }) $gwNow
 Check 'gap-watch: a scene with no free.areas yields no Free Layout monitor' ($null -ne $gsPlain -and (GapFreeIds $gsPlain) -eq '') "Free Layout monitors: [$(GapFreeIds $gsPlain)]"
+
+# New-GapState with a known setup key (the key of the plugged monitors, read through Get-TileKnownSetupKey) and with a grid mode. The layouts keys
+# are the product's key for these monitors, so the known-key branch is the one that runs. The own layout is listed first and last (order independence).
+$gwLen = [pscustomobject]@{ id = 'LEN3'; name = 'Panel A'; builtin = $true; x = 0; y = 1200; w = 1920; h = 1200; bw = 1920; bh = 1200 }
+$gwAuo = [pscustomobject]@{ id = 'AUO1'; name = 'Panel B'; builtin = $false; x = 1920; y = 0; w = 3440; h = 1440; bw = 3440; bh = 1440 }
+$gwPlug = @($gwLen, $gwAuo); $gwSetKey = Get-TileKnownSetupKey $gwPlug
+$gwOwnJson = '{"grids":{"AUO1":{"c":3,"r":1,"free":{"areas":[{"x":0,"y":0,"w":0.5,"h":1},{"x":0.5,"y":0,"w":0.5,"h":1}]}},"LEN3":{"c":1,"r":1}}}'
+$gwOtherJson = '{"grids":{"AUO1":{"c":2,"r":2}}}'
+# A scene in the real shape (role grids, then layouts keyed by setup), its layouts the entries given in the order given.
+function GapSceneKeyed($entries) {
+  $sc = ConvertFrom-Json '{"id":"work","name":"Work","trigger":{"type":"manual"},"grids":{"tall":{"c":1,"r":2},"laptop":{"c":1,"r":1},"wide":{"c":3,"r":1}}}'
+  $lay = [pscustomobject]@{}
+  foreach ($e in $entries) { $lay | Add-Member -NotePropertyName $e.k -NotePropertyValue (ConvertFrom-Json $e.j) }
+  $sc | Add-Member -NotePropertyName layouts -NotePropertyValue $lay
+  $sc
+}
+$gwAt = @([pscustomobject]@{ id = 1001; mon = 'AUO1' })
+foreach ($ownFirst in @($true, $false)) {
+  $ents = if ($ownFirst) { @(@{ k = $gwSetKey; j = $gwOwnJson }, @{ k = 'AUO1'; j = $gwOtherJson }) } else { @(@{ k = 'AUO1'; j = $gwOtherJson }, @{ k = $gwSetKey; j = $gwOwnJson }) }
+  $ord = if ($ownFirst) { 'own layout listed first' } else { 'own layout listed last' }
+  $gsB1 = Invoke-NewGapState (GapSceneKeyed $ents) $gwAt $gwNow $gwPlug
+  Check "gap-watch key: with the plugged setup's key, AUO1 takes that layout's grid (cell and free areas), not the other layout's ($ord)" ($null -ne $gsB1 -and $gsB1.grids.ContainsKey('AUO1') -and $gsB1.grids['AUO1'].c -eq 3 -and @($gsB1.grids['AUO1'].free.areas).Count -eq 2) "AUO1: $(if ($gsB1 -and $gsB1.grids.ContainsKey('AUO1')) { ConvertTo-Json -InputObject $gsB1.grids['AUO1'] -Depth 5 -Compress } else { 'not in grids' })"
+}
+$gsNoOwn = Invoke-NewGapState (GapSceneKeyed @(@{ k = 'AUO1'; j = $gwOtherJson })) $gwAt $gwNow $gwPlug
+Check 'gap-watch key: a known setup key with no layout of its own takes the scene''s role grids, not another layout''s' ($null -ne $gsNoOwn -and -not $gsNoOwn.grids.ContainsKey('AUO1') -and (@($gsNoOwn.grids.Keys | Sort-Object) -join ',') -eq 'laptop,tall,wide') "grids: $(if ($gsNoOwn) { @($gsNoOwn.grids.Keys | Sort-Object) -join ',' })"
+$scMode = GapSceneKeyed @(@{ k = $gwSetKey; j = $gwOwnJson })
+$scMode | Add-Member -NotePropertyName claudeGrid -NotePropertyValue (ConvertFrom-Json '{"dense":{"c":4,"r":1},"roomy":{"c":3,"r":1}}')
+$swapped = ConvertFrom-Json (Get-GridSceneJson $scMode $scMode.claudeGrid.dense $gwPlug)
+Check 'gap-watch mode: the grid swap puts the dense grid on AUO1, the wide monitor, in the setup''s own layout (precondition)' ($swapped.layouts.$gwSetKey.grids.AUO1.c -eq 4) "AUO1 in own layout: $(ConvertTo-Json -InputObject $swapped.layouts.$gwSetKey.grids.AUO1 -Compress)"
+$gsDense = Invoke-NewGapState $scMode $gwAt $gwNow $gwPlug 'dense'
+Check 'gap-watch mode: with the dense mode, New-GapState takes AUO1''s dense grid from the setup''s own layout' ($null -ne $gsDense -and $gsDense.grids.ContainsKey('AUO1') -and $gsDense.grids['AUO1'].c -eq 4 -and $gsDense.grids['AUO1'].r -eq 1) "AUO1: $(if ($gsDense -and $gsDense.grids.ContainsKey('AUO1')) { ConvertTo-Json -InputObject $gsDense.grids['AUO1'] -Compress } else { 'not in grids' })"
+$gsRoomy = Invoke-NewGapState $scMode $gwAt $gwNow $gwPlug ''
+Check 'gap-watch mode: with no mode, AUO1 keeps the own layout''s grid (control)' ($null -ne $gsRoomy -and $gsRoomy.grids.ContainsKey('AUO1') -and $gsRoomy.grids['AUO1'].c -eq 3) "AUO1 c: $(if ($gsRoomy -and $gsRoomy.grids.ContainsKey('AUO1')) { $gsRoomy.grids['AUO1'].c })"
 
 Remove-Item -Recurse -Force $runDir -ErrorAction SilentlyContinue
 

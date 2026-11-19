@@ -211,6 +211,9 @@ function Get-TileKnownSetupKey($monitors) {
   if (-not $m.Count -or @($m | Where-Object { -not $_.id }).Count) { return '' }
   Get-TileSetupKey $m
 }
+# The scene's own entry for a setup key (a property of scene.layouts, its layout in .Value), or $null: no key, no layouts, or no entry. The engine's layout
+# pick, the tray's grid swap and the tray's gap state all find it here.
+function Get-TileLayoutEntry($scene, [string]$key) { if ($key -and $scene.layouts) { $scene.layouts.PSObject.Properties[$key] } }
 # Adds what the config does not know yet (each unknown monitor, named by shape; the setup these monitors make, named Desk when it is the
 # first) and notes that they are plugged in now. Returns the setup key. A repeat call adds nothing; it only moves lastSeen and lastUsed.
 function Register-TileSetup($cfg, $monitors) {

@@ -107,10 +107,13 @@ Status: built in PR 50 (free areas), merged at commit 74f87cb.
 - A window moves only if it sits at its scene rect, or at the last rect the tray gave it (`-Last`), so neighbours shrink back on restore. A window the owner moved by hand stays put.
 - No new window is pulled in. Windows That Stay Put are untouched. The saved layout is never written.
 - Tests: the guard refusal; a hand-moved neighbour stays put; a restore shrinks neighbours from their last rect; no new window is pulled in.
+- Built in draft PR 54. `Get-GapMoves` (above the `-Lib` return) decides the moves from the pins phase's areas and item G:
+  - a gone window's area is the empty area its `-Last` rect holds; an empty area nothing gone holds, a locked pin's area and a hand-moved window's area are locked;
+  - a locked area never moves and never grows; the zones, held windows and fill pause, so nothing is placed into a gap.
 
 **L5b. Tray: close and minimize hook** (`tray.ps1`; no designer)
 
-Status: built in PR 43 (the gap-watch pull request), merged at commit ee47541. Until lane L5a lands, gap-fill only logs.
+Status: built in PR 43 (the gap-watch pull request), merged at commit ee47541. Lane L5a (draft PR 54) wires `Invoke-GapFill` to the engine's `-GapFill`.
 
 - `tray.ps1 -Lib` returns at its `if ($Lib) { return }` line, before the `TileInput` class. So the pure parts live in PowerShell above that line, where `-Lib` tests reach them:
   - `Test-GapEvent` (the filter);
