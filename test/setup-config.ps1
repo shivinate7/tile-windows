@@ -589,6 +589,43 @@ try {
     Check 'resolve zero height: the zero-height screen takes no grid' ((Cell $r.grids 'zeroh') -ceq 'none') "zeroh: $(Cell $r.grids 'zeroh')"
   }
 
+  # ---- Get-TileLayoutEntry: one case per branch (no key, no layouts, no entry for the key, the entry) ----
+  # Callers read the return as a property: its Name is the key and its Value is the layout (the engine reads $own.Value, the tray $own.Value.grids).
+  Case 'layout entry: with no setup key there is no entry, though the scene has layouts' {
+    $kA = [string](Get-TileSetupKey @($Laptop, $Ultra))
+    $sc = [pscustomobject]@{ id = 'entry-nokey' }
+    Set-Layout $sc $kA (New-Layout @{ laptop = (New-Grid 2 2) })
+    foreach ($k in @('', $null)) {
+      $got = Get-TileLayoutEntry $sc $k
+      Check "layout entry: key '$k' gives no entry" ($null -eq $got) "got: $(if ($got) { $got.Name })"
+    }
+  }
+  Case 'layout entry: a scene with no layouts object gives no entry for any key' {
+    $kA = [string](Get-TileSetupKey @($Laptop, $Ultra))
+    $sc = [pscustomobject]@{ id = 'entry-nolayouts'; grids = [pscustomobject]@{ laptop = (New-Grid 1 1) } }
+    $got = Get-TileLayoutEntry $sc $kA
+    Check 'layout entry: a scene with no layouts object gives no entry' ($null -eq $got) "got: $(if ($got) { $got.Name })"
+  }
+  Case 'layout entry: a key the scene has no entry for gives no entry, though other keys do' {
+    $kA = [string](Get-TileSetupKey @($Laptop, $Ultra)); $kB = [string](Get-TileSetupKey @($Laptop, $Port)); $kC = [string](Get-TileSetupKey @($Laptop, $Uhd))
+    $sc = [pscustomobject]@{ id = 'entry-miss' }
+    Set-Layout $sc $kA (New-Layout @{ laptop = (New-Grid 2 2) })
+    Set-Layout $sc $kB (New-Layout @{ laptop = (New-Grid 3 3) })
+    $got = Get-TileLayoutEntry $sc $kC
+    Check 'layout entry: a key with no entry in the scene gives no entry' ($null -eq $got) "got: $(if ($got) { $got.Name })"
+  }
+  Case 'layout entry: the key gives its own property, whose Value is that layout, whatever order the layouts were added in' {
+    $kA = [string](Get-TileSetupKey @($Laptop, $Ultra)); $kB = [string](Get-TileSetupKey @($Laptop, $Port))
+    foreach ($order in @(@($kA, $kB), @($kB, $kA))) {
+      $sc = [pscustomobject]@{ id = 'entry-hit' }
+      foreach ($k in $order) { $cell = if ($k -ceq $kA) { New-Grid 2 2 } else { New-Grid 5 5 }; Set-Layout $sc $k (New-Layout @{ laptop = $cell }) }
+      $got = Get-TileLayoutEntry $sc $kB
+      $label = (@($order | ForEach-Object { if ($_ -ceq $kA) { 'A' } else { 'B' } })) -join ','
+      Check "layout entry: key B gives the property named B (added $label)" ($null -ne $got -and $got.Name -ceq $kB) "name: $(if ($got) { $got.Name })"
+      Check "layout entry: its Value is B's layout, so its grids read B's cell (added $label)" ($null -ne $got -and (Cell $got.Value.grids 'laptop') -ceq '5,5') "cell: $(if ($got) { Cell $got.Value.grids 'laptop' })"
+    }
+  }
+
   # ---- Run folder sweep (a harness check, not a product claim) ----
   Case 'run folder: the sweep removes an old sibling run folder and keeps a new one' {
     $now = Get-Date
