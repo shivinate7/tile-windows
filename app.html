@@ -118,6 +118,26 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .menu button b{font-weight:600;font-size:12.5px}
 .menu button small{font-size:12px;color:var(--muted)}
 @media (forced-colors:active){.menu{border-color:CanvasText}}
+/* Split Cell (mockup split-cell.html): the split menu is .menu with two groups and a glyph for the half the window keeps; the board previews the focused item. */
+.menu.split{width:244px;gap:0}
+.menu .mh{margin:0;padding:6px 9px 4px;font:700 13px var(--f)}
+.menu .mg{margin:0;padding:6px 9px 2px;display:flex;justify-content:space-between;gap:8px;align-items:baseline;font:600 12px var(--f);color:var(--muted)}
+.menu .mg small{font:400 11.5px var(--f)}
+.menu button.mi{grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px}
+.menu button.mi:focus-visible{background:color-mix(in srgb,var(--select) 12%,transparent);outline:0;box-shadow:inset 0 0 0 2px var(--select)}
+.menu button.mi[aria-disabled="true"]{color:var(--muted);cursor:not-allowed}
+.menu button.mi[aria-disabled="true"]:hover{background:transparent}
+.menu button.mi[aria-disabled="true"] .gl{opacity:.45}
+.menu kbd{font:600 11px var(--f-mono);padding:0 4px;border:1px solid color-mix(in srgb,currentColor 35%,transparent);border-radius:3px;color:var(--muted)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 2px}
+.menu .mwhy{margin:0;padding:2px 9px 6px;font-size:12px;color:var(--muted)}
+.menu .mf{margin:0;padding:6px 9px 4px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);margin-top:4px}
+.gl{width:26px;height:18px;flex:none}
+.gl .k{fill:color-mix(in srgb,var(--cat) 55%,var(--panel));stroke:var(--cat);stroke-width:1.5}
+.gl .o{fill:none;stroke:var(--muted);stroke-width:1.2;stroke-dasharray:2 1.6}
+.sprev{position:absolute;z-index:6;pointer-events:none;box-sizing:border-box;border:2px solid var(--select);border-radius:3px;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--select) 18%,var(--screen)) 0 4px,var(--screen) 4px 8px)}
+.sdiv{position:absolute;z-index:7;pointer-events:none;box-sizing:border-box;border:0 dashed var(--select)}
+@media (forced-colors:active){.gl .k{fill:Highlight;stroke:CanvasText}.gl .o{stroke:CanvasText}.sprev,.sdiv{border-color:Highlight}}
 @media (forced-colors:active){.lay.own{border:1px solid CanvasText}.mini.follow b{border-color:CanvasText}.ked{forced-color-adjust:none;background:CanvasText;border-color:CanvasText}}
 
 .cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
@@ -390,13 +410,19 @@ dialog form{display:grid;gap:10px}
 @media (hover:none){.tile:hover .lk{visibility:hidden}.tile.sel .lk,.tile.lock .lk{visibility:visible}}
 /* The hit areas reach 24px (WCAG 2.5.8) while the drawn chip stays small. */
 .tile .lk::after,.tile .stk::after{content:"";position:absolute;inset:-3px}
+/* A split half under 40px wide (1024): the tag is the app's initial and the title, lock, grip and badge give way (split-cell notes S5). The initial is a 15px square that shrinks to the room the tile has (a half at 1024 is about 21px), never cut by the tag cap that leaves 20px for a lock (there is none here). A selected half keeps its Stay Put inside the tile when the tile is 24px wide or more (class spin), and drops it when narrower. */
+.tile.tiny .lk,.tile.tiny .stayput,.tile.tiny .rsz,.tile.tiny .stk,.tile.tiny span,.tile.tiny .pinmark{display:none}
+.tile.tiny{padding-left:4px;padding-right:0}
+.tile.tiny b,.tile.tiny:hover b,.tile.tiny:focus-within b,.tile.tiny.sel b,.tile.tiny.lock b{display:grid;place-items:center;width:15px;height:15px;padding:0;font-size:10px;max-width:100%}
+.tile.tiny.sel .stayput.ico{display:grid;left:auto;right:2px;bottom:3px;width:18px;height:18px}
+.tile.tiny.sel:not(.spin) .stayput.ico{display:none}
 .tile .lk:hover{background:color-mix(in srgb,var(--ink) 12%,transparent);color:var(--ink)}
 .tile.lock{cursor:default}
 .tile.lock .lk{background:var(--ink);color:var(--panel)}
 .tile .stk{position:absolute;left:8px;bottom:3px;display:inline-flex;align-items:center;gap:3px;min-height:18px;padding:1px 5px;border:0;border-radius:3px;background:var(--ink);color:var(--panel);font:600 11px var(--f);cursor:pointer;z-index:1}
 .tile .stk svg{width:10px;height:10px}
 /* Named badge: it names the window right behind. A narrow tile shows that app's initial in its category colour. */
-.tile .stk .ini{display:inline-grid;place-items:center;width:13px;height:13px;border-radius:2px;background:var(--cat);color:var(--panel);font:700 9.5px/1 var(--f)}
+.tile .stk .ini,.peek .ini{display:inline-grid;place-items:center;width:13px;height:13px;border-radius:2px;background:var(--cat);color:var(--panel);font:700 9.5px/1 var(--f)}
 .tile .stk.ring{outline:2px solid var(--select);outline-offset:1px}
 /* A narrow stacked tile (about 50x55) has a 20px grip at the bottom right. The badge gives up its icon and most of its padding: 16px wide (the 13px initial and 1.5px a side) from 3px in, it ends where a selected tile's Stay Put begins, 28px short of the right edge, and clear of the grip. Its cap keeps that 3px + 28px budget, so the hit areas never meet and a press on the badge reaches it. */
 .tile.stacked.narrow .stk{left:3px;padding:1px 1.5px;max-width:calc(100% - 31px)}
@@ -606,6 +632,7 @@ dialog form{display:grid;gap:10px}
     <details id="keys" class="keys"><summary>Keyboard</summary><ul>
       <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
       <li>Ctrl+Shift+arrows resize it from its top or left edge.</li>
+      <li>S or Shift+F10 opens Split Cell on the selected window. Shift+S or a double-click splits it side by side at once. J joins a split cell.</li>
       <li>Delete unpins it. K keeps it where it is (off the board).</li>
       <li>L locks or unlocks it. B brings the window behind it to the front.</li>
       <li>A locked window moves only after a warning.</li>
@@ -782,10 +809,17 @@ function gridOf(m){if(LIVE){const k=mk(m);return k&&scene()?(scene().grids||{})[
   if(!offGrids[m.name])offGrids[m.name]=m.role==="wide"?{c:5,r:2}:m.h>m.w?{c:1,r:2}:{c:1,r:1};return offGrids[m.name]}
 // Round as tile.ps1's [int] does: to the nearest whole number, halves to even.
 function bround(x){const f=Math.floor(x),d=x-f;return d>0.5||(d===0.5&&f%2!==0)?f+1:f}
-function cellRect(m,g,c0,r0,cs,rs){const cw=bround(m.w/g.c),ch=bround(m.h/g.r);return{x:m.x+c0*cw,y:m.y+r0*ch,w:cs*cw,h:rs*ch}}
-function bbox(slots,g){const cs=slots.map(s=>s%g.c),rs=slots.map(s=>Math.floor(s/g.c));
+// A grid's mult (split cells): each base cell is divided mx by my. It reads as tile.ps1's Get-CellPair does: two whole numbers, 1 or more each, else [1,1].
+// Slots count cells of the finished grid: GC(g) fine columns, GR(g) fine rows. With no mult they are g.c and g.r.
+function MXY(g){const a=g&&g.mult;if(!Array.isArray(a)||a.length!==2)return[1,1];const x=Math.trunc(+a[0]),y=Math.trunc(+a[1]);return x>=1&&y>=1?[x,y]:[1,1]}
+const GC=g=>g.c*MXY(g)[0],GR=g=>g.r*MXY(g)[1];
+// The left (top) edge of fine cell i along a side of len px: whole base cells, then whole sub cells, as EdgeX and EdgeY in tile.ps1's Pass do. The last sub cell takes the remainder.
+function fineEdge(len,n,mu,i){const base=bround(len/n);return Math.floor(i/mu)*base+(i%mu)*bround(base/mu)}
+function cellRect(m,g,c0,r0,cs,rs){const[mx,my]=MXY(g),x0=fineEdge(m.w,g.c,mx,c0),y0=fineEdge(m.h,g.r,my,r0);
+  return{x:m.x+x0,y:m.y+y0,w:fineEdge(m.w,g.c,mx,c0+cs)-x0,h:fineEdge(m.h,g.r,my,r0+rs)-y0}}
+function bbox(slots,g){const cs=slots.map(s=>s%GC(g)),rs=slots.map(s=>Math.floor(s/GC(g)));
   const c0=Math.min(...cs),c1=Math.max(...cs),r0=Math.min(...rs),r1=Math.max(...rs),cells=[];
-  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)cells.push(r*g.c+c);return{c:c0,r:r0,cs:c1-c0+1,rs:r1-r0+1,cells}}
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)cells.push(r*GC(g)+c);return{c:c0,r:r0,cs:c1-c0+1,rs:r1-r0+1,cells}}
 function monAt(x,y){return snap.monitors.find(m=>x>=m.x&&x<m.x+m.w&&y>=m.y&&y<m.y+m.h)}
 const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
 
@@ -1116,6 +1150,8 @@ function render(){
     e.hidden=false;const pr=px(x.r);Object.assign(e.style,pr);
     // Stay Put reads in words from 84px across; a narrower tile shows the icon alone, named by its tooltip and label.
     const ico=parseFloat(pr.width)<84;e.classList.toggle("narrow",ico);
+    // Under 40px (a half at 1024) the tag is the app's first letter; its name stays in the label and the inspector (split-cell notes S5).
+    const tg0=LIVE?gridOf(monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2)||snap.monitors[0]):null,tiny=!!tg0&&MXY(tg0).some(v=>v>1)&&parseFloat(pr.width)<40;e.classList.toggle("tiny",tiny);e.classList.toggle("spin",tiny&&parseFloat(pr.width)>=24);const tg=e.firstChild,tn=tiny?appName(w.app).charAt(0):appName(w.app);if(tg.textContent!==tn)tg.textContent=tn;
     // The badge names the window right behind ("Chrome", "Chrome +1"). A narrow tile has no room for a name, so it shows that app's initial; the label and tooltip keep the true count.
     if(sb&&back.length){const bn=appName(back[0].app);
       sb.innerHTML=ico?`<i class="ini cat-${catOf(back[0].app)}">${esc(bn.charAt(0))}</i>`:`${parseFloat(pr.width)>=140?BEHIND:""}<span>${esc(bn)}</span>${back.length>1?`<span class="n"><i class="sp"> </i>+${back.length-1}</span>`:""}`;
@@ -1123,7 +1159,7 @@ function render(){
     // The layered look: the back window is a layer under the front tile, whose top strip names the back app.
     const PK=ico?13:15,pk=back.length>0&&parseFloat(pr.height)>=PK+30;e.classList.toggle("peeked",pk);
     if(pk){const pe=peekOf(w.id);pe.className=`peek cat-${catOf(back[0].app)}${ico?" narrow":""}${flashId===w.id?" flash":""}`;
-      pe.innerHTML=`${ico?"":BEHIND}<span class="pn">${esc(appName(back[0].app))}</span>${back.length>1?`<span class="pc"><i class="sp"> </i>+${back.length-1}</span>`:""}`;pe.hidden=false;pe.dataset.id=w.id;
+      pe.innerHTML=tiny?`<span class="ini">${esc(appName(back[0].app).charAt(0))}</span>`:`${ico?"":BEHIND}<span class="pn">${esc(appName(back[0].app))}</span>${back.length>1?`<span class="pc"><i class="sp"> </i>+${back.length-1}</span>`:""}`;pe.hidden=false;pe.dataset.id=w.id;
       Object.assign(pe.style,{left:pr.left,top:pr.top,width:pr.width,height:PK+6+"px"});
       Object.assign(e.style,{top:parseFloat(pr.top)+PK+"px",height:parseFloat(pr.height)-PK+"px"})}
     // A word-form Stay Put sits 44px above the tile's inner bottom, so two title lines (to 53px) need a tile 101px tall; a shorter one keeps one line.
@@ -1140,14 +1176,14 @@ function render(){
   }
   for(const m of snap.monitors){
     const g=gridOf(m),e=m.el;e.classList.toggle("cur",m===curMon);
-    const want=g?`${g.c}x${g.r}`:"";
+    const want=g?`${GC(g)}x${GR(g)}`:"";
     if(e.dataset.g!==want){e.dataset.g=want;e.innerHTML="";
-      if(g){e.style.gridTemplateColumns=`repeat(${g.c},minmax(0,1fr))`;e.style.gridTemplateRows=`repeat(${g.r},minmax(0,1fr))`;
-        for(let i=0;i<g.c*g.r;i++){const c=document.createElement("div");c.className="cell";c.innerHTML=`<i>${i+1}</i>`;e.appendChild(c)}}
+      if(g){e.style.gridTemplateColumns=`repeat(${GC(g)},minmax(0,1fr))`;e.style.gridTemplateRows=`repeat(${GR(g)},minmax(0,1fr))`;
+        for(let i=0;i<GC(g)*GR(g);i++){const c=document.createElement("div");c.className="cell";c.innerHTML=`<i>${i+1}</i>`;e.appendChild(c)}}
       const em=document.createElement("div");em.className="empty";e.appendChild(em)}
     e.querySelector(".empty").textContent=used.has(m)?"":g?"Empty. Drag a window here.":"Empty. Not in this scene.";
     const fills=s&&s.fill&&s.fill.mon===mk(m);
-    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${g.c}×${g.r}`:""}${fills?s.fill.off?" · fill off":" · fills":""}</span>`;
+    m.lab.innerHTML=`<button type="button" data-mon="${snap.monitors.indexOf(m)}" aria-pressed="${m===curMon}">${esc(monName(m))}</button><span class="num">${g?`${GC(g)}×${GR(g)}`:""}${fills?s.fill.off?" · fill off":" · fills":""}</span>`;
     m.lab.title=`${monName(m)}: ${m.w}×${m.h}`;
   }
   // Header
@@ -1164,7 +1200,7 @@ function render(){
   const cb=$("clearbd"),unpinned=prevs[selId]?prevs[selId].placed.filter(p=>p.pin<0&&!p.behind).length:0;
   cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
-  $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind.":
+  $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   overText(V);renderSetbar();renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);renderPicks();
 }
@@ -1178,7 +1214,7 @@ function renderZones(){
   for(const z of [...$("stage").querySelectorAll(".zone")])z.remove();
   const s=LIVE?scene():null;if(!s)return;
   (s.zones||[]).forEach((z,i)=>{const m=snap.monitors.find(q=>mk(q)===z.mon),g=m&&s.grids[z.mon];if(!g)return;
-    const sl=z.slots.filter(v=>v<g.c*g.r);if(!sl.length)return;const b=bbox(sl,g),e=document.createElement("div");
+    const sl=z.slots.filter(v=>v<GC(g)*GR(g));if(!sl.length)return;const b=bbox(sl,g),e=document.createElement("div");
     e.className=`zone cat-${z.app?catOf(z.app):z.cat}${selZone===i?" sel":""}`;Object.assign(e.style,px(cellRect(m,g,b.c,b.r,b.cs,b.rs)));
     const n=prev()?prev().placed.filter(p=>p.zone===i).length:0;
     e.innerHTML=`<button type="button" data-zone="${i}" aria-pressed="${selZone===i}" title="Edit this zone" aria-label="${esc(zoneName(z))} zone, ${n} of ${sl.length} cells filled. Edit it in the inspector.">${esc(zoneName(z))} zone · ${n} of ${sl.length} filled</button><button type="button" class="zx" data-zdel="${i}" title="Remove this zone" aria-label="Remove the ${esc(zoneName(z))} zone">✕</button>`;$("stage").appendChild(e)})}
@@ -1245,7 +1281,13 @@ function where(x){if(inBay(x))return`no cell (${bayWhy(x).toLowerCase()}), stays
   const p=x.p,m=p?snap.monitors.find(m=>mk(m)===p.mon):monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2);
   if(x.kind==="behind")return `${m?monName(m):"?"} · behind the window in cell${p.slots.length>1?"s":""} ${p.slots.join("+")}`;
   const z=p&&p.zone>=0&&LIVE?(scene().zones||[])[p.zone]:null;
-  return `${m?monName(m):"?"}${p?` · cell${p.slots.length>1?"s":""} ${p.slots.join("+")}`:""}${z?` · ${zoneName(z)} zone`:""}`}
+  return `${m?monName(m):"?"}${p?` · ${cellWords(p)}`:""}${z?` · ${zoneName(z)} zone`:""}`}
+// "cell 3, the left half of cell 2" on a split grid for a window in one fine cell; plain "cells 1+2" otherwise (split-cell notes S7).
+function cellWords(p){const g=LIVE&&scene().grids[p.mon],n=`cell${p.slots.length>1?"s":""} ${p.slots.join("+")}`;
+  if(!g||p.slots.length!==1)return n;const[mx,my]=MXY(g);if(mx===1&&my===1)return n;
+  const v=p.slots[0]-1,col=v%GC(g),row=Math.floor(v/GC(g)),cell=Math.floor(row/my)*g.c+Math.floor(col/mx)+1;
+  const part=mx===2&&my===1?(col%2?"the right half":"the left half"):mx===1&&my===2?(row%2?"the bottom half":"the top half"):"a part";
+  return `${n}, ${part} of cell ${cell}`}
 function overText(V){const P=prev(),o=$("over");if(!LIVE||!P){o.textContent="";o.classList.remove("warn");return}
   const parts=[];
   if(P.missing.length)parts.push(`<b>Not open:</b> ${esc([...new Set(P.missing.map(m=>appName(m.app)+(m.why!=="no open window"?` (${m.why})`:"")))].join(", "))}.`);
@@ -1297,6 +1339,10 @@ function renderRail(){
   if(st.log)$("recent").innerHTML=st.log.slice(0,5).map(l=>`<li><span>${esc(l.t)}</span>${esc(l.x)}</li>`).join("");
 }
 const stepper=(lbl,val,attrs,min,max,off=false)=>`<span class="step"><button type="button" ${attrs} data-d="-1" aria-label="Fewer ${lbl}" ${val<=min||off?"disabled":""}>−</button><span class="num" aria-label="${lbl}">${val}</span><button type="button" ${attrs} data-d="1" aria-label="More ${lbl}" ${val>=max||off?"disabled":""}>+</button></span>`;
+// What a split monitor's steppers count (split-cell mockup, S4): the finished grid, with a note on what a filled window takes and how to go back.
+const splitNote=g=>{const[mx,my]=MXY(g);if(mx===1&&my===1)return"";
+  const how=mx>1&&my>1?`${mx} columns and ${my} rows`:mx>1?`${mx} columns`:`${my} rows`;
+  return `<p class="note" id="splitnote">Split ${mx>1&&my>1?"both ways":mx>1?"side by side":"stacked"}: each filled window takes ${how}, so it keeps its size. Join every split to go back to ${g.c}×${g.r}.</p>`};
 // The monitor's own name (item 2): a live page that knows the monitor by id. A rename is POST /rename.
 const monNameField=m=>{const c=idm()?(cfg.monitors||{})[m.id]:null;
   return c?`<div class="mname"><div class="field stack"><label for="monName">Name</label><input type="text" id="monName" value="${esc(c.name)}" maxlength="24" autocomplete="off" data-rk="monitor" data-rid="${esc(m.id)}"></div></div>`:""};
@@ -1337,7 +1383,8 @@ function renderInsp(V){
   const mons=LIVE?snap.monitors.filter(x=>mk(x)):snap.monitors;
   let h=`<div class="seg" role="group" aria-label="Monitor">${mons.map(x=>`<button type="button" data-mon="${snap.monitors.indexOf(x)}" aria-pressed="${x===m}">${esc(monName(x))}</button>`).join("")}</div>
     ${monNameField(m)}<p class="note">${monSize(idm()&&(cfg.monitors||{})[m.id]||{bw:m.bw||m.w,bh:m.bh||m.h})} pixels.${idm()&&(cfg.monitors||{})[m.id]?`${(cfg.monitors[m.id].builtin||m.builtin)?" Built-in screen.":""} In ${plural(mgSetupCount(m.id),"setup")}.`:""}</p>`;
-  if(g){h+=`<div class="field"><span>Columns</span>${stepper("columns",g.c,'data-g="c"',1,8)}</div><div class="field"><span>Rows</span>${stepper("rows",g.r,'data-g="r"',1,4)}</div>`;
+  if(g){const[mx,my]=MXY(g);
+    h+=`<div class="field"><span>Columns</span>${stepper("columns",GC(g),'data-g="c"',mx,baseMax(g,"c")*mx)}</div><div class="field"><span>Rows</span>${stepper("rows",GR(g),'data-g="r"',my,baseMax(g,"r")*my)}</div>${splitNote(g)}`;
     if(s&&s.fill&&s.fill.mon===mk(m)){const off=!!s.fill.off;
       h+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="fillSw" ${off?"":"checked"}><span class="xt"><b>Fill Empty Cells</b><small>${off?"Windows stay where they are. A new window waits in Windows That Stay Put.":"Windows that are not pinned fill the free cells."}</small></span></label>
       <div class="field stack"><label for="sort">Fill order</label><select id="sort" ${off?'disabled title="Fill is off, so the fill order does nothing. Turn on Fill Empty Cells to use it." aria-describedby="fillwhy"':""}>${SORTS.map(([v,l])=>`<option value="${v}"${v===(s.fill.sort||"app")?" selected":""}>${l}</option>`).join("")}</select><p class="note" id="fillwhy">${off?"Fill is off, so the fill order does nothing.":`Fills with ${esc((s.fill.apps||[]).map(appName).join(", ")||"nothing")}.`}</p></div>`}
@@ -1355,12 +1402,14 @@ function renderInsp(V){
       <div class="t">${esc(w.title)}</div>
       <div class="m">${inBay(x)?`No cell: ${esc(bayWhy(x).toLowerCase())}. It stays where it is. Pick a cell below to place it.`:!LIVE?esc(where(x)):pin?"Pinned · "+esc(where(x)):x.kind==="fill"?`Fills ${esc(where(x))}`:esc(where(x)[0].toUpperCase()+where(x).slice(1))}.</div>`;
     if(onBoard)wh+=`<label class="switch lockrow"><input type="checkbox" role="switch" id="lockSw" ${lockd?"checked":""}><span class="xt"><b>Lock</b><small>${lockd?"It moves only after a warning.":"It never moves."} Swaps, zones and fill go around it.</small></span></label>`;
+    if(onBoard&&cellOfWin(w.id)){const j=joinInfo(w.id),why=lockd?"Locked. Unlock it first.":!j.split?"This cell is not split.":"";
+      wh+=`<div class="acts"><button type="button" class="btn" id="splitbtn" aria-haspopup="menu" aria-expanded="${!!smenu&&smenu.id===w.id}" ${lockd?'disabled title="Locked. Unlock it first."':""}>Split Cell</button><button type="button" class="btn" id="joinbtn" ${why?`disabled title="${why}"`:""}>Join Halves</button></div>${why?`<p class="why"><span>${esc(why)}</span></p>`:""}`}
     if(stk.length)wh+=`<div class="bstack"><h3 class="grp">Behind This Window <span class="ct2">${stk.length}</span></h3><ul>${stk.map(e=>{const bw=e.id&&winById(e.id);
       return `<li class="bw cat-${catOf(e.b.app)}"><div class="bwt"><i class="sw"></i><b>${esc(appName(e.b.app))}</b><span>${esc(bw?bw.title:(e.b.match||"Not open"))}</span></div><div class="row2"><button type="button" class="btn" data-bf="${e.k}" ${bw?"":"disabled"} title="${esc(appName(e.b.app))} comes to the front. ${esc(appName(w.app))} goes behind it.">Bring to Front</button><button type="button" class="btn" data-bo="${e.k}" title="${esc(appName(e.b.app))} leaves this cell and goes to Windows That Stay Put.">Take Out</button></div></li>`}).join("")}</ul><p class="note">Take Out moves it to Windows That Stay Put.</p></div>`;
-    if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,s.grids[pin.mon].c,lockd)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,s.grids[pin.mon].r,lockd)}</div>
+    if(pin)wh+=`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,GC(s.grids[pin.mon]),lockd)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,GR(s.grids[pin.mon]),lockd)}</div>
       <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" name="match" autocomplete="off" ${lockd?'disabled title="Locked. Unlock it first."':""} placeholder="Any ${esc(appName(w.app))} window…" spellcheck="false"></div>`;
     const mm=LIVE?snap.monitors.filter(q=>mk(q)&&s.grids[mk(q)]):snap.monitors;
-    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto" ${lockd?"disabled":""}><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(gg.c*gg.r).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
+    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto" ${lockd?"disabled":""}><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${[...Array(GC(gg)*GR(gg)).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
     if(pin)wh+=`<button type="button" class="btn" id="unpin" ${lockd?'disabled title="Locked. Unlock it first."':""}>Unpin and Let It Fill</button>`;
     if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay" ${lockd?'disabled title="Locked. Unlock it first."':""}>Keep Where It Is</button>`;
     $("win").innerHTML=wh+"</div>";
@@ -1385,7 +1434,7 @@ $("toastMore").onclick=()=>{$("results").hidden=false;$("results").scrollIntoVie
 function holding(x,P){if(!P)return 0;const h=[];
   const shut=new Set(P.missing.map(m=>m.pin).filter(i=>!P.placed.some(p=>p.pin===i&&!p.behind)));
   for(const p of P.placed){if(p.pin>=0||p.behind)continue;const g=x.grids[p.mon],w=winById(p.id);if(!g||!w)continue;
-    const sl=p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r);if(!sl.length)continue;const b=bbox(sl,g);
+    const sl=p.slots.map(v=>v-1).filter(v=>v>=0&&v<GC(g)*GR(g));if(!sl.length)continue;const b=bbox(sl,g);
     if(lockedHit(x,p.mon,b.cells,null,shut))continue;
     h.push({id:w.id,app:w.app,title:w.title,mon:p.mon,slots:b.cells})}
   x.fill=x.fill||{};if(h.length)x.fill.held=h;else delete x.fill.held;
@@ -1488,25 +1537,25 @@ const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
 // force: the owner confirmed moving a locked tile (askMove); every other caller still refuses it.
 function pinWin(id,mon,slot,cs=1,rs=1,force=false){
   const w=winById(id);
-  if(!LIVE){const i=snap.windows.indexOf(w),g=gridOf(mon);cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
-    const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),t=cellRect(mon,g,c0,r0,cs,rs);
-    if(same(t,offRects[i]))return render();hist.push({k:"rects",r:offRects.map(rect)});offRects[i]=t;selWin=id;render();status(`Moved ${w.title} to ${monName(mon)} cell ${r0*g.c+c0+1}.`);return}
-  const g=scene().grids[mk(mon)];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
-  const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),pp=pinOf(id);
+  if(!LIVE){const i=snap.windows.indexOf(w),g=gridOf(mon);cs=Math.min(cs,GC(g));rs=Math.min(rs,GR(g));
+    const c0=Math.min(slot%GC(g),GC(g)-cs),r0=Math.min(Math.floor(slot/GC(g)),GR(g)-rs),t=cellRect(mon,g,c0,r0,cs,rs);
+    if(same(t,offRects[i]))return render();hist.push({k:"rects",r:offRects.map(rect)});offRects[i]=t;selWin=id;render();status(`Moved ${w.title} to ${monName(mon)} cell ${r0*GC(g)+c0+1}.`);return}
+  const g=scene().grids[mk(mon)];cs=Math.min(cs,GC(g));rs=Math.min(rs,GR(g));
+  const c0=Math.min(slot%GC(g),GC(g)-cs),r0=Math.min(Math.floor(slot/GC(g)),GR(g)-rs),pp=pinOf(id);
   if(pp&&pp.pin.lock&&!force){status(`${w.title} is locked. Unlock it first.`);render();return}
   if(lockedHit(scene(),mk(mon),cellsOf(c0,r0,cs,rs,g),pp&&pp.pin)){status("A locked tile is in the way. Nothing changed.");render();return}
   optim={id,r:cellRect(mon,g,c0,r0,cs,rs)};selWin=id;let sl=[];
-  edit(x=>{sl=pinEdit(x,id,mon,slot,cs,rs)},`Pinned ${w.title} to ${monName(mon)} ${cs*rs>1?"cells":"cell"} ${(r0*g.c+c0)+1}${cs*rs>1?"+":""}.`);
+  edit(x=>{sl=pinEdit(x,id,mon,slot,cs,rs)},`Pinned ${w.title} to ${monName(mon)} ${cs*rs>1?"cells":"cell"} ${(r0*GC(g)+c0)+1}${cs*rs>1?"+":""}.`);
 }
 // Pin a window in scene x: it leaves the bay, and any pin on its new cells (or that held it) goes.
 // The pin that holds a window now, as an object in scene x, so later edits in the same change do not shift it.
 function pinNow(x,id){const P=prev(),cur=P&&P.placed.find(p=>p.id===id);return cur&&cur.pin>=0&&!cur.behind?x.pins[cur.pin]:null}
 function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id),opt={}){
-  const w=winById(id),g=x.grids[mk(mon)];cs=Math.min(cs,g.c);rs=Math.min(rs,g.r);
-  const c0=Math.min(slot%g.c,g.c-cs),r0=Math.min(Math.floor(slot/g.c),g.r-rs),slots=[];
-  for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*g.c+c);
+  const w=winById(id),g=x.grids[mk(mon)];cs=Math.min(cs,GC(g));rs=Math.min(rs,GR(g));
+  const c0=Math.min(slot%GC(g),GC(g)-cs),r0=Math.min(Math.floor(slot/GC(g)),GR(g)-rs),slots=[];
+  for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*GC(g)+c);
   const match=grab?grab.match||"":w.min?w.title:matchFor(w),cells=new Set(slots);
-  const covers=q=>{const qs=q.slots.filter(v=>v<g.c*g.r);return q.mon===mk(mon)&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
+  const covers=q=>{const qs=q.slots.filter(v=>v<GC(g)*GR(g));return q.mon===mk(mon)&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
   x.pins=x.pins.filter(q=>q!==grab&&!(q.app===w.app&&(q.match||"")===match)&&!covers(q));
   // The new pin goes first in the list (callers read it as x.pins[0]). It keeps its own stack and lock.
   const np={app:w.app,match,mon:mk(mon),slots},behind=opt.behind||(grab&&grab.behind);
@@ -1528,21 +1577,21 @@ function swapInto(aId,bId,mon,slot,fromBay){
   const P=prev(),pa=P.placed.find(p=>p.id===aId),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),gA=pinNow(s,aId),gB=pinNow(s,bId),
     g=s.grids[mk(mon)],bb=pbox(pb,g),ga=pa&&s.grids[pa.mon],ba=pa&&pbox(pa,ga);
   curMon=mon;selWin=aId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)};
-  return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>mk(q)===pa.mon),ba.r*ga.c+ba.c,ba.cs,ba.rs,gB);
-    pinEdit(x,aId,mon,bb.r*g.c+bb.c,bb.cs,bb.rs,gA,fromBay&&gB?{behind:gB.behind}:{})},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${pairNames(A,B).join(" and ")}.`)}
+  return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>mk(q)===pa.mon),ba.r*GC(ga)+ba.c,ba.cs,ba.rs,gB);
+    pinEdit(x,aId,mon,bb.r*GC(g)+bb.c,bb.cs,bb.rs,gA,fromBay&&gB?{behind:gB.behind}:{})},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${pairNames(A,B).join(" and ")}.`)}
 // The cells of a placed window's block (a span is its whole block), on its monitor's grid g.
-const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<g.c*g.r),g);
-const cellsOf=(c0,r0,cs,rs,g)=>{const a=[];for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)a.push(r*g.c+c);return a};
+const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<GC(g)*GR(g)),g);
+const cellsOf=(c0,r0,cs,rs,g)=>{const a=[];for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)a.push(r*GC(g)+c);return a};
 const lockOfPlaced=p=>!!(LIVE&&p&&p.pin>=0&&!p.behind&&(scene().pins[p.pin]||{}).lock);
 const isLockedId=id=>{const pp=LIVE&&pinOf(id);return !!(pp&&pp.pin&&pp.pin.lock)};
 // Is a locked pin (other than `except`) on any of these cells of the role's grid? A pin whose index is in `shut` counts too, locked or not.
 function lockedHit(s,role,cells,except,shut){const g=s.grids[role];
-  return s.pins.some((q,i)=>{if(!(q.lock||shut&&shut.has(i))||q===except||q.mon!==role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>cells.includes(c))})}
+  return s.pins.some((q,i)=>{if(!(q.lock||shut&&shut.has(i))||q===except||q.mon!==role)return false;const qs=q.slots.filter(v=>v<GC(g)*GR(g));return qs.length>0&&bbox(qs,g).cells.some(c=>cells.includes(c))})}
 // The window in front on a drop target (the whole block of a span): a swap or a Put Behind, never a Place here over it.
 // A one-cell window's target is one cell. A spanned window's target is its block: the window on the block's first cell, else the first window it covers.
 function occupant(d,t){const P=LIVE&&prev();if(!P||!t)return null;const pa=P.placed.find(p=>p.id===d.id),one=d.cs===1&&d.rs===1;
   if(!d.fromBay&&!(pa&&(!one||pa.slots.length===1)))return null;
-  const blk=cellsOf(t.slot%t.g.c,Math.floor(t.slot/t.g.c),t.cs,t.rs,t.g);
+  const blk=cellsOf(t.slot%GC(t.g),Math.floor(t.slot/GC(t.g)),t.cs,t.rs,t.g);
   const hit=P.placed.filter(p=>!p.behind&&p.id!==d.id&&p.mon===mk(t.m)&&pbox(p,t.g).cells.some(c=>blk.includes(c)));
   return hit.find(p=>pbox(p,t.g).cells.includes(t.slot))||hit.sort((a,b)=>Math.min(...a.slots)-Math.min(...b.slots))[0]||null}
 // The Swap circle on a taken block: half the block's short side, rounded down, from 28 to 64 px.
@@ -1572,7 +1621,7 @@ function putBehind(aId,bId){
   // The new stack's cues (the strip and the badge) wear a blue ring for about 1.5 seconds.
   flashId=bId;clearTimeout(flashT);flashT=setTimeout(()=>{flashId=null;for(const q of stage.querySelectorAll(".peek.flash,.stk.ring"))q.classList.remove("flash","ring")},1500);
   const ok=edit(x=>{
-    let fb=pinNow(x,bId);if(!fb){pinEdit(x,bId,mon,bb.r*g.c+bb.c,bb.cs,bb.rs,null);fb=x.pins[0]}
+    let fb=pinNow(x,bId);if(!fb){pinEdit(x,bId,mon,bb.r*GC(g)+bb.c,bb.cs,bb.rs,null);fb=x.pins[0]}
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
@@ -1609,12 +1658,12 @@ function toggleLock(id){const w=winById(id),pp=pinOf(id);selWin=id;
   if(pp){const on=!pp.pin.lock;edit(x=>{const q=x.pins[pp.p.pin];if(on)q.lock=true;else delete q.lock},on?`Locked ${w.title}. It moves only after a warning.`:`Unlocked ${w.title}. It can move again.`);return}
   const P=prev(),p=P&&P.placed.find(q=>q.id===id&&!q.behind);if(!p){status(`${w.title} has no cell to lock. Place it first.`);return}
   const mon=snap.monitors.find(q=>mk(q)===p.mon),g=scene().grids[p.mon],b=pbox(p,g);
-  edit(x=>{pinEdit(x,id,mon,b.r*g.c+b.c,b.cs,b.rs,null);x.pins[0].lock=true},`Locked ${w.title}. It moves only after a warning. It stays in ${monName(mon)} cell${b.cs*b.rs>1?"s":""} ${p.slots.join("+")}.`)}
+  edit(x=>{pinEdit(x,id,mon,b.r*GC(g)+b.c,b.cs,b.rs,null);x.pins[0].lock=true},`Locked ${w.title}. It moves only after a warning. It stays in ${monName(mon)} cell${b.cs*b.rs>1?"s":""} ${p.slots.join("+")}.`)}
 /* ---------- Resize by a handle, the corner grip, or the keys ---------- */
 // What a span over `cells` covers, apart from window selfId and its pin: each covered pin with its windows (front first, then those behind it),
 // and each window the fill or a zone placed there. `list` is every window that goes to Windows That Stay Put (decision stack-and-lock).
 function coverOf(role,g,cells,selfId,self){const s=scene(),P=prev(),covered=[];
-  s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<g.c*g.r);
+  s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<GC(g)*GR(g));
     if(!qs.length||!bbox(qs,g).cells.some(c=>cells.has(c)))return;
     const all=P?P.placed.filter(p=>p.pin===i):[];covered.push({q,i,wins:[...all.filter(p=>!p.behind),...all.filter(p=>p.behind)].map(p=>p.id)})});
   covered.sort((a,b)=>Math.min(...a.q.slots)-Math.min(...b.q.slots));
@@ -1641,14 +1690,14 @@ const nameList=a=>a.length<3?a.join(" and "):a.length===3?`${a[0]}, ${a[1]} and 
 function optimCover(ids,why=COVERED){const P=prev();if(!P)return;const set=new Set(ids);
   P.placed=P.placed.filter(p=>!set.has(p.id));P.left=[...P.left.filter(l=>!set.has(l.id)),...ids.map(id=>{const w=winById(id);return{id,app:w.app,title:w.title,why}})]}
 // After a resize or a Merge sent windows to the list: their chips wear a blue ring for about 1.5 seconds, and a Drop Note under the new block says where they went.
-function coverNote(r,ids,entry,actor,closed=[]){bayFlash=new Set(ids);clearTimeout(bayFlashT);
+function coverNote(r,ids,entry,actor,closed=[],lead=""){bayFlash=new Set(ids);clearTimeout(bayFlashT);
   bayFlashT=setTimeout(()=>{bayFlash.clear();for(const c of document.querySelectorAll("#bgrps .chip.ring"))c.classList.remove("ring")},1500);
-  dropNote(r,coverSay(ids,closed,actor,n=>`<b>${esc(n)}</b>`).join(". "),entry)}
+  dropNote(r,(lead?lead+" ":"")+coverSay(ids,closed,actor,n=>`<b>${esc(n)}</b>`).join(". "),entry)}
 // The span the pointer is over, in whole cells, stopped by a locked tile. Every window it covers goes to Windows That Stay Put, not to a free cell.
 // dir: the edges that move, as in HDIR. With dir.l or dir.t the left or top edge moves, so the right or bottom edge stays put when a lock cuts the span short.
 function planResize(id,mon,c0,r0,cs,rs,dir=HDIR.br){
   const s=scene(),role=mk(mon),g=s.grids[role],self=pinNow(s,id),info=[],fromL=!!dir.l,fromT=!!dir.t,edge=Object.keys(dir).length===1;
-  s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<g.c*g.r);if(qs.length){const b=bbox(qs,g);info.push({q,i,b,cells:new Set(b.cells)})}});
+  s.pins.forEach((q,i)=>{if(q===self||q.mon!==role)return;const qs=q.slots.filter(v=>v<GC(g)*GR(g));if(qs.length){const b=bbox(qs,g);info.push({q,i,b,cells:new Set(b.cells)})}});
   const box=(a,b)=>cellsOf(fromL?c0+cs-a:c0,fromT?r0+rs-b:r0,a,b,g);
   const hitLock=(a,b)=>{const cc=box(a,b);return info.some(o=>o.q.lock&&cc.some(c=>o.cells.has(c)))};
   let stopped=false;
@@ -1668,7 +1717,7 @@ function rzBase(p){const g=scene().grids[p.mon];return{id:p.id,m:snap.monitors.f
 // A step onto a locked tile is refused, so the block stays as it is; the grip instead keeps the largest span short of the lock.
 function resizeStep(p,dc,dr,fromL=false,fromT=false){const r=rzBase(p),w=winById(p.id),b=r.b,g=r.gr;curMon=r.m;
   if(lockOfPlaced(p)){status(`${w.title} is locked. Unlock it first.`);render();return}
-  let c0=b.c,cs=clamp(b.cs+dc,1,g.c-b.c),r0=b.r,rs=clamp(b.rs+dr,1,g.r-b.r);
+  let c0=b.c,cs=clamp(b.cs+dc,1,GC(g)-b.c),r0=b.r,rs=clamp(b.rs+dr,1,GR(g)-b.r);
   if(fromL){c0=clamp(b.c+dc,0,b.c+b.cs-1);cs=b.c+b.cs-c0}
   if(fromT){r0=clamp(b.r+dr,0,b.r+b.rs-1);rs=b.r+b.rs-r0}
   const pl=planResize(p.id,r.m,c0,r0,cs,rs,{[fromL?"l":"r"]:1,[fromT?"t":"b"]:1});
@@ -1676,11 +1725,11 @@ function resizeStep(p,dc,dr,fromL=false,fromT=false){const r=rzBase(p),w=winById
   commitResize(r,pl)}
 // Where a handle's drag leaves the block: each edge the handle holds moves to the nearest cell line, and the opposite edge stays.
 const HDIR={tl:{l:1,t:1},tr:{r:1,t:1},bl:{l:1,b:1},br:{r:1,b:1},n:{t:1},s:{b:1},w:{l:1},ea:{r:1}};
-function rzTarget(r){const m=r.m,g=r.gr,b=r.b,d=r.dir,cw=m.w/g.c,ch=m.h/g.r,dx=(r.px-r.sx)/G.S,dy=(r.py-r.sy)/G.S;
+function rzTarget(r){const m=r.m,g=r.gr,b=r.b,d=r.dir,cw=m.w/GC(g),ch=m.h/GR(g),dx=(r.px-r.sx)/G.S,dy=(r.py-r.sy)/G.S;
   let c0=b.c,cs=b.cs,r0=b.r,rs=b.rs;
-  if(d.r)cs=clamp(Math.round((r.start.x+r.start.w+dx-m.x)/cw),c0+1,g.c)-c0;
+  if(d.r)cs=clamp(Math.round((r.start.x+r.start.w+dx-m.x)/cw),c0+1,GC(g))-c0;
   if(d.l){c0=clamp(Math.round((r.start.x+dx-m.x)/cw),0,b.c+b.cs-1);cs=b.c+b.cs-c0}
-  if(d.b)rs=clamp(Math.round((r.start.y+r.start.h+dy-m.y)/ch),r0+1,g.r)-r0;
+  if(d.b)rs=clamp(Math.round((r.start.y+r.start.h+dy-m.y)/ch),r0+1,GR(g))-r0;
   if(d.t){r0=clamp(Math.round((r.start.y+dy-m.y)/ch),0,b.r+b.rs-1);rs=b.r+b.rs-r0}
   return planResize(r.id,m,c0,r0,cs,rs,d)}
 function commitResize(r,pl){
@@ -1691,42 +1740,184 @@ function commitResize(r,pl){
   const ok=edit(x=>{
     for(const o of pl.covered)x.pins=x.pins.filter(q=>q!==o.q);
     for(const wid of pl.list)bayEdit(x,wid,null,true,COVERED);
-    optimCover(pl.list);pinEdit(x,r.id,mon,pl.r0*g.c+pl.c0,pl.cs,pl.rs,self)},
+    optimCover(pl.list);pinEdit(x,r.id,mon,pl.r0*GC(g)+pl.c0,pl.cs,pl.rs,self)},
     `${actorName(w,pl.list)} now spans ${pl.cs}×${pl.rs}.${n||pl.closed.length?` ${coverSay(pl.list,pl.closed,w).join(". ")}.`:""}${pl.stopped?" It stopped at a locked tile.":""}`);
   if(ok&&(n||pl.closed.length))coverNote(px(cellRect(mon,g,pl.c0,pl.r0,pl.cs,pl.rs)),pl.list,hist[hist.length-1],w,pl.closed)}
+/* ---------- Split Cell (layout-free items 1-13; mockup split-cell.html) ---------- */
+// A window's block now: its placed entry, grid, monitor and cells (fine cells on a split grid). Null when it has no cell.
+function cellOfWin(id){const P=prev(),p=LIVE&&P&&P.placed.find(q=>q.id===id&&!q.behind),g=p&&scene().grids[p.mon];
+  return g?{p,g,role:p.mon,mon:snap.monitors.find(q=>mk(q)===p.mon),b:pbox(p,g)}:null}
+// The cells the owner sees a block as, by base cell number ("2", or "1+2" across two), never fine-cell numbers: a split makes the board's own numbers new, and a note names the cell as it was (item 13).
+function baseCells(b,g){const[mx,my]=MXY(g),c0=Math.floor(b.c/mx),c1=Math.ceil((b.c+b.cs)/mx)-1,r0=Math.floor(b.r/my),r1=Math.ceil((b.r+b.rs)/my)-1,a=[];
+  for(let r=r0;r<=r1;r++)for(let c=c0;c<=c1;c++)a.push(r*g.c+c+1);return a.join("+")}
+const SPDIR={side:{name:"Side by Side",k:["Left","Right"],x:true},stack:{name:"Stacked",k:["Top","Bottom"],x:false}};
+// How a cut of block b along dir lands. dbl: the grid doubles on that axis, because the cut is not on a line the grid has (item 7). ok:false says why not.
+function splitPlan(g,b,dir){const X=SPDIR[dir].x,[mx,my]=MXY(g),u=X?mx:my,n=X?b.cs:b.rs;
+  if(n%2===0)return{ok:true,dbl:false,grid:`${GC(g)}×${GR(g)}`};
+  if(u>1)return{ok:false,why:`This half is as narrow as a split goes. Join it first, or split it ${X?"stacked":"side by side"}.`};
+  const fc=GC(g)*(X?2:1),fr=GR(g)*(X?1:2);
+  if(fc>COLMAX)return{ok:false,why:`The grid would pass ${COLMAX} columns.`};
+  if(fr>ROWMAX)return{ok:false,why:`The grid would pass ${ROWMAX} rows.`};
+  return{ok:true,dbl:true,grid:`${fc}×${fr}`}}
+// The kept half of block b, in the grid after the cut. keep 0 is the left or top half.
+function keptBlock(b,dir,keep,dbl){const X=SPDIR[dir].x,f=dbl?2:1;
+  if(X){const cs=b.cs*f/2;return{c:b.c*f+(keep?cs:0),r:b.r,cs,rs:b.rs}}
+  const rs=b.rs*f/2;return{c:b.c,r:b.r*f+(keep?rs:0),cs:b.cs,rs}}
+// The words a split says, in the Drop Note, the status line and Undo's toast.
+const keepWords=(dir,keep)=>`keeps the ${SPDIR[dir].k[keep].toLowerCase()} half`;
+// Split the window's cell. One edit, so one POST /layout and one Undo: the grid keeps c and r and sets mult, every pin, zone and held entry on the monitor takes doubled
+// slots, and the window is pinned to its kept half (item 5). A locked window does not split (item 11).
+function splitCell(id,dir,keep){
+  const c=cellOfWin(id),w=winById(id);if(!c||!w||isBusy){status("That window has no cell to split.");return false}
+  if(isLockedId(id)){status(`${w.title} is locked. Unlock it first.`);return false}
+  const pl=splitPlan(c.g,c.b,dir);if(!pl.ok){status(pl.why);return false}
+  const X=SPDIR[dir].x,role=c.role,mon=c.mon,was=baseCells(c.b,c.g),A=appName(w.app),nb=keptBlock(c.b,dir,keep,pl.dbl);
+  curMon=mon;selWin=id;
+  const ok=edit(x=>{const g=x.grids[role],self=pinNow(x,id);
+    if(pl.dbl){const fx=X?2:1,fy=X?1:2,ofc=GC(g),ofr=GR(g),[mx,my]=MXY(g),
+      re=sl=>[...new Set(sl.filter(v=>v<ofc*ofr).flatMap(v=>{const col=v%ofc,row=Math.floor(v/ofc),o=[];for(let dy=0;dy<fy;dy++)for(let dx=0;dx<fx;dx++)o.push((row*fy+dy)*ofc*fx+col*fx+dx);return o}))].sort((a,b)=>a-b);
+      for(const q of x.pins)if(q.mon===role)q.slots=re(q.slots);
+      if(x.fill&&x.fill.held)for(const h of x.fill.held)if(h.mon===role)h.slots=re(h.slots);
+      for(const z of x.zones||[])if(z.mon===role)z.slots=re(z.slots);
+      g.mult=[mx*fx,my*fy];if(x.fill&&x.fill.mon===role)x.fill.unit=[mx*fx,my*fy]}
+    pinEdit(x,id,mon,nb.r*GC(g)+nb.c,nb.cs,nb.rs,self)},`Split cell ${was}. ${A} ${keepWords(dir,keep)}.`);
+  if(ok)dropNote(px(cellRect(mon,scene().grids[role],nb.c,nb.r,nb.cs,nb.rs)),`Split cell ${was}. <b>${esc(A)}</b> ${keepWords(dir,keep)}.`,hist[hist.length-1]);
+  return ok}
+// K1 (the owner's pick while question K is open): Shift+S or a double-click splits the window's cell side by side at once, and it keeps the left half.
+const splitFast=id=>splitCell(id,"side",0);
+// The base cells a window's block reaches, and whether it is part of a split. A block on whole base cells is not split.
+function joinInfo(id){const c=cellOfWin(id);if(!c)return null;const[mx,my]=MXY(c.g),b=c.b,
+  c0=Math.floor(b.c/mx)*mx,c1=Math.ceil((b.c+b.cs)/mx)*mx,r0=Math.floor(b.r/my)*my,r1=Math.ceil((b.r+b.rs)/my)*my;
+  return{...c,split:c0!==b.c||c1!==b.c+b.cs||r0!==b.r||r1!==b.r+b.rs,c0,r0,cs:c1-c0,rs:r1-r0}}
+// After a join: an axis of mult halves back when no pin, zone or held entry on the monitor sits off the base grid on it (item 9). Answers whether any axis did.
+function halveGrid(x,role){const g=x.grids[role],[mx,my]=MXY(g);if(mx===1&&my===1)return false;
+  const ofc=GC(g),ofr=GR(g),lists=[...x.pins.filter(q=>q.mon===role),...((x.fill&&x.fill.held)||[]).filter(h=>h.mon===role),...(x.zones||[]).filter(z=>z.mon===role)],
+    on=(u,k)=>lists.every(o=>{const sl=o.slots.filter(v=>v<ofc*ofr);if(!sl.length)return true;const b=bbox(sl,g);return k?b.c%u===0&&b.cs%u===0:b.r%u===0&&b.rs%u===0}),
+    fx=on(mx,true)?mx:1,fy=on(my,false)?my:1;
+  if(fx===1&&fy===1)return false;
+  const re=sl=>[...new Set(sl.filter(v=>v<ofc*ofr).map(v=>Math.floor(Math.floor(v/ofc)/fy)*(ofc/fx)+Math.floor((v%ofc)/fx)))].sort((a,b)=>a-b);
+  for(const o of lists)o.slots=re(o.slots);
+  const nm=[mx/fx,my/fy];
+  if(nm[0]===1&&nm[1]===1){delete g.mult;if(x.fill&&x.fill.mon===role)delete x.fill.unit}
+  else{g.mult=nm;if(x.fill&&x.fill.mon===role)x.fill.unit=[...nm]}
+  return true}
+// Join Halves: the window takes its whole base cell, as a resize does (a window there goes to Windows That Stay Put, a lock stops it), then the grid halves back where it can.
+function joinCell(id){
+  const j=joinInfo(id),w=winById(id);if(!j||!w||isBusy){status("That window has no cell to join.");return false}
+  if(isLockedId(id)){status(`${w.title} is locked. Unlock it first.`);return false}
+  if(!j.split){status("This cell is not split.");return false}
+  const pl=planResize(id,j.mon,j.c0,j.r0,j.cs,j.rs);
+  if(pl.stopped){status("A locked tile is in the way. Nothing changed.");return false}
+  const role=j.role,mon=j.mon,self=pinNow(scene(),id),was=baseCells({c:j.c0,r:j.r0,cs:j.cs,rs:j.rs},j.g),n=pl.list.length,[ox,oy]=MXY(j.g);let halved=false;
+  curMon=mon;selWin=id;
+  const lead=()=>`Joined cell ${was}.${halved?` The grid is ${GC(scene().grids[role])}×${GR(scene().grids[role])} again.`:""}`;
+  const ok=edit(x=>{
+    for(const o of pl.covered)x.pins=x.pins.filter(q=>q!==o.q);
+    for(const wid of pl.list)bayEdit(x,wid,null,true,COVERED);
+    optimCover(pl.list);pinEdit(x,id,mon,j.r0*GC(x.grids[role])+j.c0,j.cs,j.rs,self);
+    halved=halveGrid(x,role)},()=>`${lead()}${n||pl.closed.length?` ${coverSay(pl.list,pl.closed,w).join(". ")}.`:""}`);
+  if(ok){const g=scene().grids[role],[nx,ny]=MXY(g),fx=ox/nx,fy=oy/ny,r=px(cellRect(mon,g,j.c0/fx,j.r0/fy,j.cs/fx,j.rs/fy));
+    if(n||pl.closed.length)coverNote(r,pl.list,hist[hist.length-1],w,pl.closed,esc(lead()));else dropNote(r,esc(lead()),hist[hist.length-1])}
+  return ok}
+
+/* The split menu: S or Shift+F10 under the selected tile, a right-click at the pointer, Split Cell in the inspector under its button. Esc closes it and puts focus back. */
+let smenu=null;  // {id, back}: the window the open split menu is for, and what takes focus when it closes
+const GLOCK='<svg class="gl" viewBox="0 0 26 18" aria-hidden="true"><g transform="translate(7 3)" fill="currentColor"><path d="M3.5 5V3.6a2.5 2.5 0 0 1 5 0V5H9.5v6h-7V5h1zm1.3 0h2.4V3.6a1.2 1.2 0 0 0-2.4 0V5z"/></g></svg>';
+const GJOIN='<svg class="gl" viewBox="0 0 26 18" aria-hidden="true"><rect class="k" x="1.6" y="1.6" width="22.8" height="14.8" rx="1.5"/></svg>';
+// A glyph for a split item: the kept half filled in the window's colour, the open half dashed.
+function glyph(dir,keep){const X=SPDIR[dir].x,k=X?(keep?[13,1,12,16]:[1,1,12,16]):(keep?[1,9,24,8]:[1,1,24,8]),o=X?(keep?[1,1,12,16]:[13,1,12,16]):(keep?[1,1,24,8]:[1,9,24,8]);
+  return `<svg class="gl" viewBox="0 0 26 18" aria-hidden="true"><rect class="o" x="${o[0]+.6}" y="${o[1]+.6}" width="${o[2]-1.2}" height="${o[3]-1.2}" rx="1.5"/><rect class="k" x="${k[0]+.6}" y="${k[1]+.6}" width="${k[2]-1.2}" height="${k[3]-1.2}" rx="1.5"/></svg>`}
+function splitMenuHTML(id){
+  const c=cellOfWin(id),w=winById(id),A=esc(appName(w.app)),locked=isLockedId(id),j=joinInfo(id),LOCKWHY="Locked. Unlock it first.";
+  const grp=dir=>{const D=SPDIR[dir],pl=splitPlan(c.g,c.b,dir),off=locked?LOCKWHY:pl.ok?"":pl.why;
+    return `<p class="mg"><span>${D.name}</span><small>${off?"Off":esc(`Grid ${pl.dbl?"goes to":"stays"} ${pl.grid}`)}</small></p>`+
+      [0,1].map(k=>`<button type="button" role="menuitem" class="mi cat-${catOf(w.app)}" data-sp="${dir}:${k}"${off?` aria-disabled="true" title="${esc(off)}"`:""}>${glyph(dir,k)}<b>${A} Keeps ${D.k[k]}</b></button>`).join("")+
+      (off&&!locked?`<p class="mwhy">${esc(off)}</p>`:"")};
+  return `<div class="menu split" role="menu" id="smenu" aria-labelledby="smh"><p class="mh" id="smh">Split Cell ${esc(baseCells(c.b,c.g))}</p>`+
+    (locked?`<button type="button" role="menuitem" class="mi" data-sp="unlock">${GLOCK}<b>Unlock ${A}</b><kbd>L</kbd></button><p class="mwhy">${LOCKWHY}</p>`:"")+
+    grp("side")+grp("stack")+
+    (j&&j.split?`<hr><button type="button" role="menuitem" class="mi cat-${catOf(w.app)}" data-sp="join"${locked?` aria-disabled="true" title="${LOCKWHY}"`:""}>${GJOIN}<b>Join Halves</b><kbd>J</kbd></button>`:"")+
+    `<p class="mf">${locked?"Esc closes.":"Enter splits. Esc closes."}</p></div>`}
+function clearSplitPreview(){for(const e of stage.querySelectorAll(".sprev,.sdiv"))e.remove()}
+// The focused item on the board: a dashed line on the cut and a hatched open half (item S2 of the notes). It draws the grid the cut would make, so nothing moves.
+function splitPreview(id,dir,keep){clearSplitPreview();const c=cellOfWin(id);if(!c||!dir)return;const pl=splitPlan(c.g,c.b,dir);if(!pl.ok)return;
+  const X=SPDIR[dir].x,[mx,my]=MXY(c.g),g2={...c.g,mult:[mx*(pl.dbl&&X?2:1),my*(pl.dbl&&!X?2:1)]},k=keptBlock(c.b,dir,keep,pl.dbl),
+    o=X?{...k,c:keep?k.c-k.cs:k.c+k.cs}:{...k,r:keep?k.r-k.rs:k.r+k.rs},
+    kr=px(cellRect(c.mon,g2,k.c,k.r,k.cs,k.rs)),or=px(cellRect(c.mon,g2,o.c,o.r,o.cs,o.rs)),n=v=>parseFloat(v),
+    h=document.createElement("div"),l=document.createElement("div");
+  h.className="sprev";Object.assign(h.style,or);l.className="sdiv";
+  if(X){const x=keep?n(kr.left):n(kr.left)+n(kr.width);Object.assign(l.style,{left:x-1+"px",top:Math.min(n(kr.top),n(or.top))+"px",width:"2px",height:Math.max(n(kr.height),n(or.height))+"px",borderLeftWidth:"2px"})}
+  else{const y=keep?n(kr.top):n(kr.top)+n(kr.height);Object.assign(l.style,{top:y-1+"px",left:Math.min(n(kr.left),n(or.left))+"px",height:"2px",width:Math.max(n(kr.width),n(or.width))+"px",borderTopWidth:"2px"})}
+  stage.append(h,l)}
+function closeSplit(back){const s=smenu;smenu=null;clearSplitPreview();const m=$("smenu");if(m)m.remove();
+  for(const b of document.querySelectorAll("#splitbtn"))b.setAttribute("aria-expanded","false");
+  if(back&&s)s.back()}
+// at: {x,y} for a right-click (the menu opens at the pointer), or {el} for a key or the inspector button (the menu opens under it).
+function openSplit(id,at){
+  closeSplit(false);closeMenu();
+  const c=cellOfWin(id);if(isBusy)return false;if(!c){status("That window has no cell to split.");return false}
+  const d=document.createElement("div");d.innerHTML=splitMenuHTML(id);const m=d.firstElementChild;document.body.appendChild(m);
+  const w=m.offsetWidth,h=m.offsetHeight,r=at.el?at.el.getBoundingClientRect():null;
+  let L=r?r.left:at.x,T=r?r.bottom+4:at.y;
+  if(T+h+8>innerHeight)T=r?r.top-4-h:at.y-h;
+  m.style.left=clamp(L,8,Math.max(8,innerWidth-w-8))+"px";m.style.top=Math.max(8,T)+"px";
+  const tile=()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true})};
+  smenu={id,at:!(at.el&&at.el.id==="splitbtn"),back:at.el&&at.el.id==="splitbtn"?()=>{const b=$("splitbtn");if(b)b.focus();else tile()}:tile};
+  for(const b of document.querySelectorAll("#splitbtn"))b.setAttribute("aria-expanded","true");
+  const show=ev=>{const t=ev.target.closest&&ev.target.closest("[data-sp]");if(!t){clearSplitPreview();return}const[dir,k]=String(t.dataset.sp).split(":");if(SPDIR[dir]&&t.getAttribute("aria-disabled")!=="true")splitPreview(id,dir,+k);else clearSplitPreview()};
+  m.addEventListener("focusin",show);m.addEventListener("mouseover",show);
+  m.addEventListener("keydown",ev=>{const items=[...m.querySelectorAll('[role="menuitem"]')],i=items.indexOf(document.activeElement);
+    if(ev.key==="Escape"){ev.preventDefault();ev.stopPropagation();closeSplit(true)}
+    else if(ev.key==="Tab"){closeSplit(true)}
+    else if(ev.key==="ArrowDown"||ev.key==="ArrowUp"||ev.key==="Home"||ev.key==="End"){ev.preventDefault();ev.stopPropagation();
+      const n=items.length;items[ev.key==="Home"?0:ev.key==="End"?n-1:(i+(ev.key==="ArrowDown"?1:-1)+n)%n].focus({preventScroll:true})}});
+  const first=m.querySelector('[role="menuitem"]:not([aria-disabled="true"])')||m.querySelector('[role="menuitem"]');if(first)first.focus({preventScroll:true});
+  return true}
+// A choice in the open split menu. A disabled item stays put and says why in its title.
+function splitPick(t){if(!smenu||t.getAttribute("aria-disabled")==="true")return;const id=smenu.id,v=t.dataset.sp,back=smenu.back;closeSplit(false);
+  if(v==="unlock")toggleLock(id);else if(v==="join")joinCell(id);else{const[dir,k]=v.split(":");splitCell(id,dir,+k)}
+  requestAnimationFrame(()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true});else back()})}
+document.addEventListener("pointerdown",ev=>{if(smenu&&!ev.target.closest("#smenu,#splitbtn"))closeSplit(false)},true);
+// A menu at the pointer or under the tile (S, Shift+F10) stays when the inspector scrolls: selecting the window redraws the inspector, which scrolls it. The menu under the inspector's own button still closes. The board and the page still close it.
+addEventListener("scroll",ev=>{if(smenu&&!(smenu.at&&ev.target.closest&&ev.target.closest(".insp")))closeSplit(false)},true);addEventListener("resize",()=>{if(smenu)closeSplit(false)});
 // Zones: a rectangle of cells, filled with one app's or category's windows.
 function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort((a,b)=>appName(a).localeCompare(appName(b)));
   return `<optgroup label="Category">${cfg.categories.map(([c,l])=>`<option value="cat:${c}"${cur==="cat:"+c?" selected":""}>${esc(l)}</option>`).join("")}</optgroup><optgroup label="App">${apps.map(a=>`<option value="app:${esc(a)}"${cur==="app:"+a?" selected":""}>${esc(appName(a))}</option>`).join("")}</optgroup>`}
 const zoneFill=v=>v.startsWith("app:")?{app:v.slice(4)}:{cat:v.slice(4)};
 async function drawZoneDialog(){const m=curMon,g=gridOf(m);if(!g)return;
-  const cellOpts=sel=>[...Array(g.c*g.r).keys()].map(i=>`<option value="${i}"${i===sel?" selected":""}>Column ${i%g.c+1}, Row ${Math.floor(i/g.c)+1}</option>`).join("");
+  const cellOpts=sel=>[...Array(GC(g)*GR(g)).keys()].map(i=>`<option value="${i}"${i===sel?" selected":""}>Column ${i%GC(g)+1}, Row ${Math.floor(i/GC(g))+1}</option>`).join("");
   const f=await ask(`Draw a Zone on ${onMon(m)}`,`<p class="note">Pick two corner cells. The zone fills with these windows in fill order; a pin inside it keeps its cell; windows that do not fit stay put.</p>
-    <label class="field stack"><span>From</span><select name="za">${cellOpts(0)}</select></label><label class="field stack"><span>To</span><select name="zb">${cellOpts(g.c*g.r-1)}</select></label>
+    <label class="field stack"><span>From</span><select name="za">${cellOpts(0)}</select></label><label class="field stack"><span>To</span><select name="zb">${cellOpts(GC(g)*GR(g)-1)}</select></label>
     <label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts("cat:code")}</select></label>`,"Add Zone");
-  if(!f)return;const a=+f.za.value,b=+f.zb.value;addZone(m,g,a%g.c,Math.floor(a/g.c),b%g.c,Math.floor(b/g.c),zoneFill(f.zf.value))}
+  if(!f)return;const a=+f.za.value,b=+f.zb.value;addZone(m,g,a%GC(g),Math.floor(a/GC(g)),b%GC(g),Math.floor(b/GC(g)),zoneFill(f.zf.value))}
 function addZone(m,g,c0,r0,c1,r1,fill){const a=Math.min(c0,c1),b=Math.min(r0,r1),cs=Math.abs(c1-c0)+1,rs=Math.abs(r1-r0)+1,slots=[];
-  for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*g.c+c);
+  for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*GC(g)+c);
   return edit(x=>{x.zones=(x.zones||[]).filter(z=>!(z.mon===mk(m)&&z.slots.some(v=>slots.includes(v))));x.zones.push({mon:mk(m),slots,...fill});selZone=x.zones.length-1},
     `Added a ${fill.app?appName(fill.app):catName(fill.cat)} zone on ${onMon(m)}: ${cellsText(slots,g)}.`)}
 async function newZone(m,g,c0,r0,c1,r1){
   const a=Math.min(c0,c1),b=Math.min(r0,r1),cs=Math.abs(c1-c0)+1,rs=Math.abs(r1-r0)+1,slots=[];
-  for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*g.c+c);
-  const under=snap.windows.find(w=>{const d=drawn[w.id];return d&&monAt(d.x+d.w/2,d.y+d.h/2)===m&&slots.includes(clamp(Math.floor((d.y+d.h/2-m.y)/(m.h/g.r)),0,g.r-1)*g.c+clamp(Math.floor((d.x+d.w/2-m.x)/(m.w/g.c)),0,g.c-1))});
+  for(let r=b;r<b+rs;r++)for(let c=a;c<a+cs;c++)slots.push(r*GC(g)+c);
+  const under=snap.windows.find(w=>{const d=drawn[w.id];return d&&monAt(d.x+d.w/2,d.y+d.h/2)===m&&slots.includes(clamp(Math.floor((d.y+d.h/2-m.y)/(m.h/GR(g))),0,GR(g)-1)*GC(g)+clamp(Math.floor((d.x+d.w/2-m.x)/(m.w/GC(g))),0,GC(g)-1))});
   const f=await ask(`New Zone: ${plural(cs,"Column")} × ${plural(rs,"Row")} on ${onMon(m)}`,`<p class="note">The zone fills with these windows in fill order. A pin inside it keeps its cell. Windows that do not fit stay put.</p><label class="field stack"><span>Fill With</span><select name="zf">${zoneOpts(under?"app:"+under.app:"cat:code")}</select></label>`,"Add Zone");
   if(!f)return;addZone(m,g,c0,r0,c1,r1,zoneFill(f.zf.value))}
+// The grid caps count cells of the finished grid (c times mx, r times my): 24 columns and 8 rows (layout-free plan, lane L2). A + on a split monitor steps the base grid.
+const COLMAX=24,ROWMAX=8;
+const baseMax=(g,k)=>Math.floor((k==="c"?COLMAX:ROWMAX)/MXY(g)[k==="c"?0:1]);
+// Slots of a grid with ofc fine columns, kept on the same column and row in a grid nfc by nfr; cells past the new edge go.
+const reslot=(sl,ofc,nfc,nfr)=>sl.map(v=>[v%ofc,Math.floor(v/ofc)]).filter(([c,r])=>c<nfc&&r<nfr).map(([c,r])=>r*nfc+c);
 function setGrid(k,d){const m=curMon;
-  if(!LIVE){const g=gridOf(m);g[k]=clamp(g[k]+d,1,k==="c"?8:4);m.el.dataset.g="";render();return}
+  if(!LIVE){const g=gridOf(m);g[k]=clamp(g[k]+d,1,k==="c"?COLMAX:ROWMAX);m.el.dataset.g="";render();return}
   // A grid that would cut off a locked tile's cells does not change: a locked tile never moves.
-  const cur=scene().grids[mk(m)],nxt={...cur,[k]:clamp(cur[k]+d,1,k==="c"?8:4)};
-  if(scene().pins.some(p=>p.lock&&p.mon===mk(m)&&p.slots.some(v=>v<cur.c*cur.r&&(v%cur.c>=nxt.c||Math.floor(v/cur.c)>=nxt.r)))){status("A locked tile is in the way. Nothing changed.");render();return}
-  edit(s=>{const g=s.grids[mk(m)],o={...g};g[k]=clamp(g[k]+d,1,k==="c"?8:4);
+  const cur=scene().grids[mk(m)],nxt={...cur,[k]:clamp(cur[k]+d,1,baseMax(cur,k))},ofc=GC(cur),ofr=GR(cur),nfc=GC(nxt),nfr=GR(nxt);
+  if(scene().pins.some(p=>p.lock&&p.mon===mk(m)&&p.slots.some(v=>v<ofc*ofr&&(v%ofc>=nfc||Math.floor(v/ofc)>=nfr)))){status("A locked tile is in the way. Nothing changed.");render();return}
+  edit(s=>{const g=s.grids[mk(m)];g[k]=nxt[k];
     // Keep each pin on the same column and row; drop cells past the new edge.
-    for(const p of s.pins)if(p.mon===mk(m))p.slots=p.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+    for(const p of s.pins)if(p.mon===mk(m))p.slots=reslot(p.slots,ofc,nfc,nfr);
     s.pins=s.pins.filter(p=>p.slots.length);
-    if(s.fill&&s.fill.held){for(const h of s.fill.held)if(h.mon===mk(m))h.slots=h.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
+    if(s.fill&&s.fill.held){for(const h of s.fill.held)if(h.mon===mk(m))h.slots=reslot(h.slots,ofc,nfc,nfr);
       s.fill.held=s.fill.held.filter(h=>h.slots.length);if(!s.fill.held.length)delete s.fill.held}
-    for(const z of s.zones||[])if(z.mon===mk(m))z.slots=z.slots.map(v=>[v%o.c,Math.floor(v/o.c)]).filter(([c,r])=>c<g.c&&r<g.r).map(([c,r])=>r*g.c+c);
-    if(s.zones){s.zones=s.zones.filter(z=>z.slots.length);selZone=null}},`${monName(m)} grid: ${scene().grids[mk(m)].c+(k==="c"?d:0)}×${scene().grids[mk(m)].r+(k==="r"?d:0)}.`)}
+    for(const z of s.zones||[])if(z.mon===mk(m))z.slots=reslot(z.slots,ofc,nfc,nfr);
+    if(s.zones){s.zones=s.zones.filter(z=>z.slots.length);selZone=null}},`${monName(m)} grid: ${nfc}×${nfr}.`)}
 function pinOf(id){const P=prev(),p=P&&P.placed.find(q=>q.id===id);return p&&p.pin>=0&&!p.behind?{p,pin:scene().pins[p.pin]}:null}
 
 /* ---------- Drag: pointer capture, transform while moving, one rAF per frame ---------- */
@@ -1734,18 +1925,18 @@ const stage=$("stage"),dropEl=$("drop");
 function target(d){
   const sr=stage.getBoundingClientRect(),sx=(d.px-sr.left)/G.S+G.x0,sy=(d.py-sr.top)/G.S+G.y0,m=monAt(sx,sy),g=m&&gridOf(m);
   if(!g)return null;
-  const cw=m.w/g.c,ch=m.h/g.r,cs=Math.min(d.cs,g.c),rs=Math.min(d.rs,g.r);
+  const cw=m.w/GC(g),ch=m.h/GR(g),cs=Math.min(d.cs,GC(g)),rs=Math.min(d.rs,GR(g));
   let c,r;
   if(cs===1&&rs===1){c=Math.floor((sx-m.x)/cw);r=Math.floor((sy-m.y)/ch)}
   else{const tx=d.start.x+(d.px-d.sx)/G.S,ty=d.start.y+(d.py-d.sy)/G.S;c=Math.round((tx-m.x)/cw);r=Math.round((ty-m.y)/ch)}
-  c=clamp(c,0,g.c-cs);r=clamp(r,0,g.r-rs);return{m,g,slot:r*g.c+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)}}
+  c=clamp(c,0,GC(g)-cs);r=clamp(r,0,GR(g)-rs);return{m,g,slot:r*GC(g)+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)}}
 function spanOf(id,start){const pp=LIVE&&pinOf(id);if(pp){const b=bbox(pp.pin.slots,scene().grids[pp.pin.mon]);return[b.cs,b.rs,pp.pin.mon]}
-  if(!LIVE){const m=monAt(start.x+start.w/2,start.y+start.h/2),g=m&&gridOf(m);if(g)return[clamp(Math.round(start.w/(m.w/g.c)),1,g.c),clamp(Math.round(start.h/(m.h/g.r)),1,g.r),null]}
+  if(!LIVE){const m=monAt(start.x+start.w/2,start.y+start.h/2),g=m&&gridOf(m);if(g)return[clamp(Math.round(start.w/(m.w/GC(g))),1,GC(g)),clamp(Math.round(start.h/(m.h/GR(g))),1,GR(g)),null]}
   return[1,1,null]}
 const overEl=(el,x,y)=>{const r=el.getBoundingClientRect();return x>=r.left&&x<r.right&&y>=r.top&&y<r.bottom};
 const overBay=(x,y)=>{const b=$("bay");return !b.hidden&&overEl(b,x,y)};
 function cellAt(x,y){const sr=stage.getBoundingClientRect(),sx=(x-sr.left)/G.S+G.x0,sy=(y-sr.top)/G.S+G.y0,m=monAt(sx,sy),g=m&&gridOf(m);
-  return g?{m,g,c:clamp(Math.floor((sx-m.x)/(m.w/g.c)),0,g.c-1),r:clamp(Math.floor((sy-m.y)/(m.h/g.r)),0,g.r-1)}:null}
+  return g?{m,g,c:clamp(Math.floor((sx-m.x)/(m.w/GC(g))),0,GC(g)-1),r:clamp(Math.floor((sy-m.y)/(m.h/GR(g))),0,GR(g)-1)}:null}
 // Measured width of a drop label in the drop chip's font, for choosing the form that fits a cell.
 let measureCtx=null;
 function textW(t,sz=12){if(!measureCtx){measureCtx=document.createElement("canvas").getContext("2d")}
@@ -1817,7 +2008,7 @@ function frame(){raf=0;
       if(gh.style.display==="block"){const sr=stage.getBoundingClientRect();gh.style.left=Math.max(0,sr.left+parseFloat(pr.left))+"px";gh.style.top=Math.max(0,sr.top+parseFloat(pr.top)-gh.offsetHeight-4)+"px"}
       if(zone==="swap"){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=big?`${o} moves here`:o}}}
     else{Object.assign(dropEl.style,px(t.r));dropEl.className="";dropEl.style.display="block";
-      const nar=parseFloat(px(t.r).width)<110,blocked=(d.cs>1||d.rs>1)&&lockedHit(scene(),mk(t.m),cellsOf(t.slot%t.g.c,Math.floor(t.slot/t.g.c),t.cs,t.rs,t.g),pinNow(scene(),d.id));
+      const nar=parseFloat(px(t.r).width)<110,blocked=(d.cs>1||d.rs>1)&&lockedHit(scene(),mk(t.m),cellsOf(t.slot%GC(t.g),Math.floor(t.slot/GC(t.g)),t.cs,t.rs,t.g),pinNow(scene(),d.id));
       dropEl.innerHTML=`<span>${blocked?"Locked tile in the way":nar?"Here":"Place here"}</span>`}}
   else dropEl.style.display="none"}
 // The front tile's button under a press on its strip. The Put Behind flash lifts the strip over the tile's top edge, lock included.
@@ -1895,7 +2086,7 @@ function endDrag(ev){
   // Keep a pinned window's size when it moves within its monitor; a new monitor starts at one cell.
   const keep=!LIVE||d.pmon===mk(t.m);
   if(d.locked){const pp=pinOf(d.id),b=pp&&bbox(pp.pin.slots,scene().grids[pp.pin.mon]);
-    if(b&&pp.pin.mon===mk(t.m)&&t.slot===b.r*t.g.c+b.c&&t.cs===b.cs&&t.rs===b.rs){render();return}
+    if(b&&pp.pin.mon===mk(t.m)&&t.slot===b.r*GC(t.g)+b.c&&t.cs===b.cs&&t.rs===b.rs){render();return}
     askMove(d,{kind:"pin",t,keep});return}
   curMon=t.m;pinWin(d.id,t.m,t.slot,keep?t.cs:1,keep?t.rs:1);
 }
@@ -1905,7 +2096,10 @@ for(const el of [stage,$("bay")]){el.addEventListener("pointermove",move);el.add
 stage.addEventListener("keydown",ev=>{
   const e=ev.target.closest(".tile");if(!e||isBusy||ev.target.tagName==="BUTTON")return;const id=+e.dataset.id;
   if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();selWin=id;render();return}
+  if(LIVE&&prev()&&((ev.key==="F10"&&ev.shiftKey)||ev.key==="ContextMenu")){ev.preventDefault();selWin=id;render();openSplit(id,{el:e});return}
   if(LIVE&&prev()&&!ev.ctrlKey&&!ev.metaKey&&!ev.altKey){
+    if(ev.key==="s"||ev.key==="S"){ev.preventDefault();selWin=id;render();if(ev.shiftKey)splitFast(id);else openSplit(id,{el:e});return}
+    if(ev.key==="j"||ev.key==="J"){ev.preventDefault();selWin=id;joinCell(id);return}
     if(ev.key==="l"||ev.key==="L"){ev.preventDefault();toggleLock(id);return}
     if(ev.key==="b"||ev.key==="B"){ev.preventDefault();const pp=pinOf(id);if(pp&&stackOf(pp.p.pin).length)bringFront(pp.p.pin);else status("Nothing is behind that window.");return}}
   if((ev.key==="Delete"||ev.key==="Backspace")&&LIVE){ev.preventDefault();unpin(id);return}
@@ -1917,24 +2111,32 @@ stage.addEventListener("keydown",ev=>{
   const d=drawn[id];if(!d)return;
   const pp=LIVE&&pinOf(id);let m,g,b;
   if(pp){m=snap.monitors.find(q=>mk(q)===pp.pin.mon);g=gridOf(m);b=bbox(pp.pin.slots,g)}
-  else{m=monAt(d.x+d.w/2,d.y+d.h/2);g=m&&gridOf(m);if(!g)return;const cw=m.w/g.c,ch=m.h/g.r;
-    b={c:clamp(Math.floor((d.x+d.w/2-m.x)/cw),0,g.c-1),r:clamp(Math.floor((d.y+d.h/2-m.y)/ch),0,g.r-1),cs:1,rs:1};
-    if(!LIVE){const[cs,rs]=spanOf(id,d);b.cs=cs;b.rs=rs;b.c=clamp(Math.round((d.x-m.x)/cw),0,g.c-cs);b.r=clamp(Math.round((d.y-m.y)/ch),0,g.r-rs)}}
+  else{m=monAt(d.x+d.w/2,d.y+d.h/2);g=m&&gridOf(m);if(!g)return;const cw=m.w/GC(g),ch=m.h/GR(g);
+    b={c:clamp(Math.floor((d.x+d.w/2-m.x)/cw),0,GC(g)-1),r:clamp(Math.floor((d.y+d.h/2-m.y)/ch),0,GR(g)-1),cs:1,rs:1};
+    if(!LIVE){const[cs,rs]=spanOf(id,d);b.cs=cs;b.rs=rs;b.c=clamp(Math.round((d.x-m.x)/cw),0,GC(g)-cs);b.r=clamp(Math.round((d.y-m.y)/ch),0,GR(g)-rs)}}
   let{c,r,cs,rs}=b;
-  if(ev.shiftKey){cs=clamp(cs+k[0],1,g.c-c);rs=clamp(rs+k[1],1,g.r-r)}else{c=clamp(c+k[0],0,g.c-cs);r=clamp(r+k[1],0,g.r-rs)}
+  if(ev.shiftKey){cs=clamp(cs+k[0],1,GC(g)-c);rs=clamp(rs+k[1],1,GR(g)-r)}else{c=clamp(c+k[0],0,GC(g)-cs);r=clamp(r+k[1],0,GR(g)-rs)}
   // A move into cells a pinned window holds is a swap with it, so its pin and its stack stay. A locked one blocks the move.
   const P=LIVE&&!ev.shiftKey&&prev(),pa=P&&P.placed.find(q=>q.id===id&&!q.behind);
   if(pa){const blk=cellsOf(c,r,cs,rs,g),hit=P.placed.filter(q=>q.pin>=0&&!q.behind&&q.id!==id&&q.mon===mk(m)&&pbox(q,g).cells.some(v=>blk.includes(v)));
     if(pp&&pp.pin.lock&&!ev.shiftKey){
       if(c===b.c&&r===b.r){render();requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
       if(hit.some(lockOfPlaced)||hit.length>1){status(hit.some(lockOfPlaced)?"A locked tile is in the way. Nothing changed.":"More than one pinned window is in the way. Nothing changed.");render();requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
-      const t={m,g,slot:r*g.c+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)};
+      const t={m,g,slot:r*GC(g)+c,cs,rs,r:cellRect(m,g,c,r,cs,rs)};
       askMove({id,locked:true,pmon:pp.pin.mon,px:0,py:0},hit.length?{kind:"swap",occ:hit[0],t}:{kind:"pin",t,keep:true});return}
     if(hit.length){
       if(hit.some(lockOfPlaced)||hit.length>1){status(hit.some(lockOfPlaced)?"A locked tile is in the way. Nothing changed.":"More than one pinned window is in the way. Nothing changed.");render();requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
-      swapInto(id,hit[0].id,m,r*g.c+c,false);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}}
-  curMon=m;pinWin(id,m,r*g.c+c,cs,rs);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));
+      swapInto(id,hit[0].id,m,r*GC(g)+c,false);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}}
+  curMon=m;pinWin(id,m,r*GC(g)+c,cs,rs);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));
 });
+// A right-click on the board never shows the browser's own menu; on a window it opens the split menu at the pointer.
+stage.addEventListener("contextmenu",ev=>{ev.preventDefault();const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev())return;
+  const id=+e.dataset.id;selWin=id;render();openSplit(id,{x:ev.clientX,y:ev.clientY})});
+// A double-click splits only a tile that was already selected. The tile's pointerdown handler cancels the mouse events, so the selection is read from a pointerdown capture, before that handler selects: [0] is the first press of the pair, [1] the second.
+const selAtPress=[null,null];
+stage.addEventListener("pointerdown",ev=>{if(ev.button===0){selAtPress[0]=selAtPress[1];selAtPress[1]=selWin}},true);
+stage.addEventListener("dblclick",ev=>{const e=ev.target.closest(".tile");if(!e||isBusy||!LIVE||!prev()||ev.target.closest("button"))return;ev.preventDefault();if(+e.dataset.id===selAtPress[0])splitFast(+e.dataset.id)});
+
 function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.");return}
   if(pp.pin.lock){status(`${winById(id).title} is locked. Unlock it first.`);return}
   edit(s=>{leavePin(s,s.pins[pp.p.pin])},`Unpinned ${winById(id).title}. ${(pp.pin.behind||[]).length?"The window behind it takes the cell.":"It fills if its app is in the fill list."}`)}
@@ -1977,7 +2179,7 @@ function ctrlPick(ev){const P=prev();ev.preventDefault();
     // A selected tile on this monitor counts as the first pick.
     const sp=selWin&&P.placed.find(q=>q.id===selWin&&!q.behind&&q.mon===role);if(sp)picks.order.push(...pbox(sp,g).cells);
     if(other)status(`Started a new pick on the ${monName(c.m)}.`)}
-  const hit=blockAt(P,role,g,c.r*g.c+c.c).cells,have=hit.every(x=>picks.order.includes(x));
+  const hit=blockAt(P,role,g,c.r*GC(g)+c.c).cells,have=hit.every(x=>picks.order.includes(x));
   picks.order=have?picks.order.filter(x=>!hit.includes(x)):[...picks.order,...hit.filter(x=>!picks.order.includes(x))];
   if(!picks.order.length)picks=null;
   render()}
@@ -1988,7 +2190,7 @@ function pickInfo(){const k=picks,P=prev(),s=LIVE&&scene();if(!k||!P||!s)return 
   const b=bbox(k.order,g),missing=b.cells.filter(x=>!set.has(x));
   // A locked pin on any picked cell stops a Merge, a closed window's pin too (a resize stops at it the same way).
   const keeper=wins[0]||null,self=keeper&&pinNow(s,keeper.id),
-    lockedPin=s.pins.find(q=>{if(!q.lock||q===self||q.mon!==k.role)return false;const qs=q.slots.filter(v=>v<g.c*g.r);return qs.length>0&&bbox(qs,g).cells.some(c=>set.has(c))})||null;
+    lockedPin=s.pins.find(q=>{if(!q.lock||q===self||q.mon!==k.role)return false;const qs=q.slots.filter(v=>v<GC(g)*GR(g));return qs.length>0&&bbox(qs,g).cells.some(c=>set.has(c))})||null;
   return{k,g,b,set,wins,missing,rect:!missing.length,lockedW:wins.find(lockOfPlaced),lockedPin,keeper,m:monOfKey(k.role),
     one:wins.length===1&&pbox(wins[0],g).cells.length===set.size}}
 // The bar's words and whether Merge and Fill to Rectangle are on. The reason for a disabled Merge is text in the bar (aria-describedby on the button).
@@ -2002,7 +2204,7 @@ function mergeWords(i){const P=prev();
 // The picks, the block they make and the Merge bar, drawn on the stage after every render.
 function renderPicks(){for(const e of stage.querySelectorAll(".pk,.miss,.mbox,.mbar"))e.remove();
   const i=pickInfo();if(!i)return;const m=i.m,g=i.g;
-  const bx=r=>`left:${r.left};top:${r.top};width:${r.width};height:${r.height}`,cell=c=>px(cellRect(m,g,c%g.c,Math.floor(c/g.c),1,1));
+  const bx=r=>`left:${r.left};top:${r.top};width:${r.width};height:${r.height}`,cell=c=>px(cellRect(m,g,c%GC(g),Math.floor(c/GC(g)),1,1));
   let h="";
   for(const c of i.k.order)h+=`<div class="pk" style="${bx(cell(c))}"><i>${CHECK}</i></div>`;
   for(const c of i.missing)h+=`<div class="miss" style="${bx(cell(c))}"></div>`;
@@ -2025,7 +2227,7 @@ function fillRect(){const i=pickInfo();if(!i||i.rect)return;const P=prev(),o=[..
 function mergePicks(){const i=pickInfo();if(!i||!i.rect||i.lockedW||i.lockedPin||!i.keeper)return;
   const {g,b,m,keeper:k}=i,s=scene(),self=pinNow(s,k.id),cv=coverOf(i.k.role,g,i.set,k.id,self),A=winById(k.id),r=cellRect(m,g,b.c,b.r,b.cs,b.rs);
   optim={id:k.id,r};selWin=k.id;curMon=m;
-  const ok=edit(x=>{for(const o of cv.covered)x.pins=x.pins.filter(q=>q!==o.q);for(const id of cv.list)bayEdit(x,id,null,true,MERGED);optimCover(cv.list,MERGED);pinEdit(x,k.id,m,b.r*g.c+b.c,b.cs,b.rs,self)},
+  const ok=edit(x=>{for(const o of cv.covered)x.pins=x.pins.filter(q=>q!==o.q);for(const id of cv.list)bayEdit(x,id,null,true,MERGED);optimCover(cv.list,MERGED);pinEdit(x,k.id,m,b.r*GC(g)+b.c,b.cs,b.rs,self)},
     `${actorName(A,cv.list)} now spans ${b.cs}×${b.rs}.${cv.list.length||cv.closed.length?` ${coverSay(cv.list,cv.closed,A).join(". ")}.`:""}`);
   if(ok&&(cv.list.length||cv.closed.length))coverNote(px(r),cv.list,hist[hist.length-1],A,cv.closed)}
 
@@ -2147,6 +2349,9 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="retry")retrySave();
   else if(t.id==="srefresh")refresh();
   else if(t.id==="addgrid"){const m=curMon;edit(x=>{(x.grids||(x.grids={}))[mk(m)]={c:1,r:1}},`${monName(m)} has a 1×1 grid. Drag windows onto it.`)}
+  else if(t.dataset.sp!==undefined)splitPick(t);
+  else if(t.id==="splitbtn"){if(smenu&&smenu.id===selWin)closeSplit(true);else openSplit(selWin,{el:t})}
+  else if(t.id==="joinbtn")joinCell(selWin);
   else if(t.dataset.menu!==undefined)toggleMenu(t.dataset.menu);
   else if(t.dataset.fol!==undefined){const id=t.dataset.fol,card=()=>document.querySelector(`[data-pick="${CSS.escape(id)}"]`);closeMenu();if(card())card().focus();await followAgain(id);if(card())card().focus()}
   else if(t.dataset.pick){selId=t.dataset.pick;optim=null;selZone=null;zanchor=null;picks=null;closeAsk(false);render();if(!prevs[selId])preview(selId);status(`Showing ${scene().name}. ${verb()} to move the windows.`)}

@@ -56,6 +56,21 @@
 #   Inspector kind (monitor-setups notes, item 25; the owner's yes): the Scene section shows the selected scene's kind once, in words
 #     (Built-in, Custom or Not saved), no other kind's word, and it changes when a scene of another kind is selected. An edited saved scene's
 #     section says edited once. Its reasons line does not count, and an unsaved scene's edited is not checked.
+#   Split Cell (layout-free items 1-13; split-cell-notes.md; plan lane L2). The menu opens on S with a window selected, or from the
+#     inspector's Split Cell button. Its items are role=menuitem buttons "Claude Keeps Left|Right|Top|Bottom" under a group label (a p)
+#     that starts "Side by Side" or "Stacked". A locked tile (class lock) has its split items disabled (disabled or aria-disabled=true),
+#     with "Locked. Unlock it first." in the title or the aria-describedby target. A split posts one POST /layout: grids.U1 keeps c and r,
+#     sets mult, and sets fill.unit ([2,1] side, [1,2] stacked). A side split maps base slot s to 2s and 2s+1. A stacked split maps s to
+#     s+row*c and s+(row+1)*c. The split window's pin takes its kept slot only. J joins: mult and fill.unit are absent or [1,1] again.
+#     Undo sends one more POST /layout with the layout as it was. cellRect is checked against tile.ps1 -Json, whose slots are 1-based.
+#     Guard, green on main (its red is a mutant on a scratch copy): split: S with no window selected opens no menu and sends nothing.
+#   Split Cell, small halves, notes and menu (layout-free items 4, 12, 13; split-cell-notes S5): an unsplit tile under 40px keeps its lock,
+#     grip and badge, and only a split half gives them up. A half under 40px draws no window title, one initial, and a selected Stay Put
+#     stays inside it. A join says "Joined cell N." with the cell the window was cut from, and a second split names its original cell.
+#     A right-click on an unselected window opens its split menu, though selecting it scrolls the inspector. Join Halves has the category colour.
+#   Split Cell, double-click (split-cell notes): a double-click on the selected window splits it side by side, one POST /layout with the grid
+#     doubled. On an unselected window it selects only, and sends no POST. On a selected locked window it sends no POST. Real pointer and mouse
+#     events (Click-Double), not a synthetic dblclick.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 $ErrorActionPreference = 'Stop'
@@ -1255,6 +1270,756 @@ return { cards: cardsOf().length, heights, cut, soloRow };
         if ($w -eq 1024) { Check '1024: every card has one height' (@(@($m.heights) | Sort-Object -Unique).Count -eq 1) "card heights: $(@($m.heights) -join ', ')" }
       } finally { [void](Cdp $ws 'Emulation.clearDeviceMetricsOverride') }
     }
+  }
+
+  # ---- Split Cell (layout-free items 1-13; split-cell-notes.md; plan lane L2) --------------------------------------------------
+  # Every check here is new. On main each one FAILs and names its cause (no menu, no button, no POST, no pin). No lookup throws: a
+  # missing control answers null or false, and a POST check requires the route to have reached its click, so it cannot pass by accident.
+  $splitWins = @(
+    @('claude', 'Refactor the grid solver'), @('chrome', 'Quarterly roadmap'), @('chrome', 'Pull request 212'),
+    @('WindowsTerminal', 'pwsh - tiler'), @('explorer', 'Projects'), @('ms-teams', 'Design sync'),
+    @('claude', 'Pin parser edge cases'), @('WindowsTerminal', 'pwsh - docs watch'), @('explorer', 'Downloads'), @('notepad', 'todo.txt')
+  )
+  # The pin of window $i (an index into $splitWins) on these slots. $behind lists the windows stacked behind it.
+  function Split-Pin([int]$i, $slots, [bool]$lock = $false, $behind = $null) {
+    $p = [pscustomobject]@{ app = $splitWins[$i][0]; match = $splitWins[$i][1]; mon = 'U1'; slots = @($slots) }
+    if ($lock) { $p | Add-Member -NotePropertyName lock -NotePropertyValue $true }
+    if ($behind) { $p | Add-Member -NotePropertyName behind -NotePropertyValue @($behind) }
+    $p
+  }
+  # The Focus scene's layout on the plugged setup, as JSON: the U1 grid (c by r, with mult and fill.unit when given), the pins, the zones,
+  # and a fill on U1 that places nothing. $fillOver merges into the fill (held entries, off).
+  function Split-Json([int]$c, [int]$r, $pins, $mult = $null, $unit = $null, $zones = @(), $fillOver = @{}) {
+    $g = [ordered]@{ c = $c; r = $r }
+    if ($mult) { $g['mult'] = @(@($mult) -split ',' | % { [int]$_ }) }
+    $f = [ordered]@{ mon = 'U1'; apps = @(); skip = @(); sort = 'app' }
+    if ($unit) { $f['unit'] = @(@($unit) -split ',' | % { [int]$_ }) }
+    foreach ($k in $fillOver.Keys) { $f[$k] = $fillOver[$k] }
+    ConvertTo-Json -Depth 12 -Compress -InputObject ([ordered]@{ grids = [ordered]@{ U1 = $g }; pins = @($pins); zones = @($zones); fill = $f; bay = @() })
+  }
+  function Put-Split([string]$json) { $cfg = New-Config; Add-Layout $cfg 'focus' $plugKey $json; Put-Config $cfg }
+  # The integers of a value (a number, an array, or nothing), in order.
+  function Split-Ints($v) { @(@($v) | ? { $null -ne $_ } | % { [int]$_ }) }
+  # A grid axis or a unit as the page must leave it: its two numbers, or 1,1 when absent (a join drops it).
+  function Split-Axis($v) { $x = (Split-Ints $v) -join ','; if ($x -eq '') { '1,1' } else { $x } }
+  # The slots of the one pin with this match text, sorted and joined. A text that names no single pin says so.
+  function Split-SlotsOf($layout, [string]$match) {
+    $p = @(@($layout.pins) | ? { $_ -and [string]$_.match -ceq $match })
+    if ($p.Count -ne 1) { return "no single pin for '$match'" }
+    ((Split-Ints $p[0].slots | Sort-Object) -join ',')
+  }
+  # True when a pin, a zone or a held entry of the layout holds this slot.
+  function Split-HasSlot($layout, [int]$slot) {
+    $all = @(@($layout.pins) + @($layout.zones) + @($layout.fill.held) | ? { $_ })
+    @($all | ? { (Split-Ints $_.slots) -contains $slot }).Count -gt 0
+  }
+  # The pins whose slots differ from $want (match text -> "a,b", sorted), one line each.
+  function Split-Diff($layout, [hashtable]$want) {
+    @(foreach ($m in $want.Keys) { $got = Split-SlotsOf $layout $m; if ($got -ne $want[$m]) { "'$m' has $got, want $($want[$m])" } })
+  }
+  # The checks on one split's layout, one check each so a failure names its cause: the grid keeps c and r and sets mult and unit; the
+  # split window's pin holds its kept slot; every other pin in $want holds its doubled slots.
+  function Split-Verify([string]$name, $layout, [int]$c, [int]$r, [string]$mult, [string]$unit, [string]$cutMatch, [string]$cutSlot, [hashtable]$want) {
+    if (-not $layout) { Check "split: $name has a layout to check (not run: no POST /layout)" $false 'no POST /layout was sent, so there is no layout to read'; return }
+    $g = $layout.grids.U1
+    $gc = (Split-Ints $g.c) -join ','; $gr = (Split-Ints $g.r) -join ','
+    Check "split: $name keeps c $c and r $r" (($gc -eq "$c") -and ($gr -eq "$r")) "c '$gc', r '$gr'"
+    $gm = (Split-Ints $g.mult) -join ','
+    Check "split: $name sets mult [$mult]" ($gm -eq $mult) "mult '$gm'"
+    $fu = (Split-Ints $layout.fill.unit) -join ','
+    Check "split: $name sets fill.unit [$unit]" ($fu -eq $unit) "fill.unit '$fu'"
+    $cut = Split-SlotsOf $layout $cutMatch
+    Check "split: $name pins the split window to slot $cutSlot" ($cut -eq $cutSlot) "its pin holds: $cut"
+    $d = @(Split-Diff $layout $want)
+    Check "split: $name doubles every other pin's slots" ($d.Count -eq 0) ($d -join ' | ')
+  }
+  # The other pins after a split of the 5 by 2 board (window 0 is the split window). Side: slot s -> 2s and 2s+1. Stacked: slot s in row r
+  # -> s+5r and s+5(r+1). Join: every pin back to its own slot.
+  $splitWantSide = @{ 'Quarterly roadmap' = '2,3'; 'Pull request 212' = '4,5'; 'pwsh - tiler' = '6,7'; 'Projects' = '8,9'; 'Design sync' = '10,11'; 'Pin parser edge cases' = '12,13'; 'pwsh - docs watch' = '14,15'; 'Downloads' = '16,17'; 'todo.txt' = '18,19' }
+  $splitWantStack = @{ 'Quarterly roadmap' = '1,6'; 'Pull request 212' = '2,7'; 'pwsh - tiler' = '3,8'; 'Projects' = '4,9'; 'Design sync' = '10,15'; 'Pin parser edge cases' = '11,16'; 'pwsh - docs watch' = '12,17'; 'Downloads' = '13,18'; 'todo.txt' = '14,19' }
+  $splitWantJoin = @{ 'Quarterly roadmap' = '1'; 'Pull request 212' = '2'; 'pwsh - tiler' = '3'; 'Projects' = '4'; 'Design sync' = '5'; 'Pin parser edge cases' = '6'; 'pwsh - docs watch' = '7'; 'Downloads' = '8'; 'todo.txt' = '9' }
+  # A 2 by 4 board stacked: window 1 on slot 3, window 2 on slot 4, window 3 on slot 7 (rows 2 and 3 of the old 4-row cap).
+  $splitWant2x4 = @{ 'Quarterly roadmap' = '5,7'; 'Pull request 212' = '8,10'; 'pwsh - tiler' = '13,15' }
+  # JS, read in the page. The split menu is open. The inspector's Split Cell button is pressed (answers whether there is one).
+  $splitMenuJs = '[...document.querySelectorAll("[role=menu]")].some(m => m.getClientRects().length > 0 && /Split Cell/.test(m.textContent))'
+  $splitInspJs = 'const b = [...document.querySelectorAll("button")].find(x => /^Split Cell/.test(x.textContent.trim()) && x.getClientRects().length > 0 && !x.closest("[role=menu]")); if (!b) return false; b.click(); return true'
+  # An expression, for WaitFor: the inspector's Split Cell button is on screen.
+  $splitInspHasJs = '[...document.querySelectorAll("button")].some(x => /^Split Cell/.test(x.textContent.trim()) && x.getClientRects().length > 0 && !x.closest("[role=menu]"))'
+  # preventScroll: a focus that scrolls the stage queues a scroll event for the next frame, and that event closes a split menu opened before it.
+  function Split-FocusJs([int]$id) { 'const t = document.querySelector(".tile[data-id=\"__ID__\"]"); if (!t) return false; t.focus({ preventScroll: true }); return document.activeElement === t'.Replace('__ID__', "$id") }
+  # JS: waits until window $id's tile is at rest: no ResizeObserver relayout queued (rlay), no transition running on it, and its rect unchanged over two
+  # frame pairs. Answers true, or false after 5 seconds. A relayout or a transition lands on the frames after a selection, so a read before it is mid-move.
+  $tileRestJs = @'
+const t = document.querySelector('.tile[data-id="__ID__"]'); if (!t) return false;
+const geo = () => { const r = t.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].join(","); };
+const moving = () => rlay !== 0 || t.getAnimations({ subtree: true }).length > 0;
+let last = null, still = 0; const t0 = performance.now();
+while (performance.now() - t0 < 5000 && still < 2) {
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const g = geo(); still = (!moving() && g === last) ? still + 1 : 0; last = g;
+}
+return still >= 2;
+'@
+  # The wait and its Check are one statement, so the Check line prints and no caller captures it into a value.
+  function Wait-Tile-Rest($sock, [int]$id, [string]$tag) {
+    $rest = (Js $sock $tileRestJs.Replace('__ID__', "$id")) -eq $true
+    Check "$tag, window $id is at rest (wait)" $rest 'the tile is missing, or it still moves (a layout or a transition) after 5 s'
+  }
+  # JS: finds the menu item "Claude Keeps <keep>" under the group label that starts with <dir>, clicks it, and answers its read-out
+  # ({disabled, why}). Answers null when no such item is open.
+  function Split-ItemJs([string]$dir, [string]$keep) {
+    $js = @'
+const menu = [...document.querySelectorAll("[role=menu]")].find(m => /Split Cell/.test(m.textContent));
+if (!menu) return null;
+let grp = "", hit = null;
+for (const el of menu.querySelectorAll("p, [role=menuitem]")) {
+  const t = el.textContent.replace(/\s+/g, " ").trim();
+  if (el.tagName === "P") { grp = /^Side by Side/.test(t) ? "Side by Side" : /^Stacked/.test(t) ? "Stacked" : ""; continue; }
+  if (grp === "__DIR__" && t.endsWith("Keeps __KEEP__")) { hit = el; break; }
+}
+if (!hit) return null;
+const ids = (hit.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+const why = [hit.getAttribute("title") || ""].concat(ids.map(i => (document.getElementById(i) || {}).textContent || "")).join(" ").replace(/\s+/g, " ").trim();
+const disabled = hit.disabled === true || hit.getAttribute("aria-disabled") === "true";
+hit.click();
+return { disabled: disabled, why: why };
+'@
+    $js.Replace('__DIR__', $dir).Replace('__KEEP__', $keep)
+  }
+  # Selects a window as a user does: it takes focus, then Enter. Answers whether the page then has it selected.
+  function Split-Select($sock, [int]$id) {
+    if ((Js $sock (Split-FocusJs $id)) -ne $true) { return $false }
+    Press-Key $sock 'Enter' 13
+    WaitFor $sock "selWin === $id" 10
+  }
+  # One way in to a split, checked step by step. Selects window $id, opens the split menu with S ($route 'key') or with the inspector's Split
+  # Cell button ($route 'button'), then clicks "Claude Keeps $keep" under "$dir". Answers the item's read-out ($info, null when there is none)
+  # and the POSTs /layout the click sent after it. A missing control is a Check that names it.
+  function Split-Route($sock, [int]$id, [string]$route, [string]$dir, [string]$keep, [string]$tag, [int]$postWait = 10) {
+    # Its result goes to $script:splitLast, not the output: its Check lines are printed where they happen, and must not be captured.
+    $out = [pscustomobject]@{ info = $null; sent = @() }
+    $script:splitLast = $out
+    $sel = Split-Select $sock $id
+    Check "split: $tag, window $id is selected (control)" $sel "no tile $id, or Enter did not select it"
+    if (-not $sel) { return }
+    # A scroll event closes a split menu opened before it, and the selection's redraw and any relayout land on the frames after it. Wait for rest first.
+    Wait-Tile-Rest $sock $id "split: $tag, after the selection"
+    if ($route -eq 'key') { [void](Js $sock (Split-FocusJs $id)); Press-Key $sock 's' 83 's' }
+    else {
+      $btnOk = WaitFor $sock $splitInspHasJs 10
+      Check "split: $tag, the inspector has a Split Cell button (scope)" $btnOk 'no Split Cell button in the inspector'
+      if (-not $btnOk) { return }
+      [void](Js $sock $splitInspJs)
+    }
+    $open = WaitFor $sock $splitMenuJs 10
+    $how = if ($route -eq 'key') { 'S' } else { 'the Split Cell button' }
+    Check "split: $tag, the split menu opens (scope)" $open "no split menu after $how"
+    if (-not $open) { return }
+    $before = [int](Js $sock 'return window.__h.posts("layout").length')
+    $info = Js $sock (Split-ItemJs $dir $keep)
+    Check "split: $tag, the menu has 'Claude Keeps $keep' under '$dir' (scope)" ($null -ne $info) "no menu item 'Claude Keeps $keep' under '$dir'"
+    if ($null -eq $info) { return }
+    $out.info = $info
+    [void](WaitFor $sock ('window.__h.posts("layout").length > ' + $before) $postWait)
+    $a = Js $sock ('await window.__h.settle(); return window.__h.posts("layout").slice(' + $before + ')')
+    $out.sent = @($a | ? { $_ })
+  }
+  # tile.ps1 -Scene -From -Json, in process, as golden-layouts.ps1 runs it. Its slots come back 1-based (tile.ps1, the -Json line).
+  function Split-Engine([string]$scene, [string]$snapJson) {
+    $env:TILE_HOME = $tileHome; $env:TILE_SCREENS_FILE = $null
+    try { $raw = (& (Join-Path $root 'tile.ps1') -Scene $scene -From $snapJson -Json 3>$null) -join '' } finally { $env:TILE_HOME = $null }
+    if (-not $raw) { throw 'tile.ps1 printed nothing' }
+    ConvertFrom-Json $raw
+  }
+  # The page's cellRect for each probe ({id, g: mult|plain, c0, r0, cs, rs, want}), against the engine's rect (want, "x,y,w,h"). Answers the
+  # mismatches, one line each. The monitor is 1365 by 1001; c0, r0, cs and rs are in fine cells.
+  function Split-Probe($sock, $probes) {
+    $js = 'const Q = __Q__; const G = { mult: { c: 5, r: 2, mult: [2, 1] }, plain: { c: 5, r: 2 } }; const m = { x: 0, y: 0, w: 1365, h: 1001 }; return Q.map(q => { try { const r = cellRect(m, G[q.g], q.c0, q.r0, q.cs, q.rs); return [r.x, r.y, r.w, r.h].join(","); } catch (e) { return "error"; } }).join("|");'
+    $q = ConvertTo-Json -Depth 4 -Compress -InputObject @($probes | % { [pscustomobject]@{ g = $_.g; c0 = $_.c0; r0 = $_.r0; cs = $_.cs; rs = $_.rs } })
+    $got = ([string](Js $sock ($js.Replace('__Q__', $q)))) -split '\|'
+    @(for ($i = 0; $i -lt @($probes).Count; $i++) { if ($got[$i] -ne $probes[$i].want) { "window $($probes[$i].id): page $($got[$i]), engine $($probes[$i].want)" } })
+  }
+
+  Case 'split: S, then Side by Side Claude Keeps Right, on a full 5 by 2 board: one POST /layout with the doubled grid and every pin doubled' {
+    Put-Split (Split-Json 5 2 (0..9 | % { Split-Pin $_ @($_) }))
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Split-Route $ws 1001 'key' 'Side by Side' 'Right' 'S, side by side'; $r = $script:splitLast
+    $sent = @($r.sent | ? { $_ })
+    Check 'split: S and the item send one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    Check 'split: the POST carries the plugged-in setup key' ($sent.Count -eq 1 -and ((ConvertFrom-Json $sent[0].body).key -ceq $plugKey)) 'no POST /layout to read the setup key from, or it carries another key'
+    Split-Verify 'S, side by side' $lay 5 2 '2,1' '2,1' 'Refactor the grid solver' '1' $splitWantSide
+  }
+
+  Case 'split: the inspector Split Cell button, then Claude Keeps Left, on an empty board: one POST /layout, the grid doubled' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Split-Route $ws 1001 'button' 'Side by Side' 'Left' 'Split Cell button, side by side'; $r = $script:splitLast
+    $sent = @($r.sent | ? { $_ })
+    Check 'split: the button and the item send one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    Split-Verify 'Split Cell button, side by side' $lay 5 2 '2,1' '2,1' 'Refactor the grid solver' '0' @{}
+  }
+
+  Case 'split: S, then Stacked Claude Keeps Top, on a 5 by 2 board: mult [1,2], fill.unit [1,2], every pin doubled by row' {
+    Put-Split (Split-Json 5 2 (0..9 | % { Split-Pin $_ @($_) }))
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Split-Route $ws 1001 'key' 'Stacked' 'Top' 'S, stacked'; $r = $script:splitLast
+    $sent = @($r.sent | ? { $_ })
+    Check 'split: S and the item send one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    Split-Verify 'S, stacked' $lay 5 2 '1,2' '1,2' 'Refactor the grid solver' '0' $splitWantStack
+  }
+
+  Case 'split: S, then Stacked Claude Keeps Top, on a 2 by 4 board (rows above the old cap of 4): mult [1,2], the 8 rows kept' {
+    Put-Split (Split-Json 2 4 @((Split-Pin 0 @(0)), (Split-Pin 1 @(3)), (Split-Pin 2 @(4)), (Split-Pin 3 @(7))))
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Split-Route $ws 1001 'key' 'Stacked' 'Top' 'S, stacked, 2 by 4'; $r = $script:splitLast
+    $sent = @($r.sent | ? { $_ })
+    Check 'split: S and the item send one POST /layout on a 2 by 4 board, rows above the old cap' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    Split-Verify 'S, stacked, 2 by 4' $lay 2 4 '1,2' '1,2' 'Refactor the grid solver' '0' $splitWant2x4
+  }
+
+  Case 'split: a locked tile cannot split: its split items are disabled with "Locked. Unlock it first.", and a click sends no POST /layout' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0) $true))
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Split-Route $ws 1001 'key' 'Side by Side' 'Left' 'locked tile' 3; $r = $script:splitLast
+    $lk = Js $ws 'const t = document.querySelector(".tile[data-id=\"1001\"]"); return !!t && t.classList.contains("lock")'
+    Check 'split: the window''s tile shows the lock (scope)' ($lk -eq $true) 'the tile has no lock class'
+    $noItem = 'no such item was open in the split menu'
+    Check 'split: the locked tile''s Side by Side item is disabled' ($null -ne $r.info -and [bool]$r.info.disabled) $(if ($null -eq $r.info) { $noItem } else { 'the item is enabled' })
+    Check 'split: the disabled item gives the reason "Locked. Unlock it first."' ($null -ne $r.info -and ([string]$r.info.why -match 'Locked\. Unlock it first\.')) $(if ($null -eq $r.info) { $noItem } else { "reason: '$($r.info.why)'" })
+    Check 'split: clicking the disabled item sends no POST /layout' ($null -ne $r.info -and @($r.sent | ? { $_ }).Count -eq 0) $(if ($null -eq $r.info) { 'no such item was open, so nothing was clicked' } else { "POST /layout count: $(@($r.sent | ? { $_ }).Count)" })
+  }
+
+  Case 'split: S with no window selected opens no split menu and sends no POST /layout (guard; green on main)' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    # "No selection": no window is selected (selWin null or unset, no .tile.sel), and the keypress goes to the board itself, not to a window.
+    $none = Js $ws 'return (typeof selWin === "undefined" || selWin === null) && !document.querySelector(".tile.sel")'
+    Check 'split: no window is selected before S (control)' ($none -eq $true) 'a window is selected'
+    $focus = Js $ws 'const s = document.getElementById("stage"); if (!s) return false; s.focus(); return document.activeElement === s'
+    Check 'split: the board, not a window, has focus when S is pressed (control)' ($focus -eq $true) 'the board did not take focus'
+    Press-Key $ws 's' 83 's'
+    [void](Js $ws 'await window.__h.settle(); return true')
+    $menu = Js $ws $splitMenuJs
+    Check 'split: S with no selection opens no split menu' ($menu -ne $true) 'a split menu opened'
+    $a = Js $ws 'return window.__h.posts("layout")'
+    $sent = @($a | ? { $_ })
+    Check 'split: S with no selection sends no POST /layout' ($sent.Count -eq 0) "POST /layout count: $($sent.Count)"
+  }
+
+  Case 'split: J on the left half joins the halves: mult and fill.unit go back to [1,1], every pin halves back, one POST /layout' {
+    $seed = @(Split-Pin 0 @(0)) + @(1..9 | % { Split-Pin $_ @((2 * $_), (2 * $_ + 1)) })
+    Put-Split (Split-Json 5 2 $seed '2,1' '2,1')
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $sel = Split-Select $ws 1001
+    Check 'split: window 1001, on the left half, is selected (control)' $sel 'no tile 1001 to select'
+    if (-not $sel) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    Press-Key $ws 'j' 74 'j'
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $a = Js $ws ('await window.__h.settle(); return window.__h.posts("layout").slice(' + $before + ')')
+    $sent = @($a | ? { $_ })
+    Check 'split: J sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    if (-not $lay) { return }   # the count check above names the cause: J sent no POST /layout
+    $g = $lay.grids.U1
+    Check 'split: J keeps c 5 and r 2' (((Split-Ints $g.c) -join ',') -eq '5' -and ((Split-Ints $g.r) -join ',') -eq '2') "c/r after J: '$((Split-Ints $g.c) -join ',')', '$((Split-Ints $g.r) -join ',')'"
+    # Absent or [1,1] both mean the grid is today's: the page may drop mult and unit, or write them as 1,1.
+    Check 'split: J sets mult back to [1,1] (absent or 1,1)' ((Split-Axis $g.mult) -eq '1,1') "mult after J: '$(Split-Axis $g.mult)'"
+    Check 'split: J sets fill.unit back to [1,1] (absent or 1,1)' ((Split-Axis $lay.fill.unit) -eq '1,1') "fill.unit after J: '$(Split-Axis $lay.fill.unit)'"
+    Check 'split: J puts the split window on its whole cell, slot 0' ((Split-SlotsOf $lay 'Refactor the grid solver') -eq '0') "its pin holds: $(Split-SlotsOf $lay 'Refactor the grid solver')"
+    $d = @(Split-Diff $lay $splitWantJoin)
+    Check 'split: J halves every other pin back to its own cell' ($d.Count -eq 0) ($d -join ' | ')
+  }
+
+  Case 'split: cellRect on a split grid gives tile.ps1''s rect for every window at 1365 by 1001 (control: a plain 5 by 2 grid)' {
+    $mon = [pscustomobject]@{ name = '\\.\DISPLAY1'; role = 'wide'; x = 0; y = 0; w = 1365; h = 1001; bw = 1365; bh = 1001 }
+    $snap = ConvertTo-Json -Depth 8 -Compress -InputObject ([pscustomobject]@{ monitors = @($mon); windows = @($snapObj.windows) })
+    # Control: ten windows, one per cell of a plain 5 by 2 grid. Green on main.
+    $plainPins = @(0..9 | % { [pscustomobject]@{ app = $splitWins[$_][0]; match = $splitWins[$_][1]; mon = 'wide'; slots = @($_) } })
+    $plainScene = ConvertTo-Json -Depth 8 -Compress -InputObject ([pscustomobject]@{ id = 'plain6'; name = 'Plain'; grids = [pscustomobject]@{ wide = [pscustomobject]@{ c = 5; r = 2 } }; pins = $plainPins; zones = @(); fill = [pscustomobject]@{ mon = 'wide'; apps = @(); skip = @(); sort = 'app' } })
+    $pe = Split-Engine $plainScene $snap
+    Check 'split: tile.ps1 places all 10 windows on the plain grid (scope)' (@($pe.placed).Count -eq 10) "placed: $(@($pe.placed).Count)"
+    $pProbes = @(@($pe.placed) | % { $s = @(Split-Ints $_.slots | % { $_ - 1 } | Sort-Object); [pscustomobject]@{ id = [int64]$_.id; g = 'plain'; c0 = $s[0] % 5; r0 = [math]::Floor($s[0] / 5); cs = $s.Count; rs = 1; want = "$([int]$_.x),$([int]$_.y),$([int]$_.w),$([int]$_.h)" } })
+    # Subject: 14 windows on a mult grid (c 5, r 2, mult [2,1]). Spans run across a base edge (1 and 2), halves sit on fine columns 1 and 3.
+    $geo = @(
+      @('claude', 'Refactor the grid solver', @(1, 2)), @('claude', 'Pin parser edge cases', @(0)), @('claude', 'Draft release notes', @(3)),
+      @('chrome', 'Pull request 212', @(4, 5)), @('chrome', 'Quarterly roadmap', @(6)), @('chrome', 'quoted', @(7)),
+      @('WindowsTerminal', 'pwsh - tiler', @(8, 9)), @('WindowsTerminal', 'pwsh - docs watch', @(10)), @('explorer', 'Projects', @(11)),
+      @('explorer', 'Downloads', @(12, 13)), @('ms-teams', 'Design sync', @(14)), @('outlook', 'Inbox', @(15, 16)),
+      @('notepad', 'todo.txt', @(17)), @('Spotify', 'Spotify', @(18, 19))
+    )
+    $splitPins = @($geo | % { [pscustomobject]@{ app = $_[0]; match = $_[1]; mon = 'wide'; slots = @($_[2]) } })
+    $splitScene = ConvertTo-Json -Depth 8 -Compress -InputObject ([pscustomobject]@{ id = 'split6'; name = 'Split'; grids = [pscustomobject]@{ wide = [pscustomobject]@{ c = 5; r = 2; mult = @(2, 1) } }; pins = $splitPins; zones = @(); fill = [pscustomobject]@{ mon = 'wide'; apps = @(); skip = @(); sort = 'app' } })
+    $se = Split-Engine $splitScene $snap
+    Check 'split: tile.ps1 places all 14 windows on the split grid (scope)' (@($se.placed).Count -eq 14) "placed: $(@($se.placed).Count)"
+    $sProbes = @(@($se.placed) | % { $s = @(Split-Ints $_.slots | % { $_ - 1 } | Sort-Object); [pscustomobject]@{ id = [int64]$_.id; g = 'mult'; c0 = $s[0] % 10; r0 = [math]::Floor($s[0] / 10); cs = $s.Count; rs = 1; want = "$([int]$_.x),$([int]$_.y),$([int]$_.w),$([int]$_.h)" } })
+    Plug $snap
+    $loaded = Go $ws $url 'typeof cellRect === "function"'
+    Check 'split: the page has cellRect (control)' $loaded 'the page did not load cellRect in time'
+    if (-not $loaded) { return }
+    $pBad = @(Split-Probe $ws $pProbes)
+    Check 'split: cellRect gives the engine rect for every plain-grid window (control)' ($pBad.Count -eq 0) ($pBad -join ' | ')
+    $sBad = @(Split-Probe $ws $sProbes)
+    Check 'split: cellRect gives the engine rect for every window on the split grid' ($sBad.Count -eq 0) ($sBad -join ' | ')
+  }
+
+  Case 'split: Undo after a split writes the layout back with one more POST /layout' {
+    Put-Split (Split-Json 5 2 (0..9 | % { Split-Pin $_ @($_) }))
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $pre = Js $ws 'return layoutOf(work.focus)'   # the layout the page shows before the split: Undo must write it back
+    Split-Route $ws 1001 'key' 'Side by Side' 'Right' 'undo, S, side by side'; $r = $script:splitLast
+    $sent = @($r.sent | ? { $_ })
+    Check 'split: the split sends one POST /layout before Undo (scope)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    if ($sent.Count -ne 1) { Check 'split: Undo writes the layout back with one more POST /layout (not run: the split sent nothing)' $false 'no split to undo'; return }
+    $u = Js $ws 'const u = document.getElementById("undo"); if (!u || u.disabled) return false; u.click(); return true'
+    Check 'split: Undo is enabled after the split (scope)' ($u -eq $true) 'Undo is missing or disabled'
+    [void](WaitFor $ws 'window.__h.posts("layout").length > 1' 10)
+    $a = Js $ws 'await window.__h.settle(); return window.__h.posts("layout")'   # one JSON array: assign it before @() (ConvertFrom-Json does not unroll it)
+    $all = @($a | ? { $_ })
+    Check 'split: Undo sends one more POST /layout (two in all)' ($all.Count -eq 2) "POST /layout count: $($all.Count)"
+    $restored = ($all.Count -eq 2) -and ((Canon (ConvertFrom-Json $all[1].body).layout) -ceq (Canon $pre))
+    Check 'split: Undo writes the layout back as it was before the split' $restored 'the layout Undo sent is not the one from before the split'
+  }
+
+  Case 'split: a stacked tile keeps its stack on the kept half: the back window stays on the front pin, and the kept half still shows the stack' {
+    $back = [pscustomobject]@{ app = 'claude'; match = 'Pin parser edge cases' }
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0) $false @($back)))
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $stacked = Js $ws 'const t = document.querySelector(".tile[data-id=\"1001\"]"); return !!t && t.classList.contains("stacked")'
+    Check 'split: window 1001 shows its stack before the split (control)' ($stacked -eq $true) 'the tile is not stacked'
+    Split-Route $ws 1001 'key' 'Side by Side' 'Left' 'stacked tile'; $r = $script:splitLast
+    $sent = @($r.sent | ? { $_ })
+    Check 'split: the stacked tile sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    if (-not $lay) { return }   # the count check above names the cause
+    $front = @(@($lay.pins) | ? { $_ -and [string]$_.match -ceq 'Refactor the grid solver' })
+    $behind = if ($front.Count -eq 1) { (@(@($front[0].behind) | ? { $_ } | % { [string]$_.match }) -join ',') } else { 'no single front pin' }
+    Check 'split: the back window stays behind the front pin' ($behind -eq 'Pin parser edge cases') "behind: '$behind'"
+    $own = @(@($lay.pins) | ? { $_ -and [string]$_.match -ceq 'Pin parser edge cases' }).Count
+    Check 'split: the back window has no pin of its own' ($own -eq 0) "pins of its own: $own"
+    Check 'split: the front window keeps the left half, slot 0' ((Split-SlotsOf $lay 'Refactor the grid solver') -eq '0') "its pin holds: $(Split-SlotsOf $lay 'Refactor the grid solver')"
+    $sg = Js $ws 'await window.__h.settle(); const t = document.querySelector(".tile[data-id=\"1001\"]"); return !!t && t.classList.contains("stacked")'
+    Check 'split: the kept half still shows the stack (strip and badge)' ($sg -eq $true) 'the kept half is not stacked'
+  }
+
+  Case 'split: a cell in a zone: the zone takes both halves and its other cell doubles, and the window keeps its half' {
+    $zone = [pscustomobject]@{ mon = 'U1'; app = 'claude'; slots = @(0, 5) }
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)) $null $null @($zone))
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $zc = Js $ws 'return document.querySelectorAll(".zone").length'
+    Check 'split: the zone is drawn before the split (control)' ([int]$zc -gt 0) 'no zone on the board'
+    Split-Route $ws 1001 'key' 'Side by Side' 'Right' 'zone cell'; $r = $script:splitLast
+    $sent = @($r.sent | ? { $_ })
+    Check 'split: the zone cell sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    if (-not $lay) { return }   # the count check above names the cause
+    $zs = if ($lay) { @(@($lay.zones) | ? { $_ -and [string]$_.app -ceq 'claude' })[0] } else { $null }
+    $zslots = if ($zs) { (Split-Ints $zs.slots | Sort-Object) -join ',' } else { 'no zone' }
+    Check 'split: the zone takes both halves of cell 0 and doubles cell 5: slots 0,1,10,11' ($zslots -eq '0,1,10,11') "zone slots: $zslots"
+    Check 'split: the window in the zone keeps the right half, slot 1' ((Split-SlotsOf $lay 'Refactor the grid solver') -eq '1') "its pin holds: $(Split-SlotsOf $lay 'Refactor the grid solver')"
+  }
+
+  Case 'split: a held cell with fill off: the split pins the held window and drops its hold, the other hold doubles, the open half stays empty' {
+    $held = @(
+      [pscustomobject]@{ mon = 'U1'; slots = @(0); id = 1001; app = 'claude'; title = 'Refactor the grid solver' },
+      [pscustomobject]@{ mon = 'U1'; slots = @(6); id = 1002; app = 'claude'; title = 'Pin parser edge cases' })
+    Put-Split (Split-Json 5 2 @() $null $null @() @{ off = $true; held = $held })
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Split-Route $ws 1001 'key' 'Side by Side' 'Left' 'held cell'; $r = $script:splitLast
+    $sent = @($r.sent | ? { $_ })
+    Check 'split: the held cell sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    if (-not $lay) { return }   # the count check above names the cause
+    Check 'split: the held window is pinned to the kept half, slot 0' ((Split-SlotsOf $lay 'Refactor the grid solver') -eq '0') "its pin holds: $(Split-SlotsOf $lay 'Refactor the grid solver')"
+    $hs = @(@($lay.fill.held) | ? { $_ })
+    Check 'split: the split drops the hold on the split window' (@($hs | ? { [string]$_.title -ceq 'Refactor the grid solver' }).Count -eq 0) 'its hold is still in fill.held'
+    $other = (@($hs | ? { [string]$_.title -ceq 'Pin parser edge cases' } | % { (Split-Ints $_.slots | Sort-Object) -join ',' }) -join '|')
+    Check 'split: the other hold doubles to slots 12,13' ($other -eq '12,13') "its hold: '$other'"
+    Check 'split: the open half, slot 1, is held by nothing' ($null -ne $lay -and -not (Split-HasSlot $lay 1)) 'slot 1 is named by a pin, a zone or a hold'
+    Check 'split: fill stays off' ($null -ne $lay -and $lay.fill.off -eq $true) 'fill.off is not true after the split'
+  }
+
+  # ---- Split Cell: small halves, notes and the split menu (layout-free items 4, 12, 13; split-cell-notes S5; plan lane L2) ------------
+  # Each case seeds its own layout, sets its own viewport and theme, and resets them in finally, so no case depends on another.
+  # A control is green on main. Each red check names its cause in its detail. A case checks its scope before it reads its subject.
+  $smallBack = [pscustomobject]@{ app = 'claude'; match = 'Pin parser edge cases' }
+  $halfSeed = @(Split-Pin 0 @(0)) + @(1..9 | % { Split-Pin $_ @((2 * $_), (2 * $_ + 1)) })
+  $halfStackSeed = @(Split-Pin 0 @(0)) + @(1..9 | % { $i = $_; $row = [int][math]::Floor($i / 5); Split-Pin $i @(($i + 5 * $row), ($i + 5 * ($row + 1))) })
+  $tileJs = @'
+try {
+const t = document.querySelector('.tile[data-id="__ID__"]'); if (!t) return null;
+const R = e => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
+const disp = s => { const e = t.querySelector(s); return e ? getComputedStyle(e).display : "missing"; };
+const span = t.children[1], tag = t.firstChild, sp = t.querySelector(".stayput");
+const sc = getComputedStyle(span), sr = span.getBoundingClientRect(), tr = R(t), gr = R(tag);
+return { w: tr.w, tile: tr, lk: disp(".lk"), rsz: disp(".rsz"), stk: disp(".stk"), sp: disp(".stayput"),
+  spRect: sp && getComputedStyle(sp).display !== "none" ? R(sp) : null,
+  titleShown: sc.display !== "none" && sc.visibility !== "hidden" && parseFloat(sc.opacity) > 0 && sr.width > 0 && sr.height > 0,
+  tag: tag.textContent, tagSW: tag.scrollWidth, tagCW: tag.clientWidth, tagL: gr.l, tagR: gr.r, tileL: tr.l, tileR: tr.r,
+  tagIn: gr.l >= tr.l - 0.5 && gr.r <= tr.r + 0.5, lock: t.classList.contains("lock"), stacked: t.classList.contains("stacked") };
+} catch (e) { return { error: String(e) }; }
+'@
+  $splitNoteJs = 'const s = document.querySelector(".dnote span"); return s ? s.textContent.replace(/\s+/g, " ").trim() : null'
+  $splitReadJs = @'
+const m = document.getElementById("smenu"); if (!m) return null;
+const fill = s => { const e = m.querySelector(s); return e ? getComputedStyle(e).fill : null; };
+const h = m.querySelector("#smh");
+return { title: h ? h.textContent.replace(/\s+/g, " ").trim() : "", join: fill('[data-sp="join"] .gl .k'), keep: fill('[data-sp]:not([data-sp="join"]):not([aria-disabled="true"]) .gl .k') };
+'@
+  $splitFrameJs = 'await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), new Promise(r => setTimeout(r, 2000))]); return true'
+  function Tile-Metrics($sock, [int]$id) { Js $sock $tileJs.Replace('__ID__', "$id") }
+  # True when rect $a lies inside rect $b, with half a pixel of slack.
+  function Inside($a, $b) { ($a.l -ge $b.l - 0.5) -and ($a.r -le $b.r + 0.5) -and ($a.t -ge $b.t - 0.5) -and ($a.b -le $b.b + 0.5) }
+  function Set-View($sock, [int]$w, [int]$h) { [void](Cdp $sock 'Emulation.setDeviceMetricsOverride' @{ width = $w; height = $h; deviceScaleFactor = 1; mobile = $false }) }
+  # The page's own theme, set as its theme control sets it; nothing is stored.
+  function Set-Theme($sock, [string]$t) { [void](Js $sock ("setTheme('" + $t + "'); return true")) }
+  function Reset-Look($sock) {
+    try { [void](Cdp $sock 'Emulation.clearDeviceMetricsOverride') } catch { }
+    try { [void](Js $sock "setTheme('system'); return true") } catch { }
+  }
+  # A right-click as a mouse makes it: pressed, then released, at the point.
+  function Click-Right($sock, [double]$x, [double]$y) {
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x; y = $y; button = 'right'; buttons = 2; clickCount = 1 })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x; y = $y; button = 'right'; buttons = 0; clickCount = 1 })
+  }
+  # A double-click as a mouse makes it: a move to the point, then two presses and releases, the second pair with clickCount 2. The page's
+  # dblclick comes from those events, not from a synthetic dblclick.
+  function Click-Double($sock, [double]$x, [double]$y) {
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x; y = $y })
+    foreach ($n in 1, 2) {
+      [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x; y = $y; button = 'left'; buttons = 1; clickCount = $n })
+      [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x; y = $y; button = 'left'; buttons = 0; clickCount = $n })
+    }
+  }
+  # The centre of window $id's tile, and whether that point lands on the tile and not on a button in it (a click on a button is not the tile's).
+  function Tile-Centre($sock, [int]$id) {
+    Js $sock ('const t = document.querySelector(".tile[data-id=\"__ID__\"]"); if (!t) return null; const r = t.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2; const el = document.elementFromPoint(x, y); return { x: x, y: y, hit: t.contains(el) && !(el && el.closest("button")) };'.Replace('__ID__', "$id"))
+  }
+  # The layout POSTs the page sent after the first $before of them, once the page has settled (its own timers and requests included).
+  # The comma keeps an empty or a one-item list a list: a function's output is unrolled, so a bare one-item array would come back as the item.
+  function Layout-Posts-After($sock, [int]$before) {
+    , @((Js $sock ('await window.__h.settle(); return window.__h.posts("layout").slice(' + $before + ')')) | ? { $_ })
+  }
+  # Opens the split menu of window $id with its focus and S, without selecting it first. Answers the menu's read-out, or null.
+  function Split-Menu-Open($sock, [int]$id) {
+    if ((Js $sock 'return !!document.getElementById("smenu")') -eq $true) { Press-Key $sock 'Escape' 27 }
+    # The tile takes focus on each poll until it holds it, so the S press reaches the tile and not a node the page just replaced.
+    # preventScroll keeps the harness's own focus from scrolling the stage, and a scroll event would close the menu it opens.
+    $focusCond = '(() => { const t = document.querySelector(".tile[data-id=\"' + $id + '\"]"); if (!t) return false; t.focus({ preventScroll: true }); return document.activeElement === t; })()'
+    [void](WaitFor $sock $focusCond 10); [void](Js $sock $splitFrameJs); Press-Key $sock 's' 83 's'
+    if (-not (WaitFor $sock $splitMenuJs 10)) { return $null }
+    Js $sock $splitReadJs
+  }
+  # Selects window $id, then opens its split menu with S. Answers the menu's read-out, or null.
+  function Split-Open($sock, [int]$id) {
+    if (-not (Split-Select $sock $id)) { return $null }
+    Split-Menu-Open $sock $id
+  }
+  # Clicks the open split menu's item for dir and keep, waits for the POST it sends, and answers the item, the POSTs sent and the drop note.
+  function Split-Pick($sock, [string]$dir, [string]$keep) {
+    $before = [int](Js $sock 'return window.__h.posts("layout").length')
+    $info = Js $sock (Split-ItemJs $dir $keep)
+    if ($null -eq $info) { return [pscustomobject]@{ item = $null; sent = 0; note = $null } }
+    [void](WaitFor $sock ('window.__h.posts("layout").length > ' + $before) 10)
+    [void](Js $sock 'await window.__h.settle(); return true')
+    $after = [int](Js $sock 'return window.__h.posts("layout").length')
+    [pscustomobject]@{ item = $info; sent = $after - $before; note = (Js $sock $splitNoteJs) }
+  }
+
+  Case 'split small: an unsplit tile under 40px keeps its lock, grip and badge (red: the tiny rule hides them on any small tile)' {
+    # Window 1001 is unlocked and stacked (grip and badge); window 1006 is locked (lock). A lock hides the grip, so they are not one tile.
+    Put-Split (Split-Json 10 2 @((Split-Pin 0 @(0) $false @($smallBack)), (Split-Pin 1 @(1) $true)))
+    Set-View $ws 1024 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split small: the page opens on Focus at 1024 (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $sel = Split-Select $ws 1001
+      Check 'split small: window 1001 is selected (control)' $sel 'no tile 1001 to select'
+      Wait-Tile-Rest $ws 1001 'split small'
+      $m = Tile-Metrics $ws 1001
+      Wait-Tile-Rest $ws 1006 'split small'
+      $lk = Tile-Metrics $ws 1006
+      $plain = Js $ws 'return layoutOf(work.focus).grids.U1.mult === undefined'
+      Check 'split small: window 1001 is an unlocked, stacked, unsplit tile under 40px wide (scope)' ($m -and $m.w -gt 0 -and $m.w -lt 40 -and $m.stacked -eq $true -and $m.lock -eq $false -and $plain -eq $true) "width $(if ($m) { $m.w }), stacked: $(if ($m) { $m.stacked }), locked: $(if ($m) { $m.lock }), mult absent: $plain"
+      Check 'split small: window 1006 is a locked, unsplit tile under 40px wide (scope)' ($lk -and $lk.w -gt 0 -and $lk.w -lt 40 -and $lk.lock -eq $true) "width $(if ($lk) { $lk.w }), locked: $(if ($lk) { $lk.lock })"
+      Check 'split small: the locked unsplit tile under 40px keeps its lock' ($lk -and $lk.lk -ne 'none') "lock display: $(if ($lk) { $lk.lk })"
+      Check 'split small: the unsplit tile under 40px keeps its grip' ($m -and $m.rsz -ne 'none') "grip display: $(if ($m) { $m.rsz })"
+      Check 'split small: the unsplit stacked tile under 40px keeps its stack badge' ($m -and $m.stk -ne 'none') "badge display: $(if ($m) { $m.stk })"
+      Check 'split small: the selected unsplit tile under 40px keeps Stay Put (control)' ($m -and $m.sp -ne 'none') "Stay Put display: $(if ($m) { $m.sp })"
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split small: the same unsplit tile at 1440 is 40px or wider and keeps its lock, grip and badge (control)' {
+    Put-Split (Split-Json 10 2 @((Split-Pin 0 @(0) $false @($smallBack)), (Split-Pin 1 @(1) $true)))
+    Set-View $ws 1440 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split small: the page opens on Focus at 1440 (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $sel = Split-Select $ws 1001
+      Check 'split small: window 1001 is selected at 1440 (control)' $sel 'no tile 1001 to select'
+      Wait-Tile-Rest $ws 1001 'split small at 1440'
+      $m = Tile-Metrics $ws 1001
+      Wait-Tile-Rest $ws 1006 'split small at 1440'
+      $lk = Tile-Metrics $ws 1006
+      Check 'split small: window 1001 is an unsplit tile 40px or wider at 1440 (scope)' ($m -and $m.w -ge 40) "width $(if ($m) { $m.w })"
+      Check 'split small: at 1440 the locked unsplit tile keeps its lock (control)' ($lk -and $lk.lk -ne 'none') "lock display: $(if ($lk) { $lk.lk })"
+      Check 'split small: at 1440 the unlocked unsplit tile keeps its grip (control)' ($m -and $m.rsz -ne 'none') "grip display: $(if ($m) { $m.rsz })"
+      Check 'split small: at 1440 the unlocked unsplit stacked tile keeps its badge (control)' ($m -and $m.stk -ne 'none') "badge display: $(if ($m) { $m.stk })"
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split small: a split half under 40px gives up its lock, grip and badge, as the design sets (control)' {
+    $seedBack = @(Split-Pin 0 @(0) $false @($smallBack)) + @(1..9 | % { Split-Pin $_ @((2 * $_), (2 * $_ + 1)) })
+    Put-Split (Split-Json 5 2 $seedBack '2,1' '2,1')
+    Set-View $ws 1024 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split small: the page opens on Focus at 1024 with a split grid (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $sel = Split-Select $ws 1001
+      Check 'split small: window 1001 is selected (control)' $sel 'no tile 1001 to select'
+      Wait-Tile-Rest $ws 1001 'split small, split half'
+      $m = Tile-Metrics $ws 1001
+      $grid = Js $ws 'return layoutOf(work.focus).grids.U1.mult'
+      Check 'split small: window 1001 is a split half under 40px wide, on a grid with mult 2,1 (scope)' ($m -and $m.w -gt 0 -and $m.w -lt 40 -and ((@($grid) -join ',') -eq '2,1')) "width $(if ($m) { $m.w }), mult: $(@($grid) -join ',')"
+      Check 'split small: the split half gives up its lock, as the design sets (control)' ($m -and $m.lk -eq 'none') "lock display: $(if ($m) { $m.lk })"
+      Check 'split small: the split half gives up its grip, as the design sets (control)' ($m -and $m.rsz -eq 'none') "grip display: $(if ($m) { $m.rsz })"
+      Check 'split small: the split half gives up its badge, as the design sets (control)' ($m -and $m.stk -eq 'none') "badge display: $(if ($m) { $m.stk })"
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split small: a narrow half at 1024 (21px in this harness; the brief said 27px) draws no window title, its tag is one initial, and a selected Stay Put stays inside the half' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1')
+    Set-View $ws 1024 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split small: the page opens on Focus at 1024 with a split grid (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $sel = Split-Select $ws 1001
+      Check 'split small: window 1001, the left half, is selected (control)' $sel 'no tile 1001 to select'
+      Wait-Tile-Rest $ws 1001 'split small, narrow half'
+      $m = Tile-Metrics $ws 1001
+      Check 'split small: window 1001 is a split half under 40px wide at 1024 (scope)' ($m -and $m.w -gt 0 -and $m.w -lt 40) "width $(if ($m) { $m.w })"
+      Check 'split small: the half tag is one initial (control)' ($m -and ([string]$m.tag) -match '^\S$') "tag: '$(if ($m) { $m.tag })'"
+      Check 'split small: the half initial is not cut off inside its tag (text fits the tag box)' ($m -and $m.tagSW -le ($m.tagCW + 0.5)) "tag text width $(if ($m) { $m.tagSW }), tag box width $(if ($m) { $m.tagCW })"
+      Check 'split small: the half initial sits inside the half, not past its edge (control)' ($m -and $m.tagIn -eq $true) "tag box x $(if ($m) { [math]::Round($m.tagL, 1) }) to $(if ($m) { [math]::Round($m.tagR, 1) }), half x $(if ($m) { [math]::Round($m.tileL, 1) }) to $(if ($m) { [math]::Round($m.tileR, 1) })"
+      Check 'split small: the half draws no window title, only its initial (the mockup shows the initial only)' ($m -and $m.titleShown -eq $false) 'the window title is drawn inside the half'
+      Check 'split small: a selected half keeps Stay Put inside the half, or gives it way' ($m -and ($null -eq $m.spRect -or (Inside $m.spRect $m.tile))) 'Stay Put is drawn outside the half (its rect is past the half edge)'
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split note: joining a split of cell 2 says "Joined cell 2." and the cell it names holds the joined window once the grid halves back (item 13)' {
+    Put-Split (Split-Json 5 2 (0..9 | % { Split-Pin $_ @($_) }))
+    Set-View $ws 1440 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split note: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $menu = Split-Open $ws 1006
+      Check 'split note: S opens the split menu of window 1006, in cell 2 (scope)' ($null -ne $menu) 'no split menu after S'
+      if ($null -eq $menu) { return }
+      $first = Split-Pick $ws 'Side by Side' 'Left'
+      Check 'split note: the split sends one POST /layout (scope)' ($null -ne $first.item -and $first.sent -eq 1) "item sent: $($null -ne $first.item), POST /layout count: $($first.sent)"
+      Check 'split note: the first split names the cell it cuts, "Split cell 2." (control)' ([string]$first.note -match '^Split cell 2\.') "note: '$($first.note)'"
+      [void](Js $ws (Split-FocusJs 1006))
+      Press-Key $ws 'j' 74 'j'
+      [void](WaitFor $ws 'window.__h.posts("layout").length > 1' 15)
+      [void](Js $ws 'await window.__h.settle(); return true')
+      $j = Js $ws $splitNoteJs
+      Check 'split note: joining that split says "Joined cell 2." (today it names the fine cell 3)' ([string]$j -match '^Joined cell 2\.') "note: '$j'"
+      Check 'split note: the joined grid reads 5x2 again, as the note says (control)' ([string]$j -match 'The grid is 5\D2 again\.') "note: '$j'"
+      [void](WaitFor $ws '(() => { const q = prev() && prev().placed.find(x => x.id === 1006 && !x.behind); return !!q && q.slots.length === 1 && q.slots[0] === 2; })()' 15)
+      $held = Js $ws 'const q = prev() && prev().placed.find(x => x.id === 1006 && !x.behind); return q ? q.slots : null'
+      $named = if ([string]$j -match 'Joined cell (\d+)\.') { [int]$matches[1] } else { 0 }
+      Check 'split note: the cell the join names holds the joined window on the 5x2 grid (today it names a cell another window holds)' ($named -gt 0 -and (@(Split-Ints $held) -contains $named)) "the note names cell $named; window 1006 holds slot(s) $(@(Split-Ints $held) -join ',')"
+    } finally { Reset-Look $ws }
+  }
+
+  foreach ($v in @(@{ label = 'side by side'; dir = 'Side by Side'; keep = 'Right' }, @{ label = 'stacked'; dir = 'Stacked'; keep = 'Top' })) {
+    Case ('split note: a ' + $v.label + ' second split of window 1005, on two fine cells, names its original cell: Split Cell 3 and Split cell 3') {
+      Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1')
+      Set-View $ws 1440 900
+      try {
+        $opened = Open-Page $ws $url 'focus'
+        Check 'split note: the page opens on Focus with a split grid (control)' $opened 'the page did not open on Focus in time'
+        if (-not $opened) { return }
+        $menu = Split-Open $ws 1005
+        Check ('split menu: S opens the menu of window 1005 on its ' + $v.label + ' second split (scope)') ($null -ne $menu) 'no split menu after S'
+        if ($null -eq $menu) { return }
+        Check 'split menu: a second split titles its menu with the original cell, "Split Cell 3" (today it names the fine cells 5+6)' ($menu.title -eq 'Split Cell 3') "title: '$($menu.title)'"
+        $p = Split-Pick $ws $v.dir $v.keep
+        Check ('split note: the ' + $v.label + ' second split sends one POST /layout (scope)') ($null -ne $p.item -and $p.sent -eq 1) "item sent: $($null -ne $p.item), POST /layout count: $($p.sent)"
+        Check 'split note: the second split names the original cell, "Split cell 3." (today it names "5+6")' ([string]$p.note -match '^Split cell 3\.') "note: '$($p.note)'"
+      } finally { Reset-Look $ws }
+    }
+  }
+
+  Case 'split note: a second split of the half of cell 1 keeps its number, Split Cell 1 and Split cell 1 (control)' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1')
+    Set-View $ws 1440 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split note: the page opens on Focus with a split grid (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $menu = Split-Open $ws 1001
+      Check 'split menu: S opens the menu of window 1001, the half of cell 1 (scope)' ($null -ne $menu) 'no split menu after S'
+      if ($null -eq $menu) { return }
+      Check 'split menu: the menu of the half of cell 1 is titled "Split Cell 1" (control)' ($menu.title -eq 'Split Cell 1') "title: '$($menu.title)'"
+      $p = Split-Pick $ws 'Stacked' 'Top'
+      Check 'split note: the second split of the half sends one POST /layout (scope)' ($null -ne $p.item -and $p.sent -eq 1) "item sent: $($null -ne $p.item), POST /layout count: $($p.sent)"
+      Check 'split note: the second split of the half names cell 1, "Split cell 1." (control)' ([string]$p.note -match '^Split cell 1\.') "note: '$($p.note)'"
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split menu: the first right-click on an unselected window opens its split menu, though selecting it scrolls the inspector' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0) $false @($smallBack)))
+    Set-View $ws 1440 600
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split menu: the page opens on Focus at 1440 by 600 (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $pre = Js $ws 'const t = document.querySelector(".tile[data-id=\"1001\"]"); return { stacked: !!t && t.classList.contains("stacked"), sel: !!document.querySelector(".tile.sel") };'
+      Check 'split menu: window 1001 is stacked and no window is selected before the right-click (control)' ($pre.stacked -eq $true -and $pre.sel -eq $false) "stacked: $($pre.stacked), a window selected: $($pre.sel)"
+      $pt = Js $ws 'const t = document.querySelector(".tile[data-id=\"1001\"]"); if (!t) return null; const r = t.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2; return { x: x, y: y, hit: t.contains(document.elementFromPoint(x, y)) };'
+      Check 'split menu: the pointer lands on window 1001 (scope)' ($pt -and $pt.hit -eq $true) 'the pointer does not land on window 1001'
+      if (-not ($pt -and $pt.hit -eq $true)) { return }
+      Click-Right $ws ([double]$pt.x) ([double]$pt.y)
+      [void](Js $ws $splitFrameJs)
+      $a = Js $ws 'const h = document.getElementById("winh"), ins = h ? h.closest(".insp") : null; return { sel: typeof selWin === "undefined" ? null : selWin, scroll: ins ? ins.scrollTop : null, menu: !!document.getElementById("smenu") };'
+      Check 'split menu: the right-click selects window 1001 (control)' ($a -and $a.sel -eq 1001) "selected: $(if ($a) { $a.sel })"
+      Check 'split menu: selecting it scrolls the inspector (scope: the case reaches the scroll)' ($a -and $a.scroll -gt 0) "inspector scrollTop: $(if ($a) { $a.scroll })"
+      Check 'split menu: the first right-click opens the split menu, though the inspector scroll that selects the window follows it (today that scroll closes it)' ($a -and $a.menu -eq $true) 'the split menu is closed after the inspector scroll'
+      if ($a -and $a.menu -eq $true) { Press-Key $ws 'Escape' 27 }
+      Click-Right $ws ([double]$pt.x) ([double]$pt.y)
+      [void](Js $ws $splitFrameJs)
+      $b = Js $ws 'return !!document.getElementById("smenu")'
+      Check 'split menu: a right-click on the selected window opens its split menu (control)' ($b -eq $true) 'no split menu after the second right-click'
+    } finally { Reset-Look $ws }
+  }
+
+  foreach ($v in @(@{ label = 'a side half'; seed = $halfSeed; mult = '2,1' }, @{ label = 'a stacked half'; seed = $halfStackSeed; mult = '1,2' })) {
+    Case ('split menu: the Join Halves icon on ' + $v.label + ' has the window category colour, in light and in dark (today it is black)') {
+      Put-Split (Split-Json 5 2 $v.seed $v.mult $v.mult)
+      Set-View $ws 1440 900
+      try {
+        $opened = Open-Page $ws $url 'focus'
+        Check 'split menu: the page opens on Focus with a split grid (control)' $opened 'the page did not open on Focus in time'
+        if (-not $opened) { return }
+        # Selected first: a pinned narrow window that S selects scrolls the inspector, and that scroll closes the menu S opens.
+        $selOk = Split-Select $ws 1001
+        Check 'split menu: window 1001 is selected before S, so the menu is not closed by the inspector scroll (control)' $selOk 'no tile 1001 to select'
+        foreach ($theme in @('light', 'dark')) {
+          Set-Theme $ws $theme
+          $menu = Split-Menu-Open $ws 1001
+          $state = if ($null -eq $menu) { Js $ws 'return { active: document.activeElement ? (document.activeElement.className || document.activeElement.tagName) : null, dataId: document.activeElement ? document.activeElement.getAttribute("data-id") : null, sel: typeof selWin === "undefined" ? null : selWin, busy: typeof isBusy === "undefined" ? null : isBusy }' } else { $null }
+          Check ('split menu: the split menu opens on ' + $v.label + ', in ' + $theme + ' (scope)') ($null -ne $menu) ("no split menu after S; page state: " + (ConvertTo-Json -Compress -InputObject $state))
+          if ($null -eq $menu) { continue }
+          Check ('split menu: a kept half of ' + $v.label + ' has a category colour, in ' + $theme + ' (control)') ((([string]$menu.keep) -ne '') -and ($menu.keep -ne 'rgb(0, 0, 0)')) "kept-half fill: $($menu.keep)"
+          Check ('split menu: the Join Halves icon on ' + $v.label + ' is not black, in ' + $theme) ((([string]$menu.join) -ne '') -and ($menu.join -ne 'rgb(0, 0, 0)')) "Join Halves fill: $($menu.join)"
+          Check ('split menu: the Join Halves icon on ' + $v.label + ' has the kept-half colour, in ' + $theme) ((([string]$menu.join) -ne '') -and ($menu.join -eq $menu.keep)) "Join Halves fill $($menu.join), kept-half fill $($menu.keep)"
+        }
+      } finally { Reset-Look $ws }
+    }
+  }
+
+  # Double-click (split-cell notes): a double-click on the selected window splits its cell side by side, one POST /layout; a double-click on an
+  # unselected window selects it and does not split; a double-click on a selected locked window does not split. Each sends real pointer
+  # and mouse events (Click-Double), so the page's press, release and dblclick run as they do for a user.
+  Case 'split dblclick: a double-click on the selected window splits its cell side by side: one POST /layout, the grid doubled' {
+    Put-Split (Split-Json 5 2 (0..9 | % { Split-Pin $_ @($_) }))
+    Set-View $ws 1440 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split dblclick: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $sel = Split-Select $ws 1001
+      Check 'split dblclick: window 1001 is selected before the double-click (control)' $sel 'no tile 1001, or Enter did not select it'
+      if (-not $sel) { return }
+      $pt = Tile-Centre $ws 1001
+      Check 'split dblclick: the double-click lands on window 1001, not on a button in it (scope)' ($pt -and $pt.hit -eq $true) 'the point is off window 1001'
+      if (-not ($pt -and $pt.hit -eq $true)) { return }
+      $before = [int](Js $ws 'return window.__h.posts("layout").length')
+      Click-Double $ws ([double]$pt.x) ([double]$pt.y)
+      [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+      $sent = Layout-Posts-After $ws $before
+      Check 'split dblclick: the double-click on the selected window sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+      $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+      Check 'split dblclick: the POST carries the plugged-in setup key' ($sent.Count -eq 1 -and ((ConvertFrom-Json $sent[0].body).key -ceq $plugKey)) 'no POST /layout to read the setup key from, or it carries another key'
+      Split-Verify 'double-click, side by side' $lay 5 2 '2,1' '2,1' 'Refactor the grid solver' '0' $splitWantSide
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split dblclick: a double-click on an unselected window sends no POST /layout and leaves that window selected' {
+    Put-Split (Split-Json 5 2 (0..9 | % { Split-Pin $_ @($_) }))
+    Set-View $ws 1440 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split dblclick: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $other = Split-Select $ws 1002
+      Check 'split dblclick: window 1002 is selected, so window 1001 is not (scope)' ($other -and ((Js $ws 'return selWin') -eq 1002)) 'window 1002 is not selected'
+      if (-not $other) { return }
+      $pt = Tile-Centre $ws 1001
+      Check 'split dblclick: the double-click lands on window 1001, not on a button in it (scope)' ($pt -and $pt.hit -eq $true) 'the point is off window 1001'
+      if (-not ($pt -and $pt.hit -eq $true)) { return }
+      $before = [int](Js $ws 'return window.__h.posts("layout").length')
+      Click-Double $ws ([double]$pt.x) ([double]$pt.y)
+      $sent = Layout-Posts-After $ws $before
+      Check 'split dblclick: a double-click on an unselected window sends no POST /layout' ($sent.Count -eq 0) "POST /layout count: $($sent.Count)"
+      $now = Js $ws 'return selWin'
+      Check 'split dblclick: a double-click on an unselected window selects it' ($now -eq 1001) "selected window: $now"
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split dblclick: a double-click on a selected locked window sends no POST /layout' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0) $true))
+    Set-View $ws 1440 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split dblclick: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $lk = Js $ws 'const t = document.querySelector(".tile[data-id=\"1001\"]"); return !!t && t.classList.contains("lock")'
+      Check 'split dblclick: window 1001 is locked (scope)' ($lk -eq $true) 'the tile has no lock class'
+      if ($lk -ne $true) { return }
+      $sel = Split-Select $ws 1001
+      Check 'split dblclick: window 1001 is selected before the double-click (control)' $sel 'no tile 1001, or Enter did not select it'
+      if (-not $sel) { return }
+      $pt = Tile-Centre $ws 1001
+      Check 'split dblclick: the double-click lands on window 1001, not on a button in it (scope)' ($pt -and $pt.hit -eq $true) 'the point is off window 1001'
+      if (-not ($pt -and $pt.hit -eq $true)) { return }
+      $before = [int](Js $ws 'return window.__h.posts("layout").length')
+      Click-Double $ws ([double]$pt.x) ([double]$pt.y)
+      $sent = Layout-Posts-After $ws $before
+      Check 'split dblclick: a double-click on the selected locked window sends no POST /layout' ($sent.Count -eq 0) "POST /layout count: $($sent.Count)"
+    } finally { Reset-Look $ws }
   }
 
   # Inspector kind (monitor-setups notes, item 25: the owner's yes, to say the kind once in words in the inspector's Scene section). The Scene
