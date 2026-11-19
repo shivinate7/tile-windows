@@ -610,6 +610,13 @@ dialog form{display:grid;gap:10px}
 .space.lent .lab small{display:inline;margin-left:6px}
 .space.sel{outline:3px solid var(--ink);outline-offset:-1px}
 .grow{position:absolute;z-index:6;box-sizing:border-box;pointer-events:none;border:2px solid var(--cat,var(--select));background:color-mix(in srgb,var(--cat,var(--select)) 40%,transparent)}
+.menu.back{width:300px}
+.menu.back label{display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:6px;cursor:pointer;font:12px var(--f);color:var(--ink)}
+.menu.back label:hover{background:color-mix(in srgb,var(--select) 12%,transparent)}
+.menu.back small{display:block;color:var(--muted);font-weight:400}
+.menu.back .row2{display:flex;gap:6px;justify-content:flex-end;padding-top:4px}
+#reslist details{margin-top:4px;font-size:12px;color:var(--muted)}
+#reslist .btn{margin-top:4px}
 .seam{position:absolute;z-index:6;display:grid;place-items:center;touch-action:none}
 .seam.v{width:12px;transform:translateX(-50%);cursor:ew-resize}
 .seam.h{height:12px;transform:translateY(-50%);cursor:ns-resize}
@@ -1812,6 +1819,7 @@ const keepWords=(dir,keep)=>`keeps the ${SPDIR[dir].k[keep].toLowerCase()} half`
 // Split the window's cell. One edit, so one POST /layout and one Undo: the grid keeps c and r and sets mult, every pin, zone and held entry on the monitor takes doubled
 // slots, and the window is pinned to its kept half (item 5). A locked window does not split (item 11).
 function splitCell(id,dir,keep){
+  const fo=LIVE&&freeOfWin(id);if(fo&&!isBusy)return freeSplit(id,dir,keep,fo);
   const c=cellOfWin(id),w=winById(id);if(!c||!w||isBusy){status("That window has no cell to split.");return false}
   if(isLockedId(id)){status(`${w.title} is locked. Unlock it first.`);return false}
   const pl=splitPlan(c.g,c.b,dir);if(!pl.ok){status(pl.why);return false}
@@ -1847,6 +1855,7 @@ function halveGrid(x,role){const g=x.grids[role],[mx,my]=MXY(g);if(mx===1&&my===
   return true}
 // Join Halves: the window takes its whole base cell, as a resize does (a window there goes to Windows That Stay Put, a lock stops it), then the grid halves back where it can.
 function joinCell(id){
+  if(LIVE&&freeOfWin(id)){status("Free Layout has no halves to join. Move the line instead.");return false}
   const j=joinInfo(id),w=winById(id);if(!j||!w||isBusy){status("That window has no cell to join.");return false}
   if(isLockedId(id)){status(`${w.title} is locked. Unlock it first.`);return false}
   if(!j.split){status("This cell is not split.");return false}
@@ -1884,7 +1893,7 @@ function splitMenuHTML(id){
     `<p class="mf">${locked?"Esc closes.":"Enter splits. Esc closes."}</p></div>`}
 function clearSplitPreview(){for(const e of stage.querySelectorAll(".sprev,.sdiv"))e.remove()}
 // The focused item on the board: a dashed line on the cut and a hatched open half (item S2 of the notes). It draws the grid the cut would make, so nothing moves.
-function splitPreview(id,dir,keep){clearSplitPreview();const c=cellOfWin(id);if(!c||!dir)return;const pl=splitPlan(c.g,c.b,dir);if(!pl.ok)return;
+function splitPreview(id,dir,keep){clearSplitPreview();if(LIVE&&freeOfWin(id)){freeSplitPreview(id,dir,keep);return}const c=cellOfWin(id);if(!c||!dir)return;const pl=splitPlan(c.g,c.b,dir);if(!pl.ok)return;
   const X=SPDIR[dir].x,[mx,my]=MXY(c.g),g2={...c.g,mult:[mx*(pl.dbl&&X?2:1),my*(pl.dbl&&!X?2:1)]},k=keptBlock(c.b,dir,keep,pl.dbl),
     o=X?{...k,c:keep?k.c-k.cs:k.c+k.cs}:{...k,r:keep?k.r-k.rs:k.r+k.rs},
     kr=px(cellRect(c.mon,g2,k.c,k.r,k.cs,k.rs)),or=px(cellRect(c.mon,g2,o.c,o.r,o.cs,o.rs)),n=v=>parseFloat(v),
@@ -1899,8 +1908,8 @@ function closeSplit(back){const s=smenu;smenu=null;clearSplitPreview();const m=$
 // at: {x,y} for a right-click (the menu opens at the pointer), or {el} for a key or the inspector button (the menu opens under it).
 function openSplit(id,at){
   closeSplit(false);closeMenu();
-  const c=cellOfWin(id);if(isBusy)return false;if(!c){status("That window has no cell to split.");return false}
-  const d=document.createElement("div");d.innerHTML=splitMenuHTML(id);const m=d.firstElementChild;document.body.appendChild(m);
+  const fr=LIVE&&freeOfWin(id),c=fr||cellOfWin(id);if(isBusy)return false;if(!c){status("That window has no cell to split.");return false}
+  const d=document.createElement("div");d.innerHTML=fr?freeSplitMenuHTML(id):splitMenuHTML(id);const m=d.firstElementChild;document.body.appendChild(m);
   const w=m.offsetWidth,h=m.offsetHeight,r=at.el?at.el.getBoundingClientRect():null;
   let L=r?r.left:at.x,T=r?r.bottom+4:at.y;
   if(T+h+8>innerHeight)T=r?r.top-4-h:at.y-h;
@@ -2002,7 +2011,7 @@ function freeFromGrid(m,g){
 let freeNote=null;  // {id, key}: the monitor just switched on, until the next edit (the callout "Nothing moved")
 function freeToggle(){
   const m=curMon,s=LIVE&&scene(),g=s&&m&&gridOf(m);if(!g||isBusy)return;
-  if(isFree(g)){status("Free Layout is on. Use the switch to go back to the grid.");return}
+  if(isFree(g)){const sw=$("freeSw");if(sw)sw.checked=true;openBack(m);return}
   const why=freeWhy(m,g);if(why){status(why);return}
   const areas=freeFromGrid(m,g),id=selId,key=mk(m);
   if(edit(x=>{x.grids[key].free={areas}},`${monName(m)} is Free Layout. Nothing moved.`))freeNote={id,key};
@@ -2319,6 +2328,114 @@ function freeEmpty(){
   const info=freeFill(freeInfo(m,g));if(info.list.some(o=>o.occ||o.gone))return"";
   const nm=Object.values(ROLE).includes(monName(m))?"the "+monName(m).toLowerCase():monName(m);
   return `No window is placed on ${nm}. Drag one here from Windows That Stay Put, or let windows fill the spaces.`}
+
+// ---- Split a space (F15): one new line and one empty half; the grid does not double. The window keeps one half, and the other half is a space with no pin.
+function freeSplitPlan(info,o,dir){
+  const X=SPDIR[dir].x,ax=X?0:1,n=X?info.m.w:info.m.h,r=o.a.rect,p0=fpx(r[ax],n),p1=fpx(r[ax]+r[ax+2],n),pm=Math.round((p0+p1)/2),floor=FLOORPX[ax];
+  if(pm-p0<floor||p1-pm<floor)return{ok:false,why:`Each half must stay at least ${FLOORPX[0]} × ${FLOORPX[1]} px. This space is too ${X?"narrow":"short"} to split.`};
+  const mid=pm/n,a=r.slice(),b=r.slice();a[ax+2]=mid-r[ax];b[ax]=mid;b[ax+2]=r[ax]+r[ax+2]-mid;
+  return{ok:true,a,b}}
+function freeSplit(id,dir,keep,fo){
+  const w=winById(id),A=appName(w.app),{info,o}=fo;
+  if(o.lock){status(`${w.title} is locked. Unlock it first.`);return false}
+  const pl=freeSplitPlan(info,o,dir);if(!pl.ok){status(pl.why);return false}
+  const key=info.key;curMon=info.m;selWin=id;
+  return edit(x=>{const areas=x.grids[key].free.areas,a=areas[o.i];a.rect=keep?pl.b:pl.a;areas.push({rect:keep?pl.a:pl.b})},
+    `Split ${A}'s space. ${A} ${keepWords(dir,keep)}. The other half is empty.`)}
+function freeSplitMenuHTML(id){
+  const fo=freeOfWin(id),w=winById(id),A=esc(appName(w.app)),locked=fo.o.lock,LOCKWHY="Locked. Unlock it first.";
+  const grp=dir=>{const D=SPDIR[dir],pl=freeSplitPlan(fo.info,fo.o,dir),off=locked?LOCKWHY:pl.ok?"":pl.why;
+    return `<p class="mg"><span>${D.name}</span><small>${off?"Off":"Adds a line"}</small></p>`+
+      [0,1].map(k=>`<button type="button" role="menuitem" class="mi cat-${catOf(w.app)}" data-sp="${dir}:${k}"${off?` aria-disabled="true" title="${esc(off)}"`:""}>${glyph(dir,k)}<b>${A} Keeps ${D.k[k]}</b></button>`).join("")+
+      (off&&!locked?`<p class="mwhy">${esc(off)}</p>`:"")};
+  return `<div class="menu split" role="menu" id="smenu" aria-labelledby="smh"><p class="mh" id="smh">Split ${A}'s Space</p>`+
+    (locked?`<button type="button" role="menuitem" class="mi" data-sp="unlock">${GLOCK}<b>Unlock ${A}</b><kbd>L</kbd></button><p class="mwhy">${LOCKWHY}</p>`:"")+
+    grp("side")+grp("stack")+`<p class="mf">${locked?"Esc closes.":"Enter splits. Esc closes."}</p></div>`}
+function freeSplitPreview(id,dir,keep){
+  const fo=freeOfWin(id);if(!fo||!dir)return;const pl=freeSplitPlan(fo.info,fo.o,dir);if(!pl.ok)return;
+  const X=SPDIR[dir].x,m=fo.info.m,kr=px(areaPx(m,{rect:keep?pl.b:pl.a})),or=px(areaPx(m,{rect:keep?pl.a:pl.b})),n=v=>parseFloat(v),h=document.createElement("div"),l=document.createElement("div");
+  h.className="sprev";Object.assign(h.style,or);l.className="sdiv";
+  if(X){const x=keep?n(kr.left):n(kr.left)+n(kr.width);Object.assign(l.style,{left:x-1+"px",top:Math.min(n(kr.top),n(or.top))+"px",width:"2px",height:Math.max(n(kr.height),n(or.height))+"px",borderLeftWidth:"2px"})}
+  else{const y=keep?n(kr.top):n(kr.top)+n(kr.height);Object.assign(l.style,{top:y-1+"px",left:Math.min(n(kr.left),n(or.left))+"px",height:"2px",width:Math.max(n(kr.width),n(or.width))+"px",borderTopWidth:"2px"})}
+  stage.append(h,l)}
+
+// ---- Back to the Grid (F13). Switching the switch off asks first and saves nothing until Back to Grid. Snap to Cells puts each pinned window on the cells its space is nearest to (a window whose
+// cells another has taken goes to Windows That Stay Put). Restore the Grid Layout gives each pin the cells it had before Free Layout (a pin made in Free Layout has none, so it goes there too).
+function backPlan(m,g,mode){
+  const info=freeFill(freeInfo(m,g)),s=scene(),P=prev(),W=GC(g),H=GR(g),cw=m.w/W,ch=m.h/H,used=new Set(),assign=[],drop=[];let n=0;
+  const sizeOf=sl=>{const b=bbox(sl,g),r=cellRect(m,g,b.c,b.r,b.cs,b.rs);return[r.w,r.h]};
+  for(const o of info.list){if(o.pin<0)continue;let sl;
+    if(mode==="snap"){
+      const c0=clamp(Math.round((o.r.x-m.x)/cw),0,W-1),c1=clamp(Math.round((o.r.x+o.r.w-m.x)/cw),c0+1,W),r0=clamp(Math.round((o.r.y-m.y)/ch),0,H-1),r1=clamp(Math.round((o.r.y+o.r.h-m.y)/ch),r0+1,H);
+      sl=[];for(let r=r0;r<r1;r++)for(let c=c0;c<c1;c++)sl.push(r*W+c)}
+    else sl=(s.pins[o.pin].slots||[]).filter(v=>v>=0&&v<W*H);
+    if(!sl.length||sl.some(v=>used.has(v))){drop.push(o.pin);continue}
+    sl.forEach(v=>used.add(v));assign.push({pin:o.pin,slots:sl});
+    const[w0,h0]=sizeOf(sl);if(Math.abs(w0-o.r.w)>1||Math.abs(h0-o.r.h)>1)n++}
+  // A pin whose space is gone (no area names it) keeps its own cells in Restore, so it is not touched here.
+  return{assign,drop,n,P}}
+let backM=null;  // the monitor the open Back to the Grid popover is for
+function closeBack(focus){const e=$("backpop");if(e)e.remove();backM=null;if(focus){const sw=$("freeSw");if(sw)sw.focus()}}
+function openBack(m){
+  closeBack(false);closeSplit(false);closeMenu();const g=gridOf(m);if(!g||isBusy)return;backM=m;
+  const say=n=>n?`${plural(n,"window")} will change size.`:"No window changes size.",sn=backPlan(m,g,"snap"),rs=backPlan(m,g,"restore");
+  const d=document.createElement("div");
+  d.innerHTML=`<div class="menu back" role="dialog" id="backpop" aria-labelledby="backh"><p class="mh" id="backh">Back to the Grid</p>
+    <label><input type="radio" name="backmode" value="snap" checked><span><b>Snap to Cells</b><small>Each window takes the cells its space is nearest to. ${say(sn.n)}${sn.drop.length?` ${plural(sn.drop.length,"window")} with no cell of its own stays put.`:""}</small></span></label>
+    <label><input type="radio" name="backmode" value="restore"><span><b>Restore the Grid Layout</b><small>The cells each window had before Free Layout. ${say(rs.n)}</small></span></label>
+    <p class="mf">Nothing is saved until you press Back to Grid.</p>
+    <div class="row2"><button type="button" class="btn" id="backcancel">Cancel</button><button type="button" class="btn pri" id="backgo">Back to Grid</button></div></div>`;
+  const e=d.firstElementChild;document.body.appendChild(e);
+  const sw=$("freeSw"),r=sw?sw.closest("label").getBoundingClientRect():{left:16,bottom:60,top:60},w=e.offsetWidth,h=e.offsetHeight;
+  let T=r.bottom+4;if(T+h+8>innerHeight)T=Math.max(8,r.top-4-h);
+  e.style.left=clamp(r.left,8,Math.max(8,innerWidth-w-8))+"px";e.style.top=T+"px";
+  e.addEventListener("keydown",ev=>{if(ev.key==="Escape"){ev.preventDefault();ev.stopPropagation();closeBack(true)}});
+  const f=e.querySelector("input:checked");if(f)f.focus({preventScroll:true})}
+document.addEventListener("pointerdown",ev=>{if(backM&&!ev.target.closest("#backpop,#freeSw"))closeBack(false)},true);
+function backToGrid(m,mode){
+  const g=gridOf(m);if(!g||!isFree(g)||isBusy)return;
+  const key=mk(m),pl=backPlan(m,g,mode),s=scene(),P=prev(),
+    bayed=pl.drop.map(i=>{const p=s.pins[i],pp=P&&P.placed.find(q=>q.pin===i&&!q.behind),w=pp&&winById(pp.id);return w?{id:w.id,app:w.app,title:w.title}:{app:p.app,title:p.match||""}}),
+    gone=pl.drop.map(i=>s.pins[i]);
+  selSp=null;closeBack(false);
+  edit(x=>{delete x.grids[key].free;
+    for(const a of pl.assign)x.pins[a.pin].slots=a.slots;
+    x.pins=x.pins.filter(q=>!gone.includes(q));
+    if(bayed.length)x.bay=bayOf(x).filter(b=>!bayed.some(c=>sameWin(b,c))).concat(bayed)},
+    `${monName(m)} is back on its grid. ${pl.n?`${plural(pl.n,"window")} changed size.`:"No window changed size."}${pl.drop.length?` ${plural(pl.drop.length,"window")} stays put.`:""}`)}
+
+// ---- The apply result rows (F14): the engine's words go behind a disclosure, and the row says it plainly with one button that fixes it.
+const rawBehind=raw=>`<details><summary>What the server said</summary><p>${esc(raw)}</p></details>`;
+function freeApplyRow(p,nm,dry){
+  if(dry||!/^off size/.test(p.note||""))return null;
+  const s=scene(),pin=p.pin>=0?s.pins[p.pin]:null;if(!pin||!isFree(s.grids[pin.mon]))return null;
+  const q=/^off size: is (\d+)x(\d+), restore rect (\d+)x(\d+), wanted (\d+)x(\d+)/.exec(p.note);if(!q)return null;
+  const ax=+q[5]>+q[1]?0:1,need=ax?+q[6]:+q[5],over=Math.max(need-(ax?p.h:p.w),0);
+  return["bad",`${nm(p)} will not go under ${need} px ${ax?"tall":"wide"}, so it covers ${over} px of the space beside it.`,
+    `<button type="button" class="btn" data-fix="giveit" data-id="${p.id}" data-ax="${ax}" data-need="${need}">Give It ${need} px</button>${rawBehind(p.note)}`]}
+function freeMissRow(m){
+  if(!/not in a free area/.test(m.why||""))return null;
+  const s=scene(),pin=s.pins.find(p=>p.app===m.app&&(p.match||"")===(m.match||""));if(!pin||!isFree(s.grids[pin.mon]))return null;
+  return["bad",`${appName(m.app)}${m.match?` "${m.match}"`:""} is pinned, but no space on the board holds it.`,
+    `<button type="button" class="btn" data-fix="space" data-app="${esc(m.app)}" data-match="${esc(m.match||"")}">Give It a Space</button>${rawBehind(m.why)}`]}
+// Widen the window's space to need px by moving the line on its right (or its left, at the monitor's edge), one edit.
+function freeGiveIt(id,ax,need){
+  const fo=freeOfWin(id);if(!fo){status("That window is not on the board.");return}
+  const{info,o}=fo,segs=freeSegs(info),extra=need-(ax?o.r.h:o.r.w);if(extra<=0){status("It already has that much room.");return}
+  let sg=segs.find(q=>q.ax===ax&&q.A.includes(o)&&!q.locked),dir=1;
+  if(!sg){sg=segs.find(q=>q.ax===ax&&q.B.includes(o));dir=-1}
+  if(!sg){status("No line is beside it to move.");return}
+  if(sg.locked){status(`${lockNames([sg]).join(" and ")} is locked, so this line does not move.`);return}
+  const set=segSet(segs,sg,false),[lb,ub]=segBounds(info.m,set.move),d=Math.round(clamp(dir*extra,lb,ub));
+  if(!d){status(`Smallest size: ${FLOORPX[0]} × ${FLOORPX[1]} px. The line stops here.`);return}
+  selWin=id;freeCommit(info.m,info.key,set,d,sg)}
+// Give a pin with no space the first empty space on its monitor.
+function freeGiveSpace(app,match){
+  const s=scene(),pi=s.pins.findIndex(p=>p.app===app&&(p.match||"")===(match||"")),p=s.pins[pi];if(!p){status("That pin is gone.");return}
+  const m=snap.monitors.find(q=>mk(q)===p.mon),info=m&&freeFill(freeInfo(m));if(!info){status("Its monitor is not in Free Layout.");return}
+  const o=info.list.find(q=>q.pin<0&&!q.occ&&!q.a.app);
+  if(!o){status("Every space on that monitor is taken. Split a space first, then try again.");return}
+  edit(x=>{x.grids[info.key].free.areas[o.i].pin=pi},`${appName(app)} has a space.`)}
 
 /* ---------- Drag: pointer capture, transform while moving, one rAF per frame ---------- */
 const stage=$("stage"),dropEl=$("drop");
@@ -2643,7 +2760,7 @@ function mergePicks(){const i=pickInfo();if(!i||!i.rect||i.lockedW||i.lockedPin|
 /* ---------- Apply, Undo, results ---------- */
 function busy(b){isBusy=b;render()}
 function showResults(sum,rows){$("fileout").hidden=true;$("sum").textContent=sum;
-  $("reslist").innerHTML=rows.map(([cls,txt])=>`<li><span class="${cls}">${cls==="ok"?"✓":cls==="bad"?"✗":"·"}</span><span>${esc(txt)}</span></li>`).join("")}
+  $("reslist").innerHTML=rows.map(([cls,txt,extra])=>`<li><span class="${cls}">${cls==="ok"?"✓":cls==="bad"?"✗":"·"}</span><span>${esc(txt)}${extra||""}</span></li>`).join("")}
 async function applyScene(){
   const s=scene();if(!s||isBusy)return;
   busy(true);toast(`${serverDry?"Previewing":"Applying"} ${s.name}…`,"",{sticky:true});
@@ -2651,8 +2768,8 @@ async function applyScene(){
     const r=await post("scene",withCats(s));if(!r.ok)throw new Error(await r.text());const res=await r.json();
     const moved=res.placed.filter(p=>!same(p,p.from)),dry=res.placed.some(p=>/^dry run/.test(p.note));
     const nm=p=>`${appName(p.app)}: ${p.title}`;
-    const rows=res.placed.map(p=>[p.ok&&!/^off size/.test(p.note)?"ok":"bad",`${nm(p)} — ${same(p,p.from)?"already there":dry?"would move":p.note}`])
-      .concat(res.missing.map(m=>["bad",`${appName(m.app)}${m.match?` "${m.match}"`:""} — ${m.why}`]),res.left.map(l=>["mut",`${nm(l)} — ${l.why||"no free cell"}, stays where it is`]));
+    const rows=res.placed.map(p=>freeApplyRow(p,nm,dry)||[p.ok&&!/^off size/.test(p.note)?"ok":"bad",`${nm(p)} — ${same(p,p.from)?"already there":dry?"would move":p.note}`])
+      .concat(res.missing.map(m=>freeMissRow(m)||["bad",`${appName(m.app)}${m.match?` "${m.match}"`:""} — ${m.why}`]),res.left.map(l=>["mut",`${nm(l)} — ${l.why||"no free cell"}, stays where it is`]));
     const bad=res.placed.filter(p=>!p.ok||/^off size/.test(p.note)).length;
     const sum=`${dry?"Preview: would move":"Moved"} ${plural(moved.length,"window")} for ${s.name}.${bad?` ${bad} did not fit.`:""}`;
     showResults(sum,rows);
@@ -2756,6 +2873,10 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="zadd")drawZoneDialog();
   else if(t.id==="fillon")edit(x=>{delete x.fill.off;delete x.fill.held},"Fill Empty Cells is on. Windows that are not pinned fill the free cells.");
   else if(t.id==="closegap")closeGap();
+  else if(t.id==="backgo"){const r=document.querySelector("#backpop input[name=backmode]:checked"),m=backM;if(m)backToGrid(m,r?r.value:"snap")}
+  else if(t.id==="backcancel")closeBack(true);
+  else if(t.dataset.fix==="giveit")freeGiveIt(+t.dataset.id,+t.dataset.ax,+t.dataset.need);
+  else if(t.dataset.fix==="space")freeGiveSpace(t.dataset.app,t.dataset.match);
   else if(t.id==="unlocksp"){const i=+t.dataset.pin;const id=scene().pins[i]&&freePinWin(i);if(id!=null)toggleLock(id)}
   else if(t.id==="clearbd")clearBoard();
   else if(t.id==="retry")retrySave();
