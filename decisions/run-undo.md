@@ -15,6 +15,10 @@ Plan: docs/design/mockups/run-undo-notes.md#notification (windows)
 
 **Coordinator picks (2026-11-12 16:07 CST).** App names come from the shared map (`scenes.json` appNames). The notification is a toast only when the Start shortcut with the AppUserModelID exists; otherwise it is the tray balloon.
 
+**Popup Undo (owner, 15:42 CST 2026-11-19, pick A).** A `tilewindows://` link the app cannot use shows a popup saying so, never a silent exit. The log shows every Undo, whatever its outcome.
+
+**Cause.** Windows passes the toast link as `tilewindows://undo/?run=<id>` (slash before `?`), which the link pattern must accept.
+
 **Check.** `test/run-undo.ps1` (the run toast, Undo's places and guards, the protocol keys); `test/run.ps1` runs it.
 
 Open owner review: the Tile Windows Choices page

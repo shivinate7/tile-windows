@@ -514,13 +514,18 @@ function Clear-GapWatch {
   $script:gap = $null
   try { [TileWinWatch1]::SetTiled([long[]]@()) } catch {}
 }
+# The scene on screen now (state.json's active), '' when none or unreadable: the scene a run replaces, for Undo, and the active scene an Undo that moved nothing logs.
+function Get-ActiveId { try { [string](ConvertFrom-Json (Get-TileStateText)).active } catch { '' } }
 if ($Lib) { return }
 
 $quitName = TrayName 'Quit'; $openName = TrayName 'Open'
 $created = $false; $mutex = New-Object Threading.Mutex($true, (TrayName 'Agent'), [ref]$created)
-$linkOk = '^tilewindows://(open|undo\?run=[0-9a-f]{1,32}(\.[0-9a-f]{2,300})?)/?$'
+# A link that fails $linkOk gets a visible note from the launcher (the agent never sees it), not a silent exit.
+function Show-BadLink { try { Send-RunToast (New-RunToast "Tile Windows can't use that link" 'It is not a link Tile Windows made.' $TileOpenAction) } catch {} }
+$linkOk = '^tilewindows://(open|undo/?\?run=[0-9a-f]{1,32}(\.[0-9a-f]{2,300})?)/?$'
 if (-not $created) {
   if ($Link -match $linkOk) { Write-TileFile (Join-Path $TileHome 'link.txt') $Link; $e = [Threading.EventWaitHandle]::OpenExisting((TrayName 'Link')); [void]$e.Set() }
+  elseif ($Link) { Show-BadLink }
   elseif ($Open) { $e = [Threading.EventWaitHandle]::OpenExisting($openName); [void]$e.Set() }
   return
 }
@@ -531,8 +536,10 @@ if ($Link) {
   elseif ($Link -match $linkOk) {
     $name = Get-RunIdName ($Link -replace '^.*run=', '' -replace '/$', '')
     $gone = New-NoUndoToast $name 'Tile Windows restarted since, so it lost the old places.' $TileOpenAction
+    if (-not $NoApply) { Add-TileLog (Get-ActiveId) "Undo of $(if ($name) { $name } else { 'a run' }) did nothing: Tile Windows restarted since, so it lost the old places." }
     try { Send-RunToast $gone } catch {}
   }
+  else { Show-BadLink }
   return
 }
 $quitEv = New-Object Threading.EventWaitHandle($false, 'AutoReset', $quitName)
@@ -701,8 +708,6 @@ function Apply-Scene($s, [string]$why, [string]$prev = '') {
     }
   } catch { Note "$($s.name) failed: $($_.Exception.Message)" }
 }
-# The scene on screen now (state.json's active), '' when none or unreadable: the scene a run replaces, for Undo.
-function Get-ActiveId { try { [string](ConvertFrom-Json (Get-TileStateText)).active } catch { '' } }
 # Shows a toast, or the balloon with the same words when the agent has no icon toast to give (no Start shortcut with the app's name) or the toast throws.
 # With -NoIcon the agent shows nothing.
 function Show-Toast($n) {
@@ -727,19 +732,33 @@ function Invoke-Link {
       $rec.done = $true
       if ($res.manualAt) { [TileInput]::MoveEndTicks = $res.manualAt.ToUniversalTime().Ticks; $script:state.manualApplyAt = $res.manualAt }
       Clear-GapWatch
-      if ($res.scene -and -not $NoApply) { Add-TileLog $res.scene "Undid $($rec.name): $($res.text)" }
+      # A run that left the scene as it was has no scene to name, so the log line names the scene now active.
+      if (-not $NoApply) { Add-TileLog $(if ($res.scene) { $res.scene } else { Get-ActiveId }) "Undid $($rec.name): $($res.text)" }
       # A partial Undo (a window stayed, closed or was refused) pops up and says why; a clean one updates quietly.
       $partial = [bool](@($res.stayed).Count -or @($res.closed).Count -or @($res.refused).Count)
       Show-Toast (New-RunToast "$($rec.name) $(if ($partial) { 'partly undone' } else { 'undone' })" $res.text @() (-not $partial -and $res.placed -gt 0))
     } elseif ($res.status -eq 'later') {
+      if (-not $NoApply) { Add-TileLog (Get-ActiveId) "Undo of $(if ($name) { $name } else { 'a run' }) did nothing: a later run replaced it." }
       # $rec is the newer run: its record replaced the one this toast was for.
       $newer = $script:runUndo
       if ($newer -and -not $newer.done -and -not $newer.endedBy) { Show-Toast (New-NoUndoToast $name "$($newer.name) ran after it and moved windows. Undo $($newer.name) instead." @(@{ label = "Undo $($newer.name)"; launch = "tilewindows://undo?run=$($newer.id)" })) }
       else { Show-Toast (New-NoUndoToast $name 'A later run replaced it, so its places are out of date.' $TileOpenAction) }
-    } elseif ($res.status -eq 'ended') { Show-Toast (New-NoUndoToast $name $res.text $TileOpenAction)
-    } elseif ($res.status -eq 'done') { Show-Toast (New-RunToast "$($rec.name) undone" $res.text @())
-    } else { Show-Toast (New-NoUndoToast $name $res.text $TileOpenAction) }
-  } catch { Show-Toast (New-RunToast 'Undo failed' $_.Exception.Message) }
+    } elseif ($res.status -eq 'ended') {
+      if (-not $NoApply) { Add-TileLog (Get-ActiveId) "Undo of $($rec.name) did nothing: $($res.text)" }
+      Show-Toast (New-NoUndoToast $name $res.text $TileOpenAction)
+    } elseif ($res.status -eq 'done') {
+      if (-not $NoApply) { Add-TileLog (Get-ActiveId) "Undo of $($rec.name) did nothing: it was already undone." }
+      Show-Toast (New-RunToast "$($rec.name) undone" $res.text @())
+    } else {
+      if (-not $NoApply) { Add-TileLog (Get-ActiveId) "Undo of $(if ($name) { $name } else { 'a run' }) did nothing: $($res.text)" }
+      Show-Toast (New-NoUndoToast $name $res.text $TileOpenAction)
+    }
+  } catch {
+    $err = $_.Exception.Message
+    # The log shows every Undo. A log write that throws must not hide the toast.
+    if (-not $NoApply) { try { $n = Get-RunIdName $rid; Add-TileLog (Get-ActiveId) "Undo of $(if ($n) { $n } else { 'a run' }) failed: $err" } catch {} }
+    Show-Toast (New-RunToast 'Undo failed' $err)
+  }
 }
 function Open-App {
   if (-not $srv -or $srv.HasExited) {
