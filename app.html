@@ -1248,7 +1248,8 @@ function render(){
   const cb=$("clearbd"),unpinned=prevs[selId]?prevs[selId].placed.filter(p=>p.pin<0&&!p.behind).length:0;
   cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
-  $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
+  const anyFree=!!(LIVE&&s&&snap.monitors.some(q=>mk(q)&&s.grids[mk(q)]&&isFree(s.grids[mk(q)])));
+  $("hint").textContent=anyFree?"Drag to a space to pin, or to the list to keep put. On a taken space, the circle swaps and the rest puts it behind. Drag a line to resize, and hold Shift to move the whole line. Right-click a window to split its space.":LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   {const fe=LIVE&&s?freeEmpty():"";if(fe)$("hint").textContent=fe;$("fillon").hidden=!fe}
   overText(V);renderSetbar();renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);renderPicks();renderFree();
@@ -1462,7 +1463,7 @@ function renderInsp(V){
     if(pin)wh+=(frp?`<div class="field"><span>Size</span><span class="num">${x.r?`${x.r.w} × ${x.r.h} px`:"Not placed"}</span></div>`:`<div class="field"><span>Width</span>${stepper("columns wide",box.cs,'data-span="cs"',1,GC(s.grids[pin.mon]),lockd)}</div><div class="field"><span>Height</span>${stepper("rows tall",box.rs,'data-span="rs"',1,GR(s.grids[pin.mon]),lockd)}</div>`)+`
       <div class="field stack"><label for="match">Title contains</label><input type="text" id="match" value="${esc(pin.match||"")}" name="match" autocomplete="off" ${lockd?'disabled title="Locked. Unlock it first."':""} placeholder="Any ${esc(appName(w.app))} window…" spellcheck="false"></div>`;
     const mm=LIVE?snap.monitors.filter(q=>mk(q)&&s.grids[mk(q)]):snap.monitors;
-    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto" ${lockd?"disabled":""}><option value="">Choose a Cell</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${isFree(gg)?freeInfo(q).list.map(o=>`<option value="${snap.monitors.indexOf(q)}:s${o.i}">${esc(monName(q))} · Space ${o.no+1}</option>`).join(""):[...Array(GC(gg)*GR(gg)).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
+    wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto" ${lockd?"disabled":""}><option value="">${mm.some(q=>isFree(gridOf(q)))?"Choose a Space":"Choose a Cell"}</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${isFree(gg)?freeInfo(q).list.map(o=>`<option value="${snap.monitors.indexOf(q)}:s${o.i}">${esc(monName(q))} · Space ${o.no+1}</option>`).join(""):[...Array(GC(gg)*GR(gg)).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
     if(pin)wh+=`<button type="button" class="btn" id="unpin" ${lockd?'disabled title="Locked. Unlock it first."':""}>Unpin and Let It Fill</button>`;
     if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay" ${lockd?'disabled title="Locked. Unlock it first."':""}>Keep Where It Is</button>`;
     $("win").innerHTML=wh+"</div>";
@@ -1650,9 +1651,9 @@ function occupant(d,t){const P=LIVE&&prev();if(!P||!t)return null;const pa=P.pla
 // The Swap circle on a taken block: half the block's short side, rounded down, from 28 to 64 px.
 const circD=(w,h)=>Math.max(28,Math.min(64,Math.floor(Math.min(w,h)/2)));
 // Which target the pointer is on: inside the circle at the block's centre swaps (the hit test is the distance from the centre), the rest of the block puts behind. A locked tile only puts behind.
-function dropZone(d,occ,t){if(lockOfPlaced(occ))return"behind";const g=t.g,b=pbox(occ,g),r=px(cellRect(t.m,g,b.c,b.r,b.cs,b.rs)),sr=stage.getBoundingClientRect(),
-    w=parseFloat(r.width),h=parseFloat(r.height);
+function circZone(d,r){const sr=stage.getBoundingClientRect(),w=parseFloat(r.width),h=parseFloat(r.height);
   return Math.hypot(d.px-sr.left-(parseFloat(r.left)+w/2),d.py-sr.top-(parseFloat(r.top)+h/2))<=circD(w,h)/2?"swap":"behind"}
+function dropZone(d,occ,t){if(lockOfPlaced(occ))return"behind";const g=t.g,b=pbox(occ,g);return circZone(d,px(cellRect(t.m,g,b.c,b.r,b.cs,b.rs)))}
 function unplace(id,force=false){const w=winById(id);if(selWin===id)optim=null;
   if(isLockedId(id)&&!force){status(`${w.title} is locked. Unlock it first.`);return}
   edit(x=>bayEdit(x,id),`${appName(w.app)}: ${w.title} is off the board. ${verb()} leaves it where it is.`)}
@@ -2294,10 +2295,11 @@ function freeSpaceHTML(sel){
       return `<div class="win cat-${catOf(app)}">${head}<div class="m">${esc(o.gone.kind==="closed"?"Closed":"Minimized")}. Its space is lent to the windows beside it: ${esc(nameList(who))}. ${o.gone.kind==="closed"?"Open it again":"Restore it"} and it gets its space back.</div><p class="note">The saved layout does not change.</p></div>`}
     const b=freeBeside(info,o),lk=["left","above","right","below"].flatMap(d=>b[d]).find(q=>q.lock),lkn=lk&&appName(s.pins[lk.pin].app);
     return `<div class="win cat-${catOf(app)}">${head}<div class="m">${esc(o.gone.kind==="closed"?"Closed":"Minimized")}. No window beside it can take its space${lk?`: ${esc(nameList(["left","above","right","below"].flatMap(d=>b[d]).filter(q=>q.lock).map(q=>appName(s.pins[q.pin].app))))} ${["left","above","right","below"].flatMap(d=>b[d]).filter(q=>q.lock).length>1?"are":"is"} locked`:""}. The space stays empty until ${esc(appName(app))} ${o.gone.kind==="closed"?"opens":"is restored"} again.</div>${lk?`<button type="button" class="btn" id="unlocksp" data-pin="${lk.pin}">Unlock ${esc(lkn)}</button><p class="note">${esc(lkn)} then takes the space.</p>`:""}</div>`}
-  const pl=closeGapPlan(info,o),fill=s.fill&&s.fill.mon===info.key,
+  // The fill takes the open spaces in reading order, so only the first one open is next.
+  const nextOpen=info.list.find(q=>q.pin<0&&!q.a.app&&!q.occ),pl=closeGapPlan(info,o),fill=s.fill&&s.fill.mon===info.key,
     grew=t=>{const a=areaPx(info.m,{rect:t.to}),b=t.q.r;return a.w!==b.w?a.w-b.w:a.h-b.h},
     nm=pl.strips.map(t=>`${t.q.occ?appName(t.q.occ.app):"A window"} grows ${grew(t)} px`);
-  return `<div class="win"><div class="t num">${size}</div><div class="m">${fill&&!s.fill.off?"Fill Empty Cells is on, so the next new window fills it.":"Nothing fills it. Drag a window here, or turn on Fill Empty Cells."}</div>
+  return `<div class="win"><div class="t num">${size}</div><div class="m">${fill&&!s.fill.off?o===nextOpen?"Fill Empty Cells is on, so the next new window fills it.":"Fill Empty Cells is on. The spaces before this one fill first.":"Nothing fills it. Drag a window here, or turn on Fill Empty Cells."}</div>
     <button type="button" class="btn" id="closegap" ${pl.strips.length?"":'disabled aria-describedby="whycg"'}>Close Gap</button>
     ${pl.strips.length?`<p class="note" id="whycg">${esc(nameList(pl.strips.map(t=>t.q.occ?appName(t.q.occ.app):"A window")))}, beside it, ${pl.strips.length>1?"meet in the middle":"take it"}: ${esc(nameList(nm))}.</p>`:`<p class="why" id="whycg"><span>No window beside it can take its space. Unlock one, or drag a line.</span></p>`}</div>`}
 // Drop on a space (F7): a window from the list or another space goes to this space; a window already there swaps. One edit.
@@ -2305,17 +2307,36 @@ function freeTarget(d){
   if(!LIVE||!snap||!scene())return null;
   const sr=stage.getBoundingClientRect(),sx=(d.px-sr.left)/G.S+G.x0,sy=(d.py-sr.top)/G.S+G.y0,m=monAt(sx,sy),g=m&&gridOf(m);if(!isFree(g))return null;
   const info=freeFill(freeInfo(m,g));return{info,o:info.list.find(q=>inRect(sx,sy,q.r))||null}}
+// The window that holds a space and is not the dragged one: a drop on it offers Swap and Put Behind, as the grid does (ruling layout-free, 16:50 CST; mockup F7).
+const freeHolder=(d,o)=>{const oc=o.occ&&winById(o.occ.id);return oc&&oc.id!==d.id?oc:null};
 function freeDropShow(d,fz){
   const o=fz.o,w=winById(d.id);if(!o){dropEl.style.display="none";return}
-  const from=!d.fromBay&&freeOfWin(d.id),oc=o.occ&&winById(o.occ.id),same=from&&from.o.i===o.i;
+  const from=!d.fromBay&&freeOfWin(d.id),oc=freeHolder(d,o),same=from&&from.o.i===o.i&&from.info.key===fz.info.key;
+  if(oc&&!same&&!d.locked){const B=appName(oc.app),r=px(o.r);
+    // A window dragged from a space trades places. Any other window takes the space, and the one it displaces goes to Windows That Stay Put when its space is a pin's.
+    heldDrop(r,B,o.lock,o.lock?"behind":circZone(d,r),from?`Swap with ${B}`:o.pin>=0?`Swap: ${B} goes to the list`:`Swap: ${B} stays where it is`);return}
   Object.assign(dropEl.style,px(o.r));dropEl.className="";dropEl.style.display="block";
-  dropEl.innerHTML=`<span>${same?"Stays here":o.lock?`${esc(appName(scene().pins[o.pin].app))} is locked`:oc&&oc.id!==d.id?`Swap with ${esc(appName(oc.app))}`:`${esc(appName(w.app))} goes here`}</span>`}
+  dropEl.innerHTML=`<span>${same?"Stays here":d.locked?`${esc(appName(w.app))} is locked`:o.lock?`${esc(appName(scene().pins[o.pin].app))} is locked`:`${esc(appName(w.app))} goes here`}</span>`}
 function freeDrop(d,fz){
   const o=fz.o;if(!o){render();status("Dropped outside a space. Nothing changed.");return}
   const from=!d.fromBay?freeOfWin(d.id):null;if(from&&from.o.i===o.i&&from.info.key===fz.info.key){render();return}
-  const lk=d.locked?winById(d.id):o.lock?{app:scene().pins[o.pin].app}:null;
+  const oc=freeHolder(d,o),lk=d.locked?winById(d.id):o.lock&&!oc?{app:scene().pins[o.pin].app}:null;
   if(lk){render();status(`${appName(lk.app)} is locked. Unlock it first.`);return}
+  // The middle of a held space swaps; the rest puts the window behind the holder. A locked holder only takes Put Behind.
+  if(oc&&(o.lock||circZone(d,px(o.r))==="behind")){freePutBehind(d.id,o,fz.info,oc);return}
   freeAssign(d.id,o,fz.info,from)}
+// A is dropped on the lower band of a held space: A goes behind the window that holds it, with any windows behind A, in the grid's stack form (pin.behind of {app, match}).
+function freePutBehind(id,o,info,oc){
+  const w=winById(id),key=info.key,spec=winSpec(w);
+  selWin=oc.id;selSp=null;curMon=info.m;
+  edit(x=>{const a=x.grids[key].free.areas[o.i],own=pinNow(x,id);
+    let fb=a.pin!=null&&a.pin!==""?x.pins[+a.pin]:null;
+    x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
+    if(!fb){fb={app:oc.app,match:winSpec(oc).match,mon:key,slots:[]};x.pins.push(fb)}
+    freeSetPin(a,x.pins.indexOf(fb));delete a.app;delete a.title;
+    fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
+    x.bay=bayOf(x).filter(b=>!sameWin(b,w));if(!x.bay.length)delete x.bay;heldOff(x,w)},
+    `${pairNames(w,oc)[0]} is behind ${pairNames(w,oc)[1]}.`)}
 function freeAssign(id,o,info,from){
   const w=winById(id),key=info.key,oc=o.occ&&winById(o.occ.id),src=from&&from.o,skey=from&&from.info.key;
   optim={id,r:rect(o.r)};selWin=id;selSp=null;
@@ -2326,7 +2347,7 @@ function freeAssign(id,o,info,from){
     if(theirs&&theirs!==mine&&!src){x.pins=x.pins.filter(q=>q!==theirs);if(oc){x.bay=bayOf(x).filter(b=>!sameWin(b,oc));x.bay.push({id:oc.id,app:oc.app,title:oc.title});heldOff(x,oc)}}
     if(src){const sa=x.grids[skey].free.areas[src.i];freeSetPin(sa,swap?x.pins.indexOf(theirs):null);delete sa.app;delete sa.title}
     freeSetPin(a,x.pins.indexOf(mine));delete a.app;delete a.title},
-    o.pin>=0&&src&&oc&&oc.id!==id?`Swapped ${pairNames(w,oc).join(" and ")}.`:`${appName(w.app)} goes to space ${o.no+1}.${oc&&oc.id!==id&&!from?` ${appName(oc.app)} stays where it is.`:""}`)}
+    o.pin>=0&&src&&oc&&oc.id!==id?`Swapped ${pairNames(w,oc).join(" and ")}.`:`${appName(w.app)} goes to space ${o.no+1}.${oc&&oc.id!==id&&!from?` ${appName(oc.app)} ${o.pin>=0?"goes to the list":"stays where it is"}.`:""}`)}
 // Fill Empty Cells off with every space empty (F16): one sentence in the hint's place, and one control.
 function freeEmpty(){
   const m=curMon,s=LIVE&&scene(),g=m&&s&&gridOf(m);if(!isFree(g)||!s.fill||s.fill.mon!==mk(m)||!s.fill.off||!prev())return"";
@@ -2416,9 +2437,11 @@ const rawBehind=raw=>`<details><summary>What the server said</summary><p>${esc(r
 function freeApplyRow(p,nm,dry){
   if(dry||!/^off size/.test(p.note||""))return null;
   const s=scene(),pin=p.pin>=0?s.pins[p.pin]:null;if(!pin||!isFree(s.grids[pin.mon]))return null;
-  const q=/^off size: is (\d+)x(\d+), restore rect (\d+)x(\d+), wanted (\d+)x(\d+)/.exec(p.note);if(!q)return null;
-  const ax=+q[5]>+q[1]?0:1,need=ax?+q[6]:+q[5],over=Math.max(need-(ax?p.h:p.w),0);
-  return["bad",`${nm(p)} will not go under ${need} px ${ax?"tall":"wide"}, so it covers ${over} px of the space beside it.`,
+  // The engine's note gives the size the window has ("is WxH"); the placed entry's w and h are the size its space wanted. The axis that is furthest over the space is the one it will not go under.
+  const q=/^off size: is (\d+)x(\d+), restore rect (\d+)x(\d+)/.exec(p.note);if(!q)return null;
+  if(Math.max(+q[1]-p.w,+q[2]-p.h)<0)return["bad",`${nm(p)} stayed ${q[1]} × ${q[2]} px and does not fill its space.`,rawBehind(p.note)];
+  const ax=+q[1]-p.w>=+q[2]-p.h?0:1,need=ax?+q[2]:+q[1],space=ax?p.h:p.w,over=Math.max(need-space,0);
+  return["bad",`${nm(p)} will not go under ${need} px ${ax?"tall":"wide"}${over?`, so it covers ${over} px of the space beside it`:""}.`,
     `<button type="button" class="btn" data-fix="giveit" data-id="${p.id}" data-ax="${ax}" data-need="${need}">Give It ${need} px</button>${rawBehind(p.note)}`]}
 function freeMissRow(m){
   if(!/not in a free area/.test(m.why||""))return null;
@@ -2480,6 +2503,34 @@ if(document.fonts){document.fonts.addEventListener("loadingdone",()=>{if(drag&&!
 // The first form whose chip fits a box cw px wide; the last form always stands. A zone's chip box is the zone's width less
 // its 3px border and 2px padding on each side (pw-10).
 function pickForm(forms,cw){return forms.find((f,i)=>i===forms.length-1||chipFits(f,cw))||forms[forms.length-1]}
+// The label on a block another window holds: the Swap circle and the Put Behind band, or "Locked, so no Swap". pr is the block's px rect, o the holder's app name, lk whether it is locked, zone which
+// target the pointer is on (swap or behind), swapT the circle's title. One home for the grid and Free Layout.
+function heldDrop(pr,o,lk,zone,swapT){const pw=parseFloat(pr.width),ph=parseFloat(pr.height);
+  // The Put Behind label tries its forms in order and takes the first that fits the block by measured text width. The last form is the icon alone; the tooltip keeps the full name.
+  const pill=(forms,cw=pw-10)=>{const [t,ic,tg]=pickForm(forms,cw);return `<span${tg?' class="t"':""} title="Put Behind ${esc(o)}">${ic||""}${esc(t)}</span>`};
+  const behF=[[`Put Behind ${o}`,BEHIND],["Put Behind"],["Behind"],["Behind",0,1],["",BEHIND]];
+  Object.assign(dropEl.style,pr);
+  if(lk){dropEl.className="split one";dropEl.style.display="grid";
+    const [wt,wi,wg]=pickForm([["Locked, so no Swap",LOCKC],["Locked",LOCKC],["Locked"],["Locked",0,1],["",LOCKC]],pw-10);
+    dropEl.innerHTML=`<div class="dz on">${pill(behF)}<span class="why${wg?" t":""}" title="Locked, so no Swap">${wi||""}${esc(wt)}</span></div>`}
+  else{const dm=circD(pw,ph),r=dm/2,bw=zone==="swap"?2:3,iw=pw-2*bw,ih=ph-2*bw,words=behF.slice(0,-1),tight=[["Behind",0,1]];
+    // A block too short for the label under the circle (chip, 4px gap, both sides): the label takes the longest form that fits
+    // clear of the circle's bounding square. First beside the circle (8px from it, 4px from the edge), then the tight "Behind"
+    // in the bottom right corner (1px in), then the icon alone, beside the circle or in the corner, shrunk to the room left
+    // there. It never goes under the circle. lw is the label's width: the CSS box (--lw) and the form chosen both use it.
+    let place="",lw=iw-8,forms=behF,mini=0,none=false;
+    const fb=chipBorder(),ct=CHIP.text+fb,cg=CHIP.tight+fb,ci=CHIP.icon+fb,icoW=CHIP.iconW+fb;
+    if(ph<dm+2*bw+2*(ct+4)){
+      const sw=iw/2-r-12,cx=iw/2-r-3,below=h=>ih/2-3-h>=r;
+      if(words.some(f=>chipFits(f,sw-fb))){place="side";lw=sw}
+      else if(chipFits(tight[0],(below(cg)?iw-2:cx)-fb)){place="corner";lw=below(cg)?iw-2:cx;forms=tight}
+      else{forms=[["",BEHIND]];lw=icoW;
+        if(sw>=icoW)place="side";
+        else if(cx>=icoW||below(ci))place="corner";
+        // No room for the icon's usual chip: shrink it to the room clear of the circle, and with under 8px there is no label.
+        else{const room=Math.floor(Math.max(cx,ih/2-r-0.5));if(room<8)none=true;else{place="corner";mini=room;lw=mini}}}}
+    dropEl.className=(zone==="swap"?"circ":"circ on")+(place?" "+place:"")+(mini?" icos":"");dropEl.style.display="block";dropEl.style.setProperty("--d",dm+"px");dropEl.style.setProperty("--lw",lw+"px");
+    dropEl.innerHTML=`${none?"":pill(forms,lw-fb)}<div class="swc${zone==="swap"?" on":""}${dm<48?" sm":""}" style="--d:${dm}px" title="${esc(swapT)}">${SWAPI}${dm<48?"":"Swap"}</div>`}}
 function frame(){raf=0;
   if(zdraw){const z=zdraw,a=Math.min(z.c0,z.c1),b=Math.min(z.r0,z.r1),cs=Math.abs(z.c1-z.c0)+1,rs=Math.abs(z.r1-z.r0)+1,e=$("zdraw");
     const r=cellRect(z.m,z.g,a,b,cs,rs);Object.assign(e.style,px(r));e.style.display="block";let n=0;
@@ -2502,32 +2553,8 @@ function frame(){raf=0;
   const fz=ob?null:freeTarget(d),t=ob||fz?null:target(d);d.t=t;for(const e of stage.querySelectorAll(".tile.swap"))e.classList.remove("swap");dest.style.display="none";
   if(t){const occ=occupant(d,t);
     if(occ){const g=t.g,bb=pbox(occ,g),pr=px(cellRect(t.m,g,bb.c,bb.r,bb.cs,bb.rs)),pw=parseFloat(pr.width),ph=parseFloat(pr.height),lk=lockOfPlaced(occ),zone=dropZone(d,occ,t),o=appName(winById(occ.id).app),big=pw>=110;
-      // The Put Behind label tries its forms in order and takes the first that fits the block by measured text width. The last form is the icon alone; the tooltip keeps the full name.
       const swapT=d.fromBay?`Swap: ${o} goes to the list`:`Swap with ${o}`;
-      const pill=(forms,cw=pw-10)=>{const [t,ic,tg]=pickForm(forms,cw);return `<span${tg?' class="t"':""} title="Put Behind ${esc(o)}">${ic||""}${esc(t)}</span>`};
-      const behF=[[`Put Behind ${o}`,BEHIND],["Put Behind"],["Behind"],["Behind",0,1],["",BEHIND]];
-      Object.assign(dropEl.style,pr);
-      if(lk){dropEl.className="split one";dropEl.style.display="grid";
-        const [wt,wi,wg]=pickForm([["Locked, so no Swap",LOCKC],["Locked",LOCKC],["Locked"],["Locked",0,1],["",LOCKC]],pw-10);
-        dropEl.innerHTML=`<div class="dz on">${pill(behF)}<span class="why${wg?" t":""}" title="Locked, so no Swap">${wi||""}${esc(wt)}</span></div>`}
-      else{const dm=circD(pw,ph),r=dm/2,bw=zone==="swap"?2:3,iw=pw-2*bw,ih=ph-2*bw,words=behF.slice(0,-1),tight=[["Behind",0,1]];
-        // A block too short for the label under the circle (chip, 4px gap, both sides): the label takes the longest form that fits
-        // clear of the circle's bounding square. First beside the circle (8px from it, 4px from the edge), then the tight "Behind"
-        // in the bottom right corner (1px in), then the icon alone, beside the circle or in the corner, shrunk to the room left
-        // there. It never goes under the circle. lw is the label's width: the CSS box (--lw) and the form chosen both use it.
-        let place="",lw=iw-8,forms=behF,mini=0,none=false;
-        const fb=chipBorder(),ct=CHIP.text+fb,cg=CHIP.tight+fb,ci=CHIP.icon+fb,icoW=CHIP.iconW+fb;
-        if(ph<dm+2*bw+2*(ct+4)){
-          const sw=iw/2-r-12,cx=iw/2-r-3,below=h=>ih/2-3-h>=r;
-          if(words.some(f=>chipFits(f,sw-fb))){place="side";lw=sw}
-          else if(chipFits(tight[0],(below(cg)?iw-2:cx)-fb)){place="corner";lw=below(cg)?iw-2:cx;forms=tight}
-          else{forms=[["",BEHIND]];lw=icoW;
-            if(sw>=icoW)place="side";
-            else if(cx>=icoW||below(ci))place="corner";
-            // No room for the icon's usual chip: shrink it to the room clear of the circle, and with under 8px there is no label.
-            else{const room=Math.floor(Math.max(cx,ih/2-r-0.5));if(room<8)none=true;else{place="corner";mini=room;lw=mini}}}}
-        dropEl.className=(zone==="swap"?"circ":"circ on")+(place?" "+place:"")+(mini?" icos":"");dropEl.style.display="block";dropEl.style.setProperty("--d",dm+"px");dropEl.style.setProperty("--lw",lw+"px");
-        dropEl.innerHTML=`${none?"":pill(forms,lw-fb)}<div class="swc${zone==="swap"?" on":""}${dm<48?" sm":""}" style="--d:${dm}px" title="${esc(swapT)}">${SWAPI}${dm<48?"":"Swap"}</div>`}
+      heldDrop(pr,o,lk,zone,swapT);
       // The chip sits just above the block, so the circle and both targets stay in view.
       if(gh.style.display==="block"){const sr=stage.getBoundingClientRect();gh.style.left=Math.max(0,sr.left+parseFloat(pr.left))+"px";gh.style.top=Math.max(0,sr.top+parseFloat(pr.top)-gh.offsetHeight-4)+"px"}
       if(zone==="swap"){els.get(occ.id).classList.add("swap");if(!d.fromBay){Object.assign(dest.style,px(d.start));dest.style.display="block";dest.firstChild.textContent=big?`${o} moves here`:o}}}
