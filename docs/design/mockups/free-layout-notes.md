@@ -77,8 +77,8 @@ F3. **The Shift move is found at the drag.** Every drag shows a tip at the point
 
 F4. **The size floor shows where it stopped.** At 400 × 300 px (item 20) the line stops, a stop bar
     marks it, and the size that stopped it turns ink. The tip says "Smallest size: 400 × 300 px. The
-    line stops here." Gain: the stop reads as a rule, not a stuck control. Loss: none. Pick: as drawn.
-    Owner grant: yes, 2026-11-19 13:10 CST (owner: "F4/F6/F12: yes to all three"). The floor itself
+    line stops here." Gain: the stop reads as a rule, not a stuck control. Loss: none. Ruled: as drawn, 2026-11-19 13:10 CST (owner: "F4/F6/F12: yes to all three").
+    The floor itself
     is item 20 of `layout-free-notes.md`, ruled at the same time (decision `layout-free`).
 
 F5. **Shift-drag across a locked row (item 18, owned by L4).** Two options, each with its switch:
@@ -98,10 +98,9 @@ F6. **Keys (item 19, owned by L4).** The monitor decides: on a Free Layout monit
     whole-cell resize. Plain arrows move the window to the next space; a window there swaps with it.
     The inspector reads Width and Height in pixels (item 19). Gain: one set of keys, the same moves
     as the pointer, and the whole-line move has a keyboard way (the plan named none). Loss: a key
-    means two things by monitor; Alt+Shift+arrows is a three-key chord. Pick: as drawn.
+    means two things by monitor; Alt+Shift+arrows is a three-key chord. Ruled: as drawn, 2026-11-19 13:10 CST (owner: "F4/F6/F12: yes to all three").
     Departs from: plan L4 (Shift+arrows move lines by 1/48, no whole-line key) — adds Alt for the
-    whole line, and arrows swap with the next space. Owner grant: yes, 2026-11-19 13:10 CST (owner:
-    "F4/F6/F12: yes to all three").
+    whole line, and arrows swap with the next space.
 
 F7. **Assign by drop, one home.** A drop on an empty space pins the window there; the space lights
     and says "Notepad goes here" (state `assign-drop`). A drop on a space a window holds uses today's
@@ -144,7 +143,7 @@ F12. **Close Gap uses the gone-window rule.** Close Gap on an empty space remove
      window, this saves. Gain: one rule for every space that empties (plan: "Close Gap calls the same
      function"). Loss: an owner who wanted one neighbour to take it all drags the line after.
      Departs from: `layout-free-notes.md` item 17 (Close Gap grows the one neighbour that shares the
-     whole edge) — both qualifying sides meet in the middle, per the plan and M1. Owner grant: yes, 2026-11-19 13:10 CST (owner: "F4/F6/F12: yes to all three").
+     whole edge) — both qualifying sides meet in the middle, by the owner's F12 grant. Question M (a gone window's share) stays open. Ruled: yes, 2026-11-19 13:10 CST (owner: "F4/F6/F12: yes to all three").
 
 F13. **Split in Free Layout** (item 28). The split menu of `split-cell.html` (S1, Menu List), halves
      only (S1 default). Each group says "Adds a line", since no grid doubles. The heading names the
@@ -189,7 +188,7 @@ mode they are monitor ids. The builder owns the shape.
 - Departs from: plan L4 keys (Shift+arrows only) — Alt+Shift+arrows move the whole line, and arrows
   swap with the next space (F6).
 - Departs from: `layout-free-notes.md` item 17, Close Gap grows one neighbour — both qualifying
-  sides meet in the middle (F12).
+  sides meet in the middle, by the owner's F12 grant (question M stays open).
 - Departs from: today's Apply results row (raw engine text) — plain words, a fix, and a disclosure
   (F14).
 
@@ -199,5 +198,5 @@ mode they are monitor ids. The builder owns the shape.
 - Ruled: Lent Space for a gone window's space on the board (F10; owner, 2026-11-19 13:10 CST: "F10: Lent Space").
 - Ruled: yes, keys on a Free Layout monitor, with Alt+Shift+arrows for the whole line (F6; owner, 2026-11-19 13:10 CST: "F4/F6/F12: yes to all three").
 - Ruled: yes, the size floor, 400 × 300 px (F4; item 20 of `layout-free-notes.md`; owner, 2026-11-19 13:10 CST: "F4/F6/F12: yes to all three").
-- Ruled: yes, Close Gap shares the space at the middle, as a gone window does (F12; owner, 2026-11-19 13:10 CST: "F4/F6/F12: yes to all three").
+- Ruled: yes, Close Gap shares the space at the middle (F12; owner, 2026-11-19 13:10 CST: "F4/F6/F12: yes to all three").
 - Open, drawn at defaults: S1, G1, K1, M1, read as the plan's defaults (top of this file).
