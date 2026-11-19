@@ -2296,11 +2296,13 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
     if (-not $line) { return $null }
     try { ConvertFrom-Json $line } catch { $null }
   }
+  # The pinned free areas of a saved layout: the ones whose pin names a window. A layout with none leaves the engine check nothing to compare.
+  function Fl-Pinned($layout) { @(@($layout.grids.U1.free.areas) | ? { $null -ne $_.pin }) }
   # tile.ps1 places each pinned window at its space's pixel rect. Answers one line per window that differs (none when it agrees).
   function Fl-EngineDiff($eng, $layout) {
     if (-not $eng -or -not $eng.placed) { return @('tile.ps1 placed no windows') }
     $out = @()
-    foreach ($a in @(@($layout.grids.U1.free.areas) | ? { $null -ne $_.pin })) {
+    foreach ($a in @(Fl-Pinned $layout)) {
       $mt = @($layout.pins)[[int]$a.pin].match
       $wid = [int64](@($flWins | ? { $_.match -eq $mt })[0].id)
       $got = @($eng.placed | ? { [int64]$_.id -eq $wid })[0]
@@ -2323,23 +2325,32 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
   $kd = 1 / 48
 
   foreach ($v in @(@{ tag = 'switch'; route = 'click' }, @{ tag = 'F key'; route = 'key' })) {
-    $tag = $v.tag; $route = $v.route
+    $tag = $v.tag; $route = $v.route; $how = $(if ($route -eq 'key') { 'the F key' } else { 'the switch' })
     Case "free-on ($tag): switching the ultrawide to Free Layout moves no window and sends one POST /layout" {
-      # Mutant: the switch re-lays the board (a tile's rect moves), saves twice, or writes the config.
+      # Mutant: the switch's click handler (for the F row, the F keydown handler) is removed, so Free Layout stays off. Or the switch
+      # re-lays the board and moves tile 1001 by one cell. Or it drops tile 1014 from the board. Or it saves twice, or writes the config.
       $opened = Fl-Open $ws (Fl-Json (Fl-Board) -grid)
       Check "free-on ($tag): the page opens on Focus with the 5 by 2 grid (control)" $opened 'the page did not open on Focus in time'
       if (-not $opened) { return }
       $before = Fl-Rects $ws $flIds
+      $onBoard = @($flIds | ? { $before."$_" }).Count
+      Check "free-on ($tag): all ten windows are on the board before the press (scope)" ($onBoard -eq 10) "on the board before: $onBoard of 10"
+      if ($onBoard -ne 10) { return }
       $hasSw = Js $ws ($freeJs + 'return !!freeSw();')
       Check "free-on ($tag): the Monitor section has a Free Layout switch" ($hasSw -eq $true) 'no Free Layout switch in the Monitor section of the ultrawide'
       if ($route -eq 'click') { [void](Js $ws ($freeJs + 'const s = freeSw(); if (s) s.click(); return !!s;')) }
       else { [void](Js $ws 'if (document.activeElement) document.activeElement.blur(); return true;'); Press-Key $ws 'f' 70 'f' }
       $s = Fl-Saves $ws
       $after = Fl-Rects $ws $flIds
+      $on = Js $ws ($freeJs + 'const s = freeSw(); return !!s && (s.checked === true || s.getAttribute("aria-checked") === "true");')
+      Check "free-on ($tag): $how turns Free Layout on" ($on -eq $true) "Free Layout is not on after $how"
       Check "free-on ($tag): one POST /layout was sent" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
       Check "free-on ($tag): no POST /config was sent" ($s.config.Count -eq 0) "POST /config count: $($s.config.Count)"
-      $mv = @(Fl-Moved $before $after $flIds)
-      Check "free-on ($tag): no tile's rect changed on the board" ($mv.Count -eq 0) "moved or missing: $($mv -join ', ')"
+      $both = @($flIds | ? { $before."$_" -and $after."$_" })
+      $mv = @(Fl-Moved $before $after $both)
+      Check "free-on ($tag): no window moved on the board" ($mv.Count -eq 0) "moved: $($mv -join ', ')"
+      $gone = @($flIds | ? { $before."$_" -and -not $after."$_" })
+      Check "free-on ($tag): no window went missing from the board" ($gone.Count -eq 0) "missing: $($gone -join ', ')"
       if ($s.layout.Count -ne 1) { return }
       $L1 = $s.layout[0].layout
       Check "free-on ($tag): the saved layout keeps grids U1 c 5 and r 2" ($L1.grids.U1.c -eq 5 -and $L1.grids.U1.r -eq 2) "c $($L1.grids.U1.c), r $($L1.grids.U1.r)"
@@ -2386,7 +2397,7 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
   foreach ($v in @(@{ tag = 'top row'; lid = 1001; rid = 1002; oth = @(1008, 1009) }, @{ tag = 'bottom row'; lid = 1008; rid = 1009; oth = @(1001, 1002) })) {
     $tag = $v.tag; $lid = $v.lid; $rid = $v.rid; $oth = $v.oth
     Case "drag-segment ($tag): a plain drag moves that row's part of the line, and no other; no gap opens" {
-      # Mutant: a plain drag moves both rows (the Shift move), or the drag leaves a gap between the two spaces.
+      # Mutant: a plain drag moves both rows (the Shift move), or the drag leaves a gap between the two spaces, or the save drops the pin fields.
       $opened = Fl-Open $ws (Fl-Json (Fl-Board))
       Check "drag-segment ($tag): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
       if (-not $opened) { return }
@@ -2413,6 +2424,9 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
       $meet = [bool]($aL -and $aR -and ([Math]::Abs(($aL.rect[0] + $aL.rect[2]) - $aR.rect[0]) -lt 1e-6))
       $tot = 0; foreach ($a in @($L1.grids.U1.free.areas)) { $tot += $a.rect[2] * $a.rect[3] }
       Check "drag-segment ($tag): the two spaces meet, and the spaces still cover the monitor" ($meet -and [Math]::Abs($tot - 1) -lt 1e-6) "meet: $meet, total area: $tot"
+      $pinN = @(Fl-Pinned $L1).Count
+      Check "drag-segment ($tag): the saved layout holds a pinned space to compare (guard)" ($pinN -ge 1) "pinned spaces in the saved layout: $pinN"
+      if ($pinN -lt 1) { return }
       $ed = @(Fl-EngineDiff (Fl-Engine) $L1)
       Check "drag-segment ($tag): tile.ps1 places each window in its saved space" ($ed.Count -eq 0) ($ed -join ' | ')
     }
@@ -2421,7 +2435,7 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
   foreach ($v in @(@{ tag = 'top row'; lid = 1001; rid = 1002; l2 = 1008; r2 = 1009 }, @{ tag = 'bottom row'; lid = 1008; rid = 1009; l2 = 1001; r2 = 1002 })) {
     $tag = $v.tag; $lid = $v.lid; $rid = $v.rid; $l2 = $v.l2; $r2 = $v.r2
     Case "drag-line ($tag, Shift): a Shift-drag moves the whole line, both rows by the same amount" {
-      # Mutant: Shift moves the grabbed row only (the plain drag), or the two rows move by different amounts.
+      # Mutant: Shift moves the grabbed row only (the plain drag), or the two rows move by different amounts, or the save drops the pin fields.
       $opened = Fl-Open $ws (Fl-Json (Fl-Board))
       Check "drag-line ($tag): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
       if (-not $opened) { return }
@@ -2445,6 +2459,9 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
       Check "drag-line ($tag): only the spaces of the line changed" ($dd.Count -eq 0) ($dd -join ' | ')
       $tot = 0; foreach ($a in @($L1.grids.U1.free.areas)) { $tot += $a.rect[2] * $a.rect[3] }
       Check "drag-line ($tag): the spaces still cover the monitor" ([Math]::Abs($tot - 1) -lt 1e-6) "total area: $tot"
+      $pinN = @(Fl-Pinned $L1).Count
+      Check "drag-line ($tag): the saved layout holds a pinned space to compare (guard)" ($pinN -ge 1) "pinned spaces in the saved layout: $pinN"
+      if ($pinN -lt 1) { return }
       $ed = @(Fl-EngineDiff (Fl-Engine) $L1)
       Check "drag-line ($tag): tile.ps1 places each window in its saved space" ($ed.Count -eq 0) ($ed -join ' | ')
     }
@@ -2644,7 +2661,7 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
   }
 
   Case 'close-gap (F12): Close Gap on an empty space previews both strips, then shares the space at the middle and saves once' {
-    # Mutant: one neighbour takes the whole space (item 17 in full), no strip is previewed, or the gap is not removed.
+    # Mutant: one neighbour takes the whole space (item 17 in full), no strip is previewed, the gap is not removed, or the save drops the pin fields.
     $opened = Fl-Open $ws (Fl-Json (Fl-Board @(6)) -fillOver @{ off = $true })
     Check 'close-gap: the page opens with Free Layout on and space 6 empty (control)' $opened 'the page did not open on Focus in time'
     if (-not $opened) { return }
@@ -2667,6 +2684,9 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
     $wGap = @{}; $wGap[1009] = 'gone'; $wGap[1008] = @(0, 0.5, 0.3, 0.5); $wGap[1011] = @(0.3, 0.5, 0.3, 0.5)
     $dd = @(Fl-AreaDiff $L1 $wGap)
     Check 'close-gap: the neighbours meet at the middle: Terminal takes 0 to 0.3, Downloads 0.3 to 0.6' ($dd.Count -eq 0) ($dd -join ' | ')
+    $pinN = @(Fl-Pinned $L1).Count
+    Check 'close-gap: the saved layout holds a pinned space to compare (guard)' ($pinN -ge 1) "pinned spaces in the saved layout: $pinN"
+    if ($pinN -lt 1) { return }
     $ed = @(Fl-EngineDiff (Fl-Engine) $L1)
     Check 'close-gap: tile.ps1 places each window in its saved space' ($ed.Count -eq 0) ($ed -join ' | ')
   }
