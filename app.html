@@ -1859,7 +1859,7 @@ function openSplit(id,at){
   if(T+h+8>innerHeight)T=r?r.top-4-h:at.y-h;
   m.style.left=clamp(L,8,Math.max(8,innerWidth-w-8))+"px";m.style.top=Math.max(8,T)+"px";
   const tile=()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true})};
-  smenu={id,at:!at.el,back:at.el&&at.el.id==="splitbtn"?()=>{const b=$("splitbtn");if(b)b.focus();else tile()}:tile};
+  smenu={id,at:!(at.el&&at.el.id==="splitbtn"),back:at.el&&at.el.id==="splitbtn"?()=>{const b=$("splitbtn");if(b)b.focus();else tile()}:tile};
   for(const b of document.querySelectorAll("#splitbtn"))b.setAttribute("aria-expanded","true");
   const show=ev=>{const t=ev.target.closest&&ev.target.closest("[data-sp]");if(!t){clearSplitPreview();return}const[dir,k]=String(t.dataset.sp).split(":");if(SPDIR[dir]&&t.getAttribute("aria-disabled")!=="true")splitPreview(id,dir,+k);else clearSplitPreview()};
   m.addEventListener("focusin",show);m.addEventListener("mouseover",show);
@@ -1875,7 +1875,7 @@ function splitPick(t){if(!smenu||t.getAttribute("aria-disabled")==="true")return
   if(v==="unlock")toggleLock(id);else if(v==="join")joinCell(id);else{const[dir,k]=v.split(":");splitCell(id,dir,+k)}
   requestAnimationFrame(()=>{const e=els.get(id);if(e&&!e.hidden)e.focus({preventScroll:true});else back()})}
 document.addEventListener("pointerdown",ev=>{if(smenu&&!ev.target.closest("#smenu,#splitbtn"))closeSplit(false)},true);
-// A menu at the pointer stays when the inspector scrolls: the right-click selected the window, and redrawing the inspector scrolls it. The board and the page still close it.
+// A menu at the pointer or under the tile (S, Shift+F10) stays when the inspector scrolls: selecting the window redraws the inspector, which scrolls it. The menu under the inspector's own button still closes. The board and the page still close it.
 addEventListener("scroll",ev=>{if(smenu&&!(smenu.at&&ev.target.closest&&ev.target.closest(".insp")))closeSplit(false)},true);addEventListener("resize",()=>{if(smenu)closeSplit(false)});
 // Zones: a rectangle of cells, filled with one app's or category's windows.
 function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort((a,b)=>appName(a).localeCompare(appName(b)));
