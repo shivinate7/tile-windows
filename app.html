@@ -266,6 +266,7 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .hint,.over{font-size:12px;color:var(--muted);margin:0}
 .boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
 .boardbar .hint{margin:0;flex:1 1 300px}
+.boardbar .zwhy{flex:0 1 220px;display:block}
 .keys{font-size:12px;color:var(--muted)}
 .keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
 .keys ul{margin:4px 0 0;padding-left:18px}
@@ -611,7 +612,7 @@ dialog form{display:grid;gap:10px}
 .space.lent i{position:absolute;pointer-events:none;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--cat) 38%,transparent) 0 5px,color-mix(in srgb,var(--cat) 12%,transparent) 5px 10px)}
 .space.lent .lab small{display:inline;margin-left:6px}
 .space.sel{outline:3px solid var(--ink);outline-offset:-1px}
-.grow{position:absolute;z-index:6;box-sizing:border-box;pointer-events:none;border:2px solid var(--cat,var(--select));background:color-mix(in srgb,var(--cat,var(--select)) 40%,transparent)}
+.grow{position:absolute;z-index:6;box-sizing:border-box;pointer-events:none;border:2px solid var(--cat,var(--select));border-radius:2px;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--cat,var(--select)) 34%,transparent) 0 4px,transparent 4px 8px)}
 .menu.back{width:300px}
 .menu.back label{display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:6px;cursor:pointer;font:12px var(--f);color:var(--ink)}
 .menu.back label:hover{background:color-mix(in srgb,var(--select) 12%,transparent)}
@@ -673,7 +674,7 @@ dialog form{display:grid;gap:10px}
   <main class="canvas">
     <div id="setbar" class="setbar" hidden></div>
     <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"></div><div id="dest"><span></span></div><div id="zdraw"><span></span></div><div id="rzdraw"><span></span></div><div id="rzdest" aria-hidden="true"></div></div><div id="ghost" aria-hidden="true"></div>
-    <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" hidden>Draw Zone</button><button type="button" class="btn" id="fillon" hidden>Turn On Fill Empty Cells</button><button type="button" class="btn" id="clearbd" aria-describedby="whyclear" hidden>Clear Board</button><span class="vh" id="whyclear"></span>
+    <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" hidden>Draw Zone</button><span class="why zwhy" id="zwhy" hidden></span><button type="button" class="btn" id="fillon" hidden>Turn On Fill Empty Cells</button><button type="button" class="btn" id="clearbd" aria-describedby="whyclear" hidden>Clear Board</button><span class="vh" id="whyclear"></span>
     <details id="keys" class="keys"><summary>Keyboard</summary><ul>
       <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
       <li>Ctrl+Shift+arrows resize it from its top or left edge.</li>
@@ -1243,7 +1244,7 @@ function render(){
   $("undo").title=isBusy?"Wait for the current action to finish.":hist.length?"Undo the last change or "+(LIVE?verb():"Apply")+".":"Nothing to undo yet.";
   $("pend").textContent=moves?`${plural(moves,"window")} will move on ${LIVE?verb():"Apply"}`:"The board matches your screen";
   $("zadd").hidden=!(LIVE&&s);
-  {const zf=!!(LIVE&&s&&curMon&&isFree(gridOf(curMon)));$("zadd").disabled=zf;$("zadd").title=zf?"Zones pause in Free Layout. Turn it off to draw a zone.":""}
+  {const zf=!!(LIVE&&s&&curMon&&isFree(gridOf(curMon)));const ZWHY="Zones pause in Free Layout. Turn it off to draw a zone.";$("zadd").disabled=zf;$("zadd").title=zf?ZWHY:"";const zw=$("zwhy");zw.textContent=zf?ZWHY:"";zw.hidden=!(zf&&!$("zadd").hidden);if(zf)$("zadd").setAttribute("aria-describedby","zwhy");else $("zadd").removeAttribute("aria-describedby")}
   // Clear Board turns Fill Empty Cells off. With only pinned windows on the board there is nothing to clear.
   const cb=$("clearbd"),unpinned=prevs[selId]?prevs[selId].placed.filter(p=>p.pin<0&&!p.behind).length:0;
   cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
@@ -1826,7 +1827,7 @@ function splitCell(id,dir,keep){
   const c=cellOfWin(id),w=winById(id);if(!c||!w||isBusy){status("That window has no cell to split.");return false}
   if(isLockedId(id)){status(`${w.title} is locked. Unlock it first.`);return false}
   const pl=splitPlan(c.g,c.b,dir);if(!pl.ok){status(pl.why);return false}
-  const X=SPDIR[dir].x,role=c.role,mon=c.mon,was=baseCells(c.b,c.g),A=appName(w.app),nb=keptBlock(c.b,dir,keep,pl.dbl);
+  const X=SPDIR[dir].x,role=c.role,mon=c.mon,was=baseCells(c.b,c.g),A=appName(w.app),nb=keptBlock(c.b,dir,keep,pl.dbl),one=!!freeWhy(mon,c.g);
   curMon=mon;selWin=id;
   const ok=edit(x=>{const g=x.grids[role],self=pinNow(x,id);
     if(pl.dbl){const fx=X?2:1,fy=X?1:2,ofc=GC(g),ofr=GR(g),[mx,my]=MXY(g),
@@ -1835,7 +1836,7 @@ function splitCell(id,dir,keep){
       if(x.fill&&x.fill.held)for(const h of x.fill.held)if(h.mon===role)h.slots=re(h.slots);
       for(const z of x.zones||[])if(z.mon===role)z.slots=re(z.slots);
       g.mult=[mx*fx,my*fy];if(x.fill&&x.fill.mon===role)x.fill.unit=[mx*fx,my*fy]}
-    pinEdit(x,id,mon,nb.r*GC(g)+nb.c,nb.cs,nb.rs,self)},`Split cell ${was}. ${A} ${keepWords(dir,keep)}.`);
+    pinEdit(x,id,mon,nb.r*GC(g)+nb.c,nb.cs,nb.rs,self)},`Split cell ${was}. ${A} ${keepWords(dir,keep)}.${one?" Free Layout can be turned on now.":""}`);
   if(ok)dropNote(px(cellRect(mon,scene().grids[role],nb.c,nb.r,nb.cs,nb.rs)),`Split cell ${was}. <b>${esc(A)}</b> ${keepWords(dir,keep)}.`,hist[hist.length-1]);
   return ok}
 // K1 (the owner's pick while question K is open): Shift+S or a double-click splits the window's cell side by side at once, and it keeps the left half.
@@ -2367,7 +2368,7 @@ function freeSplit(id,dir,keep,fo){
   const pl=freeSplitPlan(info,o,dir);if(!pl.ok){status(pl.why);return false}
   const key=info.key;curMon=info.m;selWin=id;
   return edit(x=>{const areas=x.grids[key].free.areas,a=areas[o.i];a.rect=keep?pl.b:pl.a;areas.push({rect:keep?pl.a:pl.b})},
-    `Split ${A}'s space. ${A} ${keepWords(dir,keep)}. The other half is empty.`)}
+    `Split ${A}'s space. ${A} ${keepWords(dir,keep)}. ${(sc=>sc.fill&&sc.fill.mon===key&&!sc.fill.off)(scene())?"The other half is a new space. Fill Empty Cells fills it with the next window.":"The other half is empty."}`)}
 function freeSplitMenuHTML(id){
   const fo=freeOfWin(id),w=winById(id),A=esc(appName(w.app)),locked=fo.o.lock,LOCKWHY="Locked. Unlock it first.";
   const grp=dir=>{const D=SPDIR[dir],pl=freeSplitPlan(fo.info,fo.o,dir),off=locked?LOCKWHY:pl.ok?"":pl.why;
@@ -2410,7 +2411,7 @@ function openBack(m){
   const d=document.createElement("div");
   d.innerHTML=`<div class="menu back" role="dialog" id="backpop" aria-labelledby="backh"><p class="mh" id="backh">Back to the Grid</p>
     <label><input type="radio" name="backmode" value="snap" checked><span><b>Snap to Cells</b><small>Each window takes the cells its space is nearest to. ${say(sn.n)}${sn.drop.length?` ${plural(sn.drop.length,"window")} that would share a cell ${sn.drop.length===1?"goes":"go"} to Windows That Stay Put.`:""}</small></span></label>
-    <label><input type="radio" name="backmode" value="restore"><span><b>Restore the Grid Layout</b><small>The cells each window had before Free Layout. ${say(rs.n)} A pin made in Free Layout has no cells, so it goes to Windows That Stay Put.${rs.drop.length?` That is ${plural(rs.drop.length,"window")} now.`:""}</small></span></label>
+    <label><input type="radio" name="backmode" value="restore"><span><b>Restore the Grid Layout</b><small>The cells each window had before Free Layout. ${say(rs.n)} An unlocked pin made in Free Layout has no cells, so it goes to Windows That Stay Put. A locked one snaps to the nearest cells.${rs.drop.length?` That is ${plural(rs.drop.length,"window")} now.`:""}</small></span></label>
     <p class="mf">Nothing is saved until you press Back to Grid.</p>
     <div class="row2"><button type="button" class="btn" id="backcancel">Keep Free Layout</button><button type="button" class="btn pri" id="backgo">Back to Grid</button></div></div>`;
   const e=d.firstElementChild;document.body.appendChild(e);
@@ -2439,6 +2440,8 @@ function freeApplyRow(p,nm,dry){
   const s=scene(),pin=p.pin>=0?s.pins[p.pin]:null;if(!pin||!isFree(s.grids[pin.mon]))return null;
   // The engine's note gives the size the window has ("is WxH"); the placed entry's w and h are the size its space wanted. The axis that is furthest over the space is the one it will not go under.
   const q=/^off size: is (\d+)x(\d+), restore rect (\d+)x(\d+)/.exec(p.note);if(!q)return null;
+  // The live size fits and only the restore rect is off (a snapped window Windows later falls back to): there is no line to move, so no Give It.
+  if(Math.abs(+q[1]-p.w)<=20&&Math.abs(+q[2]-p.h)<=20&&(Math.abs(+q[3]-p.w)>20||Math.abs(+q[4]-p.h)>20))return["bad",`${nm(p)} is the right size now, but Windows remembers ${q[3]} × ${q[4]} px for it. It may go back to that size later.`,rawBehind(p.note)];
   if(Math.max(+q[1]-p.w,+q[2]-p.h)<0)return["bad",`${nm(p)} stayed ${q[1]} × ${q[2]} px and does not fill its space.`,rawBehind(p.note)];
   const ax=+q[1]-p.w>=+q[2]-p.h?0:1,need=ax?+q[2]:+q[1],space=ax?p.h:p.w,over=Math.max(need-space,0);
   return["bad",`${nm(p)} will not go under ${need} px ${ax?"tall":"wide"}${over?`, so it covers ${over} px of the space beside it`:""}.`,
@@ -2911,7 +2914,9 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="backcancel")closeBack(true);
   else if(t.dataset.fix==="giveit")freeGiveIt(+t.dataset.id,+t.dataset.ax,+t.dataset.need);
   else if(t.dataset.fix==="space")freeGiveSpace(t.dataset.app,t.dataset.match);
-  else if(t.id==="unlocksp"){const i=+t.dataset.pin;const id=scene().pins[i]&&freePinWin(i);if(id!=null)toggleLock(id)}
+  else if(t.id==="unlocksp"){const i=+t.dataset.pin,pin=scene().pins[i];if(!pin)return;const id=freePinWin(i);
+    // The locked pin may hold a window that is closed or minimized: the lock is on the pin, so it goes with no window to name.
+    if(id!=null)toggleLock(id);else edit(x=>{delete x.pins[i].lock},`Unlocked ${appName(pin.app)}. It can move again.`)}
   else if(t.id==="clearbd")clearBoard();
   else if(t.id==="retry")retrySave();
   else if(t.id==="srefresh")refresh();
