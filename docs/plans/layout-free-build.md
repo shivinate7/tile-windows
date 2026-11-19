@@ -69,7 +69,7 @@ Status: built in PR 50 (free areas), merged at commit 74f87cb.
 - A side qualifies when its neighbours exactly cover the gone window's edge: none sticks out past it, none is locked, and they leave no hole. A side also needs a share that leaves no overlap with a live area.
 - If left and right both qualify, they meet at the midpoint. Otherwise, if above and below both qualify, they meet at the midpoint.
 - Otherwise the first single side that qualifies takes it all, in the order of notes item 17 (left, above, right, below). When one side cannot take the region, the next side in that order does.
-- If a midpoint share would leave a window under 400×300, or would overlap a live area, the whole space goes to the first side that qualifies.
+- If a midpoint share would leave a window under 400×300, or would overlap a live area, that pair does not count. The next pair is tried (left and right, then above and below). Only when neither pair can meet does the first single side that qualifies take it all (the branch above).
 - If no side can take it (a pinwheel centre, or only locked neighbours), the space stays a dashed gap.
 - Close Gap calls the same function. When no side can take it, Close Gap is off and says why (item 17).
 - The result is worked out at apply time and never saved, so a restored window gets its saved rect back.
