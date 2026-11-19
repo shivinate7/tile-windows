@@ -416,6 +416,47 @@ $gwPidGone = { param($h) [uint32]0 }
 $rg = Invoke-StepGapFill (GapState @((GapTile 1002 'A' 2222)) @() @{ A = $gwFree } $gwLast) @((GapEvt $gwHide 1002 $gwNow)) $gwNow $gwPidGone
 Check 'gap-watch pid: a gone window (process id 0) is no mismatch, so its hide still goes absent' ($null -ne $rg -and (@($rg.absent) -join ',') -eq '1002') (GapDesc $rg)
 
+# Destroy is final (the ruling: a destroyed window never comes back). After a destroy (0x8001) of a tiled handle, every later event on that
+# handle is ignored until the next apply resets the tiled set. A minimize then restore of the same window still restores (control).
+# A multi-tick case copies each run's absent set back into its state, as the tray does, so a later tick reads what the earlier one left.
+$gdState = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast
+$gdDestroy = Invoke-StepGapFill $gdState @((GapEvt 0x8001 1001 $gwNow)) $gwNow $gwPidSame
+Check 'gap-watch destroy: a destroy of a tiled handle gives a run with it absent (scope, before the show)' ($null -ne $gdDestroy -and $gdDestroy.scene -eq 'work' -and (@($gdDestroy.absent) -join ',') -eq '1001') (GapDesc $gdDestroy)
+$gdState.absent = @($gdDestroy.absent)
+$gdShow = Invoke-StepGapFill $gdState @((GapEvt 0x8002 1001 $gwNow.AddSeconds(5))) $gwNow.AddSeconds(5) $gwPidSame
+Check 'gap-watch destroy: a show of that handle from the same pid gives no gap run' ($null -ne $gdDestroy -and $null -eq $gdShow) (GapDesc $gdShow)
+$gdAfter = if ($null -eq $gdShow) { @($gdState.absent) } else { @($gdShow.absent) }
+Check 'gap-watch destroy: after that show the absent set still holds the destroyed handle' (($gdAfter -join ',') -eq '1001') "absent: [$($gdAfter -join ',')]"
+$gdSameTick = Invoke-StepGapFill (GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast) @((GapEvt 0x8001 1001 $gwNow), (GapEvt 0x8002 1001 $gwNow.AddMilliseconds(200))) $gwNow $gwPidSame
+Check 'gap-watch destroy: a destroy and a show of one handle in the same tick leave it absent (the show is later, so ignored)' ($null -ne $gdSameTick -and (@($gdSameTick.absent) -join ',') -eq '1001') (GapDesc $gdSameTick)
+$gdOtherPid = { param($h) [uint32]3333 }  # the handle now belongs to another process: a window that reused it
+$gdOtherState = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast
+$gdOtherRun = Invoke-StepGapFill $gdOtherState @((GapEvt 0x8001 1001 $gwNow)) $gwNow $gwPidSame
+Check 'gap-watch destroy: a destroy from the owning pid gives a run with the handle absent (scope, before the other pid''s show)' ($null -ne $gdOtherRun -and (@($gdOtherRun.absent) -join ',') -eq '1001') (GapDesc $gdOtherRun)
+$gdOtherState.absent = @($gdOtherRun.absent)
+$gdOtherShow = Invoke-StepGapFill $gdOtherState @((GapEvt 0x8002 1001 $gwNow.AddSeconds(5))) $gwNow.AddSeconds(5) $gdOtherPid
+Check 'gap-watch destroy: a show of that handle from another pid gives no gap run (control: the process-id check already skips it)' ($null -ne $gdOtherRun -and $null -eq $gdOtherShow) (GapDesc $gdOtherShow)
+$gmState = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast
+$gmMin = Invoke-StepGapFill $gmState @((GapEvt 0x0016 1001 $gwNow)) $gwNow $gwPidSame
+Check 'gap-watch minimize: a minimize start of a tiled handle gives a run with it absent (scope, before the restore)' ($null -ne $gmMin -and (@($gmMin.absent) -join ',') -eq '1001') (GapDesc $gmMin)
+$gmState.absent = @($gmMin.absent)
+$gmRest = Invoke-StepGapFill $gmState @((GapEvt 0x0017 1001 $gwNow.AddSeconds(5))) $gwNow.AddSeconds(5) $gwPidSame
+Check 'gap-watch minimize: a restore of that window from the same pid gives a run with it back (control)' ($null -ne $gmRest -and -not (@($gmRest.absent) -contains 1001)) (GapDesc $gmRest)
+$gnState = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } $gwLast
+$gnFirst = Invoke-StepGapFill $gnState @((GapEvt 0x8001 1001 $gwNow)) $gwNow $gwPidSame
+Check 'gap-watch destroy: a destroy before a new apply gives a run with the handle absent (scope)' ($null -ne $gnFirst -and (@($gnFirst.absent) -join ',') -eq '1001') (GapDesc $gnFirst)
+# The new apply makes a new state: the same handle is tiled again, and nothing is absent yet.
+$gnApplied = GapState @((GapTile 1001 'A' 1111)) @() @{ A = $gwFree } ($gwNow.AddSeconds(10))
+$gnAgain = Invoke-StepGapFill $gnApplied @((GapEvt 0x8001 1001 $gwNow.AddSeconds(20))) $gwNow.AddSeconds(20) $gwPidSame
+Check 'gap-watch destroy: after a new apply the handle is tracked again, so its destroy gives a run with it absent (control)' ($null -ne $gnAgain -and (@($gnAgain.absent) -join ',') -eq '1001') (GapDesc $gnAgain)
+# Full-size: all 40 tiled handles destroyed in one tick, then all 40 shown again from the same pid.
+$gbState = GapState @($gwBurst | % { GapTile $_ 'A' 1111 }) @() @{ A = $gwFree } $gwLast
+$gbDestroy = Invoke-StepGapFill $gbState @($gwBurst | % { GapEvt 0x8001 $_ $gwNow }) $gwNow $gwPidSame
+Check 'gap-watch destroy: the destroy of all 40 tiled handles gives one run with all 40 absent (scope)' ($null -ne $gbDestroy -and ((@($gbDestroy.absent) | % { [int64]$_ } | Sort-Object) -join ',') -eq ($gwBurst -join ',')) (GapDesc $gbDestroy)
+$gbState.absent = @($gbDestroy.absent)
+$gbShow = Invoke-StepGapFill $gbState @($gwBurst | % { GapEvt 0x8002 $_ $gwNow.AddSeconds(5) }) $gwNow.AddSeconds(5) $gwPidSame
+Check 'gap-watch destroy: the show of all 40 destroyed handles from the same pid gives no gap run' ($null -ne $gbDestroy -and $null -eq $gbShow) (GapDesc $gbShow)
+
 # ---- L5b cases: the gap-fill run (the stub until L5a) and New-GapState on a real scene shape. ----
 # Invoke-GapFill is the log-only stub. It is defined below tray.ps1's -Lib return, so -Lib does not define it. The case reads its definition
 # from tray.ps1 with the PowerShell parser and defines it here, so the case runs the file's own text on either side of the return.
