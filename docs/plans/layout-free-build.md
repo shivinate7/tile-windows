@@ -1,6 +1,6 @@
 ## layout-free-build
 
-**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L3 (PR 50, free areas) and L5b (PR 43, gap watch) are merged. L2, L4 and L5a are not built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
+**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L3 (PR 50, free areas), L5a (PR 54, gap-fill run) and L5b (PR 43, gap watch) are merged. L2 and L4 are not built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
 
 **Source.** The Plan agent's build plan (opus), revised after a refuter, 2026-11-18 11:20 CST. It was first checked against origin/main 9e6ae0a. The symbols that replace its line numbers were checked against origin/main b6bc537 by 2026-11-18 11:23 CST. Its other claims, such as the columns cap of 8 and the span stepper following `g.c`, were not re-checked. Main has no docs/map/.
 
@@ -102,18 +102,22 @@ Status: built in PR 50 (free areas), merged at commit 74f87cb.
   - whether the board shows a gone window's space as lent.
 
 **L5a. Engine: gap-fill run** (`tile.ps1`; no designer; needs L3)
+
+Status: built in PR 54 (gap-fill run), merged at commit e0e3be2. Records: debt `gap-fill-live-move-untested`; notes `gap-destroy-quiet-not-recorded`, `gap-pid-control-tests-destroyed`, `gap-fill-builder-choices`.
+
 - Red test first: `-GapFill` is added to the live-move guard `if` in `tile.ps1`, under its `# Live-move guard` comment. Under TILE_TEST_SUITE or CLAUDECODE it is refused unless `-DryRun` or TILE_TEST_ALLOW_LIVE=1 is set.
 - `-GapFill -Absent <ids> -Last <json>` applies item G to the active scene.
 - A window moves only if it sits at its scene rect, or at the last rect the tray gave it (`-Last`), so neighbours shrink back on restore. A window the owner moved by hand stays put.
 - No new window is pulled in. Windows That Stay Put are untouched. The saved layout is never written.
 - Tests: the guard refusal; a hand-moved neighbour stays put; a restore shrinks neighbours from their last rect; no new window is pulled in.
-- Built in draft PR 54. `Get-GapMoves` (above the `-Lib` return) decides the moves from the pins phase's areas and item G:
+- `Get-GapMoves` (above the `-Lib` return) decides the moves from the pins phase's areas and item G:
   - a gone window's area is the empty area its `-Last` rect holds; an empty area nothing gone holds, a locked pin's area and a hand-moved window's area are locked;
   - a locked area never moves and never grows; the zones, held windows and fill pause, so nothing is placed into a gap.
+- Departs from: the tile.ps1 header at 74f87cb, line 17, which said a pin's lock is read by the page, not here. `-GapFill` reads a pin's lock (tile.ps1:870, `.lock -eq $true`), so a locked pin's area never moves in a gap run. The header at tile.ps1:17 now says so.
 
 **L5b. Tray: close and minimize hook** (`tray.ps1`; no designer)
 
-Status: built in PR 43 (the gap-watch pull request), merged at commit ee47541. Lane L5a (draft PR 54) wires `Invoke-GapFill` to the engine's `-GapFill`.
+Status: built in PR 43 (the gap-watch pull request), merged at commit ee47541. Lane L5a (PR 54) wires `Invoke-GapFill` to the engine's `-GapFill`.
 
 - `tray.ps1 -Lib` returns at its `if ($Lib) { return }` line, before the `TileInput` class. So the pure parts live in PowerShell above that line, where `-Lib` tests reach them:
   - `Test-GapEvent` (the filter);
