@@ -200,7 +200,9 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 @media (forced-colors:active){.lrow .st.now{background:CanvasText}}
 
 /* Canvas */
-.canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;justify-content:safe center;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+/* scrollbar-gutter keeps clientWidth, which layout() sizes the board from, the same with or without a scrollbar. Without it a board 3px too tall adds a
+   scrollbar, the narrower width shrinks the board, the scrollbar goes, and the relayout never settles. */
+.canvas{grid-area:canvas;min-width:0;min-height:0;overflow:auto;scrollbar-gutter:stable;justify-content:safe center;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px;display:flex;flex-direction:column;align-items:center;gap:12px}
 .canvas>*{width:100%;flex:none}
 #stage{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .mon{position:absolute;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
