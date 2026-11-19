@@ -598,6 +598,31 @@ dialog form{display:grid;gap:10px}
 @media (max-width:760px){
   .app{height:auto;min-height:100%;grid-template-rows:none;grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "dry" "rail" "canvas" "insp" "status"}
   .insp{border:0;border-top:1px solid var(--line)}}
+/* Free Layout (free-layout.html): a grip on each line where spaces meet, the size at the line, the tip, the stop bar, and the spaces themselves. */
+.seam{position:absolute;z-index:6;display:grid;place-items:center;touch-action:none}
+.seam.v{width:12px;transform:translateX(-50%);cursor:ew-resize}
+.seam.h{height:12px;transform:translateY(-50%);cursor:ns-resize}
+.seam i{display:block;border-radius:2px;background:var(--select);box-shadow:0 0 0 2px var(--screen);pointer-events:none}
+.seam.v i{width:4px;height:22px}
+.seam.h i{height:4px;width:22px}
+.seam.on::before{content:"";position:absolute;background:var(--select)}
+.seam.v.on::before{left:5px;width:2px;top:0;bottom:0}
+.seam.h.on::before{top:5px;height:2px;left:0;right:0}
+.seam.on i{box-shadow:0 0 0 2px var(--screen),0 0 0 4px var(--select)}
+.seam.stuck{cursor:not-allowed}
+.seam.stuck i{display:none}
+.seam.v.stuck::before{content:"";position:absolute;left:5px;top:0;bottom:0;border-left:2px dotted var(--muted)}
+.seam.h.stuck::before{content:"";position:absolute;top:5px;left:0;right:0;border-top:2px dotted var(--muted)}
+.seam.small.v i{height:12px}.seam.small.h i{width:12px}
+@media (pointer:coarse){.seam.v{width:24px}.seam.h{height:24px}}
+@media (forced-colors:active){.seam i,.seam.on::before{background:Highlight;forced-color-adjust:none}.seam.v.stuck::before,.seam.h.stuck::before{border-color:CanvasText}}
+.fltip{position:absolute;z-index:31;max-width:260px;padding:5px 8px;border-radius:6px;background:var(--ink);color:var(--panel);font:500 11.5px/1.35 var(--f);pointer-events:none;white-space:normal;width:max-content}
+.sz{position:absolute;z-index:31;padding:1px 6px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px/1.4 var(--f-mono);white-space:nowrap;pointer-events:none}
+.sz.l{transform:translateX(-100%)}
+.sz.stop{background:var(--ink);color:var(--panel)}
+.stopbar{position:absolute;z-index:7;width:6px;transform:translateX(-50%);border-left:2px solid var(--ink);border-right:2px solid var(--ink);pointer-events:none}
+.stopbar.h{width:auto;height:6px;transform:translateY(-50%);border:0;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink)}
+.tile.free .rsz{display:none}
 </style>
 </head>
 <body>
@@ -896,7 +921,7 @@ function preview(id){const p=previewRun(id).finally(()=>{if(inflight[id]===p)del
 async function previewRun(id){
   const n=pseq[id]=(pseq[id]||0)+1;
   try{const r=await post("preview",withCats(work[id]));if(!r.ok)throw new Error(await r.text());const j=await r.json();
-    if(pseq[id]!==n)return;prevs[id]=j;if(id===selId)optim=null;render()}
+    if(pseq[id]!==n)return;prevs[id]=j;if(id===selId){optim=null;flLive=null}render()}
   catch(e){status("Preview failed: "+e.message)}}
 async function previewAll(){await preview(selId);for(const s of cfg.scenes)if(s.id!==selId)await preview(s.id);
   for(const id in work)if(!saved(id)&&id!==selId)await preview(id)}
@@ -1107,6 +1132,7 @@ function view(){
   snap.windows.forEach((w,i)=>{v[w.id]={w,r:LIVE?(w.min?null:rect(w)):(w.min&&same(offRects[i],offOrig[i])?null:offRects[i]),kind:"stay",p:null}});
   if(LIVE&&P){for(const p of P.placed){const x=v[p.id];if(x){x.r=rect(p);x.kind=p.behind?"behind":p.pin>=0?"pin":p.zone>=0?"zone":"fill";x.p=p}}for(const l of P.left)if(v[l.id]){v[l.id].kind="left";v[l.id].why=l.why}}
   if(!LIVE)snap.windows.forEach((w,i)=>{v[w.id].kind=same(offRects[i],offOrig[i])?"fill":"pin"});
+  if(flLive)for(const[id,r]of flLive)if(v[id]&&v[id].kind!=="left")v[id].r=r;
   if(optim&&v[optim.id]){v[optim.id].r=optim.r;v[optim.id].kind=optim.kind||"pin";if(optim.p)v[optim.id].p=optim.p}
   return v}
 // In the bay: every window the scene gives no cell. Live only, once the engine has answered.
@@ -1135,7 +1161,7 @@ function render(){
   for(const w of snap.windows){
     const e=els.get(w.id),x=V[w.id];if(drag&&drag.id===w.id){used.add(monAt(drag.start.x+drag.start.w/2,drag.start.y+drag.start.h/2));continue}
     peekOf(w.id).hidden=true;
-    e.className=`tile cat-${catOf(w.app)} ${x.kind==="left"?"stay":x.kind==="zone"?"zfill":x.kind}`;
+    e.className=`tile cat-${catOf(w.app)} ${x.kind==="left"?"stay":x.kind==="zone"?"zfill":x.kind}${s&&x.p&&isFree(s.grids[x.p.mon])?" free":""}`;
     const pm=e.querySelector(".pinmark");if(x.kind==="pin"&&!pm)e.insertAdjacentHTML("beforeend",PIN);else if(x.kind!=="pin"&&pm)pm.remove();
     if(!x.r||inBay(x)){e.hidden=true;continue}
     const bh=x.kind==="behind",pi=x.p&&x.p.pin>=0&&!bh?x.p.pin:-1,back0=pi>=0?nb[pi]||[]:[],
@@ -1202,11 +1228,11 @@ function render(){
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
   $("hint").textContent=LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
-  overText(V);renderSetbar();renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);renderPicks();
+  overText(V);renderSetbar();renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);renderPicks();renderFree();
 }
 // The eight handles go around the selected tile's whole cell block: a stacked tile's strip is inside the frame, so the handles never sit on the name of the window behind. A locked tile has none: it never resizes.
 function placeHandles(V){const e=selWin&&els.get(selWin),x=selWin&&V[selWin],P=prev();
-  const ok=LIVE&&!drag&&e&&!e.hidden&&x&&x.r&&P&&P.placed.some(p=>p.id===selWin&&!p.behind)&&!e.classList.contains("lock")&&!(picks&&picks.order.length>1);
+  const ok=LIVE&&!drag&&e&&!e.hidden&&x&&x.r&&P&&P.placed.some(p=>p.id===selWin&&!p.behind)&&!e.classList.contains("lock")&&!e.classList.contains("free")&&!(picks&&picks.order.length>1);
   hdl.hidden=!ok;if(!ok)return;
   Object.assign(hdl.style,px(x.r));
   const nar=e.classList.contains("narrow");hdl.style.setProperty("--arm",nar?"8px":"10px");hdl.style.setProperty("--bar",nar?"12px":"16px");hdl.style.setProperty("--off",nar?"6px":"7px")}
@@ -1941,8 +1967,9 @@ function freeInfo(m,g=gridOf(m)){
   list.sort((p,q)=>p.r.y-q.r.y||p.r.x-q.r.x||p.i-q.i);list.forEach((o,k)=>{o.no=k});
   return{m,g,key,list}}
 // A pin's index in an area follows the pin object through any edit that adds, removes or reorders pins (pinEdit puts a new pin first, leavePin splices).
-function freeTags(s){const t=[];for(const g of Object.values(s.grids||{}))for(const a of freeAreas(g)){if(a&&a.pin!=null&&s.pins[+a.pin])t.push([a,s.pins[+a.pin]])}return t}
-function freeRelink(s,tags){for(const[a,p]of tags){const i=s.pins.indexOf(p);if(i>=0)a.pin=i;else delete a.pin}}
+// An edit that sets an area's pin itself (a swap, a drop on a space) is left as it set it.
+function freeTags(s){const t=[];for(const g of Object.values(s.grids||{}))for(const a of freeAreas(g)){if(a&&a.pin!=null&&s.pins[+a.pin])t.push([a,s.pins[+a.pin],a.pin])}return t}
+function freeRelink(s,tags){for(const[a,p,was]of tags){if(a.pin!==was)continue;const i=s.pins.indexOf(p);if(i>=0)a.pin=i;else delete a.pin}}
 // Why the switch is off on a monitor, or "" when it can go on (item 15).
 const freeWhy=(m,g)=>GC(g)*GR(g)===1?"One window fills this monitor. Split it first.":"";
 // Switching on: one space per window block (a pin keeps its index, a fill or zone window is named by app and title), then one empty space per cell nothing holds. Each rect is its
@@ -1975,6 +2002,138 @@ document.addEventListener("keydown",ev=>{
   if((ev.key!=="f"&&ev.key!=="F")||ev.ctrlKey||ev.metaKey||ev.altKey||ev.shiftKey||ev.defaultPrevented||!LIVE||!snap)return;
   const t=ev.target;if(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||(t.closest&&t.closest("dialog,[role=dialog],[role=menu]"))))return;
   ev.preventDefault();freeToggle()});
+
+// ---- Lines. A line runs between two crossings where both sides have an edge, so every space that touches it lies inside its length (item 16, F2). Each run is one segment: the spaces
+// on its near side (A: left or above) and far side (B: right or below). Runs that share a space are one run, so a move never leaves a space cut in two. ax 0 is a vertical line (x), 1 a horizontal one (y).
+function freeSegs(info){
+  const L=info.list,out=[],E=FEPS;
+  for(const ax of[0,1]){const o=1-ax,poss=[];
+    for(const a of L)for(const v of[a.a.rect[ax],a.a.rect[ax]+a.a.rect[ax+2]])if(!poss.some(q=>Math.abs(q-v)<E))poss.push(v);
+    for(const pos of poss){
+      const A=L.filter(a=>Math.abs(a.a.rect[ax]+a.a.rect[ax+2]-pos)<E),B=L.filter(a=>Math.abs(a.a.rect[ax]-pos)<E);if(!A.length||!B.length)continue;
+      const cuts=[];for(const a of[...A,...B])for(const v of[a.a.rect[o],a.a.rect[o]+a.a.rect[o+2]])if(!cuts.some(q=>Math.abs(q-v)<E))cuts.push(v);cuts.sort((p,q)=>p-q);
+      const cov=(a,lo,hi)=>a.a.rect[o]<=lo+E&&a.a.rect[o]+a.a.rect[o+2]>=hi-E,ps=[];
+      for(let k=0;k+1<cuts.length;k++){const lo=cuts[k],hi=cuts[k+1];if(hi-lo<E)continue;const a=A.find(x=>cov(x,lo,hi)),b=B.find(x=>cov(x,lo,hi));if(a&&b)ps.push({lo,hi,a,b})}
+      const grp=ps.map((_,i)=>i),find=i=>grp[i]===i?i:(grp[i]=find(grp[i]));
+      for(let i=0;i<ps.length;i++)for(let j=i+1;j<ps.length;j++)if(ps[i].a===ps[j].a||ps[i].b===ps[j].b)grp[find(j)]=find(i);
+      const runs=new Map();ps.forEach((p,i)=>{const r=find(i);if(!runs.has(r))runs.set(r,[]);runs.get(r).push(p)});
+      for(const rp of runs.values()){const As=[...new Set(rp.map(p=>p.a))],Bs=[...new Set(rp.map(p=>p.b))];
+        out.push({ax,pos,lo:Math.min(...rp.map(p=>p.lo)),hi:Math.max(...rp.map(p=>p.hi)),A:As,B:Bs,locked:[...As,...Bs].some(a=>a.lock)})}}}
+  return out}
+const FLOORPX=[400,300],FSTEP=1/48;
+// The segments one drag or key moves, and the locked parts it leaves (Go Around, F5). A plain move takes only the segment grabbed; the whole line takes every segment on the same line that runs on from it
+// end to end, except a part beside a locked window, which stays.
+function segSet(all,sg,whole){
+  if(!whole)return{move:[sg],stay:[]};
+  const same=all.filter(q=>q.ax===sg.ax&&Math.abs(q.pos-sg.pos)<FEPS),chain=[sg];let grew=true;
+  while(grew){grew=false;for(const q of same)if(!chain.includes(q)&&chain.some(c=>Math.abs(c.hi-q.lo)<FEPS||Math.abs(q.hi-c.lo)<FEPS)){chain.push(q);grew=true}}
+  return{move:chain.filter(q=>!q.locked),stay:chain.filter(q=>q.locked)}}
+// How far, in pixels, the segments can move: no space goes under 400 × 300 px (F4), and a space already under it only grows.
+function segBounds(m,moves){let lb=-Infinity,ub=Infinity;
+  for(const q of moves){const n=q.ax?m.h:m.w,pp=fpx(q.pos,n),fl=FLOORPX[q.ax];
+    for(const a of q.A)lb=Math.max(lb,Math.min(0,fl-(pp-fpx(a.a.rect[q.ax],n))));
+    for(const b of q.B)ub=Math.min(ub,Math.max(0,fpx(b.a.rect[q.ax]+b.a.rect[q.ax+2],n)-pp-fl))}
+  return[lb,ub]}
+// The rects (fractions) of the spaces the move changes, by area index. The line lands on a whole pixel, so the near side's edge and the far side's edge are the same number.
+function segRects(areas,m,moves,d){const out=new Map(),get=i=>{if(!out.has(i))out.set(i,areas[i].rect.slice());return out.get(i)};
+  for(const q of moves){const n=q.ax?m.h:m.w,np=(fpx(q.pos,n)+d)/n;
+    for(const a of q.A){const r=get(a.i);r[q.ax+2]=np-r[q.ax]}
+    for(const b of q.B){const r=get(b.i),end=r[q.ax]+r[q.ax+2];r[q.ax]=np;r[q.ax+2]=end-np}}
+  return out}
+const lockNames=moves=>{const s=scene();return[...new Set(moves.flatMap(q=>[...q.A,...q.B]).filter(a=>a.lock).map(a=>appName(s.pins[a.pin].app)))]};
+let segStore=[],fdrag=null,flLive=null;
+// The windows that sit in a space: a pin's front and back windows, or a window the fill put there (the one whose centre is in it).
+function freeWinsOf(info,o){const P=prev();if(!P)return[];
+  return P.placed.filter(p=>p.mon===info.key&&(o.pin>=0?p.pin===o.pin:p.pin<0&&p.x+p.w/2>=o.r.x&&p.x+p.w/2<o.r.x+o.r.w&&p.y+p.h/2>=o.r.y&&p.y+p.h/2<o.r.y+o.r.h))}
+// The space a placed window is in, on a Free Layout monitor.
+function freeOfWin(id){const P=prev(),p=LIVE&&P&&P.placed.find(q=>q.id===id&&!q.behind);if(!p)return null;
+  const m=snap.monitors.find(q=>mk(q)===p.mon),info=m&&freeInfo(m);if(!info)return null;
+  const o=p.pin>=0?info.list.find(q=>q.pin===p.pin):info.list.find(q=>p.x+p.w/2>=q.r.x&&p.x+p.w/2<q.r.x+q.r.w&&p.y+p.h/2>=q.r.y&&p.y+p.h/2<q.r.y+q.r.h);
+  return o?{info,o,p}:null}
+// The grips: one on each segment, dotted with no grip when a window beside it is locked (item 18).
+function renderFree(){
+  if(fdrag)return;
+  for(const e of stage.querySelectorAll(".seam"))e.remove();segStore=[];
+  if(!LIVE||!scene())return;
+  for(const m of snap.monitors){const info=freeInfo(m);if(!info)continue;const all=freeSegs(info);
+    all.forEach(sg=>{const e=document.createElement("div"),k=segStore.length;segStore.push({m,info,all,sg});
+      e.className=`seam ${sg.ax?"h":"v"}${sg.locked?" stuck":""}${G.S<.1?" small":""}`;e.dataset.seg=k;e.innerHTML="<i></i>";
+      if(sg.locked)e.title=`${lockNames([sg]).join(" and ")} is locked, so this line does not move.`;
+      placeSeam(e,m,sg,0);stage.appendChild(e)})}}
+// A seam's place on the board: on its line, d pixels from where it is saved, over the run it spans.
+function placeSeam(e,m,sg,d){const n=sg.ax?m.h:m.w,line=(sg.ax?m.y:m.x)+fpx(sg.pos,n)+d,o0=(sg.ax?m.x:m.y)+fpx(sg.lo,sg.ax?m.w:m.h),o1=(sg.ax?m.x:m.y)+fpx(sg.hi,sg.ax?m.w:m.h);
+  if(sg.ax)Object.assign(e.style,{left:(o0-G.x0)*G.S+2+"px",top:(line-G.y0)*G.S+"px",width:Math.max((o1-o0)*G.S-4,8)+"px",height:""});
+  else Object.assign(e.style,{top:(o0-G.y0)*G.S+2+"px",left:(line-G.x0)*G.S+"px",height:Math.max((o1-o0)*G.S-4,8)+"px",width:""})}
+// The drag's own elements: the tip, the size on each side of the line, and the bar where the line stopped. They go when the drag ends.
+function flUI(){const one=c=>{let e=stage.querySelector("."+c.split(" ")[0]+".fl1");if(!e){e=document.createElement("div");e.className=c+" fl1";stage.appendChild(e)}return e};
+  return{tip:one("fltip"),sa:one("sz"),sb:one("sz sb"),stop:one("stopbar")}}
+function flUIHide(){for(const e of stage.querySelectorAll(".fl1"))e.remove()}
+$("stage").addEventListener("pointerdown",ev=>{
+  const sm=ev.target.closest(".seam");if(!sm||ev.button!==0||drag||zdraw||rz||fdrag||isBusy||!LIVE)return;
+  const st=segStore[+sm.dataset.seg];if(!st||st.sg.locked)return;
+  ev.preventDefault();try{sm.setPointerCapture(ev.pointerId)}catch(_){}
+  fdrag={...st,key:mk(st.m),el:sm,pid:ev.pointerId,sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,shift:ev.shiftKey,d:0,rects:new Map()}});
+// Each move reads the pointer, clamps it, and draws the result at once: tiles, spaces and the grip follow, and the tip names the key.
+function freeDragUpdate(){
+  const f=fdrag,m=f.m,sg=f.sg,set=segSet(f.all,sg,f.shift),[lb,ub]=segBounds(m,set.move),raw=(sg.ax?f.py-f.sy:f.px-f.sx)/G.S,d=Math.round(clamp(raw,lb,ub)),stopped=raw<lb-.5||raw>ub+.5;
+  f.set=set;f.d=d;f.stopped=stopped;f.rects=segRects(scene().grids[f.key].free.areas,m,set.move,d);
+  flLive=new Map();
+  for(const[i,r]of f.rects){const o=f.info.list.find(q=>q.i===i),rr=areaPx(m,{rect:r});
+    for(const p of freeWinsOf(f.info,o)){flLive.set(p.id,rr);const e=els.get(p.id);if(e)Object.assign(e.style,px(rr))}}
+  stage.querySelectorAll(".seam").forEach(e=>{const st=segStore[+e.dataset.seg];if(st&&f.set.move.includes(st.sg))placeSeam(e,m,st.sg,d)});
+  const u=flUI(),sr=stage.getBoundingClientRect(),n=sg.ax?m.h:m.w,pp=fpx(sg.pos,n)+d,a0=sg.A[0],b0=sg.B[0],wa=pp-fpx(a0.a.rect[sg.ax],n),wb=fpx(b0.a.rect[sg.ax]+b0.a.rect[sg.ax+2],n)-pp;
+  const line=((sg.ax?m.y:m.x)+pp-(sg.ax?G.y0:G.x0))*G.S,mid=(((sg.ax?m.x:m.y)+fpx((sg.lo+sg.hi)/2,sg.ax?m.w:m.h))-(sg.ax?G.x0:G.y0))*G.S;
+  const kind=sg.ax?"column":"row",nm=lockNames(set.stay),mv=set.move.length;
+  u.tip.textContent=stopped?`Smallest size: ${FLOORPX[0]} × ${FLOORPX[1]} px. The line stops here.`:
+    f.shift?`Shift: the whole line, ${plural(mv,kind)}.${nm.length?` ${nm.join(" and ")} is locked, so its part stayed.`:""}`:`This ${kind} only. Shift moves the whole line.`;
+  Object.assign(u.tip.style,{left:f.px-sr.left+14+"px",top:f.py-sr.top+18+"px"});
+  u.sa.textContent=`${wa} px`;u.sb.textContent=`${wb} px`;
+  u.sa.classList.add("l");u.sa.classList.toggle("stop",stopped&&d<=lb);u.sb.classList.toggle("stop",stopped&&d>=ub);
+  if(sg.ax){Object.assign(u.sa.style,{left:mid-6+"px",top:line-22+"px"});Object.assign(u.sb.style,{left:mid+6+"px",top:line+4+"px"})}
+  else{Object.assign(u.sa.style,{left:line-4+"px",top:mid-9+"px"});Object.assign(u.sb.style,{left:line+4+"px",top:mid-9+"px"})}
+  u.stop.hidden=!stopped;u.stop.classList.toggle("h",!!sg.ax);
+  if(stopped){if(sg.ax)Object.assign(u.stop.style,{left:(m.x+fpx(sg.lo,m.w)-G.x0)*G.S+"px",top:line+"px",width:Math.max((fpx(sg.hi,m.w)-fpx(sg.lo,m.w))*G.S,8)+"px",height:""});
+    else Object.assign(u.stop.style,{left:line+"px",top:(m.y+fpx(sg.lo,m.h)-G.y0)*G.S+"px",height:Math.max((fpx(sg.hi,m.h)-fpx(sg.lo,m.h))*G.S,8)+"px",width:""})}
+  status(stopped?`Smallest size: ${FLOORPX[0]} × ${FLOORPX[1]} px.`:nm.length&&f.shift?`${nm.join(" and ")} is locked, so its part of the line stays.`:`${wa} px | ${wb} px`)}
+function freeEnd(ev){
+  const f=fdrag;fdrag=null;flUIHide();if(!f)return;
+  if(ev.type!=="pointerup"||!f.d){flLive=null;render();return}
+  freeCommit(f.m,f.key,f.set,f.d,f.sg)}
+// One edit: the spaces the move changes get their new rects, so one POST /layout and one Undo.
+function freeCommit(m,key,set,d,sg){
+  const nm=lockNames(set.stay);
+  const ok=edit(x=>{const areas=x.grids[key].free.areas;for(const[i,r]of segRects(areas,m,set.move,d))areas[i].rect=r},
+    `Moved a line ${Math.abs(d)} px ${sg.ax?d<0?"up":"down":d<0?"left":"right"}.${nm.length?` ${nm.join(" and ")} is locked, so its part of the line stayed.`:""}`);
+  if(!ok)flLive=null;render()}
+// Keys on a Free Layout monitor (F6): Shift+arrows move the window's right or bottom line by 1/48 of the monitor, Ctrl+Shift+arrows its left or top line, in its own space's row; Alt adds the whole
+// line. A plain arrow moves the window to the next space, and a window there swaps with it. True when the key was a Free Layout one.
+function freeKeys(ev,id){
+  const k={ArrowLeft:[0,-1],ArrowRight:[0,1],ArrowUp:[1,-1],ArrowDown:[1,1]}[ev.key];if(!k)return false;
+  const w=freeOfWin(id);if(!w)return false;const[ax,dir]=k;
+  if(!ev.shiftKey){freeStep(w,ax,dir);return true}
+  const segs=freeSegs(w.info),sg=segs.find(q=>q.ax===ax&&(ev.ctrlKey?q.B:q.A).includes(w.o));
+  if(!sg){status("That edge is the edge of the monitor, so no line is there to move.");return true}
+  if(sg.locked){status(`${lockNames([sg]).join(" and ")} is locked, so this line does not move.`);return true}
+  const m=w.info.m,n=ax?m.h:m.w,set=segSet(segs,sg,ev.altKey),[lb,ub]=segBounds(m,set.move),want=dir*Math.round(n*FSTEP),d=Math.round(clamp(want,lb,ub));
+  if(!d){status(`Smallest size: ${FLOORPX[0]} × ${FLOORPX[1]} px. The line stops here.`);return true}
+  selWin=id;freeCommit(m,w.info.key,set,d,sg);requestAnimationFrame(()=>{const e=els.get(id);if(e)e.focus({preventScroll:true})});return true}
+// The next space in a direction: the nearest one beyond this edge that overlaps it, with the most overlap.
+function freeNext(info,o,ax,dir){const lo=ax?o.r.y:o.r.x,sz=ax?o.r.h:o.r.w,edge=dir>0?lo+sz:lo;let best=null;
+  for(const t of info.list){if(t===o)continue;const tl=ax?t.r.y:t.r.x,ts=ax?t.r.h:t.r.w,gap=dir>0?tl-edge:edge-(tl+ts);if(gap<-1)continue;
+    const ov=Math.min(ax?o.r.x+o.r.w:o.r.y+o.r.h,ax?t.r.x+t.r.w:t.r.y+t.r.h)-Math.max(ax?o.r.x:o.r.y,ax?t.r.x:t.r.y);if(ov<=0)continue;
+    if(!best||gap<best.gap-1||(Math.abs(gap-best.gap)<=1&&ov>best.ov))best={t,gap,ov}}
+  return best&&best.t}
+function freeStep(w,ax,dir){
+  const t=freeNext(w.info,w.o,ax,dir);if(!t){status("There is no space that way.");return}
+  const win=winById(w.p.id),other=freeWinsOf(w.info,t).find(p=>!p.behind);
+  if(w.o.lock||t.lock){const l=w.o.lock?w.o:t;status(`${appName(scene().pins[l.pin].app)} is locked, so it does not move.`);return}
+  selWin=w.p.id;
+  edit(x=>{const areas=x.grids[w.info.key].free.areas,a=areas[w.o.i],b=areas[t.i];
+    if(a.pin==null){x.pins.push({app:win.app,match:matchFor(win),mon:w.info.key,slots:[]});a.pin=x.pins.length-1;delete a.app;delete a.title}
+    const pa=a.pin,pb=b.pin;if(pb!=null)a.pin=pb;else delete a.pin;b.pin=pa;
+    if(a.pin==null&&other&&!a.app){a.app=other.app;a.title=(winById(other.id)||{}).title}},
+    other?`Swapped ${pairNames(win,winById(other.id)).join(" and ")}.`:`${appName(win.app)} moved to the next space.`);
+  requestAnimationFrame(()=>{const e=els.get(w.p.id);if(e)e.focus({preventScroll:true})})}
 
 /* ---------- Drag: pointer capture, transform while moving, one rAF per frame ---------- */
 const stage=$("stage"),dropEl=$("drop");
@@ -2074,7 +2233,7 @@ function ctlUnderPeek(ev){const pk=ev.target.closest&&ev.target.closest(".peek")
   for(const b of e.querySelectorAll(".lk,.stk,.stayput"))if(!b.disabled&&getComputedStyle(b).visibility!=="hidden"&&overEl(b,ev.clientX,ev.clientY))return b;
   return null}
 stage.addEventListener("pointerdown",ev=>{peekBtn=ctlUnderPeek(ev);
-  const lab=ev.target.closest(".mlab button,.zone button,.tile .stayput,.tile .lk,.tile .stk,.tile .rsz,.hdl i,.dnote,.lconf,.mbar")||peekBtn;if(lab||ev.button!==0||drag||zdraw||rz||isBusy)return;
+  const lab=ev.target.closest(".mlab button,.zone button,.tile .stayput,.tile .lk,.tile .stk,.tile .rsz,.hdl i,.dnote,.lconf,.mbar,.seam")||peekBtn;if(lab||ev.button!==0||drag||zdraw||rz||isBusy)return;
   // Ctrl+click picks a cell or a tile for Merge. Any other press clears the pick.
   if(LIVE&&(ev.ctrlKey||ev.metaKey)&&prev()){ctrlPick(ev);return}
   if(picks){picks=null;render()}
@@ -2107,6 +2266,7 @@ $("bay").addEventListener("pointerdown",ev=>{
   e.classList.add("drag");drag={id:+e.dataset.bay,el:e,fromBay:true,start:{x:0,y:0,w:0,h:0},cs:1,rs:1,pmon:null,sx:ev.clientX,sy:ev.clientY,px:ev.clientX,py:ev.clientY,pid:ev.pointerId,t:null};
 });
 function move(ev){
+  if(fdrag&&ev.pointerId===fdrag.pid){fdrag.px=ev.clientX;fdrag.py=ev.clientY;fdrag.shift=ev.shiftKey;freeDragUpdate();return}
   if(zdraw&&ev.pointerId===zdraw.pid){const c=cellAt(ev.clientX,ev.clientY);if(c&&c.m===zdraw.m){zdraw.c1=c.c;zdraw.r1=c.r}if(!raf)raf=requestAnimationFrame(frame);return}
   if(rz&&ev.pointerId===rz.pid){rz.px=ev.clientX;rz.py=ev.clientY;if(!raf)raf=requestAnimationFrame(frame);return}
   if(!drag||ev.pointerId!==drag.pid)return;drag.px=ev.clientX;drag.py=ev.clientY;if(!raf)raf=requestAnimationFrame(frame)}
@@ -2125,6 +2285,7 @@ function endZone(ev){
   if(zanchor&&zanchor.m===z.m){const a=zanchor;zanchor=null;newZone(z.m,z.g,a.c,a.r,z.c0,z.r0);return}
   zanchor={m:z.m,c:z.c0,r:z.r0};status(`Zone corner at ${monName(z.m)} column ${z.c0+1}, row ${z.r0+1}. Shift+click the other corner.`)}
 function endDrag(ev){
+  if(fdrag&&ev.pointerId===fdrag.pid)return freeEnd(ev);
   if(zdraw&&ev.pointerId===zdraw.pid)return endZone(ev);
   if(rz&&ev.pointerId===rz.pid)return endResize(ev);
   if(!drag||ev.pointerId!==drag.pid)return;
@@ -2161,6 +2322,7 @@ stage.addEventListener("keydown",ev=>{
   if((ev.key==="Delete"||ev.key==="Backspace")&&LIVE){ev.preventDefault();unpin(id);return}
   if((ev.key==="k"||ev.key==="K")&&LIVE&&prev()){ev.preventDefault();unplace(id);return}
   const k={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[ev.key];if(!k)return;ev.preventDefault();
+  if(LIVE&&prev()&&freeKeys(ev,id))return;
   // Shift+arrows on the board resize by one cell, as the corner grip does. With Ctrl they move the top or left edge.
   const pz=ev.shiftKey&&LIVE&&prev()&&prev().placed.find(q=>q.id===id&&!q.behind);
   if(pz){resizeStep(pz,k[0],k[1],ev.ctrlKey,ev.ctrlKey);requestAnimationFrame(()=>els.get(id).focus({preventScroll:true}));return}
@@ -2472,6 +2634,7 @@ addEventListener("keydown",ev=>{if(ev.key==="Escape"&&menuId){closeMenu(true);re
   // Tab leaves the open menu: it closes and focus is on its button, so the key goes on from there (the menu sits at the end of the page and has nothing after it to tab to).
   if(ev.key==="Tab"&&menuId&&$("cmenu")&&$("cmenu").contains(document.activeElement)){closeMenu(true);return}
   if(ev.key==="Escape"&&picks&&!rz&&!zdraw&&!drag){picks=null;render();status("Pick cleared.");return}
+  if(ev.key==="Escape"&&fdrag){const f=fdrag;fdrag=null;flUIHide();flLive=null;try{f.el.releasePointerCapture(f.pid)}catch(_){}render();status("Line move canceled. Nothing changed.");return}
   if(ev.key==="Escape"&&rz){const r=rz;endResize({type:"cancel"});try{r.grip.releasePointerCapture(r.pid)}catch(_){}status("Resize canceled. Nothing changed.");return}
   if(ev.key==="Escape"&&(zdraw||zanchor)){zanchor=null;const z=zdraw;if(z){endZone({type:"cancel"});try{stage.releasePointerCapture(z.pid)}catch(_){}}status("Zone drawing canceled. Nothing changed.");return}if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
 // The board's size depends on the text and list below it, so lay out again when they change height.
