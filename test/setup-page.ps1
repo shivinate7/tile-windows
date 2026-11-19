@@ -1310,7 +1310,28 @@ return { cards: cardsOf().length, heights, cut, soloRow };
   # JS, read in the page. The split menu is open. The inspector's Split Cell button is pressed (answers whether there is one).
   $splitMenuJs = '[...document.querySelectorAll("[role=menu]")].some(m => m.getClientRects().length > 0 && /Split Cell/.test(m.textContent))'
   $splitInspJs = 'const b = [...document.querySelectorAll("button")].find(x => /^Split Cell/.test(x.textContent.trim()) && x.getClientRects().length > 0 && !x.closest("[role=menu]")); if (!b) return false; b.click(); return true'
-  function Split-FocusJs([int]$id) { 'const t = document.querySelector(".tile[data-id=\"__ID__\"]"); if (!t) return false; t.focus(); return document.activeElement === t'.Replace('__ID__', "$id") }
+  # An expression, for WaitFor: the inspector's Split Cell button is on screen.
+  $splitInspHasJs = '[...document.querySelectorAll("button")].some(x => /^Split Cell/.test(x.textContent.trim()) && x.getClientRects().length > 0 && !x.closest("[role=menu]"))'
+  # preventScroll: a focus that scrolls the stage queues a scroll event for the next frame, and that event closes a split menu opened before it.
+  function Split-FocusJs([int]$id) { 'const t = document.querySelector(".tile[data-id=\"__ID__\"]"); if (!t) return false; t.focus({ preventScroll: true }); return document.activeElement === t'.Replace('__ID__', "$id") }
+  # JS: waits until window $id's tile is at rest: no ResizeObserver relayout queued (rlay), no transition running on it, and its rect unchanged over two
+  # frame pairs. Answers true, or false after 5 seconds. A relayout or a transition lands on the frames after a selection, so a read before it is mid-move.
+  $tileRestJs = @'
+const t = document.querySelector('.tile[data-id="__ID__"]'); if (!t) return false;
+const geo = () => { const r = t.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].join(","); };
+const moving = () => rlay !== 0 || t.getAnimations({ subtree: true }).length > 0;
+let last = null, still = 0; const t0 = performance.now();
+while (performance.now() - t0 < 5000 && still < 2) {
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const g = geo(); still = (!moving() && g === last) ? still + 1 : 0; last = g;
+}
+return still >= 2;
+'@
+  # The wait and its Check are one statement, so the Check line prints and no caller captures it into a value.
+  function Wait-Tile-Rest($sock, [int]$id, [string]$tag) {
+    $rest = (Js $sock $tileRestJs.Replace('__ID__', "$id")) -eq $true
+    Check "$tag, window $id is at rest (wait)" $rest 'the tile is missing, or it still moves (a layout or a transition) after 5 s'
+  }
   # JS: finds the menu item "Claude Keeps <keep>" under the group label that starts with <dir>, clicks it, and answers its read-out
   # ({disabled, why}). Answers null when no such item is open.
   function Split-ItemJs([string]$dir, [string]$keep) {
@@ -1348,11 +1369,14 @@ return { disabled: disabled, why: why };
     $sel = Split-Select $sock $id
     Check "split: $tag, window $id is selected (control)" $sel "no tile $id, or Enter did not select it"
     if (-not $sel) { return }
+    # A scroll event closes a split menu opened before it, and the selection's redraw and any relayout land on the frames after it. Wait for rest first.
+    Wait-Tile-Rest $sock $id "split: $tag, after the selection"
     if ($route -eq 'key') { [void](Js $sock (Split-FocusJs $id)); Press-Key $sock 's' 83 's' }
     else {
-      $btn = Js $sock $splitInspJs
-      Check "split: $tag, the inspector has a Split Cell button (scope)" ($btn -eq $true) 'no Split Cell button in the inspector'
-      if ($btn -ne $true) { return }
+      $btnOk = WaitFor $sock $splitInspHasJs 10
+      Check "split: $tag, the inspector has a Split Cell button (scope)" $btnOk 'no Split Cell button in the inspector'
+      if (-not $btnOk) { return }
+      [void](Js $sock $splitInspJs)
     }
     $open = WaitFor $sock $splitMenuJs 10
     $how = if ($route -eq 'key') { 'S' } else { 'the Split Cell button' }
@@ -1705,7 +1729,9 @@ return { title: h ? h.textContent.replace(/\s+/g, " ").trim() : "", join: fill('
       if (-not $opened) { return }
       $sel = Split-Select $ws 1001
       Check 'split small: window 1001 is selected (control)' $sel 'no tile 1001 to select'
+      Wait-Tile-Rest $ws 1001 'split small'
       $m = Tile-Metrics $ws 1001
+      Wait-Tile-Rest $ws 1006 'split small'
       $lk = Tile-Metrics $ws 1006
       $plain = Js $ws 'return layoutOf(work.focus).grids.U1.mult === undefined'
       Check 'split small: window 1001 is an unlocked, stacked, unsplit tile under 40px wide (scope)' ($m -and $m.w -gt 0 -and $m.w -lt 40 -and $m.stacked -eq $true -and $m.lock -eq $false -and $plain -eq $true) "width $(if ($m) { $m.w }), stacked: $(if ($m) { $m.stacked }), locked: $(if ($m) { $m.lock }), mult absent: $plain"
@@ -1726,7 +1752,9 @@ return { title: h ? h.textContent.replace(/\s+/g, " ").trim() : "", join: fill('
       if (-not $opened) { return }
       $sel = Split-Select $ws 1001
       Check 'split small: window 1001 is selected at 1440 (control)' $sel 'no tile 1001 to select'
+      Wait-Tile-Rest $ws 1001 'split small at 1440'
       $m = Tile-Metrics $ws 1001
+      Wait-Tile-Rest $ws 1006 'split small at 1440'
       $lk = Tile-Metrics $ws 1006
       Check 'split small: window 1001 is an unsplit tile 40px or wider at 1440 (scope)' ($m -and $m.w -ge 40) "width $(if ($m) { $m.w })"
       Check 'split small: at 1440 the locked unsplit tile keeps its lock (control)' ($lk -and $lk.lk -ne 'none') "lock display: $(if ($lk) { $lk.lk })"
@@ -1745,6 +1773,7 @@ return { title: h ? h.textContent.replace(/\s+/g, " ").trim() : "", join: fill('
       if (-not $opened) { return }
       $sel = Split-Select $ws 1001
       Check 'split small: window 1001 is selected (control)' $sel 'no tile 1001 to select'
+      Wait-Tile-Rest $ws 1001 'split small, split half'
       $m = Tile-Metrics $ws 1001
       $grid = Js $ws 'return layoutOf(work.focus).grids.U1.mult'
       Check 'split small: window 1001 is a split half under 40px wide, on a grid with mult 2,1 (scope)' ($m -and $m.w -gt 0 -and $m.w -lt 40 -and ((@($grid) -join ',') -eq '2,1')) "width $(if ($m) { $m.w }), mult: $(@($grid) -join ',')"
@@ -1763,6 +1792,7 @@ return { title: h ? h.textContent.replace(/\s+/g, " ").trim() : "", join: fill('
       if (-not $opened) { return }
       $sel = Split-Select $ws 1001
       Check 'split small: window 1001, the left half, is selected (control)' $sel 'no tile 1001 to select'
+      Wait-Tile-Rest $ws 1001 'split small, narrow half'
       $m = Tile-Metrics $ws 1001
       Check 'split small: window 1001 is a split half under 40px wide at 1024 (scope)' ($m -and $m.w -gt 0 -and $m.w -lt 40) "width $(if ($m) { $m.w })"
       Check 'split small: the half tag is one initial (control)' ($m -and ([string]$m.tag) -match '^\S$') "tag: '$(if ($m) { $m.tag })'"
