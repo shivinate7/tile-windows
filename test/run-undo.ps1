@@ -144,8 +144,9 @@ if ($laOk.Count -eq 1) { . ([scriptblock]::Create($laOk[0].Extent.Text)) }
 $tiSrc = @($tree.FindAll({ param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -match 'public static class TileInput' }, $true))
 if ($tiSrc.Count -eq 1 -and -not ('TileInput' -as [type])) { Add-Type -TypeDefinition $tiSrc[0].Value }
 # Windows the tray reads (Read-Windows) and the scene a grid run reads (Get-TileScene): fixtures, so no config file is read or made.
-$script:winsNow = @(); $script:gridScene = $null
-function Read-Windows { @($script:winsNow) }
+$script:winsNow = @(); $script:gridScene = $null; $script:readNull = $false
+# readNull: Read-Windows gives $null when the windows cannot be read, as the tray's own catch does; Invoke-Link then takes its catch.
+function Read-Windows { if ($script:readNull) { return $null }; @($script:winsNow) }
 function Get-TileScene([string]$key, $config) { $script:gridScene }
 # A notice or balloon as text, for a match. The launch of a toast's first action (its Undo), or '' when it has none.
 function Flat($x) { if ($null -eq $x) { '' } else { ConvertTo-Json -InputObject $x -Depth 5 -Compress } }
@@ -640,15 +641,17 @@ if ($launchOk) {
 # (d) Each Undo click writes exactly one log line. The line names the run's scene, says the outcome, and carries the active scene
 # (the scene on screen after the click, the first argument of Add-TileLog). Invoke-Link logs only when $NoApply is off, so a click
 # runs with it off through ClickLogged. The fake $tile moves nothing, so no window is placed.
-# One click with the log on. $onScreen is the scene on screen: state.json's active, which Get-ActiveId reads from $TileState.
-function ClickLogged([string]$link, $wins, [string]$onScreen = '') {
+# One run with the log on: $act runs (a click or a launch) and returns its result with the log lines it wrote. $onScreen is the scene on
+# screen: state.json's active, which Get-ActiveId reads from $TileState.
+function RunLogged([scriptblock]$act, [string]$onScreen = '') {
   $stateFile = Join-Path $script:linkHome 'state.json'
   [IO.File]::WriteAllText($stateFile, (ConvertTo-Json -Compress ([pscustomobject]@{ active = $onScreen; log = @() })), $utf8)
   $saveState = $script:TileState; $script:TileState = $stateFile
   $script:logLines.Clear(); $script:NoApply = $false
-  try { $c = ClickLink $link $wins } finally { $script:NoApply = $true; $script:TileState = $saveState }
-  [pscustomobject]@{ click = $c; lines = @($script:logLines | ForEach-Object { $_ }) }
+  try { $r = & $act } finally { $script:NoApply = $true; $script:TileState = $saveState }
+  [pscustomobject]@{ result = $r; lines = @($script:logLines | ForEach-Object { $_ }) }
 }
+function ClickLogged([string]$link, $wins, [string]$onScreen = '') { RunLogged { ClickLink $link $wins } $onScreen }
 # One Undo's log line: exactly one, which names the run's scene and says the outcome (both read as text). With $active, the line's
 # active scene is checked too. A count other than one stops the other checks of the case, so each failure names one cause.
 function Check-OutcomeLine([string]$case, $lines, [string]$scene, [string]$words, [string]$active = $null) {
@@ -720,6 +723,30 @@ if ($script:scopeOk) {
   $tSl = RunMoved $focus 'work' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lSl = LinkOf $tSl
   $cSl = ClickLink ($lSl -replace 'undo\?run=', 'undo/?run=') @((Win 1001 'claude' 'Draft' $t1))
   Check '(d) an Undo link in the Windows shape (undo/?run=<id>) puts back the run it names' ([bool](@($cSl.sent).Count -eq 1 -and @($cSl.sent)[0].id -eq 1001 -and @($cSl.sent)[0].x -eq $from1.x -and @($cSl.sent)[0].y -eq $from1.y -and -not $cSl.err)) "sent $(Brief $cSl.sent), error '$($cSl.err)'"
+
+  # A failed Undo: Read-Windows gives no windows, so Invoke-Link's catch runs. It shows "Undo failed" and writes one log line that names the
+  # failure. $onScreen is neither the run's scene nor its prev, so a line that names either one with the active scene fails.
+  Reset-Run
+  $tFl = RunMoved $focus 'work' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lFl = LinkOf $tFl
+  $script:readNull = $true
+  try { $oFl = RunLogged { ClickLink $lFl @((Win 1001 'claude' 'Draft' $t1)) } 'quiet' } finally { $script:readNull = $false }
+  $shownFl = (Flat $oFl.result.toasts) + (Flat $oFl.result.balloons)
+  Check '(d) control: a failed Undo shows the "Undo failed" toast or balloon (the catch runs)' ([bool]($shownFl -match 'Undo failed')) "toasts $(@($oFl.result.toasts).Count), balloons $(@($oFl.result.balloons).Count), error '$($oFl.result.err)'"
+  $oneFl = (@($oFl.lines).Count -eq 1)
+  Check '(d) failed Undo: writes exactly one log line' $oneFl "log lines: $(@($oFl.lines).Count) [$(@($oFl.lines | ForEach-Object { $_.text }) -join ' | ')]"
+  if ($oneFl) {
+    Check '(d) failed Undo: the line names the failure (the read error)' ([string]$oFl.lines[0].text -match 'could not read the windows') "line '$($oFl.lines[0].text)'"
+    Check '(d) failed Undo: the line names the on-screen scene, which the failed Undo leaves as it was' ([string]$oFl.lines[0].active -ceq 'quiet') "active '$($oFl.lines[0].active)'"
+  }
+}
+
+# The launcher's own log line, with no tray running: a link for a restarted run writes exactly one line, and the on-screen scene is unchanged.
+# The launch runs in this process with the log on, so the line is the one the launcher's Add-TileLog wrote.
+if ($launchOk) {
+  $lRs = 'tilewindows://undo?run=' + (New-RunId $focus.name)
+  $oRs = RunLogged { Invoke-LauncherHere $lRs $false } 'quiet'
+  Check '(d) control: with the log on, the restarted Undo launch still shows its note (the restarted toast)' ([bool]($oRs.result.shown -ge 1)) "shown $($oRs.result.shown), error '$($oRs.result.err)'"
+  Check-OutcomeLine '(d) launcher, restarted' $oRs.lines $focus.name 'restart|gone|lost' 'quiet'
 }
 $script:TileHome = $homeNever
 
