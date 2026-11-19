@@ -106,7 +106,7 @@ F7. **Assign by drop, one home.** A drop on an empty space pins the window there
     and says "Notepad goes here" (state `assign-drop`). A drop on a space a window holds uses today's
     targets: the Swap circle and Put Behind (`app.html` `dropZone()`, `swapInto()`, `putBehind()`).
     Move To in the inspector lists spaces ("Choose a Space"). Gain: nothing new to learn. Loss: none.
-    Pick: as drawn.
+    Pick: as drawn (ruled, owner, 2026-11-19 16:50 CST: a drop on a held space offers Swap and Put Behind).
 
 F8. **"Space", the word on the screen.** The engine's area is a "space" on the screen: Empty space,
     Choose a Space, Split Chrome's Space, Close Gap. The act keeps its name: Split Cell on the
