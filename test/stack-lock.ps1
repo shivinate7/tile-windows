@@ -123,10 +123,8 @@ function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $sc
 # removes sibling run folders older than one day, and keeps newer ones.
 $SlTempRoot = Join-Path $env:TEMP 'tile-windows-test-runs'
 $SlRunName = '^\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-function SlSweep($dir, $olderThan) {
-  if (-not (Test-Path -LiteralPath $dir)) { return }
-  @(Get-ChildItem -LiteralPath $dir -Directory | ? { $_.Name -match $SlRunName -and $_.LastWriteTime -lt (Get-Date).Subtract($olderThan) }) | % { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
-}
+. (Join-Path $PSScriptRoot 'run-folders.ps1')
+function SlSweep($dir, $olderThan) { Invoke-RunFolderSweep $dir $SlRunName $olderThan }
 # The sweep, proven on its own folder: an old run folder goes, a new one stays.
 $proof = Join-Path $env:TEMP ('tile-windows-sweep-proof-' + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory $proof | Out-Null
@@ -136,7 +134,14 @@ New-Item -ItemType Directory $oldRun | Out-Null; New-Item -ItemType Directory $n
 SlSweep $proof ([TimeSpan]::FromDays(1))
 Check 'run folders: the sweep removes a run folder older than a day' (-not (Test-Path -LiteralPath $oldRun))
 Check 'run folders: the sweep keeps a run folder newer than a day' (Test-Path -LiteralPath $newRun)
-Remove-Item -LiteralPath $proof -Recurse -Force
+# A run folder whose path is past 260 characters (an Edge profile nests that deep): the sweep removes it too.
+$longRun = Join-Path $proof ('3-' + [guid]::NewGuid().ToString()); New-Item -ItemType Directory $longRun | Out-Null
+$longDeep = $longRun; for ($i = 0; $i -lt 6; $i++) { $longDeep = Join-Path $longDeep ('d' * 60) }
+[IO.Directory]::CreateDirectory('\\?\' + $longDeep) | Out-Null
+(Get-Item -LiteralPath $longRun).LastWriteTime = (Get-Date).AddDays(-2)
+SlSweep $proof ([TimeSpan]::FromDays(1))
+Check 'run folders: the sweep removes an old run folder whose path is past 260 characters' (-not [IO.Directory]::Exists('\\?\' + $longRun)) "path length $($longDeep.Length)"
+Remove-RunFolder $proof
 
 # ---------- Engine: tile.ps1 -Scene on the fixture (dry run) ----------
 # Fixture: claude 1001 'Refactor the grid solver', 1002 'Pin parser edge cases', 1003 'Draft release notes',

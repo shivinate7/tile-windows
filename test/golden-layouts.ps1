@@ -23,14 +23,12 @@ $script:fail = 0
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root per repo. The first request of a run
-# removes sibling run folders older than a day and keeps newer ones. This file keeps its own copy of the sweep, as bay.ps1 does,
-# so each file runs alone. The sweep takes its clock as a parameter: the proof below passes a fixed one.
+# removes sibling run folders older than a day and keeps newer ones. The sweep and its delete are run-folders.ps1's, shared with the other
+# files, so each file still runs alone. The sweep takes its clock as a parameter: the proof below passes a fixed one.
+. (Join-Path $PSScriptRoot 'run-folders.ps1')
 $GoldenTempRoot = Join-Path $env:TEMP 'tile-windows-test-runs'
 $GoldenRunName = '^\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-function GoldenSweep($dir, $olderThan, $now) {
-  if (-not (Test-Path -LiteralPath $dir)) { return }
-  @(Get-ChildItem -LiteralPath $dir -Directory | ? { $_.Name -match $GoldenRunName -and $_.LastWriteTime -lt $now.Subtract($olderThan) }) | % { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
-}
+function GoldenSweep($dir, $olderThan, $now) { Invoke-RunFolderSweep $dir $GoldenRunName $olderThan $now }
 [void](New-Item -ItemType Directory -Force $GoldenTempRoot)
 GoldenSweep $GoldenTempRoot ([TimeSpan]::FromDays(1)) (Get-Date)
 $run = Join-Path $GoldenTempRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item -ItemType Directory $run | Out-Null

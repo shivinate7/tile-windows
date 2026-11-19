@@ -34,8 +34,8 @@
 #   Do not put class flow on #bay for the new layout: layout() toggles .bay.flow for the board's height.
 #
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root per repo. The first request of a run
-# removes sibling run folders older than a day and keeps newer ones. This file keeps its own copy of the sweep and of the
-# headless-Edge helpers that stack-lock.ps1 has, because the fill-keep branch edits stack-lock.ps1 (see the commit message).
+# removes sibling run folders older than a day and keeps newer ones. The sweep and its delete are run-folders.ps1's; this file keeps
+# its own copy of the headless-Edge helpers that stack-lock.ps1 has, because the fill-keep branch edits stack-lock.ps1 (see the commit message).
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
@@ -45,10 +45,8 @@ function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $sc
 
 $BayTempRoot = Join-Path $env:TEMP 'tile-windows-test-runs'
 $BayRunName = '^\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-function BaySweep($dir, $olderThan) {
-  if (-not (Test-Path -LiteralPath $dir)) { return }
-  @(Get-ChildItem -LiteralPath $dir -Directory | ? { $_.Name -match $BayRunName -and $_.LastWriteTime -lt (Get-Date).Subtract($olderThan) }) | % { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
-}
+. (Join-Path $PSScriptRoot 'run-folders.ps1')
+function BaySweep($dir, $olderThan) { Invoke-RunFolderSweep $dir $BayRunName $olderThan }
 [void](New-Item -ItemType Directory -Force $BayTempRoot)
 BaySweep $BayTempRoot ([TimeSpan]::FromDays(1))
 $run = Join-Path $BayTempRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item -ItemType Directory $run | Out-Null

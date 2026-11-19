@@ -24,9 +24,10 @@ function Case([string]$name, [scriptblock]$body) { try { & $body } catch { $scri
 
 # Run folder (test-temp-standard): one temp root for this repo, one <pid>-<uuid> folder per run. The first request of a run
 # removes sibling run folders over a day old and keeps newer ones. Teardown removes this run's folder.
+. (Join-Path $PSScriptRoot 'run-folders.ps1')
 function Remove-OldRunFolders([string]$Root, [string]$Own, [datetime]$Now) {
   foreach ($d in @(Get-ChildItem -LiteralPath $Root -Directory -ErrorAction SilentlyContinue)) {
-    if ($d.FullName -ne $Own -and $d.Name -match '^\d+-[0-9a-f]{32}$' -and ($Now - $d.LastWriteTime).TotalDays -gt 1) { Remove-Item -LiteralPath $d.FullName -Recurse -Force }
+    if ($d.FullName -ne $Own -and $d.Name -match '^\d+-[0-9a-f]{32}$' -and ($Now - $d.LastWriteTime).TotalDays -gt 1) { Remove-RunFolder $d.FullName }
   }
 }
 $tempRoot = Join-Path $env:TEMP 'tile-windows-test'
