@@ -79,6 +79,11 @@
 #     order): an empty one has class empty, a lent one class lent with one i per borrower (class fromL or fromR), a gap that stays class
 #     gap. A save sends one POST /layout whose grids.U1 keeps c and r and holds free.areas (tile.ps1's shape). The page draws each tile at
 #     px() of the engine's rect, and tile.ps1 places each pinned window at its area's pixel rect.
+#   Free Layout review fixes (PR 58, round 1; F1 to F4): a window dropped on the space of the scene's last pin names that space; an arrow
+#     move leaves the target space holding only its pin; Back to the Grid with Snap keeps a locked window's cell and lock, and the unlocked
+#     neighbour gives its cell up; Restore keeps a locked window's pin and lock; a drop on a held space says that the window it displaces
+#     goes to the list, and the status says the same. A drop on a held space offers Swap and Put Behind (the grid's two targets: the middle
+#     swaps, the lower band puts behind); Put Behind adds the window to the pin's behind list, in the grid's form {app, match}.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 $ErrorActionPreference = 'Stop'
@@ -2663,7 +2668,7 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
     Check 'gap-stays: tile.ps1 moves no window into the gap' ($gfN -eq 0) "placed by the gap-fill run: $gfN"
     Put-Split (Fl-Json (Fl-Board @() @(2, 6)))
     $gf2 = Fl-Engine @('-GapFill', '-Absent', '1002', '-Last', "`"$lastPath`"")
-    $gf2Own = @(@($gf2.placed) | ? { [int64]$_.id -eq 1001 }).Count
+    $gf2Own = @(@($gf2.placed) | ? { $_.title -eq 'Refactor the grid solver' }).Count
     Check 'gap-stays (control): with the left window unlocked, tile.ps1 gives it the gap' ($gf2Own -eq 1) "1001 placed by the run: $gf2Own"
   }
 
@@ -2798,7 +2803,7 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
   }
 
   foreach ($v in @(
-      @{ tag = 'an app will not fit its space'; note = 'off size: is 410x840, restore rect 410x840, wanted 500x840'; raw = 'off size'; words = 'will not go under 500 px wide' },
+      @{ tag = 'an app will not fit its space'; note = 'off size: is 410x840, restore rect 410x840'; raw = 'off size'; words = 'will not go under' },
       @{ tag = 'a pin no space holds'; note = 'not in a free area'; raw = 'not in a free area'; words = '' })) {
     $tag = $v.tag; $note = $v.note; $raw = $v.raw; $words = $v.words
     Case "err-apply ($tag, F14): the result row says it in words, with a fix button, and the engine's words behind a disclosure" {
@@ -2827,13 +2832,268 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
       Check "err-apply ($tag): the engine's words are not on the row itself" (-not $vis.Contains($raw)) "the row shows: $raw"
       Check "err-apply ($tag): the engine's words sit behind What the server said" ($det.Contains($raw) -and (@($rs.sums) -match 'What the server said').Count -ge 1) 'no disclosure What the server said holds the engine text'
       if ($words) {
-        Check "err-apply ($tag): the row says it in words: will not go under 500 px wide" ($vis.Contains($words)) 'the row does not say it in words'
-        Check "err-apply ($tag): a Give It 500 px button leads on" (@($rs.buttons) -contains 'Give It 500 px') 'no Give It 500 px button'
+        Check "err-apply ($tag): the row says it in words: will not go under" ($vis.Contains($words)) 'the row does not say it in words'
+        Check "err-apply ($tag): a Give It N px button leads on" (@(@($rs.buttons) | ? { $_ -match '^Give It \d+ px$' }).Count -ge 1) 'no Give It N px button'
       } else {
         Check "err-apply ($tag): the row offers a fix button besides Close" (@(@($rs.buttons) | ? { $_ -ne 'Close' }).Count -ge 1) "buttons: $(@($rs.buttons) -join ' | ')"
       }
     }
   }
+
+  # ---- Free Layout, PR 58 round 1 (F1 to F4), and the Put Behind drop on a held space ---------------------------------------------
+  # Each case is red on 297f9cb by its named cause. A green control sits in the same case where the old code already does the act.
+  # The drop label is read from #drop: each leaf's text and each title in it. Put Behind is the grid's word for a stacked window.
+  $dropJs = @'
+const dropInfo = () => { const d = document.getElementById("drop"); if (!d || !(d.style.display === "block" || d.style.display === "grid")) return null; const txt = [d, ...d.querySelectorAll("*")].map(e => (e.getAttribute("title") || "") + " " + (e.children.length ? "" : (e.textContent || ""))).join(" ").replace(/\s+/g, " "); return { put: /Put Behind/.test(txt), swap: /Swap/.test(txt), swapWith: /Swap with/.test(txt), list: /goes to the list/.test(txt), txt: txt }; };
+const bayCentre = id => { const r = RR(document.querySelector('[data-bay="' + id + '"]')); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null; };
+const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; return where === "bottom" ? { x: r.l + r.w / 2, y: r.b - 6 } : { x: r.l + r.w / 2, y: r.t + r.h / 2 }; };
+'@
+  # A window from Windows That Stay Put dragged onto a space. Answers the drop label read while the button is still down, or $null.
+  function Fl-BayDrop($sock, [int]$bayId, [int]$space, [string]$where = 'centre') {
+    [void](WaitFor $sock ('!!document.querySelector(''[data-bay="' + $bayId + '"]'')') 10)
+    [void](Js $sock 'await window.__h.settle(); return true')
+    $from = Js $sock ($freeJs + $dropJs + "return bayCentre($bayId);")
+    $to = Js $sock ($freeJs + $dropJs + "return spaceAt($space, '$where');")
+    if (-not ($from -and $to)) { return $null }
+    Fl-Drag $sock $from.x $from.y $to.x $to.y $false ($freeJs + $dropJs + 'return dropInfo();')
+  }
+  # Switches Free Layout off and presses Back to Grid in the mode given (snap or restore). Answers whether the popover opened.
+  function Fl-BackGo($sock, [string]$mode) {
+    [void](Js $sock ($freeJs + 'const s = freeSw(); if (s) s.click(); return !!s;'))
+    if (-not (WaitFor $sock '[...document.querySelectorAll("[role=dialog]")].some(d => /Back to the Grid/.test(d.textContent))' 10)) { return $false }
+    if ($mode -eq 'restore') { [void](Js $sock ($freeJs + 'const l = [...document.querySelectorAll("label")].find(x => /Restore the Grid Layout/.test(x.textContent)); const r = l && l.querySelector("input[type=radio]"); if (r) r.click(); return !!r;')) }
+    [void](Js $sock ($freeJs + 'const b = btnNamed(/^Back to Grid$/); if (b) b.click(); return !!b;'))
+    $true
+  }
+
+  Case 'drop-last (F1): a window dropped on the space of the last pin names that space in the saved layout' {
+    # Mutant: freeRelink reads a pin by its index, so the new pin takes the removed pin's index and is then unlinked from its space.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(9)) -fillOver @{ off = $true })
+    Check 'drop-last (F1): the page opens on Focus with space 8 held by the last pin (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $held = Js $ws ($freeJs + 'const s = spaceOf(8); return !!s && !s.classList.contains("empty");')
+    Check 'drop-last (F1): space 8 is held (scope)' ($held -eq $true) 'space 8 is not held'
+    if ($held -ne $true) { return }
+    [void](Fl-BayDrop $ws 1014 8)
+    $s = Fl-Saves $ws
+    Check 'drop-last (F1): one POST /layout after the drop' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $L1 = $s.layout[0].layout
+    $a8 = @($L1.grids.U1.free.areas)[8]
+    $p8 = $(if ($a8 -and $null -ne $a8.pin) { @($L1.pins)[[int]$a8.pin] } else { $null })
+    Check 'drop-last (F1): space 8 names the dropped Notepad pin' ($p8 -and $p8.app -eq 'notepad') "space 8 names: $(if ($p8) { $p8.app } else { 'no pin' })"
+    Check 'drop-last (control): the window that held space 8 goes to Windows That Stay Put' (@(@($L1.bay) | ? { $_ -and $_.app -eq 'ms-teams' }).Count -eq 1) 'Design sync is not in Windows That Stay Put'
+  }
+
+  Case 'step-fill (F2): an arrow moves a pinned window onto a space that holds an app and a title, and the space keeps only its pin' {
+    # Mutant: freeStep copies the pin into the space and leaves the space's old app and title beside it.
+    $board = Fl-Board @(1)
+    $board.areas[1]['app'] = 'claude'; $board.areas[1]['title'] = 'Pin parser edge cases'
+    $opened = Fl-Open $ws (Fl-Json $board -fillOver @{ off = $true })
+    Check 'step-fill (F2): the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $c = Fl-Centre (Fl-Rects $ws @(1001)) 1001
+    Fl-Click $ws $c[0] $c[1]
+    [void](Js $ws ($freeJs + 'const t = tileOf(1001); if (t) t.focus({ preventScroll: true }); return true;'))
+    $focused = Js $ws ($freeJs + 'const a = document.activeElement; return !!a && !!a.dataset && a.dataset.id === "1001";')
+    Check 'step-fill (F2): window 1001 is selected and has focus (scope)' ($focused -eq $true) 'window 1001 did not take focus'
+    if ($focused -ne $true) { return }
+    Press-Key $ws 'ArrowRight' 39
+    $s = Fl-Saves $ws
+    Check 'step-fill (F2): one POST /layout after the arrow' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $areas = @($s.layout[0].layout.grids.U1.free.areas); $pins = @($s.layout[0].layout.pins)
+    $a0 = $areas[0]; $a1 = $areas[1]
+    $p1 = $(if ($a1 -and $null -ne $a1.pin) { $pins[[int]$a1.pin] } else { $null })
+    Check 'step-fill (F2): the window moved to space 1, and its pin names it (control)' ($p1 -and $p1.match -ceq 'Refactor the grid solver') "space 1 names: $(if ($p1) { $p1.match } else { 'no pin' })"
+    Check 'step-fill (F2): the space it left holds no pin (control)' ($null -eq $a0.pin) "space 0 pin: $($a0.pin)"
+    Check 'step-fill (F2): space 1 holds only its pin: no app and no title beside it' ($null -eq $a1.app -and $null -eq $a1.title) "space 1 app: $($a1.app), title: $($a1.title)"
+  }
+
+  foreach ($v in @(@{ tag = 'locked later'; lockedFirst = $false }, @{ tag = 'locked first, control'; lockedFirst = $true })) {
+    Case "snap-lock ($($v.tag)): Back to the Grid with Snap to Cells keeps a locked window's cell and lock, and the unlocked neighbour gives its cell up" {
+      # Mutant: a window whose snapped cells collide goes to the bay with its pin and lock deleted, whether or not it is the locked one.
+      $freeM = 'Refactor the grid solver'; $lockM = 'Pin parser edge cases'
+      $pinFree = [pscustomobject]@{ app = 'claude'; match = $freeM; mon = 'U1'; slots = @(0) }
+      $pinLock = [pscustomobject]@{ app = 'claude'; match = $lockM; mon = 'U1'; slots = @(1); lock = $true }
+      $fx = $(if ($v.lockedFirst) { 400 } else { 0 }); $lx = $(if ($v.lockedFirst) { 0 } else { 400 })
+      $aFree = [ordered]@{ rect = @([double]($fx / 4096), [double]0, [double](300 / 4096), [double]0.5); pin = 0 }
+      $aLock = [ordered]@{ rect = @([double]($lx / 4096), [double]0, [double](540 / 4096), [double]0.5); pin = 1 }
+      $board = [pscustomobject]@{ areas = $(if ($v.lockedFirst) { @($aLock, $aFree) } else { @($aFree, $aLock) }); pins = @($pinFree, $pinLock) }
+      $opened = Fl-Open $ws (Fl-Json $board -fillOver @{ off = $true })
+      Check "snap-lock ($($v.tag)): the page opens on Focus with the two spaces (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      if (-not (Fl-BackGo $ws 'snap')) { Check "snap-lock ($($v.tag)): switching Free Layout off opens Back to the Grid (scope)" $false 'no Back to the Grid popover'; return }
+      $s = Fl-Saves $ws
+      Check "snap-lock ($($v.tag)): one POST /layout after Back to Grid" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      if ($s.layout.Count -ne 1) { return }
+      $L1 = $s.layout[0].layout
+      $lp = @(@($L1.pins) | ? { $_ -and $_.match -ceq $lockM })[0]
+      Check "snap-lock ($($v.tag)): the locked window keeps its pin and its lock" ($lp -and $lp.lock -eq $true) "pin: $(if ($lp) { "lock $($lp.lock)" } else { 'gone' })"
+      Check "snap-lock ($($v.tag)): the locked window keeps cell 0" ((Split-SlotsOf $L1 $lockM) -eq '0') "cells: $(Split-SlotsOf $L1 $lockM)"
+      $fp = @(@($L1.pins) | ? { $_ -and $_.match -ceq $freeM }).Count
+      $inBay = @(@($L1.bay) | ? { $_ -and $_.title -eq 'Refactor the grid solver' }).Count
+      Check "snap-lock ($($v.tag)): the unlocked neighbour gives its cell up: no pin, and it is in Windows That Stay Put" ($fp -eq 0 -and $inBay -eq 1) "pins: $fp, in Windows That Stay Put: $inBay"
+    }
+  }
+
+  foreach ($v in @(@{ tag = 'locked'; lock = $true }, @{ tag = 'unlocked, control'; lock = $false })) {
+    Case "restore-lock ($($v.tag)): Back to the Grid with Restore the Grid Layout keeps a locked window's pin and lock" {
+      # Mutant: Restore drops a pin that has no cells, and its lock with it. Item 27 of the notes is silent on locks; item 24 keeps a pin's lock.
+      $freeM = 'Refactor the grid solver'
+      $pinNew = [pscustomobject]@{ app = 'claude'; match = $freeM; mon = 'U1'; slots = @() }
+      if ($v.lock) { $pinNew | Add-Member -NotePropertyName lock -NotePropertyValue $true }
+      $board = [pscustomobject]@{ areas = @([ordered]@{ rect = @([double]0, [double]0, [double](1000 / 4096), [double]0.5); pin = 0 }); pins = @($pinNew) }
+      $opened = Fl-Open $ws (Fl-Json $board -fillOver @{ off = $true })
+      Check "restore-lock ($($v.tag)): the page opens on Focus with the window pinned to a space (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      if (-not (Fl-BackGo $ws 'restore')) { Check "restore-lock ($($v.tag)): switching Free Layout off opens Back to the Grid (scope)" $false 'no Back to the Grid popover'; return }
+      $s = Fl-Saves $ws
+      Check "restore-lock ($($v.tag)): one POST /layout after Back to Grid" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      if ($s.layout.Count -ne 1) { return }
+      $L1 = $s.layout[0].layout
+      $rp = @(@($L1.pins) | ? { $_ -and $_.match -ceq $freeM })[0]
+      if ($v.lock) {
+        Check 'restore-lock (locked): the window keeps a pin, and the pin keeps its lock' ($rp -and $rp.lock -eq $true) "pin: $(if ($rp) { "lock $($rp.lock)" } else { 'gone' })"
+      } else {
+        $inBay = @(@($L1.bay) | ? { $_ -and $_.title -eq 'Refactor the grid solver' }).Count
+        Check 'restore-lock (unlocked, control): the window with no cell has no pin and is in Windows That Stay Put' (-not $rp -and $inBay -eq 1) "pin: $(if ($rp) { 'kept' } else { 'none' }), in Windows That Stay Put: $inBay"
+      }
+    }
+  }
+
+  Case 'drop-words (F4): a window dropped on a held space says that the window it displaces goes to the list, and the status agrees' {
+    # Mutant: the label reads Swap with X and the status says X stays where it is, while X moves to Windows That Stay Put (freeAssign).
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(9)) -fillOver @{ off = $true })
+    Check 'drop-words (F4): the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $held = Js $ws ($freeJs + 'const s = spaceOf(1); return !!s && !s.classList.contains("empty");')
+    Check 'drop-words (F4): space 1 is held (scope)' ($held -eq $true) 'space 1 is not held'
+    if ($held -ne $true) { return }
+    $mid = Fl-BayDrop $ws 1014 1 'centre'
+    Check 'drop-words (F4): over the held space the drop offers a Swap (control)' ([bool]($mid -and $mid.swap)) "label: $(if ($mid) { $mid.txt } else { 'none' })"
+    Check 'drop-words (F4): the label says the window it displaces goes to the list, and does not say Swap with it' ([bool]($mid -and $mid.list -and -not $mid.swapWith)) "label: $(if ($mid) { $mid.txt } else { 'none' })"
+    $msg = [string](Js $ws ($freeJs + 'return document.getElementById("msg").textContent.replace(/\s+/g, " ").trim();'))
+    Check 'drop-words (F4): the status says the window it displaces goes to the list' ($msg -match 'goes to the list') "status: $msg"
+    Check 'drop-words (F4): the status does not say the window it displaces stays where it is' ($msg -notmatch 'stays where it is') "status: $msg"
+  }
+
+  Case 'behind-choice (Put Behind): a window dropped on a held space is offered Swap and Put Behind' {
+    # Mutant: a held space offers Swap alone, the label freeDropShow draws today, with no Put Behind target.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(9)) -fillOver @{ off = $true })
+    Check 'behind-choice: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $mid = Fl-BayDrop $ws 1014 1 'centre'
+    Check 'behind-choice: over a held space the drop offers a Swap (control)' ([bool]($mid -and $mid.swap)) "label: $(if ($mid) { $mid.txt } else { 'none' })"
+    Check 'behind-choice: over a held space the drop also offers Put Behind' ([bool]($mid -and $mid.put)) "label: $(if ($mid) { $mid.txt } else { 'none' })"
+  }
+
+  Case 'behind-drop (Put Behind): a window dropped on the lower band of a held space stacks behind the window that holds it, in the grid form' {
+    # Mutant: the lower band swaps like the middle, so the window takes the space and the held window goes to Windows That Stay Put.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(9)) -fillOver @{ off = $true })
+    Check 'behind-drop: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $mid = Fl-BayDrop $ws 1014 1 'bottom'
+    Check 'behind-drop: over the lower band the drop offers Put Behind (scope)' ([bool]($mid -and $mid.put)) "label: $(if ($mid) { $mid.txt } else { 'none' })"
+    $s = Fl-Saves $ws
+    Check 'behind-drop: one POST /layout after the drop' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $L1 = $s.layout[0].layout
+    $a1 = @($L1.grids.U1.free.areas)[1]
+    $p1 = $(if ($a1 -and $null -ne $a1.pin) { @($L1.pins)[[int]$a1.pin] } else { $null })
+    $beh = @($(if ($p1) { $p1.behind } else { $null }) | ? { $_ -and $_.app -eq 'notepad' })
+    Check 'behind-drop: Notepad is stacked behind the window space 1 holds, as one behind entry' ($beh.Count -eq 1) "behind entries for Notepad: $($beh.Count)"
+    Check 'behind-drop: the behind entry has the grid form, with an app and a match' ($beh.Count -eq 1 -and $beh[0].PSObject.Properties.Name -contains 'match') 'the behind entry has no match'
+    $ownPin = @(@($L1.pins) | ? { $_ -and $_.app -eq 'notepad' }).Count
+    $inBay = @(@($L1.bay) | ? { $_ -and $_.app -eq 'notepad' }).Count
+    Check 'behind-drop: Notepad has no pin of its own and is not in Windows That Stay Put' ($ownPin -eq 0 -and $inBay -eq 0) "own pins: $ownPin, in Windows That Stay Put: $inBay"
+  }
+
+  Case 'swap-bay (control): a window dropped on the middle of a held space takes the space, and the window it displaces goes to Windows That Stay Put' {
+    # Mutant: the middle of a held space stacks the window, or the displaced window stays on the board.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(9)) -fillOver @{ off = $true })
+    Check 'swap-bay: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $mid = Fl-BayDrop $ws 1014 1 'centre'
+    Check 'swap-bay: over the middle of a held space the drop offers a Swap (control)' ([bool]($mid -and $mid.swap)) "label: $(if ($mid) { $mid.txt } else { 'none' })"
+    $s = Fl-Saves $ws
+    Check 'swap-bay: one POST /layout after the drop (control)' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $L1 = $s.layout[0].layout
+    $a1 = @($L1.grids.U1.free.areas)[1]
+    $p1 = $(if ($a1 -and $null -ne $a1.pin) { @($L1.pins)[[int]$a1.pin] } else { $null })
+    Check 'swap-bay: Notepad takes space 1 (control)' ($p1 -and $p1.app -eq 'notepad') "space 1 names: $(if ($p1) { $p1.app } else { 'no pin' })"
+    $bayHas = @(@($L1.bay) | ? { $_ -and $_.title -eq 'Pin parser edge cases' }).Count
+    Check 'swap-bay: Pin parser edge cases goes to Windows That Stay Put (control)' ($bayHas -eq 1) "Windows That Stay Put: $(@($L1.bay) | ConvertTo-Json -Compress -Depth 4)"
+  }
+
+  Case 'swap-space (control): a window dragged from one held space onto the middle of another trades places with it' {
+    # Mutant: a drop between two held spaces leaves one window without a space, or stacks it.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(9)) -fillOver @{ off = $true })
+    Check 'swap-space: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $r0 = Fl-Rects $ws @(1001, 1002)
+    $from = Fl-Centre $r0 1001; $to = Fl-Centre $r0 1002
+    [void](Fl-Drag $ws $from[0] $from[1] $to[0] $to[1])
+    $s = Fl-Saves $ws
+    Check 'swap-space: one POST /layout after the drag (control)' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $L1 = $s.layout[0].layout
+    $pinAt = { param($i) $a = @($L1.grids.U1.free.areas)[$i]; $(if ($a -and $null -ne $a.pin) { @($L1.pins)[[int]$a.pin] } else { $null }) }
+    $p0 = & $pinAt 0; $p1 = & $pinAt 1
+    Check 'swap-space: Pin parser edge cases takes space 0 (control)' ($p0 -and $p0.match -ceq 'Pin parser edge cases') "space 0 names: $(if ($p0) { $p0.match } else { 'no pin' })"
+    Check 'swap-space: Refactor the grid solver takes space 1 (control)' ($p1 -and $p1.match -ceq 'Refactor the grid solver') "space 1 names: $(if ($p1) { $p1.match } else { 'no pin' })"
+  }
+
+  # ---- Free Layout, design-review findings (PR 58, round 1, the second review): wording, the panel of a space, focus, a split's status.
+  Case 'fill-next (review): with Fill Empty Cells on, the panel of a space that is not next does not say the next new window fills it' {
+    # Mutant: the panel says the next new window fills every empty space, not only the one first in reading order.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(8, 9))) (Fl-Snap @(1012, 1014))
+    Check 'fill-next: the page opens with spaces 8 and 9 empty and Fill Empty Cells on (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $c9 = Js $ws ($freeJs + 'const r = RR(spaceOf(9)); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;')
+    if (-not $c9) { Check 'fill-next: space 9 is on screen (scope)' $false 'space 9 is not on screen'; return }
+    Fl-Click $ws $c9.x $c9.y
+    $t9 = [string](Js $ws ($freeJs + 'return pageText();'))
+    Check 'fill-next: space 9, which is not next, does not say the next new window fills it' ($t9 -notmatch 'the next new window fills it') 'the panel says the next new window fills it'
+    $c8 = Js $ws ($freeJs + 'const r = RR(spaceOf(8)); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;')
+    if (-not $c8) { Check 'fill-next: space 8 is on screen (scope)' $false 'space 8 is not on screen'; return }
+    Fl-Click $ws $c8.x $c8.y
+    $t8 = [string](Js $ws ($freeJs + 'return pageText();'))
+    Check 'fill-next: space 8, which is next, says the next new window fills it (control)' ($t8 -match 'the next new window fills it') 'the panel does not say the next new window fills it'
+  }
+
+  Case 'free-words (review): in Free Layout the board hint says space, names the Shift move of the whole line, and Move To reads Choose a Space' {
+    # Mutant: the Free Layout hint is the grid's hint (it says cell), and Move To's first line reads Choose a Cell.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+    Check 'free-words: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $hint = [string](Js $ws ($freeJs + 'return document.getElementById("hint").textContent.replace(/\s+/g, " ").trim();'))
+    Check 'free-words: the board hint is on the page (control)' ($hint.Length -gt 0) 'the board hint is empty'
+    Check 'free-words: the board hint says a space, not a cell' ($hint -notmatch '\bcells?\b') "hint: $hint"
+    Check 'free-words: the board hint names the Shift move of the whole line' ($hint -match 'Shift' -and $hint -match 'whole line') "hint: $hint"
+    $c = Fl-Centre (Fl-Rects $ws @(1001)) 1001
+    Fl-Click $ws $c[0] $c[1]
+    $mt = [string](Js $ws ($freeJs + 'const s = document.getElementById("moveto"); if (!s || !s.options.length) return ""; return s.options[0].textContent.trim();'))
+    Check 'free-words: Move To is in the inspector of the selected window (scope)' ($mt -ne '') 'no Move To list in the inspector'
+    Check 'free-words: Move To first line says Choose a Space, not Choose a Cell' ($mt -eq 'Choose a Space') "first line: $mt"
+  }
+
+  Case 'back-words (review): the Back to the Grid popover says Restore moves pinned windows to Windows That Stay Put, and its cancel reads Keep Free Layout' {
+    # Mutant: Restore promises cells only, and the cancel button reads Cancel.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+    Check 'back-words: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    [void](Js $ws ($freeJs + 'const s = freeSw(); if (s) s.click(); return !!s;'))
+    $pop = WaitFor $ws '[...document.querySelectorAll("[role=dialog]")].some(d => /Back to the Grid/.test(d.textContent))' 10
+    Check 'back-words: switching off opens Back to the Grid (scope)' $pop 'no Back to the Grid popover'
+    if (-not $pop) { return }
+    $restore = [string](Js $ws ($freeJs + 'const l = [...document.querySelectorAll("label")].find(x => /Restore the Grid Layout/.test(x.textContent)); return l ? l.textContent.replace(/\s+/g, " ").trim() : "";'))
+    Check 'back-words: Restore the Grid Layout says pinned windows go to Windows That Stay Put' ($restore -match 'Windows That Stay Put') "restore: $restore"
+    $btns = Js $ws ($freeJs + 'return [...document.querySelectorAll("#backpop button")].map(b => b.textContent.replace(/\s+/g, " ").trim());')
+    Check 'back-words: the cancel button reads Keep Free Layout' (@($btns) -contains 'Keep Free Layout') "buttons: $((@($btns) | % { [string]$_ }) -join ' | ')"
+  }
+
 } catch {
   $script:fail++; "FAIL  page cases stopped: $($_.Exception.Message)"
 } finally {
