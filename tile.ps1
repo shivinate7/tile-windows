@@ -14,13 +14,17 @@
 #   left[].why says where a window without a cell came from: 'no free cell', 'zone full' or 'in the bay'. A bay entry's own why
 #   (the page sets it, such as when a resize covered the window) is passed through in place of 'in the bay'; the page words it.
 #   A pin's behind ([{app, match}]) stacks windows on its rect: each is placed with behind=true and the pin's index, never filled.
-#   A pin's lock (true) is read by the page, not here: a pin already beats zones and the fill for its cells.
+#   A pin's lock (true): the page reads it, a pin already beats zones and the fill for its cells, and -GapFill reads it too: a locked area never moves and never grows.
 #   A scene run reads monitor ids. If scene.layouts has an entry for this call's setup key (Get-TileSetupKey over the ids read: -From's
 #   snapshot, the TILE_SCREENS_FILE seam, or the live read), that layout replaces the scene's role template for the call: its grids, pins,
 #   zones and fill name monitors by id. A scene posted already resolved (grids, pins, zones, fill by id at the top level) runs by id too.
 #   No entry and no ids: the role path (wide, tall, laptop) runs, as before. The engine never picks the closest setup; the caller resolves.
 #   A window a layout places on a monitor that is not plugged in is claimed, never moved, and listed in left: 'Its screen is unplugged'.
 # -From <path|json>: use a -Json snapshot instead of the live desktop. Always a dry run.
+# -GapFill -Scene <..> -Absent <ids> -Last <json|path>: a gap-fill run on the scene's Free Layout monitors (item G). -Absent: handles of the windows that closed or
+#   minimized. -Last: [{id,x,y,w,h}], the rect the tray last gave each tiled window. A window moves only from its scene rect or its -Last rect; any other rect is a
+#   hand move, and that window's area counts as locked. Nothing is placed into a gap, and no saved layout is written. With -Json, prints {placed,missing,left}:
+#   placed lists only the windows the run moves. Honors -DryRun. Joins the live-move guard.
 # -Lib: define Move-Win and the Win32 reads and writes behind it, then return (tests dot-source it and swap those for fakes).
 # Slots number row by row from 1 (top-left).
 # -Cells n: grid with n cells (rows picked for you). Ultrawide default = 10 cells (5x2).
@@ -30,6 +34,7 @@ param([int]$Cols = 0, [int]$Rows = 0, [int]$Cells = 0, [string[]]$Proc = @('clau
   # -Sort app|category|title|position: fill order. app = -Proc order (then -Order, then where windows sit now).
   [string]$Sort = 'app',
   [string]$Scene = '', [string]$From = '', [switch]$Lib,
+  [switch]$GapFill, [string[]]$Absent = @(), [string]$Last = '',
   [string[]]$Skip = @('TextInputHost', 'PowerToys*', 'ShellExperienceHost', 'SearchHost', 'StartMenuExperienceHost', 'LockApp'))
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -176,14 +181,211 @@ function Move-Win($win, $x, $y, $ww, $hh) {
     "off size: is {0}x{1}, restore rect {2}x{3}" -f $r.W, $r.H, $rs.W, $rs.H
   }
 }
+# Free Layout areas (scene grids[mon].free.areas). An area is a rect in fractions of the work area, [fx, fy, fw, fh], plus a pin (an index into the scene's
+# pins), an app and title, or nothing.
+# Pixel lines: each line is rounded once per monitor, so two areas that meet at one fraction share one pixel. A fraction is first rounded to 9 places, so
+# a sum such as f + (1 - f) lands on the same line as 1. [Math]::Round rounds half to even, as the [int] casts in Pass do.
+function Get-AreaPixelRects($rects, [int]$W, [int]$H) {
+  $out = New-Object System.Collections.ArrayList
+  foreach ($r in @($rects)) {
+    $x0 = [int][Math]::Round([Math]::Round([double]$r[0], 9) * $W); $x1 = [int][Math]::Round([Math]::Round([double]$r[0] + [double]$r[2], 9) * $W)
+    $y0 = [int][Math]::Round([Math]::Round([double]$r[1], 9) * $H); $y1 = [int][Math]::Round([Math]::Round([double]$r[1] + [double]$r[3], 9) * $H)
+    [void]$out.Add([int[]]@($x0, $y0, ($x1 - $x0), ($y1 - $y0)))
+  }
+  , $out.ToArray()
+}
+
+# One monitor's free areas, ready for Pass. Returns $null when no area has a usable rect. Else: Rects (pixel rects relative to the work area, in reading
+# order: top line, then left line), Pins (pin entries whose Slots are one area's position in Rects; a named area is a pin entry with Named set), and Missing
+# (pins on this monitor that no area holds, and areas whose pin is not in the scene). The fill takes the areas no pin or name holds, in Rects order.
+function Resolve-FreeAreas($areas, $scenePins, [string]$role, [int]$W, [int]$H) {
+  $list = @($areas); $okIdx = @(); $fr = @()
+  for ($i = 0; $i -lt $list.Count; $i++) {
+    $a = $list[$i]; if ($null -eq $a) { continue }
+    $v = @(@($a.rect) | ? { $null -ne $_ })
+    if ($v.Count -ne 4) { continue }
+    try { $d = [double[]]@($v) } catch { continue }
+    if ($d | ? { [double]::IsNaN($_) -or [double]::IsInfinity($_) }) { continue }
+    if ($d[2] -le 0 -or $d[3] -le 0) { continue }
+    $okIdx += $i; $fr += , $d
+  }
+  if (-not $okIdx.Count) { return $null }
+  $px = Get-AreaPixelRects $fr $W $H
+  $order = @(0..($okIdx.Count - 1) | Sort-Object { $px[$_][1] }, { $px[$_][0] }, { $_ })
+  $slotOf = @{}; $rects = @()
+  for ($s = 0; $s -lt $order.Count; $s++) { $slotOf[$okIdx[$order[$s]]] = $s; $rects += , $px[$order[$s]] }
+  $sp = @($scenePins); $taken = @{}; $named = @(); $missing = @()
+  foreach ($i in $okIdx) {
+    $a = $list[$i]; $slot = $slotOf[$i]
+    if ($null -ne $a.pin -and "$($a.pin)" -ne '') {
+      $pi = -1; try { $pi = [int]$a.pin } catch { }
+      if ($pi -ge 0 -and $pi -lt $sp.Count -and $sp[$pi].mon -eq $role) { if (-not $taken.ContainsKey($pi)) { $taken[$pi] = $slot }; continue }
+      $missing += [pscustomobject]@{ pin = $pi; app = ''; match = ''; why = 'pin not in this scene' }
+    }
+    if ($a.app) { $named += [pscustomobject]@{ App = [string]$a.app; Match = [string]$a.title; Slots = @($slot); Index = -1; Behind = @(); Named = $true } }
+  }
+  $pins = @(for ($pi = 0; $pi -lt $sp.Count; $pi++) {
+    $p = $sp[$pi]; if ($p.mon -ne $role) { continue }
+    if ($taken.ContainsKey($pi)) { [pscustomobject]@{ App = [string]$p.app; Match = [string]$p.match; Slots = @($taken[$pi]); Index = $pi; Behind = @(@($p.behind | ? { $_ }) | % { [pscustomobject]@{ App = [string]$_.app; Match = [string]$_.match } }) } }
+    else { $missing += [pscustomobject]@{ pin = $pi; app = [string]$p.app; match = [string]$p.match; why = 'not in a free area' } }
+  })
+  [pscustomobject]@{ Rects = $rects; Pins = @($pins) + @($named | Sort-Object { $_.Slots[0] }); Missing = $missing }
+}
+
+# Item G: who takes the space of a closed or minimized window. $areas = [{rect: [fx, fy, fw, fh]}] in fractions of the work area; $absent and $locked =
+# 0-based indexes into $areas; $size = @(W, H) in pixels, for the 400 x 300 floor. Returns one entry per area, in order: its new rect in fractions, or
+# $null for an area whose window is gone (its space went to neighbours, or stays a gap). A locked area, or one nothing touches, returns its rect as it was.
+# Pure and never saved: the caller works it out at apply time. Every gone region is worked out against the rects as they came in, so the result does
+# not depend on the order of $absent. Gone areas that touch and together make one rectangle are one region.
+# A side qualifies when the areas that touch the region's edge on that side cover the edge exactly: none sticks out past it, none is locked, no hole.
+# Left and right both qualifying meet at the midpoint; else above and below do; else the first qualifying side, in the order left, above, right, below,
+# takes it all. A midpoint share that leaves a window under 400 x 300 px, or overlaps a live area, does not count: the next pair is tried, and only
+# when neither pair can meet does the first single side take it all.
+function Get-CollapsedAreas($areas, $absent, $locked, $size) {
+  $eps = 1e-7
+  $list = @($areas); $n = $list.Count
+  $orig = New-Object System.Collections.ArrayList; $cur = New-Object System.Collections.ArrayList; $rc = New-Object System.Collections.ArrayList
+  foreach ($a in $list) {
+    $d = [double[]]@($a.rect); [void]$rc.Add($d)
+    [void]$orig.Add([double[]]@($d[0], $d[1], ($d[0] + $d[2]), ($d[1] + $d[3]))); [void]$cur.Add([double[]]@($d[0], $d[1], ($d[0] + $d[2]), ($d[1] + $d[3])))
+  }
+  $ab = @(@($absent) | ? { $null -ne $_ } | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $n } | Sort-Object -Unique)
+  $lk = @{}; foreach ($l in @($locked)) { if ($null -ne $l) { $lk[[int]$l] = 1 } }
+  $W = [double]@($size)[0]; $H = [double]@($size)[1]
+  $isAbs = @{}; foreach ($i in $ab) { $isAbs[$i] = 1 }
+
+  # Gone areas that share an edge join one component; a component that fills its bounding box is one region, else each member is its own.
+  function Test-Touch($p, $q) {
+    $ovY = [Math]::Min($p[3], $q[3]) - [Math]::Max($p[1], $q[1]); $ovX = [Math]::Min($p[2], $q[2]) - [Math]::Max($p[0], $q[0])
+    (($ovY -gt $eps) -and (([Math]::Abs($p[2] - $q[0]) -lt $eps) -or ([Math]::Abs($q[2] - $p[0]) -lt $eps))) -or (($ovX -gt $eps) -and (([Math]::Abs($p[3] - $q[1]) -lt $eps) -or ([Math]::Abs($q[3] - $p[1]) -lt $eps)))
+  }
+  $regions = @(); $seen = @{}
+  foreach ($i in $ab) {
+    if ($seen.ContainsKey($i)) { continue }
+    $comp = @($i); $seen[$i] = 1; $k = 0
+    while ($k -lt $comp.Count) { foreach ($j in $ab) { if (-not $seen.ContainsKey($j) -and (Test-Touch $orig[$comp[$k]] $orig[$j])) { $seen[$j] = 1; $comp += $j } }; $k++ }
+    $bb = [double[]]@(($comp | % { $orig[$_][0] } | Measure-Object -Minimum).Minimum, ($comp | % { $orig[$_][1] } | Measure-Object -Minimum).Minimum, ($comp | % { $orig[$_][2] } | Measure-Object -Maximum).Maximum, ($comp | % { $orig[$_][3] } | Measure-Object -Maximum).Maximum)
+    $sum = 0.0; foreach ($c in $comp) { $sum += ($orig[$c][2] - $orig[$c][0]) * ($orig[$c][3] - $orig[$c][1]) }
+    if ([Math]::Abs($sum - ($bb[2] - $bb[0]) * ($bb[3] - $bb[1])) -lt $eps) { $regions += , $bb } else { foreach ($c in $comp) { $regions += , $orig[$c] } }
+  }
+
+  # The areas that cover one side of a region exactly, or $null when the side does not qualify.
+  function Get-Side($reg, [string]$side) {
+    $nb = @(); $cov = 0.0
+    switch ($side) { { $_ -in 'left', 'right' } { $rlo = $reg[1]; $rhi = $reg[3] } default { $rlo = $reg[0]; $rhi = $reg[2] } }
+    for ($i = 0; $i -lt $n; $i++) {
+      if ($isAbs.ContainsKey($i)) { continue }
+      $a = $orig[$i]
+      switch ($side) {
+        'left'  { $touch = [Math]::Abs($a[2] - $reg[0]) -lt $eps; $lo = $a[1]; $hi = $a[3] }
+        'right' { $touch = [Math]::Abs($a[0] - $reg[2]) -lt $eps; $lo = $a[1]; $hi = $a[3] }
+        'above' { $touch = [Math]::Abs($a[3] - $reg[1]) -lt $eps; $lo = $a[0]; $hi = $a[2] }
+        'below' { $touch = [Math]::Abs($a[1] - $reg[3]) -lt $eps; $lo = $a[0]; $hi = $a[2] }
+      }
+      if (-not $touch) { continue }
+      $ov = [Math]::Min($hi, $rhi) - [Math]::Max($lo, $rlo)
+      if ($ov -le $eps) { continue }
+      if ($lo -lt $rlo - $eps -or $hi -gt $rhi + $eps -or $lk.ContainsKey($i)) { return $null }
+      $nb += $i; $cov += $ov
+    }
+    if (-not $nb.Count -or [Math]::Abs($cov - ($rhi - $rlo)) -gt $eps) { return $null }
+    , $nb
+  }
+  # True when every window in $idx is 400 x 300 px or more at its current edges.
+  function Test-Floor($idx) { foreach ($i in $idx) { $e = $cur[$i]; if (($e[2] - $e[0]) * $W -lt 399.999999 -or ($e[3] - $e[1]) * $H -lt 299.999999) { return $false } }; $true }
+
+  # True when no area in $idx overlaps another area that is not gone. A shared edge is no overlap.
+  function Test-NoOverlap($idx) {
+    foreach ($i in $idx) { for ($j = 0; $j -lt $n; $j++) {
+      if ($j -eq $i -or $isAbs.ContainsKey($j)) { continue }
+      $a = $cur[$i]; $b = $cur[$j]
+      if (([Math]::Min($a[2], $b[2]) - [Math]::Max($a[0], $b[0]) -gt $eps) -and ([Math]::Min($a[3], $b[3]) - [Math]::Max($a[1], $b[1]) -gt $eps)) { return $false }
+    } }
+    $true
+  }
+
+  # Regions go in a fixed order (top line, then left line), so the result does not depend on the order of $absent. A share that would make a neighbour
+  # overlap another area (it already grew into a region beside this one) does not count: the next qualifying side is tried, and the gap stays only
+  # when no side is left.
+  $rord = @(if ($regions.Count) { 0..($regions.Count - 1) | Sort-Object { $regions[$_][1] }, { $regions[$_][0] } })
+  foreach ($ri in $rord) {
+    $reg = $regions[$ri]
+    $side = @{}; foreach ($s in 'left', 'above', 'right', 'below') { $side[$s] = Get-Side $reg $s }
+    $done = $false
+    foreach ($pair in @(@('left', 'right', 0, $W), @('above', 'below', 1, $H))) {
+      if ($done -or $null -eq $side[$pair[0]] -or $null -eq $side[$pair[1]]) { continue }
+      $ax = [int]$pair[2]; $len = [double]$pair[3]
+      $m = [Math]::Round([Math]::Round(($reg[$ax] + $reg[$ax + 2]) / 2, 9) * $len) / $len
+      $idx = @(@($side[$pair[0]]) + @($side[$pair[1]]))
+      $save = @{}; foreach ($i in $idx) { $save[$i] = [double[]]@($cur[$i]) }
+      foreach ($i in @($side[$pair[0]])) { $cur[$i][$ax + 2] = $m }
+      foreach ($i in @($side[$pair[1]])) { $cur[$i][$ax] = $m }
+      if ((Test-Floor $idx) -and (Test-NoOverlap $idx)) { $done = $true } else { foreach ($i in $save.Keys) { $cur[$i] = $save[$i] } }
+    }
+    if ($done) { continue }
+    foreach ($s in 'left', 'above', 'right', 'below') {
+      if ($null -eq $side[$s]) { continue }
+      $idx = @($side[$s]); $save = @{}; foreach ($i in $idx) { $save[$i] = [double[]]@($cur[$i]) }
+      foreach ($i in $idx) { switch ($s) { 'left' { $cur[$i][2] = $reg[2] } 'above' { $cur[$i][3] = $reg[3] } 'right' { $cur[$i][0] = $reg[0] } 'below' { $cur[$i][1] = $reg[1] } } }
+      if (Test-NoOverlap $idx) { break }
+      foreach ($i in $save.Keys) { $cur[$i] = $save[$i] }
+    }
+  }
+
+  for ($i = 0; $i -lt $n; $i++) {
+    if ($isAbs.ContainsKey($i)) { $null; continue }
+    $changed = $false; for ($k = 0; $k -lt 4; $k++) { if ($cur[$i][$k] -ne $orig[$i][$k]) { $changed = $true } }
+    if ($changed) { , [double[]]@($cur[$i][0], $cur[$i][1], ($cur[$i][2] - $cur[$i][0]), ($cur[$i][3] - $cur[$i][1])) } else { , $rc[$i] }
+  }
+}
+# Gap fill on one Free Layout monitor: which windows move, and where. $px: the areas' pixel rects relative to the work area ([x, y, w, h], reading order);
+# $org: the work area's @(X, Y); $size: @(W, H). $wins: [{id, slot (an area's index), cur = [x, y, w, h]}], the windows that sit in an area (a pin's back
+# windows too), in screen pixels. $locked: area indexes whose pin is locked. $absentLast: the -Last rects of the windows that are gone. $last: id -> -Last rect.
+# A window may move when it sits at its area's own rect, or at its -Last rect when that rect holds the area's centre (so a window the run would pull into
+# another area never counts). Any other rect is a hand move: its area counts as locked, as a locked pin's does. An area with no window is locked too, unless a
+# gone window's -Last rect holds it: that area is gone. Each eligible window moves to its area's rect from Get-CollapsedAreas (the scene rect when nothing
+# is gone, so a neighbour shrinks back from its -Last rect). A locked area's window never moves. Returns [{id, slot, rect}], rects in screen pixels.
+function Get-GapMoves($px, $org, $size, $wins, $locked, $absentLast, $last) {
+  $n = @($px).Count; $sw = [int]@($size)[0]; $sh = [int]@($size)[1]
+  $abs = @(for ($i = 0; $i -lt $n; $i++) { , [int[]]@(($org[0] + $px[$i][0]), ($org[1] + $px[$i][1]), $px[$i][2], $px[$i][3]) })
+  function Test-SameRect($a, $b) { $a[0] -eq $b[0] -and $a[1] -eq $b[1] -and $a[2] -eq $b[2] -and $a[3] -eq $b[3] }
+  # $in lies inside $out, give or take one pixel.
+  function Test-Inside($in, $out) { $in[0] -ge $out[0] - 1 -and $in[1] -ge $out[1] - 1 -and $in[0] + $in[2] -le $out[0] + $out[2] + 1 -and $in[1] + $in[3] -le $out[1] + $out[3] + 1 }
+  $lockSet = @{}; foreach ($l in @($locked)) { if ($null -ne $l) { $lockSet[[int]$l] = 1 } }
+  $has = @{}; $elig = @{}
+  foreach ($w in @($wins)) {
+    $has[[int]$w.slot] = 1
+    $t = $abs[[int]$w.slot]; $c = [int[]]@($w.cur); $lr = $last["$($w.id)"]
+    $atLast = $false
+    if ($lr) { $cx = $t[0] + $t[2] / 2; $cy = $t[1] + $t[3] / 2; $atLast = (Test-SameRect $c $lr) -and $cx -ge $lr[0] -and $cx -le $lr[0] + $lr[2] -and $cy -ge $lr[1] -and $cy -le $lr[1] + $lr[3] }
+    $elig["$($w.id)"] = [bool]((Test-SameRect $c $t) -or $atLast)
+    if (-not $elig["$($w.id)"]) { $lockSet[[int]$w.slot] = 1 }
+  }
+  $gone = @{}
+  for ($i = 0; $i -lt $n; $i++) { if ($has.ContainsKey($i)) { continue }; foreach ($lr in @($absentLast)) { if (Test-Inside $abs[$i] $lr) { $gone[$i] = 1; break } } }
+  for ($i = 0; $i -lt $n; $i++) { if (-not $has.ContainsKey($i) -and -not $gone.ContainsKey($i)) { $lockSet[$i] = 1 } }
+  $areas = @(for ($i = 0; $i -lt $n; $i++) { [pscustomobject]@{ rect = [double[]]@(($px[$i][0] / $sw), ($px[$i][1] / $sh), ($px[$i][2] / $sw), ($px[$i][3] / $sh)) } })
+  $res = @(Get-CollapsedAreas $areas @($gone.Keys) @($lockSet.Keys) @($sw, $sh))
+  foreach ($w in @($wins)) {
+    $s = [int]$w.slot
+    if ($lockSet.ContainsKey($s) -or -not $elig["$($w.id)"] -or $null -eq $res[$s]) { continue }
+    $q = (Get-AreaPixelRects @(, $res[$s]) $sw $sh)[0]
+    $to = [int[]]@(($org[0] + $q[0]), ($org[1] + $q[1]), $q[2], $q[3])
+    if (-not (Test-SameRect ([int[]]@($w.cur)) $to)) { [pscustomobject]@{ id = $w.id; slot = $s; rect = $to } }
+  }
+}
 if ($Lib) { return }
 
 # Live-move guard: under the test suite (test/run.ps1 sets TILE_TEST_SUITE) or an agent shell (Claude Code sets CLAUDECODE), a run that can reach Move-Win is refused unless the caller sets
 # TILE_TEST_ALLOW_LIVE=1. Exempt: -DryRun, -From (always a dry run), -Monitors, -List (returns before any Move-Win), and -Json as the bare snapshot.
+# -GapFill moves windows, so it is never the bare snapshot.
 # Runs before any scene read, window read or pass. Outside the suite and an agent shell nothing changes.
-if (($env:TILE_TEST_SUITE -or $env:CLAUDECODE) -and $env:TILE_TEST_ALLOW_LIVE -ne '1' -and -not ($DryRun -or $From -or $Monitors -or $List -or ($Json -and -not ($Scene -or $Default -or $Place -or $PlaceFile)))) {
+if (($env:TILE_TEST_SUITE -or $env:CLAUDECODE) -and $env:TILE_TEST_ALLOW_LIVE -ne '1' -and -not ($DryRun -or $From -or $Monitors -or $List -or ($Json -and -not ($Scene -or $Default -or $Place -or $PlaceFile -or $GapFill)))) {
   throw 'Refused: this run would move windows, and TILE_TEST_SUITE or CLAUDECODE is set. Add -DryRun, or set TILE_TEST_ALLOW_LIVE=1 to allow a live run.'
 }
+
+if ($GapFill -and -not $Scene) { throw '-GapFill needs -Scene.' }
+$Absent = @($Absent -split ',' | ? { $_ } | % { [int64]$_ })
 
 function JsonText($s) { if ($s -match '^\s*[\[{]') { $s } else { [IO.File]::ReadAllText((Resolve-Path -LiteralPath $s), $TileUtf8) } }
 
@@ -345,6 +547,8 @@ if ($From) {
     if ($pname["$p"]) { [pscustomobject]@{ H = $_; Rank = $null; X = $r.L; Y = $r.T; Wd = $r.R - $r.L; Ht = $r.B - $r.T; App = $pname["$p"]; Title = "$sb" } }
   })
 }
+# A gap-fill run looks at the desktop without the windows that are gone (a minimized one is still listed), so no pin finds them.
+if ($GapFill) { $items = @($items | ? { $Absent -notcontains [int64]$_.H }) }
 $claimed = @{}  # windows a scene pass already placed
 # Rank = place of the window's app in the list; '*' = every other app not in -Skip.
 function Ranked($procs, $skip) {
@@ -421,7 +625,9 @@ function Get-CellPair($v) {
 # $Cols and $Rows count the cells of the finished grid. With $mult (the scene's grids[mon].mult) each base cell is divided mx by my, so $Cols is the
 # base columns times mx. A cell edge comes from the base grid first, then the division, so a window outside a split cell keeps its undivided rect.
 # $unit (fill.unit): each filled window takes one aligned block of ux by uy cells.
-function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all', $held = @(), $phantom = $false, $mult = $null, $unit = $null) {
+# $areaRects (Free Layout areas): pixel rects relative to the work area, in reading order. A slot is then an area's position in it, and $Cols is how many
+# areas there are; the fill takes the open areas in that order. A pin entry with Named set (an area named by app and title) is never reported missing.
+function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all', $held = @(), $phantom = $false, $mult = $null, $unit = $null, $areaRects = $null) {
   $scene = $phase -ne 'all'
   $all = @(@($pins.App) + @($fill | ? { $pins.App -notcontains $_ }) | ? { $_ })
   if (-not $script:roleState.ContainsKey("$role")) { $script:roleState["$role"] = @{ used = @{}; pinned = 0 } }
@@ -433,7 +639,7 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   if ($phase -in 'all', 'pins') {
     foreach ($pn in $pins) {
       $it = $its | ? { $_.App -eq $pn.App -and (-not $pn.Match -or (Contains $_.Title $pn.Match)) -and -not $placed.Contains($_) -and ($pn.Match -or (& $up)) } | Sort-Object { $_.X -le -20000 }, X, Y | Select-Object -First 1
-      if ($it) { $placed += $it } else { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' } }
+      if ($it) { $placed += $it } elseif (-not $pn.Named) { Write-Warning "No open window for '$($pn.App)'."; $script:missing += [pscustomobject]@{ pin = $pn.Index; app = $pn.App; match = $pn.Match; why = 'no open window' } }
       # Windows stacked behind this pin: same rect, never in the fill. A minimized one counts (Apply restores it).
       $bis = @(foreach ($b in @($pn.Behind)) {
         $bi = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and -not $placed.Contains($_) -and $_.App -eq $b.App -and (-not $b.Match -or (Contains $_.Title $b.Match)) } | Sort-Object { $_.X -le -20000 }, X, Y | Select-Object -First 1)[0]
@@ -484,7 +690,8 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
     $cs = $slots | % { $_ % $Cols }; $rs = $slots | % { [Math]::Floor($_ / $Cols) }
     $c0 = ($cs | Measure -Min).Minimum; $c1 = ($cs | Measure -Max).Maximum
     $r0 = ($rs | Measure -Min).Minimum; $r1 = ($rs | Measure -Max).Maximum
-    $x = $area.X + (EdgeX $c0); $y = $area.Y + (EdgeY $r0); $ww = (EdgeX ($c1 + 1)) - (EdgeX $c0); $hh = (EdgeY ($r1 + 1)) - (EdgeY $r0)
+    if ($areaRects) { $q = $areaRects[[int]$slots[0]]; $x = $area.X + $q[0]; $y = $area.Y + $q[1]; $ww = $q[2]; $hh = $q[3] }
+    else { $x = $area.X + (EdgeX $c0); $y = $area.Y + (EdgeY $r0); $ww = (EdgeX ($c1 + 1)) - (EdgeX $c0); $hh = (EdgeY ($r1 + 1)) - (EdgeY $r0) }
     $script:claimed["$($it.H)"] = 1
     if ($phantom) { $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = $script:unpluggedWhy }; return }
     if ($Json) {
@@ -581,7 +788,7 @@ function Test-IdKeyed($o) {
 $idMode = $false
 if ($screens.Count -and -not @($screens | ? { -not $_.Id }).Count) {
   $setupKey = Get-TileSetupKey $screens
-  $own = if ($sc.layouts) { $sc.layouts.PSObject.Properties[$setupKey] }
+  $own = Get-TileLayoutEntry $sc $setupKey
   $lay = if ($own) { $own.Value } elseif (Test-IdKeyed $sc) { $sc }
   if ($lay) {
     $sc = [pscustomobject]@{ id = $sc.id; name = $sc.name; grids = $lay.grids; pins = @($lay.pins | ? { $_ }); zones = @($lay.zones | ? { $_ }); fill = $(if ($lay.fill) { $lay.fill } else { [pscustomobject]@{} }); bay = $lay.bay; cats = $sc.cats; categories = $sc.categories }
@@ -612,7 +819,12 @@ foreach ($role in $passKeys) {
   $phantom = -not $scr
   # mult divides each base cell, so every slot below counts cells of the finished grid: base columns times mx, base rows times my.
   $mult = $null
-  if ($g) { $mult = @(Get-CellPair $g.mult); $gc = [int]$g.c * $mult[0]; $gr = [int]$g.r * $mult[1] }
+  # Free Layout areas replace the grid: the slots are the areas in reading order, zones and held cells pause, and a pin takes the area that names it.
+  # A monitor that is not plugged in gets a nominal size, since it only claims its windows.
+  $fr = $null
+  if ($g -and $g.free -and @($g.free.areas | ? { $_ }).Count) { $fr = Resolve-FreeAreas $g.free.areas $sc.pins $role $(if ($phantom) { 1000 } else { $scr.W }) $(if ($phantom) { 1000 } else { $scr.H }) }
+  if ($fr) { $gc = $fr.Rects.Count; $gr = 1; $missing += $fr.Missing }
+  elseif ($g) { $mult = @(Get-CellPair $g.mult); $gc = [int]$g.c * $mult[0]; $gr = [int]$g.r * $mult[1] }
   elseif ($phantom) {
     # No grid for a monitor that is not plugged in (a resolved layout drops it): the cells its entries name are enough to match their windows.
     $named = @(foreach ($x in @($sc.pins) + @($sc.zones) + @($sc.fill.held)) { if ($x -and $x.mon -eq $role) { @($x.slots | % { [int]$_ } | ? { $_ -ge 0 }) } })
@@ -620,18 +832,18 @@ foreach ($role in $passKeys) {
     if (-not $named.Count -and $sc.fill.mon -ne $role) { continue }
     $gc = if ($named.Count) { [int]($named | Measure-Object -Maximum).Maximum + 1 } else { 1 }; $gr = 1
   } else { continue }
-  $ps = @(for ($i = 0; $i -lt @($sc.pins).Count; $i++) {
+  $ps = @(if ($fr) { $fr.Pins } else { for ($i = 0; $i -lt @($sc.pins).Count; $i++) {
     $p = @($sc.pins)[$i]; if ($p.mon -ne $role) { continue }
     $sl = @($p.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
     if (-not $sl.Count) { $missing += [pscustomobject]@{ pin = $i; app = $p.app; match = [string]$p.match; why = 'slots outside the grid' }; continue }
     [pscustomobject]@{ App = [string]$p.app; Match = [string]$p.match; Slots = $sl; Index = $i; Behind = @(@($p.behind | ? { $_ }) | % { [pscustomobject]@{ App = [string]$_.app; Match = [string]$_.match } }) }
-  })
-  $zs = @(for ($i = 0; $i -lt @($sc.zones | ? { $_ }).Count; $i++) {
+  } })
+  $zs = @(if (-not $fr) { for ($i = 0; $i -lt @($sc.zones | ? { $_ }).Count; $i++) {
     $z = @($sc.zones)[$i]; if ($z.mon -ne $role) { continue }
     $sl = @($z.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
     if ($sl.Count -and ($z.app -or $z.cat)) { [pscustomobject]@{ App = [string]$z.app; Cat = [string]$z.cat; Slots = $sl; Index = $i } }
-  })
-  $hs = @(if ($sceneFillOff) { for ($i = 0; $i -lt @($sc.fill.held | ? { $_ }).Count; $i++) {
+  } })
+  $hs = @(if ($sceneFillOff -and -not $fr) { for ($i = 0; $i -lt @($sc.fill.held | ? { $_ }).Count; $i++) {
     $h = @($sc.fill.held)[$i]; if ($h.mon -ne $role) { continue }
     $sl = @($h.slots | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr })
     if ($sl.Count) { [pscustomobject]@{ Id = $h.id; App = [string]$h.app; Title = [string]$h.title; Slots = $sl } }
@@ -640,12 +852,37 @@ foreach ($role in $passKeys) {
   if (-not $ps.Count -and -not $isFill -and -not $zs.Count -and -not $hs.Count) { continue }
   if ($phantom -and -not $idMode) { Write-Warning "No $role monitor. That part of the scene is skipped." }
   if ($phantom) { $scr = [pscustomobject]@{ Name = "unplugged $role"; X = 0; Y = 0; W = 100 * $gc; H = 100 * $gr } }
-  $passes += [pscustomobject]@{ Scr = $scr; Phantom = $phantom; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Held = $hs; Role = $role; Mult = $mult; Unit = $(if ($isFill) { $sc.fill.unit })
+  $passes += [pscustomobject]@{ Scr = $scr; Phantom = $phantom; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Held = $hs; Role = $role; Mult = $mult; Unit = $(if ($isFill -and -not $fr) { $sc.fill.unit }); AreaRects = $(if ($fr) { , $fr.Rects })
     Skip = $(if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }); Sort = $(if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }) }
+}
+# Gap fill: the pins phase finds each window's area (as a dry run, so Put moves nothing); item G then decides the moves (Get-GapMoves). Zones, held
+# windows and the fill pause, so nothing is placed into a gap. Only a Free Layout monitor takes part.
+if ($GapFill) {
+  $realDry = [bool]$DryRun; $realJson = [bool]$Json
+  $DryRun = [switch]$true; $Json = [switch]$true
+  $lastMap = @{}
+  if ($Last) { foreach ($e in @(ConvertFrom-Json (JsonText $Last) | % { $_ })) { if ($null -ne $e.id) { $lastMap["$([int64]$e.id)"] = [int[]]@([int]$e.x, [int]$e.y, [int]$e.w, [int]$e.h) } } }
+  $absentLast = @(); foreach ($a in $Absent) { if ($lastMap.ContainsKey("$a")) { $absentLast += , $lastMap["$a"] } }
+  $gp = @()
+  foreach ($q in $passes) {
+    if (-not $q.AreaRects -or $q.Phantom) { continue }
+    $found = @(Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones 'pins' $q.Held $q.Phantom $q.Mult $q.Unit $q.AreaRects | ? { $_ -and $_.id })
+    $locked = @(foreach ($pn in $q.Pins) { if ($pn.Index -ge 0 -and @($sc.pins)[$pn.Index].lock -eq $true) { @($pn.Slots)[0] } })
+    $wins = @(foreach ($o in $found) { [pscustomobject]@{ id = [int64]$o.id; slot = [int]@($o.slots)[0] - 1; cur = [int[]]@($o.from.x, $o.from.y, $o.from.w, $o.from.h) } })
+    foreach ($mv in @(Get-GapMoves $q.AreaRects @($q.Scr.X, $q.Scr.Y) @($q.Scr.W, $q.Scr.H) $wins $locked $absentLast $lastMap)) {
+      $o = @($found | ? { [int64]$_.id -eq $mv.id })[0]
+      $o.x = $mv.rect[0]; $o.y = $mv.rect[1]; $o.w = $mv.rect[2]; $o.h = $mv.rect[3]
+      if ($realDry) { $o.note = 'dry run' } else { $m = Move-Win @($items | ? { [int64]$_.H -eq $mv.id })[0].H $o.x $o.y $o.w $o.h; $o.note = if ($m) { "$m" } else { 'moved' } }
+      $gp += $o
+    }
+  }
+  if ($realJson) { ConvertTo-Json -Depth 6 -Compress ([pscustomobject]@{ placed = @($gp); missing = @($missing); left = @($left) }) }
+  else { foreach ($o in $gp) { "{0,-9} x={1} y={2} {3}x{4}  {5}" -f $o.app, $o.x, $o.y, $o.w, $o.h, $o.title }; "Gap fill: moved $($gp.Count) window(s)." }
+  return
 }
 foreach ($phase in 'pins', 'held', 'zones', 'fill') {
   foreach ($q in $passes) {
-    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase $q.Held $q.Phantom $q.Mult $q.Unit
+    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase $q.Held $q.Phantom $q.Mult $q.Unit $q.AreaRects
     if ($Json) { $out += @($r) } else { $r }
   }
 }

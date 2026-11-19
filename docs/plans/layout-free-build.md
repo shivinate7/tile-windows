@@ -1,6 +1,6 @@
 ## layout-free-build
 
-**Status.** L0 (PR 45, golden layouts) and L5b (PR 43, gap watch) are merged. L1 (PR 46, finer grid) is built and not merged yet. The other lanes are not built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
+**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L3 (PR 50, free areas), L5a (PR 54, gap-fill run) and L5b (PR 43, gap watch) are merged. L2 and L4 are not built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
 
 **Source.** The Plan agent's build plan (opus), revised after a refuter, 2026-11-18 11:20 CST. It was first checked against origin/main 9e6ae0a. The symbols that replace its line numbers were checked against origin/main b6bc537 by 2026-11-18 11:23 CST. Its other claims, such as the columns cap of 8 and the span stepper following `g.c`, were not re-checked. Main has no docs/map/.
 
@@ -18,7 +18,7 @@ One fact drives L1. On the 1365px test area, five columns are 273px wide (`[int]
 
 **L1. Engine: finer grid** (`tile.ps1`; no designer; needs L0)
 
-Status: built in PR 46 (finer grid). The engine and its red cases are on branch `finer-grid`, at head commit 37a94e0. Not merged to main yet.
+Status: built in PR 46 (finer grid), merged at commit fce4790. Its engine and red cases were on branch `finer-grid`, at head commit 37a94e0.
 
 - New `grids[mon].mult:[mx,my]`: cell edges come from the base grid, and each base cell is then divided.
 - New `fill.unit:[ux,uy]`: each filled window gets one aligned block of cells.
@@ -56,6 +56,9 @@ Status: built in PR 46 (finer grid). The engine and its red cases are on branch 
   - the right-click menu.
 
 **L3. Engine: Free Layout areas and item G** (`tile.ps1`; no designer; after L1, since both edit the `Pass` function)
+
+Status: built in PR 50 (free areas), merged at commit 74f87cb.
+
 - `layouts[key].grids[monId].free.areas`. Each area is a rect in fractions, plus a pin, an app and title, or nothing.
 - Each line is rounded once, so neighbours share a pixel.
 - The fill takes empty areas in reading order. Zones pause (item 26).
@@ -63,12 +66,12 @@ Status: built in PR 46 (finer grid). The engine and its red cases are on branch 
 - Tests: areas built from a grid give L0 exactly, so switching on moves nothing. Item G's cases below.
 
 **Item G. Who takes a closed or minimized window's space** (in L3; used by L5a and Close Gap)
-- A side qualifies when its neighbours exactly cover the gone window's edge: none sticks out past it, none is locked, and they leave no hole.
+- A side qualifies when its neighbours exactly cover the gone window's edge: none sticks out past it, none is locked, and they leave no hole. A side also needs a share that leaves no overlap with a live area.
 - If left and right both qualify, they meet at the midpoint. Otherwise, if above and below both qualify, they meet at the midpoint.
-- Otherwise the first single side that qualifies takes it all, in the order of notes item 17 (left, above, right, below).
-- If a midpoint share would leave a window under 400×300, the whole space goes to the first side that qualifies.
-- If no side qualifies (a pinwheel centre, or only locked neighbours), the space stays a dashed gap.
-- Close Gap calls the same function. When no side qualifies, Close Gap is off and says why (item 17).
+- Otherwise the first single side that qualifies takes it all, in the order of notes item 17 (left, above, right, below). When one side cannot take the region, the next side in that order does.
+- If a midpoint share would leave a window under 400×300, or would overlap a live area, that pair does not count. The next pair is tried (left and right, then above and below). Only when neither pair can meet does the first single side that qualifies take it all (the branch above).
+- If no side can take it (a pinwheel centre, or only locked neighbours), the space stays a dashed gap.
+- Close Gap calls the same function. When no side can take it, Close Gap is off and says why (item 17).
 - The result is worked out at apply time and never saved, so a restored window gets its saved rect back.
 - Tests:
   - a middle column's space is split by its left and right neighbours;
@@ -99,15 +102,22 @@ Status: built in PR 46 (finer grid). The engine and its red cases are on branch 
   - whether the board shows a gone window's space as lent.
 
 **L5a. Engine: gap-fill run** (`tile.ps1`; no designer; needs L3)
+
+Status: built in PR 54 (gap-fill run), merged at commit e0e3be2. Records: debt `gap-fill-live-move-untested`; notes `gap-destroy-quiet-not-recorded`, `gap-pid-control-tests-destroyed`, `gap-fill-builder-choices`.
+
 - Red test first: `-GapFill` is added to the live-move guard `if` in `tile.ps1`, under its `# Live-move guard` comment. Under TILE_TEST_SUITE or CLAUDECODE it is refused unless `-DryRun` or TILE_TEST_ALLOW_LIVE=1 is set.
 - `-GapFill -Absent <ids> -Last <json>` applies item G to the active scene.
 - A window moves only if it sits at its scene rect, or at the last rect the tray gave it (`-Last`), so neighbours shrink back on restore. A window the owner moved by hand stays put.
 - No new window is pulled in. Windows That Stay Put are untouched. The saved layout is never written.
 - Tests: the guard refusal; a hand-moved neighbour stays put; a restore shrinks neighbours from their last rect; no new window is pulled in.
+- `Get-GapMoves` (above the `-Lib` return) decides the moves from the pins phase's areas and item G:
+  - a gone window's area is the empty area its `-Last` rect holds; an empty area nothing gone holds, a locked pin's area and a hand-moved window's area are locked;
+  - a locked area never moves and never grows; the zones, held windows and fill pause, so nothing is placed into a gap.
+- Departs from: the tile.ps1 header at 74f87cb, line 17, which said a pin's lock is read by the page, not here. `-GapFill` reads a pin's lock (tile.ps1:870, `.lock -eq $true`), so a locked pin's area never moves in a gap run. The header at tile.ps1:17 now says so.
 
 **L5b. Tray: close and minimize hook** (`tray.ps1`; no designer)
 
-Status: built in PR 43 (the gap-watch pull request), merged at commit ee47541. Until lane L5a lands, gap-fill only logs.
+Status: built in PR 43 (the gap-watch pull request), merged at commit ee47541. Lane L5a (PR 54) wires `Invoke-GapFill` to the engine's `-GapFill`.
 
 - `tray.ps1 -Lib` returns at its `if ($Lib) { return }` line, before the `TileInput` class. So the pure parts live in PowerShell above that line, where `-Lib` tests reach them:
   - `Test-GapEvent` (the filter);
