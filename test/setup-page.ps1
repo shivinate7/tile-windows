@@ -65,6 +65,9 @@
 #     grip and badge, and only a split half gives them up. A half under 40px draws no window title, one initial, and a selected Stay Put
 #     stays inside it. A join says "Joined cell N." with the cell the window was cut from, and a second split names its original cell.
 #     A right-click on an unselected window opens its split menu, though selecting it scrolls the inspector. Join Halves has the category colour.
+#   Split Cell, double-click (split-cell notes): a double-click on the selected window splits it side by side, one POST /layout with the grid
+#     doubled. On an unselected window it selects only, and sends no POST. On a selected locked window it sends no POST. Real pointer and mouse
+#     events (Click-Double), not a synthetic dblclick.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 $ErrorActionPreference = 'Stop'
@@ -1648,6 +1651,24 @@ return { title: h ? h.textContent.replace(/\s+/g, " ").trim() : "", join: fill('
     [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x; y = $y; button = 'right'; buttons = 2; clickCount = 1 })
     [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x; y = $y; button = 'right'; buttons = 0; clickCount = 1 })
   }
+  # A double-click as a mouse makes it: a move to the point, then two presses and releases, the second pair with clickCount 2. The page's
+  # dblclick comes from those events, not from a synthetic dblclick.
+  function Click-Double($sock, [double]$x, [double]$y) {
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x; y = $y })
+    foreach ($n in 1, 2) {
+      [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x; y = $y; button = 'left'; buttons = 1; clickCount = $n })
+      [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x; y = $y; button = 'left'; buttons = 0; clickCount = $n })
+    }
+  }
+  # The centre of window $id's tile, and whether that point lands on the tile and not on a button in it (a click on a button is not the tile's).
+  function Tile-Centre($sock, [int]$id) {
+    Js $sock ('const t = document.querySelector(".tile[data-id=\"__ID__\"]"); if (!t) return null; const r = t.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2; const el = document.elementFromPoint(x, y); return { x: x, y: y, hit: t.contains(el) && !(el && el.closest("button")) };'.Replace('__ID__', "$id"))
+  }
+  # The layout POSTs the page sent after the first $before of them, once the page has settled (its own timers and requests included).
+  # The comma keeps an empty or a one-item list a list: a function's output is unrolled, so a bare one-item array would come back as the item.
+  function Layout-Posts-After($sock, [int]$before) {
+    , @((Js $sock ('await window.__h.settle(); return window.__h.posts("layout").slice(' + $before + ')')) | ? { $_ })
+  }
   # Opens the split menu of window $id with its focus and S, without selecting it first. Answers the menu's read-out, or null.
   function Split-Menu-Open($sock, [int]$id) {
     if ((Js $sock 'return !!document.getElementById("smenu")') -eq $true) { Press-Key $sock 'Escape' 27 }
@@ -1864,6 +1885,78 @@ return { title: h ? h.textContent.replace(/\s+/g, " ").trim() : "", join: fill('
         }
       } finally { Reset-Look $ws }
     }
+  }
+
+  # Double-click (split-cell notes): a double-click on the selected window splits its cell side by side, one POST /layout; a double-click on an
+  # unselected window selects it and does not split; a double-click on a selected locked window does not split. Each sends real pointer
+  # and mouse events (Click-Double), so the page's press, release and dblclick run as they do for a user.
+  Case 'split dblclick: a double-click on the selected window splits its cell side by side: one POST /layout, the grid doubled' {
+    Put-Split (Split-Json 5 2 (0..9 | % { Split-Pin $_ @($_) }))
+    Set-View $ws 1440 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split dblclick: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $sel = Split-Select $ws 1001
+      Check 'split dblclick: window 1001 is selected before the double-click (control)' $sel 'no tile 1001, or Enter did not select it'
+      if (-not $sel) { return }
+      $pt = Tile-Centre $ws 1001
+      Check 'split dblclick: the double-click lands on window 1001, not on a button in it (scope)' ($pt -and $pt.hit -eq $true) 'the point is off window 1001'
+      if (-not ($pt -and $pt.hit -eq $true)) { return }
+      $before = [int](Js $ws 'return window.__h.posts("layout").length')
+      Click-Double $ws ([double]$pt.x) ([double]$pt.y)
+      [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+      $sent = Layout-Posts-After $ws $before
+      Check 'split dblclick: the double-click on the selected window sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+      $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+      Check 'split dblclick: the POST carries the plugged-in setup key' ($sent.Count -eq 1 -and ((ConvertFrom-Json $sent[0].body).key -ceq $plugKey)) 'no POST /layout to read the setup key from, or it carries another key'
+      Split-Verify 'double-click, side by side' $lay 5 2 '2,1' '2,1' 'Refactor the grid solver' '0' $splitWantSide
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split dblclick: a double-click on an unselected window sends no POST /layout and leaves that window selected' {
+    Put-Split (Split-Json 5 2 (0..9 | % { Split-Pin $_ @($_) }))
+    Set-View $ws 1440 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split dblclick: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $other = Split-Select $ws 1002
+      Check 'split dblclick: window 1002 is selected, so window 1001 is not (scope)' ($other -and ((Js $ws 'return selWin') -eq 1002)) 'window 1002 is not selected'
+      if (-not $other) { return }
+      $pt = Tile-Centre $ws 1001
+      Check 'split dblclick: the double-click lands on window 1001, not on a button in it (scope)' ($pt -and $pt.hit -eq $true) 'the point is off window 1001'
+      if (-not ($pt -and $pt.hit -eq $true)) { return }
+      $before = [int](Js $ws 'return window.__h.posts("layout").length')
+      Click-Double $ws ([double]$pt.x) ([double]$pt.y)
+      $sent = Layout-Posts-After $ws $before
+      Check 'split dblclick: a double-click on an unselected window sends no POST /layout' ($sent.Count -eq 0) "POST /layout count: $($sent.Count)"
+      $now = Js $ws 'return selWin'
+      Check 'split dblclick: a double-click on an unselected window selects it' ($now -eq 1001) "selected window: $now"
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split dblclick: a double-click on a selected locked window sends no POST /layout' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0) $true))
+    Set-View $ws 1440 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'split dblclick: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $lk = Js $ws 'const t = document.querySelector(".tile[data-id=\"1001\"]"); return !!t && t.classList.contains("lock")'
+      Check 'split dblclick: window 1001 is locked (scope)' ($lk -eq $true) 'the tile has no lock class'
+      if ($lk -ne $true) { return }
+      $sel = Split-Select $ws 1001
+      Check 'split dblclick: window 1001 is selected before the double-click (control)' $sel 'no tile 1001, or Enter did not select it'
+      if (-not $sel) { return }
+      $pt = Tile-Centre $ws 1001
+      Check 'split dblclick: the double-click lands on window 1001, not on a button in it (scope)' ($pt -and $pt.hit -eq $true) 'the point is off window 1001'
+      if (-not ($pt -and $pt.hit -eq $true)) { return }
+      $before = [int](Js $ws 'return window.__h.posts("layout").length')
+      Click-Double $ws ([double]$pt.x) ([double]$pt.y)
+      $sent = Layout-Posts-After $ws $before
+      Check 'split dblclick: a double-click on the selected locked window sends no POST /layout' ($sent.Count -eq 0) "POST /layout count: $($sent.Count)"
+    } finally { Reset-Look $ws }
   }
 
   Case 'the offline page shows no Follow item on any card and sends no POST' {
