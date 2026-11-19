@@ -1,0 +1,1 @@
+- gap-destroy-quiet-not-recorded: A destroy inside quietMs (1.5 s, set at tray.ps1:494) of an apply, or one seen after another process took the handle (tray.ps1:467), is never recorded in state.destroyed: the skips at tray.ps1:465 and :467 come before the record at :468. A later hide of a reused handle from the same process then goes absent. Seen: 2026-11-19 x1
