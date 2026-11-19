@@ -71,6 +71,12 @@
 #   Split Cell, double-click (split-cell notes): a double-click on the selected window splits it side by side, one POST /layout with the grid
 #     doubled. On an unselected window it selects only, and sends no POST. On a selected locked window it sends no POST. Real pointer and mouse
 #     events (Click-Double), not a synthetic dblclick.
+#   Free Layout (layout-free items 14-29; free-layout-notes F1-F16; plan lane L4). The page's contract, as the checks at the end of this
+#     file read it: the switch is input[role=switch] labelled Free Layout in the Monitor section (the section that holds #monh), and the
+#     key F toggles it. A monitor label reads Free Layout. Each tile is .tile[data-id]. Each space carries data-space (its index in reading
+#     order): an empty one has class empty, a lent one class lent with one i per borrower (class fromL or fromR), a gap that stays class
+#     gap. A save sends one POST /layout whose grids.U1 keeps c and r and holds free.areas (tile.ps1's shape). The page draws each tile at
+#     px() of the engine's rect, and tile.ps1 places each pinned window at its area's pixel rect.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 $ErrorActionPreference = 'Stop'
@@ -226,7 +232,7 @@ if (!window.__h) {
   // The card menu as a user meets it: a card's More button, the Follow items on screen, and a card. An item's label is its first bold text, or its aria-label.
   window.__fa = {
     card: s => { const b = [...document.querySelectorAll("[data-pick]")].find(x => x.dataset.pick === s); return b ? b.closest("article.card") : null },
-    more: s => { const c = window.__fa.card(s); return c ? ([...c.querySelectorAll("button:not([data-pick]):not([data-apply])")].find(x => /\bmore\b|\bmenu\b|⋯/i.test((x.getAttribute("aria-label") || "") + " " + (x.title || "") + " " + x.textContent.trim())) || null) : null },
+    more: s => { const c = window.__fa.card(s); return c ? ([...c.querySelectorAll("button:not([data-pick]):not([data-apply])")].find(x => /\bmore\b|\bmenu\b|â‹¯/i.test((x.getAttribute("aria-label") || "") + " " + (x.title || "") + " " + x.textContent.trim())) || null) : null },
     label: x => (x.getAttribute("aria-label") || (x.querySelector("b") || x).textContent).replace(/\s+/g, " ").trim(),
     items: () => [...document.querySelectorAll("button, [role=menuitem], a")].filter(x => x.getClientRects().length > 0 && /^Follow .+ Again$/.test(window.__fa.label(x))),
     item: t => [...document.querySelectorAll("button, [role=menuitem], a")].find(x => x.getClientRects().length > 0 && window.__fa.label(x) === t) || null
@@ -925,11 +931,12 @@ try {
     $p + 'Answered = false; ' + $p + 'Sends = 0; ' + $p + 'Watch = null; ' + $p + 'Gate = new Promise(r => { ' + $p + 'Open = r }); const g = window.fetch; window.fetch = (u, o) => String(u) === "' + $route + '" && o && String(o.method || "").toUpperCase() === "POST" ? (' + $p + 'Sends++, ' + $watchJs + $held + ') : g(u, o); return true'
   }
   # A key press in the page, sent through the DevTools Input domain as the browser takes it. A key that types text is a keyDown with the text.
-  function Press-Key($sock, [string]$key, [int]$code, [string]$text = '') {
-    $down = @{ type = $(if ($text) { 'keyDown' } else { 'rawKeyDown' }); key = $key; code = $key; windowsVirtualKeyCode = $code; nativeVirtualKeyCode = $code }
+  # $mods: the held modifier keys (CDP bits: Alt 1, Ctrl 2, Shift 8).
+  function Press-Key($sock, [string]$key, [int]$code, [string]$text = '', [int]$mods = 0) {
+    $down = @{ type = $(if ($text) { 'keyDown' } else { 'rawKeyDown' }); key = $key; code = $key; windowsVirtualKeyCode = $code; nativeVirtualKeyCode = $code; modifiers = $mods }
     if ($text) { $down.text = $text }
     [void](Cdp $sock 'Input.dispatchKeyEvent' $down)
-    [void](Cdp $sock 'Input.dispatchKeyEvent' @{ type = 'keyUp'; key = $key; code = $key; windowsVirtualKeyCode = $code; nativeVirtualKeyCode = $code })
+    [void](Cdp $sock 'Input.dispatchKeyEvent' @{ type = 'keyUp'; key = $key; code = $key; windowsVirtualKeyCode = $code; nativeVirtualKeyCode = $code; modifiers = $mods })
   }
   # The Focus card's More button, pressed as a user does, and the wait until its Follow item is on screen. Returns whether the item is there.
   function Open-Follow-Menu($sock) {
@@ -2131,6 +2138,674 @@ const sceneKind = () => {
         Check 'the offline page sends no request, while it loads or after' (@($o.sent).Count -eq 0) "sent: $(@($o.sent) -join ' | ')"
       }
     } finally { if ($preId) { [void](Cdp $ws 'Page.removeScriptToEvaluateOnNewDocument' @{ identifier = $preId }) } }
+  }
+  # ---- Free Layout (layout-free items 14-29; free-layout-notes F1-F16; plan lane L4) -----------------------------------------------
+  # Every check here is new: on main each one FAILs and names its cause (no switch, no seam, no space, no POST, no strip). A missing
+  # control answers null or false, so no lookup throws. Each case's first line names its mutant: the defect a scratch copy of the built
+  # lane must turn red. The times sign is built from a code point, so this file stays ASCII.
+  $tile = Join-Path $root 'tile.ps1'
+  $times = [char]0x00D7
+  $freeJs = @'
+const tileOf = id => document.querySelector('.tile[data-id="' + id + '"]');
+const RR = e => { if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
+const rectsOf = ids => { const o = {}; for (const id of ids) o[id] = RR(tileOf(id)); return o; };
+const monhSec = () => { const h = document.getElementById("monh"); return h ? h.closest("section") : null; };
+const freeSw = () => { const s = monhSec(); if (!s) return null; return [...s.querySelectorAll("input[role=switch]")].find(i => /Free Layout/.test((i.closest("label") || {}).textContent || "")) || null; };
+const swOn = () => { const s = freeSw(); return !!s && !s.disabled && s.getAttribute("aria-disabled") !== "true"; };
+const pageText = () => (document.body.innerText || "").replace(/\s+/g, " ");
+const btnNamed = rx => [...document.querySelectorAll("button")].find(b => b.getClientRects().length > 0 && rx.test(b.textContent.replace(/\s+/g, " ").trim())) || null;
+const monBtn = name => [...document.querySelectorAll("#mon button[data-mon]")].find(b => b.textContent.trim() === name) || null;
+const spaceOf = i => document.querySelector('.space[data-space="' + i + '"]');
+const spRect = r => { const p = px({ x: r[0], y: r[1], w: r[2], h: r[3] }); const st = document.getElementById("stage").getBoundingClientRect(); return { l: st.left + parseFloat(p.left), t: st.top + parseFloat(p.top), w: parseFloat(p.width), h: parseFloat(p.height) }; };
+const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.getBoundingClientRect(); return Math.abs(b.left - s.l) <= tol && Math.abs(b.top - s.t) <= tol && Math.abs(b.width - s.w) <= tol && Math.abs(b.height - s.h) <= tol; };
+'@
+  # The ultrawide's ten windows in cell order: window i sits in cell i (row by row, five to a row) and is pin i of the layout.
+  $flWins = @(
+    @{ id = 1001; app = 'claude'; match = 'Refactor the grid solver' }
+    @{ id = 1002; app = 'claude'; match = 'Pin parser edge cases' }
+    @{ id = 1005; app = 'chrome'; match = 'Pull request 212' }
+    @{ id = 1006; app = 'chrome'; match = 'Quarterly roadmap' }
+    @{ id = 1010; app = 'explorer'; match = 'Projects' }
+    @{ id = 1008; app = 'WindowsTerminal'; match = 'pwsh - tiler' }
+    @{ id = 1009; app = 'WindowsTerminal'; match = 'pwsh - docs watch' }
+    @{ id = 1011; app = 'explorer'; match = 'Downloads' }
+    @{ id = 1012; app = 'ms-teams'; match = 'Design sync' }
+    @{ id = 1014; app = 'notepad'; match = 'todo.txt' }
+  )
+  $flIds = @($flWins | % { [int]$_.id })
+  # Pixel edge of a fraction of the 4096 by 1680 ultrawide work area, rounded as tile.ps1's Get-AreaPixelRects rounds it.
+  function Fl-Px([double]$f, [int]$n) { [int][Math]::Round([Math]::Round($f, 9) * $n) }
+  # An area's rect in pixels, as the engine places it: @(x, y, w, h).
+  function Fl-AreaPx($rect) { $x0 = Fl-Px $rect[0] 4096; $x1 = Fl-Px ($rect[0] + $rect[2]) 4096; $y0 = Fl-Px $rect[1] 1680; $y1 = Fl-Px ($rect[1] + $rect[3]) 1680; @($x0, $y0, ($x1 - $x0), ($y1 - $y0)) }
+  # Cell i of the 5 by 2 board, as a free area's rect in fractions.
+  function Fl-Cell([int]$i) { @([double](($i % 5) / 5), [double]([Math]::Floor($i / 5) / 2), 0.2, 0.5) }
+  # The board's pins and areas. Window i is pin i unless cell i is in $noPin (an empty space). $lock: the windows whose pin is locked.
+  function Fl-Board([int[]]$noPin = @(), [int[]]$lock = @()) {
+    $pins = @(); $map = @{}
+    for ($i = 0; $i -lt 10; $i++) {
+      if ($noPin -contains $i) { continue }
+      $p = [pscustomobject]@{ app = $flWins[$i].app; match = $flWins[$i].match; mon = 'U1'; slots = @($i) }
+      if ($lock -contains $i) { $p | Add-Member -NotePropertyName lock -NotePropertyValue $true }
+      $map[$i] = $pins.Count; $pins += $p
+    }
+    $areas = @()
+    for ($i = 0; $i -lt 10; $i++) {
+      $a = [ordered]@{ rect = @(Fl-Cell $i) }
+      if ($map.ContainsKey($i)) { $a['pin'] = $map[$i] }
+      $areas += $a
+    }
+    [pscustomobject]@{ areas = $areas; pins = @($pins) }
+  }
+  # The saved layout of the plugged setup: grids.U1 keeps c 5 and r 2 and, unless -grid, holds the board's areas as free.areas.
+  function Fl-Json($board, [switch]$grid, [hashtable]$fillOver = @{}) {
+    $f = [ordered]@{ mon = 'U1'; apps = @(); skip = @(); sort = 'app' }
+    foreach ($k in $fillOver.Keys) { $f[$k] = $fillOver[$k] }
+    $g = [ordered]@{ c = 5; r = 2 }
+    if (-not $grid) { $g['free'] = [ordered]@{ areas = @($board.areas) } }
+    ConvertTo-Json -Depth 12 -Compress -InputObject ([ordered]@{ grids = [ordered]@{ U1 = $g }; pins = @($board.pins); zones = @(); fill = $f; bay = @() })
+  }
+  # The aligned snapshot: each board window sits at its cell, so the page and the engine start from the same rects.
+  $flSnapObj = ConvertFrom-Json $snapAText
+  for ($i = 0; $i -lt 10; $i++) {
+    $sw1 = @($flSnapObj.windows | ? { [int]$_.id -eq $flWins[$i].id })[0]
+    if ($sw1) { $p = Fl-AreaPx (Fl-Cell $i); $sw1.x = $p[0]; $sw1.y = $p[1]; $sw1.w = $p[2]; $sw1.h = $p[3] }
+  }
+  $flSnap = ConvertTo-Json -Depth 10 -Compress -InputObject $flSnapObj
+  # The aligned snapshot without some windows (closed), or with some minimized.
+  function Fl-Snap([int[]]$closed = @(), [int[]]$minimized = @()) {
+    $o = ConvertFrom-Json $flSnap
+    $o.windows = @($o.windows | ? { $closed -notcontains [int]$_.id })
+    foreach ($w in @($o.windows | ? { $minimized -contains [int]$_.id })) { $w | Add-Member -Force -NotePropertyName min -NotePropertyValue $true }
+    ConvertTo-Json -Depth 10 -Compress -InputObject $o
+  }
+  # Saves $layoutJson for the plugged setup, opens the page on Focus with $snapText, and selects the ultrawide. Answers whether it opened.
+  function Fl-Open($sock, [string]$layoutJson, [string]$snapText = $flSnap) {
+    Put-Split $layoutJson
+    $ok = Open-Page $sock $url 'focus' $snapText
+    if ($ok) { [void](Fl-Select $sock 'Ultrawide') }
+    $ok
+  }
+  # Selects a monitor in the Monitor section by its name, and waits until the page shows it selected.
+  function Fl-Select($sock, [string]$name) {
+    [void](Js $sock ($freeJs + 'const b = monBtn("' + $name + '"); if (!b) return false; b.click(); return true'))
+    WaitFor $sock ('[...document.querySelectorAll("#mon button[data-mon]")].some(x => x.textContent.trim() === "' + $name + '" && x.getAttribute("aria-pressed") === "true")') 10
+  }
+  # The POSTs the page sent to /layout and /config since it opened, read once it has settled. Each /layout body is parsed.
+  function Fl-Saves($sock) {
+    $p = Js $sock 'await window.__h.settle(); return { layout: window.__h.posts("layout"), config: window.__h.posts("config") }'
+    [pscustomobject]@{ layout = @(@($p.layout) | ? { $_ } | % { ConvertFrom-Json $_.body }); config = @(@($p.config) | ? { $_ }) }
+  }
+  # The rects of the given tiles now: id -> {l, t, r, b, w, h}, or null for a tile not on the board.
+  function Fl-Rects($sock, [int[]]$ids) { Js $sock ($freeJs + 'return rectsOf([' + (($ids | % { "$_" }) -join ',') + ']);') }
+  # The ids (of $ids) whose tile rect moved by more than half a pixel between two reads. A tile missing from either read counts as moved.
+  function Fl-Moved($before, $after, [int[]]$ids) {
+    @($ids | ? {
+      $b = $before."$_"; $a = $after."$_"
+      if (-not $b -or -not $a) { return $true }
+      ([Math]::Abs($b.l - $a.l) -gt 0.5) -or ([Math]::Abs($b.t - $a.t) -gt 0.5) -or ([Math]::Abs($b.r - $a.r) -gt 0.5) -or ([Math]::Abs($b.b - $a.b) -gt 0.5)
+    })
+  }
+  # The point on the seam between two side-by-side tiles (left, right), and between two stacked tiles (top, bottom).
+  function Fl-SeamV($rects, [int]$left, [int]$right) { $a = $rects."$left"; $b = $rects."$right"; @((($a.r + $b.l) / 2), (($a.t + $a.b) / 2)) }
+  function Fl-SeamH($rects, [int]$top, [int]$bottom) { $a = $rects."$top"; $b = $rects."$bottom"; @((($a.l + $a.r) / 2), (($a.b + $b.t) / 2)) }
+  # The centre of a tile, from a read of the rects.
+  function Fl-Centre($rects, [int]$id) { $a = $rects."$id"; @(($a.l + $a.w / 2), ($a.t + $a.h / 2)) }
+  # A left click as a mouse makes it, at the point.
+  function Fl-Click($sock, [double]$x, [double]$y) {
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x; y = $y })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x; y = $y; button = 'left'; buttons = 1; clickCount = 1 })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x; y = $y; button = 'left'; buttons = 0; clickCount = 1 })
+    [void](Js $sock 'await window.__h.settle(); return true')
+  }
+  # A pointer drag as a mouse makes it: a press at (x0, y0), ten moves to (x1, y1), a release. Shift is held when $shift. $probe, a page
+  # expression, is read while the button is still down, and its value is returned.
+  function Fl-Drag($sock, [double]$x0, [double]$y0, [double]$x1, [double]$y1, [bool]$shift = $false, [string]$probe = '') {
+    $m = $(if ($shift) { 8 } else { 0 })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x0; y = $y0; modifiers = $m })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x0; y = $y0; button = 'left'; buttons = 1; clickCount = 1; modifiers = $m })
+    for ($s = 1; $s -le 10; $s++) { [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x0 + ($x1 - $x0) * $s / 10; y = $y0 + ($y1 - $y0) * $s / 10; button = 'left'; buttons = 1; modifiers = $m }) }
+    $mid = $(if ($probe) { Js $sock $probe } else { $null })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x1; y = $y1; button = 'left'; buttons = 0; clickCount = 1; modifiers = $m })
+    [void](Js $sock 'await window.__h.settle(); return true')
+    $mid
+  }
+  # The area of window $id in a saved layout: the one whose pin names that window, or $null.
+  function Fl-AreaOf($layout, [int]$id) {
+    $mt = $flWins[[Array]::IndexOf($flIds, $id)].match
+    @(@($layout.grids.U1.free.areas) | ? { $null -ne $_.pin -and @($layout.pins)[[int]$_.pin].match -eq $mt })[0]
+  }
+  # The saved areas against what a case expects: $want maps a window id to its rect in fractions, 'any' (not checked) or 'gone'
+  # (no space). A window not in $want keeps its cell. Answers one line per window that differs.
+  function Fl-AreaDiff($layout, [hashtable]$want) {
+    @(for ($i = 0; $i -lt 10; $i++) {
+      $id = $flIds[$i]; $a = Fl-AreaOf $layout $id
+      if ($want.ContainsKey($id) -and $want[$id] -eq 'gone') { if ($a) { "window $id still has a space" }; continue }
+      if ($want.ContainsKey($id) -and $want[$id] -eq 'any') { continue }
+      if ($null -eq $a) { "window $id has no space"; continue }
+      $exp = $(if ($want.ContainsKey($id)) { $want[$id] } else { Fl-Cell $i })
+      $d = 0; for ($k = 0; $k -lt 4; $k++) { $d = [Math]::Max($d, [Math]::Abs([double]$a.rect[$k] - [double]$exp[$k])) }
+      if ($d -gt 0.0006) { "window ${id}: space $((@($a.rect) | % { [Math]::Round($_, 4) }) -join ','), want $((@($exp) | % { [Math]::Round($_, 4) }) -join ',')" }
+    })
+  }
+  # The engine's answer for the focus scene on the plugged setup, from the snapshot file (-DryRun: nothing moves). $extra: more switches.
+  function Fl-Engine([string[]]$extra = @()) {
+    $p = Start-Child ("-File `"$tile`" -Scene focus -From `"$snapPath`" -Json " + ($extra -join ' ') + " -DryRun")
+    $out = $p.StandardOutput.ReadToEnd(); [void]$p.WaitForExit(60000)
+    # tile.ps1 writes its warnings to stdout too, so the answer is the last line that is a JSON object.
+    $line = @(($out -split "`r?`n") | ? { $_.StartsWith('{') }) | Select-Object -Last 1
+    if (-not $line) { return $null }
+    try { ConvertFrom-Json $line } catch { $null }
+  }
+  # tile.ps1 places each pinned window at its space's pixel rect. Answers one line per window that differs (none when it agrees).
+  function Fl-EngineDiff($eng, $layout) {
+    if (-not $eng -or -not $eng.placed) { return @('tile.ps1 placed no windows') }
+    $out = @()
+    foreach ($a in @(@($layout.grids.U1.free.areas) | ? { $null -ne $_.pin })) {
+      $mt = @($layout.pins)[[int]$a.pin].match
+      $wid = [int64](@($flWins | ? { $_.match -eq $mt })[0].id)
+      $got = @($eng.placed | ? { [int64]$_.id -eq $wid })[0]
+      if (-not $got) { $out += "${mt}: not placed"; continue }
+      $g = @([int]$got.x, [int]$got.y, [int]$got.w, [int]$got.h); $want = Fl-AreaPx $a.rect
+      if (($g -join ',') -ne ($want -join ',')) { $out += "${mt}: engine $($g -join ','), space $($want -join ',')" }
+    }
+    @($out)
+  }
+  # The page draws a tile at px() of the engine's rect. Answers the difference in words, or '' when the tile is where the engine says.
+  function Fl-PageVsEngine($sock, [int]$id, $g) {
+    $pg = Js $sock ($freeJs + 'const t = tileOf(' + $id + '); if (!t) return null; const p = px({ x: ' + [int]$g.x + ', y: ' + [int]$g.y + ', w: ' + [int]$g.w + ', h: ' + [int]$g.h + ' }); return { wL: parseFloat(p.left), wT: parseFloat(p.top), wW: parseFloat(p.width), wH: parseFloat(p.height), gL: parseFloat(t.style.left), gT: parseFloat(t.style.top), gW: parseFloat(t.style.width), gH: parseFloat(t.style.height) };')
+    if (-not $pg) { return "tile $id is not on the board" }
+    $dd = [Math]::Max([Math]::Max([Math]::Abs($pg.wL - $pg.gL), [Math]::Abs($pg.wT - $pg.gT)), [Math]::Max([Math]::Abs($pg.wW - $pg.gW), [Math]::Abs($pg.wH - $pg.gH)))
+    if ($dd -gt 1) { "tile $id drawn at $($pg.gL),$($pg.gT) $($pg.gW)x$($pg.gH), the engine says $($pg.wL),$($pg.wT) $($pg.wW)x$($pg.wH)" } else { '' }
+  }
+  # The Monitor section's switch is on and can be used (not disabled), as an expression for WaitFor.
+  $swOnCond = '(() => { const h = document.getElementById("monh"); const s = h && h.closest("section"); if (!s) return false; const i = [...s.querySelectorAll("input[role=switch]")].find(x => /Free Layout/.test((x.closest("label") || {}).textContent || "")); return !!i && !i.disabled && i.getAttribute("aria-disabled") !== "true"; })()'
+  $lastPath = Join-Path $runDir 'free-last.json'
+  $kd = 1 / 48
+
+  foreach ($v in @(@{ tag = 'switch'; route = 'click' }, @{ tag = 'F key'; route = 'key' })) {
+    $tag = $v.tag; $route = $v.route
+    Case "free-on ($tag): switching the ultrawide to Free Layout moves no window and sends one POST /layout" {
+      # Mutant: the switch re-lays the board (a tile's rect moves), saves twice, or writes the config.
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board) -grid)
+      Check "free-on ($tag): the page opens on Focus with the 5 by 2 grid (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $before = Fl-Rects $ws $flIds
+      $hasSw = Js $ws ($freeJs + 'return !!freeSw();')
+      Check "free-on ($tag): the Monitor section has a Free Layout switch" ($hasSw -eq $true) 'no Free Layout switch in the Monitor section of the ultrawide'
+      if ($route -eq 'click') { [void](Js $ws ($freeJs + 'const s = freeSw(); if (s) s.click(); return !!s;')) }
+      else { [void](Js $ws 'if (document.activeElement) document.activeElement.blur(); return true;'); Press-Key $ws 'f' 70 'f' }
+      $s = Fl-Saves $ws
+      $after = Fl-Rects $ws $flIds
+      Check "free-on ($tag): one POST /layout was sent" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      Check "free-on ($tag): no POST /config was sent" ($s.config.Count -eq 0) "POST /config count: $($s.config.Count)"
+      $mv = @(Fl-Moved $before $after $flIds)
+      Check "free-on ($tag): no tile's rect changed on the board" ($mv.Count -eq 0) "moved or missing: $($mv -join ', ')"
+      if ($s.layout.Count -ne 1) { return }
+      $L1 = $s.layout[0].layout
+      Check "free-on ($tag): the saved layout keeps grids U1 c 5 and r 2" ($L1.grids.U1.c -eq 5 -and $L1.grids.U1.r -eq 2) "c $($L1.grids.U1.c), r $($L1.grids.U1.r)"
+      $nAreas = @($L1.grids.U1.free.areas).Count
+      Check "free-on ($tag): the saved layout holds one space per cell (10)" ($nAreas -eq 10) "spaces: $nAreas"
+      $dd = @(Fl-AreaDiff $L1 @{})
+      Check "free-on ($tag): each space is its cell and holds that cell's window" ($dd.Count -eq 0) ($dd -join ' | ')
+      $lbl = Js $ws ($freeJs + 'return [...document.querySelectorAll(".num")].some(e => e.textContent.trim() === "Free Layout");')
+      Check "free-on ($tag): the monitor label reads Free Layout, in place of 5 $times 2" ($lbl -eq $true) 'no monitor label reads Free Layout'
+      $st = Js $ws ($freeJs + 'const sec = monhSec(); if (!sec) return null; const b = [...sec.querySelectorAll("[data-g]")]; return { n: b.length, off: b.length > 0 && b.every(x => x.disabled || x.getAttribute("aria-disabled") === "true"), why: pageText().indexOf("Free Layout is on. Turn it off to change the grid.") >= 0 };')
+      Check "free-on ($tag): Columns and Rows are off, with the reason" ($st -and $st.off -and $st.why) "steppers: $(if ($st) { "$($st.n) found, all off $($st.off), reason shown $($st.why)" } else { 'no Monitor section' })"
+      $call = Js $ws ($freeJs + 'return pageText().indexOf("Free Layout is on. Nothing moved.") >= 0;')
+      Check "free-on ($tag): the callout reads Free Layout is on. Nothing moved." ($call -eq $true) 'no such callout on the page'
+    }
+  }
+
+  Case 'free-on (1 by 1): a laptop with one window has its switch off, with the reason and a Split Cell button; a split turns it on' {
+    # Mutant: the switch stays on over a 1 by 1 monitor, with no reason and no Split Cell button beside it.
+    $o = ConvertFrom-Json (Fl-Json (Fl-Board) -grid)
+    $o.grids | Add-Member -NotePropertyName L1 -NotePropertyValue ([pscustomobject]@{ c = 1; r = 1 })
+    $o.pins = @($o.pins) + [pscustomobject]@{ app = 'Spotify'; match = 'Spotify Free'; mon = 'L1'; slots = @(0) }
+    $opened = Fl-Open $ws (ConvertTo-Json -Depth 12 -Compress -InputObject $o)
+    Check '1 by 1: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $selLap = Fl-Select $ws 'Laptop'
+    Check '1 by 1: the Laptop is selected (scope)' $selLap 'the Laptop button did not select in time'
+    if (-not $selLap) { return }
+    $st = Js $ws ($freeJs + 'const s = freeSw(); if (!s) return null; return { off: s.disabled || s.getAttribute("aria-disabled") === "true", why: pageText().indexOf("One window fills this monitor. Split it first.") >= 0, split: !!btnNamed(/^Split Cell$/) };')
+    Check '1 by 1: the Free Layout switch is off' ($st -and $st.off) 'no Free Layout switch, or it is on'
+    Check '1 by 1: the switch gives its reason, One window fills this monitor. Split it first.' ($st -and $st.why) 'the reason is not on the page'
+    Check '1 by 1: a Split Cell button sits beside the switch' ($st -and $st.split) 'no Split Cell button in the Monitor section'
+    if (-not ($st -and $st.split)) { return }
+    [void](Js $ws ($freeJs + 'const b = btnNamed(/^Split Cell$/); if (b) b.click(); return !!b;'))
+    $menu = WaitFor $ws 'document.querySelectorAll("[role=menuitem]").length > 0' 10
+    Check '1 by 1: Split Cell opens the split menu' $menu 'no split menu opened in time'
+    if (-not $menu) { return }
+    [void](Js $ws 'const it = [...document.querySelectorAll("[role=menuitem]")].find(x => x.getClientRects().length > 0); if (it) it.click(); return true;')
+    $s = Fl-Saves $ws
+    Check '1 by 1: the split sends one POST /layout' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    $on = WaitFor $ws $swOnCond 15
+    Check '1 by 1: after the split the switch is on' $on 'the switch stays off after the split'
+  }
+
+  foreach ($v in @(@{ tag = 'top row'; lid = 1001; rid = 1002; oth = @(1008, 1009) }, @{ tag = 'bottom row'; lid = 1008; rid = 1009; oth = @(1001, 1002) })) {
+    $tag = $v.tag; $lid = $v.lid; $rid = $v.rid; $oth = $v.oth
+    Case "drag-segment ($tag): a plain drag moves that row's part of the line, and no other; no gap opens" {
+      # Mutant: a plain drag moves both rows (the Shift move), or the drag leaves a gap between the two spaces.
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+      Check "drag-segment ($tag): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $r0 = Fl-Rects $ws $flIds
+      $okTiles = ($null -ne $r0."$lid") -and ($null -ne $r0."$rid")
+      Check "drag-segment ($tag): both windows are on the board (scope)" $okTiles "tile $lid or $rid is not on the board"
+      if (-not $okTiles) { return }
+      $sp = Fl-SeamV $r0 $lid $rid
+      [void](Fl-Drag $ws $sp[0] $sp[1] ($sp[0] + 40) $sp[1])
+      $r1 = Fl-Rects $ws $flIds
+      $dL = $r1."$lid".w - $r0."$lid".w; $dR = $r1."$rid".w - $r0."$rid".w
+      Check "drag-segment ($tag): the left window grows by at least 20 px" ($dL -ge 20) ("grew by " + [Math]::Round($dL, 1) + " px")
+      Check "drag-segment ($tag): the right window gives up the same width" ([Math]::Abs($dL + $dR) -le 1.5) ("left " + [Math]::Round($dL, 1) + ", right " + [Math]::Round($dR, 1))
+      $mv = @(Fl-Moved $r0 $r1 $oth)
+      Check "drag-segment ($tag): the other row keeps its rects" ($mv.Count -eq 0) "moved: $($mv -join ', ')"
+      $s = Fl-Saves $ws
+      Check "drag-segment ($tag): one POST /layout" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      if ($s.layout.Count -ne 1) { return }
+      $L1 = $s.layout[0].layout
+      $wAny = @{}; $wAny[$lid] = 'any'; $wAny[$rid] = 'any'
+      $dd = @(Fl-AreaDiff $L1 $wAny)
+      Check "drag-segment ($tag): only the two spaces of that row changed" ($dd.Count -eq 0) ($dd -join ' | ')
+      $aL = Fl-AreaOf $L1 $lid; $aR = Fl-AreaOf $L1 $rid
+      $meet = [bool]($aL -and $aR -and ([Math]::Abs(($aL.rect[0] + $aL.rect[2]) - $aR.rect[0]) -lt 1e-6))
+      $tot = 0; foreach ($a in @($L1.grids.U1.free.areas)) { $tot += $a.rect[2] * $a.rect[3] }
+      Check "drag-segment ($tag): the two spaces meet, and the spaces still cover the monitor" ($meet -and [Math]::Abs($tot - 1) -lt 1e-6) "meet: $meet, total area: $tot"
+      $ed = @(Fl-EngineDiff (Fl-Engine) $L1)
+      Check "drag-segment ($tag): tile.ps1 places each window in its saved space" ($ed.Count -eq 0) ($ed -join ' | ')
+    }
+  }
+
+  foreach ($v in @(@{ tag = 'top row'; lid = 1001; rid = 1002; l2 = 1008; r2 = 1009 }, @{ tag = 'bottom row'; lid = 1008; rid = 1009; l2 = 1001; r2 = 1002 })) {
+    $tag = $v.tag; $lid = $v.lid; $rid = $v.rid; $l2 = $v.l2; $r2 = $v.r2
+    Case "drag-line ($tag, Shift): a Shift-drag moves the whole line, both rows by the same amount" {
+      # Mutant: Shift moves the grabbed row only (the plain drag), or the two rows move by different amounts.
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+      Check "drag-line ($tag): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $r0 = Fl-Rects $ws $flIds
+      $okTiles = ($null -ne $r0."$lid") -and ($null -ne $r0."$rid") -and ($null -ne $r0."$l2") -and ($null -ne $r0."$r2")
+      Check "drag-line ($tag): the four windows are on the board (scope)" $okTiles 'a tile of the line is not on the board'
+      if (-not $okTiles) { return }
+      $sp = Fl-SeamV $r0 $lid $rid
+      [void](Fl-Drag $ws $sp[0] $sp[1] ($sp[0] + 40) $sp[1] $true)
+      $r1 = Fl-Rects $ws $flIds
+      $dA = $r1."$lid".w - $r0."$lid".w; $dB = $r1."$l2".w - $r0."$l2".w
+      Check "drag-line ($tag): the left window of the grabbed row grows by at least 20 px" ($dA -ge 20) ("grew by " + [Math]::Round($dA, 1) + " px")
+      Check "drag-line ($tag): the left window of the other row grows by the same amount" ([Math]::Abs($dA - $dB) -le 1.5) ("grew by " + [Math]::Round($dB, 1) + " px")
+      Check "drag-line ($tag): the right windows of both rows give up that width" ([Math]::Abs(($r1."$rid".w - $r0."$rid".w) + $dA) -le 1.5 -and [Math]::Abs(($r1."$r2".w - $r0."$r2".w) + $dA) -le 1.5) 'a right window did not shrink by the same amount'
+      $s = Fl-Saves $ws
+      Check "drag-line ($tag): one POST /layout" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      if ($s.layout.Count -ne 1) { return }
+      $L1 = $s.layout[0].layout
+      $wAny = @{}; $wAny[$lid] = 'any'; $wAny[$rid] = 'any'; $wAny[$l2] = 'any'; $wAny[$r2] = 'any'
+      $dd = @(Fl-AreaDiff $L1 $wAny)
+      Check "drag-line ($tag): only the spaces of the line changed" ($dd.Count -eq 0) ($dd -join ' | ')
+      $tot = 0; foreach ($a in @($L1.grids.U1.free.areas)) { $tot += $a.rect[2] * $a.rect[3] }
+      Check "drag-line ($tag): the spaces still cover the monitor" ([Math]::Abs($tot - 1) -lt 1e-6) "total area: $tot"
+      $ed = @(Fl-EngineDiff (Fl-Engine) $L1)
+      Check "drag-line ($tag): tile.ps1 places each window in its saved space" ($ed.Count -eq 0) ($ed -join ' | ')
+    }
+  }
+
+  Case "drag-line (Go Around, F5): a Shift-drag across a locked window moves the free part and leaves the locked row; the tip names what stayed" {
+    # Mutant: Shift refuses (nothing moves), or Shift moves the locked row's part too, or the tip does not name Terminal.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @() @(5)))
+    Check 'go-around: the page opens on Focus with Terminal locked (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $r0 = Fl-Rects $ws $flIds
+    $okTiles = ($null -ne $r0.'1001') -and ($null -ne $r0.'1002') -and ($null -ne $r0.'1008') -and ($null -ne $r0.'1009')
+    Check 'go-around: the four windows are on the board (scope)' $okTiles 'a tile of the line is not on the board'
+    if (-not $okTiles) { return }
+    $sp = Fl-SeamV $r0 1001 1002
+    $pre = Js $ws ($freeJs + 'return pageText();')
+    $mid = Fl-Drag $ws $sp[0] $sp[1] ($sp[0] + 40) $sp[1] $true ($freeJs + 'return pageText();')
+    $r1 = Fl-Rects $ws $flIds
+    $dTop = $r1.'1001'.w - $r0.'1001'.w
+    Check 'go-around: the free part moves: the top-left window grows by at least 20 px' ($dTop -ge 20) ("grew by " + [Math]::Round($dTop, 1) + " px")
+    $mv = @(Fl-Moved $r0 $r1 @(1008, 1009))
+    Check 'go-around: the locked row keeps its rects: Terminal and its neighbour stay' ($mv.Count -eq 0) "moved: $($mv -join ', ')"
+    $tipNow = ([regex]::Matches([string]$mid, 'Terminal')).Count -gt ([regex]::Matches([string]$pre, 'Terminal')).Count
+    Check 'go-around: the tip or status names Terminal as the part that stayed' $tipNow 'no new word Terminal appears while the drag is held'
+    $s = Fl-Saves $ws
+    Check 'go-around: one POST /layout' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -eq 1) {
+      $wAny = @{}; $wAny[1001] = 'any'; $wAny[1002] = 'any'
+      $dd = @(Fl-AreaDiff $s.layout[0].layout $wAny)
+      Check 'go-around: the locked row''s spaces are saved as they were' ($dd.Count -eq 0) ($dd -join ' | ')
+    }
+  }
+
+  foreach ($v in @(
+      @{ tag = 'side'; lid = 1001; rid = 1002; dx = -600; dy = 0; min = 400; axis = 2 },
+      @{ tag = 'top and bottom'; lid = 1001; rid = 1008; dx = 0; dy = -600; min = 300; axis = 3 })) {
+    $tag = $v.tag; $lid = $v.lid; $rid = $v.rid
+    Case "drag-floor ($tag): a drag stops at the 400 $times 300 px floor, with its tip, and the space is not smaller" {
+      # Mutant: no floor (the space shrinks past 400 or 300 px), or no tip.
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+      Check "drag-floor ($tag): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $r0 = Fl-Rects $ws $flIds
+      $okTiles = ($null -ne $r0."$lid") -and ($null -ne $r0."$rid")
+      Check "drag-floor ($tag): both windows are on the board (scope)" $okTiles "tile $lid or $rid is not on the board"
+      if (-not $okTiles) { return }
+      $sp = $(if ($v.dx -ne 0) { Fl-SeamV $r0 $lid $rid } else { Fl-SeamH $r0 $lid $rid })
+      $mid = Fl-Drag $ws $sp[0] $sp[1] ($sp[0] + $v.dx) ($sp[1] + $v.dy) $false ($freeJs + 'return pageText();')
+      $tip = ([string]$mid).Contains('Smallest size') -and ([string]$mid).Contains("400 $times 300 px")
+      Check "drag-floor ($tag): the tip reads Smallest size: 400 $times 300 px. The line stops here." $tip 'no floor tip while the drag is held'
+      $s = Fl-Saves $ws
+      Check "drag-floor ($tag): one POST /layout" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      if ($s.layout.Count -ne 1) { return }
+      $aL = Fl-AreaOf $s.layout[0].layout $lid
+      $px = if ($aL) { Fl-AreaPx $aL.rect } else { @(0, 0, 0, 0) }
+      $got = $px[$v.axis]
+      Check "drag-floor ($tag): the space is not smaller than $($v.min) px on that side" ($got -ge ($v.min - 1) -and $got -le ($v.min + 2)) "space is $got px"
+    }
+  }
+
+  $kdCases = @(
+    @{ tag = 'Shift+Right moves the right edge in its row'; mods = 8; key = 'ArrowRight'; code = 39; sel = 1001; want = @{ 1001 = @(0, 0, (0.2 + $kd), 0.5); 1002 = @((0.2 + $kd), 0, (0.2 - $kd), 0.5) } },
+    @{ tag = 'Ctrl+Shift+Left moves the left edge in its row'; mods = 10; key = 'ArrowLeft'; code = 37; sel = 1002; want = @{ 1001 = @(0, 0, (0.2 - $kd), 0.5); 1002 = @((0.2 - $kd), 0, (0.2 + $kd), 0.5) } },
+    @{ tag = 'Alt+Shift+Right moves the whole line'; mods = 9; key = 'ArrowRight'; code = 39; sel = 1001; want = @{ 1001 = @(0, 0, (0.2 + $kd), 0.5); 1002 = @((0.2 + $kd), 0, (0.2 - $kd), 0.5); 1008 = @(0, 0.5, (0.2 + $kd), 0.5); 1009 = @((0.2 + $kd), 0.5, (0.2 - $kd), 0.5) } },
+    @{ tag = 'a plain Right moves the window to the next space'; mods = 0; key = 'ArrowRight'; code = 39; sel = 1001; want = @{ 1001 = @(0.2, 0, 0.2, 0.5); 1002 = @(0, 0, 0.2, 0.5) } }
+  )
+  foreach ($v in $kdCases) {
+    Case "keys ($($v.tag)): one 48th of the monitor, as the pointer moves it" {
+      # Mutant: Shift+arrows move the line in every row, the step is a cell, or a plain arrow resizes instead of moving the window.
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+      Check "keys ($($v.tag)): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $r0 = Fl-Rects $ws $flIds
+      $c = Fl-Centre $r0 $v.sel
+      Fl-Click $ws $c[0] $c[1]
+      [void](Js $ws ($freeJs + 'const t = tileOf(' + $v.sel + '); if (t) t.focus({ preventScroll: true }); return true;'))
+      $focused = Js $ws ($freeJs + 'const a = document.activeElement; return !!a && !!a.dataset && a.dataset.id === "' + $v.sel + '";')
+      Check "keys ($($v.tag)): the window is selected and has focus (scope)" ($focused -eq $true) "window $($v.sel) did not take focus"
+      if ($focused -ne $true) { return }
+      Press-Key $ws $v.key $v.code '' $v.mods
+      $s = Fl-Saves $ws
+      Check "keys ($($v.tag)): one POST /layout" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      if ($s.layout.Count -ne 1) { return }
+      $dd = @(Fl-AreaDiff $s.layout[0].layout $v.want)
+      Check "keys ($($v.tag)): the spaces move as the pointer would move them" ($dd.Count -eq 0) ($dd -join ' | ')
+    }
+  }
+
+  Case 'guard (green on main): on a grid monitor Shift+Right still resizes by a cell, with one POST /layout and no free areas' {
+    # Mutant: the Free Layout keys reach a grid monitor, so a free area is written.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board) -grid)
+    Check 'grid keys: the page opens on the grid (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $r0 = Fl-Rects $ws $flIds
+    $c = Fl-Centre $r0 1001
+    Fl-Click $ws $c[0] $c[1]
+    [void](Js $ws ($freeJs + 'const t = tileOf(1001); if (t) t.focus({ preventScroll: true }); return true;'))
+    Press-Key $ws 'ArrowRight' 39 '' 8
+    $s = Fl-Saves $ws
+    Check 'grid keys: one POST /layout' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    Check 'grid keys: no free areas are written on a grid monitor' ($s.layout.Count -eq 1 -and $null -eq $s.layout[0].layout.grids.U1.free) 'a free area was written on a grid monitor'
+  }
+
+  Case 'assign-drop: a window dragged from Windows That Stay Put onto an empty space pins it there, and the space says so while the drag is over it' {
+    # Mutant: the drop pins nothing, pins the window to another space, or the space does not say where the window goes.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(9)) -fillOver @{ off = $true })
+    Check 'assign-drop: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $empty9 = Js $ws ($freeJs + 'const s = spaceOf(9); return !!s && s.classList.contains("empty");')
+    Check 'assign-drop: space 9 is drawn empty (scope)' ($empty9 -eq $true) 'space 9 is not drawn as an empty space'
+    if ($empty9 -ne $true) { return }
+    $from = Js $ws ($freeJs + 'const c = document.querySelector("[data-bay=\"1014\"]"); const r = RR(c); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;')
+    $to = Js $ws ($freeJs + 'const r = RR(spaceOf(9)); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;')
+    Check 'assign-drop: the window in Windows That Stay Put and space 9 are both on screen (scope)' ($from -and $to) 'the chip or space 9 is not on screen'
+    if (-not ($from -and $to)) { return }
+    $mid = Fl-Drag $ws $from.x $from.y $to.x $to.y $false ($freeJs + 'return pageText();')
+    Check 'assign-drop: while the window is over the space, the space says Notepad goes here' ([string]$mid -match 'Notepad goes here') 'no Notepad goes here while the drag is over space 9'
+    $s = Fl-Saves $ws
+    Check 'assign-drop: one POST /layout after the drop' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $L1 = $s.layout[0].layout
+    $a9 = @($L1.grids.U1.free.areas)[9]
+    $pin9 = $(if ($a9 -and $null -ne $a9.pin) { @($L1.pins)[[int]$a9.pin] } else { $null })
+    Check 'assign-drop: space 9 holds the window: its pin names notepad' ($pin9 -and $pin9.app -eq 'notepad') 'space 9 has no pin for Notepad'
+    $inside = Js $ws ($freeJs + 'const t = RR(tileOf(1014)), s = RR(spaceOf(9)); if (!t || !s) return false; const cx = t.l + t.w / 2, cy = t.t + t.h / 2; return cx >= s.l && cx <= s.r && cy >= s.t && cy <= s.b;')
+    Check 'assign-drop: Notepad is drawn inside space 9' ($inside -eq $true) 'Notepad is not drawn inside space 9'
+  }
+
+  Case "assign-fill (F9): a new window takes the first empty space in reading order, and the next empty space reads Fills next" {
+    # Mutant: the fill takes the last empty space, or the page draws the new window where tile.ps1 does not place it.
+    # Only the board's windows are open, so the fill has no other unpinned window to take the spaces: 1012 is closed, and 1014 is the new one.
+    $none = Fl-Snap @(1012, 1014, 1003, 1004, 1007, 1013, 1015, 1016)
+    $fillAll = @{ apps = @('*') }
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(8, 9)) -fillOver $fillAll) $none
+    Check 'assign-fill: the page opens with spaces 8 and 9 empty (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $two = Js $ws ($freeJs + 'return [8, 9].map(i => { const s = spaceOf(i); return !!s && s.classList.contains("empty"); });')
+    Check 'assign-fill: spaces 8 and 9 are drawn empty (scope)' ((@($two) -join ',') -eq 'True,True') "drawn empty: $(@($two) -join ',')"
+    $withNp = Fl-Snap @(1012, 1003, 1004, 1007, 1013, 1015, 1016)
+    $opened2 = Fl-Open $ws (Fl-Json (Fl-Board @(8, 9)) -fillOver $fillAll) $withNp
+    Check 'assign-fill: the page opens with Notepad open (control)' $opened2 'the page did not open in time with Notepad open'
+    if (-not $opened2) { return }
+    $eng = Fl-Engine
+    $np = @($eng.placed | ? { [int64]$_.id -eq 1014 })[0]
+    $want8 = Fl-AreaPx (Fl-Cell 8)
+    $npTxt = $(if ($np) { "$($np.x),$($np.y) $($np.w)x$($np.h)" } else { 'nowhere' })
+    Check 'assign-fill: tile.ps1 places Notepad in space 8, the first empty space in reading order' ($np -and (@([int]$np.x, [int]$np.y, [int]$np.w, [int]$np.h) -join ',') -eq ($want8 -join ',')) "engine places it at $npTxt, space 8 is $($want8 -join ',')"
+    $pg = $(if ($np) { Fl-PageVsEngine $ws 1014 $np } else { 'no engine rect for Notepad' })
+    Check 'assign-fill: the page draws Notepad where tile.ps1 places it' ($pg -eq '') $pg
+    $fills = Js $ws ($freeJs + 'const s = spaceOf(9); return !!s && /Fills next/.test(s.textContent);')
+    Check 'assign-fill: space 9 reads Fills next' ($fills -eq $true) 'space 9 does not read Fills next'
+  }
+
+  foreach ($kind in @('minimized', 'closed')) {
+    Case "gap-lent ($kind, F10): the space of a $kind window is drawn lent, striped by its borrowers; the saved layout does not change" {
+      # Mutant: the neighbours grow into the space (Grown Neighbours), the space is drawn plain, or the page saves on open.
+      $snap = $(if ($kind -eq 'closed') { Fl-Snap @(1002) } else { Fl-Snap @() @(1002) })
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board)) $snap
+      Check "gap-lent ($kind): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $s = Fl-Saves $ws
+      Check "gap-lent ($kind): opening the page sends no save" ($s.layout.Count -eq 0 -and $s.config.Count -eq 0) "saves on open: $($s.layout.Count) /layout, $($s.config.Count) /config"
+      $a0 = (Fl-AreaPx (Fl-Cell 0)) -join ','; $a1 = (Fl-AreaPx (Fl-Cell 1)) -join ','; $a2 = (Fl-AreaPx (Fl-Cell 2)) -join ','
+      $lent = Js $ws ($freeJs + 'const s = spaceOf(1); if (!s) return { has: false }; const parts = [...s.querySelectorAll(":scope > i")]; return { has: s.classList.contains("lent"), near: nearRect(s, spRect([' + $a1 + ']), 2), n: parts.length, fromL: parts.filter(p => p.classList.contains("fromL")).length, fromR: parts.filter(p => p.classList.contains("fromR")).length, striped: parts.length > 0 && parts.every(p => /repeating-linear-gradient/.test(getComputedStyle(p).backgroundImage)), nb: nearRect(tileOf(1001), spRect([' + $a0 + ']), 2) && nearRect(tileOf(1005), spRect([' + $a2 + ']), 2) };')
+      Check "gap-lent ($kind): the space of window 1002 is drawn lent" ($lent -and $lent.has -eq $true) 'no lent space at space 1'
+      Check "gap-lent ($kind): the lent space sits at its saved place" ($lent -and $lent.near -eq $true) 'the lent space is not at its saved rect'
+      Check "gap-lent ($kind): two parts, one from the left neighbour and one from the right" ($lent -and $lent.n -eq 2 -and $lent.fromL -eq 1 -and $lent.fromR -eq 1) "parts: $(if ($lent) { "$($lent.n), fromL $($lent.fromL), fromR $($lent.fromR)" } else { 'none' })"
+      Check "gap-lent ($kind): each part is striped" ($lent -and $lent.striped -eq $true) 'a part is not striped'
+      Check "gap-lent ($kind): the neighbours keep their saved spaces" ($lent -and $lent.nb -eq $true) 'a neighbour grew into the space'
+    }
+  }
+
+  Case "gap-stays (F11): with no neighbour able to take a closed window's space, the space stays a dashed gap that says so, and Close Gap is not offered" {
+    # Mutant: a neighbour grows into the gap, Close Gap is offered for it, or tile.ps1 moves a window into it.
+    $closedSnap = Fl-Snap @(1002)
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @() @(0, 2, 6))) $closedSnap
+    Check 'gap-stays: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $a0 = (Fl-AreaPx (Fl-Cell 0)) -join ','; $a1 = (Fl-AreaPx (Fl-Cell 1)) -join ','; $a2 = (Fl-AreaPx (Fl-Cell 2)) -join ','
+    $g = Js $ws ($freeJs + 'const s = spaceOf(1); if (!s) return { has: false }; return { has: s.classList.contains("gap"), near: nearRect(s, spRect([' + $a1 + ']), 2), stays: /Stays empty/.test(s.textContent), nogrow: nearRect(tileOf(1001), spRect([' + $a0 + ']), 2) && nearRect(tileOf(1005), spRect([' + $a2 + ']), 2) };')
+    Check 'gap-stays: the space is drawn as a gap at its place' ($g -and $g.has -eq $true -and $g.near -eq $true) 'no gap at space 1'
+    Check 'gap-stays: the gap says Stays empty' ($g -and $g.stays -eq $true) 'the gap does not say Stays empty'
+    Check 'gap-stays: no neighbour grows into the gap' ($g -and $g.nogrow -eq $true) 'a neighbour grew into the gap'
+    $c = Js $ws ($freeJs + 'const r = RR(spaceOf(1)); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;')
+    if ($c) { Fl-Click $ws $c.x $c.y }
+    $ins = Js $ws ($freeJs + 'return { unlock: !!btnNamed(/^Unlock /), close: !!btnNamed(/^Close Gap$/) };')
+    Check 'gap-stays: the inspector offers an Unlock button' ($ins -and $ins.unlock -eq $true) 'no Unlock button for the gap'
+    Check 'gap-stays: Close Gap is not offered for the gap' ($ins -and $ins.close -eq $false) 'Close Gap is offered for a gap that stays'
+    [IO.File]::WriteAllText($lastPath, '[{"id":1002,"x":819,"y":0,"w":819,"h":840}]', $utf8)
+    $gf = Fl-Engine @('-GapFill', '-Absent', '1002', '-Last', "`"$lastPath`"")
+    $gfN = $(if ($gf) { @($gf.placed).Count } else { -1 })
+    Check 'gap-stays: tile.ps1 moves no window into the gap' ($gfN -eq 0) "placed by the gap-fill run: $gfN"
+    Put-Split (Fl-Json (Fl-Board @() @(2, 6)))
+    $gf2 = Fl-Engine @('-GapFill', '-Absent', '1002', '-Last', "`"$lastPath`"")
+    $gf2Own = @(@($gf2.placed) | ? { [int64]$_.id -eq 1001 }).Count
+    Check 'gap-stays (control): with the left window unlocked, tile.ps1 gives it the gap' ($gf2Own -eq 1) "1001 placed by the run: $gf2Own"
+  }
+
+  Case 'close-gap (F12): Close Gap on an empty space previews both strips, then shares the space at the middle and saves once' {
+    # Mutant: one neighbour takes the whole space (item 17 in full), no strip is previewed, or the gap is not removed.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(6)) -fillOver @{ off = $true })
+    Check 'close-gap: the page opens with Free Layout on and space 6 empty (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $c = Js $ws ($freeJs + 'const r = RR(spaceOf(6)); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;')
+    if ($c) { Fl-Click $ws $c.x $c.y }
+    $has = Js $ws ($freeJs + 'return !!btnNamed(/^Close Gap$/);')
+    Check 'close-gap: the selected empty space offers Close Gap' ($has -eq $true) 'no Close Gap button for the selected empty space'
+    if ($has -ne $true) { return }
+    $s1 = (Fl-AreaPx @(0.2, 0.5, 0.1, 0.5)) -join ','; $s2 = (Fl-AreaPx @(0.3, 0.5, 0.1, 0.5)) -join ','
+    $prev = Js $ws ($freeJs + 'const b = btnNamed(/^Close Gap$/); if (b) b.focus(); const near = s => [...document.querySelectorAll("#stage *")].some(e => nearRect(e, s, 2)); return { left: near(spRect([' + $s1 + '])), right: near(spRect([' + $s2 + '])) };')
+    Check 'close-gap: while Close Gap has focus, the left strip is previewed' ($prev -and $prev.left -eq $true) 'no preview of the strip the left neighbour takes'
+    Check 'close-gap: while Close Gap has focus, the right strip is previewed' ($prev -and $prev.right -eq $true) 'no preview of the strip the right neighbour takes'
+    [void](Js $ws ($freeJs + 'const b = btnNamed(/^Close Gap$/); if (b) b.click(); return !!b;'))
+    $s = Fl-Saves $ws
+    Check 'close-gap: one POST /layout' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $L1 = $s.layout[0].layout
+    $n9 = @($L1.grids.U1.free.areas).Count
+    Check 'close-gap: the empty space is removed (9 spaces left)' ($n9 -eq 9) "spaces: $n9"
+    $wGap = @{}; $wGap[1009] = 'gone'; $wGap[1008] = @(0, 0.5, 0.3, 0.5); $wGap[1011] = @(0.3, 0.5, 0.3, 0.5)
+    $dd = @(Fl-AreaDiff $L1 $wGap)
+    Check 'close-gap: the neighbours meet at the middle: Terminal takes 0 to 0.3, Downloads 0.3 to 0.6' ($dd.Count -eq 0) ($dd -join ' | ')
+    $ed = @(Fl-EngineDiff (Fl-Engine) $L1)
+    Check 'close-gap: tile.ps1 places each window in its saved space' ($ed.Count -eq 0) ($ed -join ' | ')
+  }
+
+  foreach ($v in @(@{ tag = 'side by side'; item = 'Chrome Keeps Left' }, @{ tag = 'stacked'; item = 'Chrome Keeps Top' })) {
+    $tag = $v.tag; $item = $v.item
+    Case "split-area ($tag): a split in Free Layout adds one line and one empty half; each group says Adds a line" {
+      # Mutant: the split doubles the grid, the empty half holds a pin, or the menu does not name the space.
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+      Check "split-area ($tag): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $r0 = Fl-Rects $ws $flIds
+      if (-not $r0.'1005') { Check "split-area ($tag): Chrome is on the board (scope)" $false 'Chrome is not on the board'; return }
+      $c = Fl-Centre $r0 1005
+      Click-Right $ws $c[0] $c[1]
+      $menu = WaitFor $ws '[...document.querySelectorAll("[role=menu]")].some(m => m.getClientRects().length > 0 && /Keeps/.test(m.textContent))' 10
+      Check "split-area ($tag): the right-click opens the split menu" $menu 'no split menu opened in time'
+      if (-not $menu) { return }
+      $mt = Js $ws ($freeJs + 'const m = [...document.querySelectorAll("[role=menu]")].find(x => x.getClientRects().length > 0 && /Keeps/.test(x.textContent)); return { heading: /Split Chrome.{1,2}s Space/.test(m.textContent), adds: (m.textContent.match(/Adds a line/g) || []).length };')
+      Check "split-area ($tag): the menu names Chrome's space" ($mt -and $mt.heading -eq $true) "the menu does not read Split Chrome's Space"
+      Check "split-area ($tag): each group says Adds a line" ($mt -and $mt.adds -eq 2) "Adds a line counted: $(if ($mt) { $mt.adds } else { 0 })"
+      [void](Js $ws ($freeJs + 'const it = [...document.querySelectorAll("[role=menuitem]")].find(x => x.textContent.replace(/\s+/g, " ").trim() === "' + $item + '"); if (it) it.click(); return !!it;'))
+      $s = Fl-Saves $ws
+      Check "split-area ($tag): one POST /layout" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      if ($s.layout.Count -ne 1) { return }
+      $L1 = $s.layout[0].layout
+      $areas = @($L1.grids.U1.free.areas)
+      Check "split-area ($tag): the monitor has 11 spaces, and the grid does not double" ($areas.Count -eq 11 -and $L1.grids.U1.c -eq 5 -and $L1.grids.U1.r -eq 2) "spaces: $($areas.Count), c $($L1.grids.U1.c), r $($L1.grids.U1.r)"
+      $ac = Fl-AreaOf $L1 1005
+      $half = $(if ($ac) { $ac.rect[2] * $ac.rect[3] } else { 0 })
+      Check "split-area ($tag): Chrome keeps one half of its space (0.05 of the monitor)" ([Math]::Abs($half - 0.05) -lt 1e-4) "Chrome's space is $half of the monitor"
+      $unp = @($areas | ? { $null -eq $_.pin }).Count
+      Check "split-area ($tag): the new half is one empty space, with no pin" ($unp -eq 1) "spaces with no pin: $unp"
+      $tot = 0; foreach ($a in $areas) { $tot += $a.rect[2] * $a.rect[3] }
+      Check "split-area ($tag): the spaces still cover the monitor" ([Math]::Abs($tot - 1) -lt 1e-6) "total area: $tot"
+    }
+  }
+
+  foreach ($choice in @('Snap to Cells', 'Restore the Grid Layout')) {
+    Case "back ($choice): switching Free Layout off opens Back to the Grid; nothing saves until Back to Grid, which saves once" {
+      # Mutant: the switch saves before Back to Grid, Snap is not the default, or Restore does not give the grid back.
+      $gridJson = Fl-Json (Fl-Board) -grid
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+      Check "back ($choice): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      [void](Js $ws ($freeJs + 'const s = freeSw(); if (s) s.click(); return !!s;'))
+      $pop = WaitFor $ws '[...document.querySelectorAll("[role=dialog]")].some(d => /Back to the Grid/.test(d.textContent))' 10
+      Check "back ($choice): switching off opens Back to the Grid" $pop 'no Back to the Grid popover'
+      if (-not $pop) { return }
+      $snapDef = Js $ws ($freeJs + 'const r = [...document.querySelectorAll("input[type=radio]")].find(x => /Snap to Cells/.test((x.closest("label") || {}).textContent || "")); return r ? r.checked : null;')
+      Check "back ($choice): Snap to Cells is the default" ($snapDef -eq $true) 'Snap to Cells is not checked by default'
+      $pre = Fl-Saves $ws
+      Check "back ($choice): nothing is saved before Back to Grid" ($pre.layout.Count -eq 0) "saves: $($pre.layout.Count)"
+      if ($choice -ne 'Snap to Cells') {
+        [void](Js $ws ($freeJs + 'const l = [...document.querySelectorAll("label")].find(x => /Restore the Grid Layout/.test(x.textContent)); const r = l && l.querySelector("input[type=radio]"); if (r) r.click(); return !!r;'))
+      }
+      [void](Js $ws ($freeJs + 'const b = btnNamed(/^Back to Grid$/); if (b) b.click(); return !!b;'))
+      $s = Fl-Saves $ws
+      Check "back ($choice): Back to Grid sends one POST /layout" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      if ($s.layout.Count -ne 1) { return }
+      $L1 = $s.layout[0].layout
+      Check "back ($choice): the saved layout has no free areas" ($null -eq $L1.grids.U1.free) 'the saved layout still holds free areas'
+      if ($choice -eq 'Snap to Cells') {
+        $badSnap = @(for ($i = 0; $i -lt 10; $i++) { $got = Split-SlotsOf $L1 $flWins[$i].match; if ($got -ne "$i") { "$($flWins[$i].match) at slot $got" } })
+        Check 'back (Snap to Cells): the grid stays 5 by 2, and each window snaps into its own cell' ($L1.grids.U1.c -eq 5 -and $L1.grids.U1.r -eq 2 -and $badSnap.Count -eq 0) ($badSnap -join ' | ')
+      } else {
+        $g0 = ConvertFrom-Json $gridJson
+        Check 'back (Restore): the grid is the one from before Free Layout' ((Canon $L1.grids.U1) -ceq (Canon $g0.grids.U1)) 'the restored grid differs from the grid before Free Layout'
+      }
+    }
+  }
+
+  Case 'empty (F16): a Free Layout monitor with every space empty keeps its lines, reads Empty, and its one control sits under the board' {
+    # Mutant: a space is drawn with no Empty word, the sentence is missing, or the control covers a space.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)) -fillOver @{ off = $true })
+    Check 'empty: the page opens with every space empty (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $e = Js $ws ($freeJs + 'const es = [...document.querySelectorAll(".space.empty")]; const b = btnNamed(/^Turn On Fill Empty Cells$/); const bottom = es.length ? Math.max(...es.map(x => RR(x).b)) : 0; return { n: es.length, allEmpty: es.length > 0 && es.every(x => /Empty/.test(x.textContent)), sentence: pageText().indexOf("No window is placed on the ultrawide. Drag one here from Windows That Stay Put, or let windows fill the spaces.") >= 0, ctl: !!b, under: !!b && RR(b).t >= bottom - 1 };')
+    Check 'empty: all ten spaces are drawn empty' ($e -and $e.n -eq 10) "empty spaces drawn: $(if ($e) { $e.n } else { 'none' })"
+    Check 'empty: each space reads Empty' ($e -and $e.allEmpty -eq $true) 'a space does not read Empty'
+    Check 'empty: one sentence says what fills the spaces' ($e -and $e.sentence -eq $true) 'the sentence about what fills the spaces is not on the page'
+    Check 'empty: one control, Turn On Fill Empty Cells, is on the page' ($e -and $e.ctl -eq $true) 'no Turn On Fill Empty Cells control'
+    Check 'empty: the control sits under the board, covering no space' ($e -and $e.under -eq $true) 'the control sits on the board'
+  }
+
+  Case 'err-save (F14): a plain drag whose save fails turns the setup strip amber, with Not saved, Undo still works, and Try Again' {
+    # Mutant: a failed save shows nothing, or the strip drops Undo or Try Again.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+    Check 'err-save: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    [void](Js $ws ($freeJs + 'const prev = window.fetch; window.fetch = (u, o) => (String(u) === "layout" && o && String(o.method || "").toUpperCase() === "POST") ? Promise.resolve(new Response("the app server stopped answering", { status: 500 })) : prev(u, o); return true;'))
+    $r0 = Fl-Rects $ws $flIds
+    if (-not ($r0.'1001' -and $r0.'1002')) { Check 'err-save: Refactor and Pin parser are on the board (scope)' $false 'a tile of the seam is not on the board'; return }
+    $sp = Fl-SeamV $r0 1001 1002
+    [void](Fl-Drag $ws $sp[0] $sp[1] ($sp[0] + 40) $sp[1])
+    [void](WaitFor $ws 'document.getElementById("setbar").classList.contains("warn")' 15)
+    $st = Js $ws $stripJs
+    Check 'err-save: the setup strip turns amber' ($st -and $st.warn -eq $true) 'the setup strip is not amber after the failed save'
+    Check 'err-save: the strip says Not saved.' ($st -and $st.text -match 'Not saved\.') "strip reads: $(if ($st) { $st.text } else { 'nothing' })"
+    Check 'err-save: the strip says Undo still works' ($st -and $st.text -match 'Undo still works') 'the strip does not say Undo still works'
+    Check 'err-save: Try Again is offered' ($st -and @($st.buttons) -contains 'Try Again') "buttons: $(if ($st) { @($st.buttons) -join ' | ' } else { 'none' })"
+  }
+
+  foreach ($v in @(
+      @{ tag = 'an app will not fit its space'; note = 'off size: is 410x840, restore rect 410x840, wanted 500x840'; raw = 'off size'; words = 'will not go under 500 px wide' },
+      @{ tag = 'a pin no space holds'; note = 'not in a free area'; raw = 'not in a free area'; words = '' })) {
+    $tag = $v.tag; $note = $v.note; $raw = $v.raw; $words = $v.words
+    Case "err-apply ($tag, F14): the result row says it in words, with a fix button, and the engine's words behind a disclosure" {
+      # Mutant: the raw engine text shows on the row, or the row offers no fix.
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+      Check "err-apply ($tag): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      # The engine's reply to a scene run (POST scene): an app placed off size, or a pin no space holds, as tile.ps1 returns them.
+      $reply = if ($words) {
+        [ordered]@{ placed = @([ordered]@{ id = 1001; app = 'claude'; title = 'Refactor the grid solver'; ok = $false; note = $note; x = 0; y = 0; w = 410; h = 840; from = [ordered]@{ x = 0; y = 0; w = 819; h = 840 }; pin = 0; zone = -1; slots = @(0) }); missing = @(); left = @() }
+      } else {
+        [ordered]@{ placed = @(); missing = @([ordered]@{ app = 'claude'; match = 'Refactor the grid solver'; why = $note }); left = @() }
+      }
+      $replyLit = ConvertTo-Json -Depth 8 -Compress -InputObject $reply
+      [void](Js $ws ($freeJs + 'const prev = window.fetch; window.fetch = (u, o) => (String(u) === "scene" && o && String(o.method || "").toUpperCase() === "POST") ? Promise.resolve(new Response(' + (ConvertTo-Json -Compress $replyLit) + ', { status: 200, headers: { "Content-Type": "application/json" } })) : prev(u, o); return true;'))
+      [void](Js $ws 'const b = document.getElementById("apply"); if (b) b.click(); return !!b;')
+      # The page lists the results in #reslist; the results panel opens from the toast's More control, as a user opens it.
+      $listed = WaitFor $ws 'document.querySelectorAll("#reslist li").length > 0' 15
+      if ($listed) { [void](Js $ws 'const r = document.getElementById("results"); if (r && r.hidden) { const m = document.getElementById("toastMore"); if (m) m.click(); } return true;') }
+      $shown = $listed -and (WaitFor $ws '!!document.getElementById("results") && !document.getElementById("results").hidden' 10)
+      Check "err-apply ($tag): the apply results row shows" $shown 'no apply results row in time'
+      if (-not $shown) { return }
+      $rs = Js $ws ($freeJs + 'const res = document.getElementById("results"); if (!res) return null; const sums = [...res.querySelectorAll("details summary")].map(x => x.textContent.replace(/\s+/g, " ").trim()); const buttons = [...res.querySelectorAll("button")].map(x => x.textContent.replace(/\s+/g, " ").trim()); const det = [...res.querySelectorAll("details")].map(x => x.textContent.replace(/\s+/g, " ")).join(" "); const clone = res.cloneNode(true); clone.querySelectorAll("details").forEach(x => x.remove()); return { visible: clone.textContent.replace(/\s+/g, " "), det: det, sums: sums, buttons: buttons };')
+      $vis = $(if ($rs) { [string]$rs.visible } else { '' })
+      $det = $(if ($rs) { [string]$rs.det } else { '' })
+      Check "err-apply ($tag): the engine's words are not on the row itself" (-not $vis.Contains($raw)) "the row shows: $raw"
+      Check "err-apply ($tag): the engine's words sit behind What the server said" ($det.Contains($raw) -and (@($rs.sums) -match 'What the server said').Count -ge 1) 'no disclosure What the server said holds the engine text'
+      if ($words) {
+        Check "err-apply ($tag): the row says it in words: will not go under 500 px wide" ($vis.Contains($words)) 'the row does not say it in words'
+        Check "err-apply ($tag): a Give It 500 px button leads on" (@($rs.buttons) -contains 'Give It 500 px') 'no Give It 500 px button'
+      } else {
+        Check "err-apply ($tag): the row offers a fix button besides Close" (@(@($rs.buttons) | ? { $_ -ne 'Close' }).Count -ge 1) "buttons: $(@($rs.buttons) -join ' | ')"
+      }
+    }
   }
 } catch {
   $script:fail++; "FAIL  page cases stopped: $($_.Exception.Message)"
