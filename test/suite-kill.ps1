@@ -45,6 +45,14 @@ if ($Scenario) {
   $script:fail = 0
   . ([scriptblock]::Create($loops[0].Extent.Text))
   "COUNT $script:fail"
+  # The fake children's processes, read before this host exits: a job ends whatever it holds when its handle closes at exit, which
+  # would hide a stop that did not end them.
+  foreach ($pf in 'hang.pid', 'grand.pid') {
+    $f = Join-Path $Folder $pf
+    if (-not (Test-Path -LiteralPath $f)) { continue }
+    $p = Get-Process -Id ([int](Get-Content -Raw -LiteralPath $f).Trim()) -ErrorAction SilentlyContinue
+    "ALIVE $pf $([int][bool]($p -and -not $p.WaitForExit(5000)))"
+  }
   exit 0
 }
 
@@ -57,12 +65,6 @@ $run = Join-Path $runsRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item -I
 
 # The pid a fake child wrote, or 0 when it wrote none.
 function Read-Pid([string]$file) { $id = 0; if ([int]::TryParse((Read-Text $file).Trim(), [ref]$id)) { $id } else { 0 } }
-# Whether a process this case started is still running, once it has had 5 s to end. A process that is gone is not alive.
-function Test-Alive([int]$id) {
-  $p = Get-Process -Id $id -ErrorAction SilentlyContinue
-  if (-not $p) { return $false }
-  return -not $p.WaitForExit(5000)
-}
 # Runs one scenario's host, in this run's folder, and waits up to the guard. A host still running at the guard is stopped alone, so
 # what its children left running shows as it is.
 function Start-Host([string]$scenario, [string]$dir, [int]$guardMs) {
@@ -104,7 +106,7 @@ try {
   Check 'the stopped child gets a FAIL line' ($hang.Out -match '(?m)^FAIL  hang ') "host output: $($hang.Out)"
   Check 'the child after the stopped one is read and printed' ($hang.Out -match 'PASS  normal child is read') "host output: $($hang.Out)"
   Check 'the stopped child and the child after it are counted' ($hang.Out -match '(?m)^COUNT 2') "host output: $($hang.Out)"
-  Check 'no process of the stopped child survives its stop' (-not (Test-Alive $hangPid)) "pid $hangPid is still running"
+  Check 'no process of the stopped child survives its stop' ($hang.Out -match '(?m)^ALIVE hang\.pid 0') "host output: $($hang.Out)"
 
   # Held: a child exits, but a grandchild still holds its output. The child is read, the child after it is read and counted, and the
   # grandchild is stopped with the child.
@@ -118,7 +120,7 @@ try {
   Check 'a child whose output a grandchild holds is read' ($held.Out -match 'PASS  holder child is read') "host output: $($held.Out)"
   Check 'the child after it is read when a grandchild held the earlier output' ($held.Out -match 'PASS  normal child is read') "host output: $($held.Out)"
   Check 'the child after it is counted' ($held.Out -match '(?m)^COUNT 1') "host output: $($held.Out)"
-  Check 'the grandchild that held the output is stopped with its child' (-not (Test-Alive $grandPid)) "pid $grandPid is still running"
+  Check 'the grandchild that held the output is stopped with its child' ($held.Out -match '(?m)^ALIVE grand\.pid 0') "host output: $($held.Out)"
 
   # Parent throw: the run stops before its collection loop. The children it started are stopped and read in the finally, so their
   # output is not dropped.
