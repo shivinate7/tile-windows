@@ -447,6 +447,8 @@ function Test-GapEvent($event, $idObject, $idChild, $hwnd, $tiledSet) {
 # Only a monitor whose grid has free.areas (Free Layout on) takes part; a handle on any other monitor stays out of the run.
 # $pidOf (optional): a scriptblock that gives the process id that owns a handle now, 0 when the window is gone. A tiled entry that carries procId (taken at apply)
 # skips an event when the handle now belongs to another process: Windows reuses a closed window's handle. A gone window reads 0, which is no mismatch.
+# A destroy (0x8001) is final: the state keeps those handles in state.destroyed (made here when missing, dropped with the state at the next apply), and every
+# later event on one is ignored, so a reused handle from the same process is not taken for the window. Minimize then restore and hide then show are not destroys.
 function Step-GapFill($state, $events, [datetime]$now, $pidOf = $null) {
   $mon = @{}; $own = @{}; foreach ($t in @($state.tiled)) { $mon["$($t.hwnd)"] = [string]$t.mon; $own["$($t.hwnd)"] = $t.procId }
   $set = @($state.tiled | % { $_.hwnd })
@@ -456,11 +458,14 @@ function Step-GapFill($state, $events, [datetime]$now, $pidOf = $null) {
     $free[$m] = [bool]($g -and $g.free -and @($g.free.areas).Count)
   }
   $last = @{}
+  if ($null -eq $state.PSObject.Properties['destroyed']) { $state | Add-Member -NotePropertyName destroyed -NotePropertyValue @{} }
   foreach ($e in @($events | Sort-Object time)) {
     if (-not (Test-GapEvent $e.event $e.idObject $e.idChild $e.hwnd $set)) { continue }
+    if ($state.destroyed.ContainsKey("$($e.hwnd)")) { continue }
     if ($state.lastApply -and ($e.time - $state.lastApply).TotalMilliseconds -lt $state.quietMs) { continue }
     if (-not $free[$mon["$($e.hwnd)"]]) { continue }
     if ($pidOf -and $own["$($e.hwnd)"]) { $livePid = [uint32](& $pidOf $e.hwnd); if ($livePid -and $livePid -ne [uint32]$own["$($e.hwnd)"]) { continue } }
+    if ($e.event -eq 0x8001) { $state.destroyed["$($e.hwnd)"] = $true }
     $last["$($e.hwnd)"] = [pscustomobject]@{ hwnd = $e.hwnd; gone = ($e.event -in $TileGapHide) }
   }
   $abs = @{}; foreach ($h in @($state.absent)) { $abs["$h"] = $h }
@@ -478,7 +483,7 @@ function Step-GapFill($state, $events, [datetime]$now, $pidOf = $null) {
 # which the tray cannot see: each layout's grids count, and a monitor two layouts both give is left out, since it cannot be told which the run used. arg: what Apply-Scene passed to tile.ps1 -Scene. last: handle -> the rect the tray last gave it (for -Last).
 function New-GapState($sc, $placed, [datetime]$at, $plugged = $null, [string]$mode = '', $arg = $null) {
   $use = $sc
-  if ($mode -and $sc.claudeGrid -and $sc.claudeGrid.$mode) { try { $use = ConvertFrom-Json (Get-GridSceneJson $sc $sc.claudeGrid.$mode $plugged) } catch { } }
+  if ($mode -and $sc.claudeGrid -and $sc.claudeGrid.$mode) { try { $use = ConvertFrom-Json (Get-GridSceneJson $sc $sc.claudeGrid.$mode $plugged) } catch { Add-TileLog ([string]$sc.id) "Gap-fill kept the scene's own grids: the $mode grid could not be read ($($_.Exception.Message))." } }
   $key = Get-TileKnownSetupKey $plugged
   $own = Get-TileLayoutEntry $use $key
   $srcs = if ($own) { @($own.Value.grids) } elseif ($key) { @($use.grids) } else { @($use.grids) + @(if ($use.layouts) { $use.layouts.PSObject.Properties | % { $_.Value.grids } }) }
