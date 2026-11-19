@@ -397,19 +397,17 @@ if ($l3) {
 }
 
 # 4. A tilewindows://open link with no tray running starts the tray. TILE_DRY_START names the file the start path writes its command to,
-# so nothing starts. The control is a link that is neither open nor undo: it starts nothing. (No undo link runs in a child: with no tray,
-# it would show a real toast.)
+# so nothing starts. Only the open link runs in a child: its start path returns before any toast. The link that is neither open nor undo
+# runs in this process (case (c)), so no child reaches the real toast sink.
 function Invoke-LinkChild([string]$link, [string]$dry) {
   $env:TILE_DRY_START = $dry
   $kid = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$Tray`"", '-Link', $link -PassThru -WindowStyle Hidden
   if (-not $kid.WaitForExit(30000)) { Stop-Process -Id $kid.Id -Force -ErrorAction SilentlyContinue }
   $env:TILE_DRY_START = $null
 }
-$startOpen = Join-Path $runDir 'start-open.txt'; $startOther = Join-Path $runDir 'start-other.txt'
+$startOpen = Join-Path $runDir 'start-open.txt'
 Invoke-LinkChild 'tilewindows://open' $startOpen
-Invoke-LinkChild 'tilewindows://nope' $startOther
 Check 'a tilewindows://open link with no tray running starts the tray (the start call is recorded)' ([bool]((Test-Path -LiteralPath $startOpen) -and ([IO.File]::ReadAllText($startOpen) -match 'tray\.ps1'))) "no start call in $startOpen"
-Check 'control: a link that is neither open nor undo starts nothing' (-not (Test-Path -LiteralPath $startOther)) "a start call was recorded in $startOther"
 
 # 5. Undo marks its record done: a second click on the same toast does not report the restored windows as moved since.
 Reset-Run
@@ -547,6 +545,8 @@ Check 'uninstall.ps1 removes the tilewindows protocol (a call to Get-UndoProtoco
 function Toast-Links($notice) { $x = [xml](Get-RunToastXml $notice); @([string]$x.toast.launch) + @($x.toast.actions.action | ForEach-Object { [string]$_.arguments }) }
 # The links that fail the tray's $linkOk, each as [uri] reads it. [uri] puts the slash before ? (a link with no path reads as scheme://host/?query).
 function Unread-Links($links) { @($links | ForEach-Object { ([uri]$_).AbsoluteUri } | Where-Object { $_ -notmatch $linkOk }) }
+# With $linkOk null, Unread-Links rejects nothing and (a) passes for any link, so the pattern must be read from tray.ps1 before (a) runs.
+Check 'tray.ps1 gives the link check $linkOk as a non-empty pattern (read before the (a) checks)' ([bool]($linkOk -is [string] -and $linkOk.Length -gt 0)) "read '$linkOk'"
 
 # (a) Every launch a toast carries passes the link check, as Windows reads it.
 Scope '(a) the launches of the toasts' 'Get-RunToastXml'
@@ -629,14 +629,37 @@ if ($launchOk) {
   # (c) A link that fails the link check gets a visible note from the launcher (a toast or a balloon through the fake sink), not a silent exit.
   $ctrlC = Invoke-LauncherHere ('tilewindows://undo?run=' + $idL) $false
   Check '(c) control: with no tray running, a link that passes the check shows a note (the restarted toast)' ([bool]($ctrlC.shown -ge 1)) "shown $($ctrlC.shown), error '$($ctrlC.err)'"
+  $startFile = Join-Path $runDir 'launcher-start.txt'; Remove-Item -LiteralPath $startFile -Force -ErrorAction SilentlyContinue
   $cNo = Invoke-LauncherHere 'tilewindows://nope' $false
   Check '(c) a link that fails the link check, with no tray running, shows a note, not a silent exit' ([bool]($cNo.shown -ge 1)) "shown $($cNo.shown), error '$($cNo.err)'"
+  Check '(c) control: a link that is neither open nor undo, with no tray running, starts nothing (no start call is written)' (-not (Test-Path -LiteralPath $startFile)) "a start call was written to $startFile"
   $cYes = Invoke-LauncherHere 'tilewindows://nope' $true
   Check '(c) a link that fails the link check, with a tray running, shows a note, not a silent exit' ([bool]($cYes.shown -ge 1)) "shown $($cYes.shown), error '$($cYes.err)'"
 }
 
-# (d) An Undo writes its log line. Invoke-Link logs only when $NoApply is off, so each click below runs with it off for that click only.
-# The fake $tile moves nothing, so no window is placed.
+# (d) Each Undo click writes exactly one log line. The line names the run's scene, says the outcome, and carries the active scene
+# (the scene on screen after the click, the first argument of Add-TileLog). Invoke-Link logs only when $NoApply is off, so a click
+# runs with it off through ClickLogged. The fake $tile moves nothing, so no window is placed.
+# One click with the log on. $onScreen is the scene on screen: state.json's active, which Get-ActiveId reads from $TileState.
+function ClickLogged([string]$link, $wins, [string]$onScreen = '') {
+  $stateFile = Join-Path $script:linkHome 'state.json'
+  [IO.File]::WriteAllText($stateFile, (ConvertTo-Json -Compress ([pscustomobject]@{ active = $onScreen; log = @() })), $utf8)
+  $saveState = $script:TileState; $script:TileState = $stateFile
+  $script:logLines.Clear(); $script:NoApply = $false
+  try { $c = ClickLink $link $wins } finally { $script:NoApply = $true; $script:TileState = $saveState }
+  [pscustomobject]@{ click = $c; lines = @($script:logLines | ForEach-Object { $_ }) }
+}
+# One Undo's log line: exactly one, which names the run's scene and says the outcome (both read as text). With $active, the line's
+# active scene is checked too. A count other than one stops the other checks of the case, so each failure names one cause.
+function Check-OutcomeLine([string]$case, $lines, [string]$scene, [string]$words, [string]$active = $null) {
+  $one = (@($lines).Count -eq 1)
+  Check "${case}: writes exactly one log line" $one "log lines: $(@($lines).Count) [$(@($lines | ForEach-Object { $_.text }) -join ' | ')]"
+  if (-not $one) { return }
+  $t = [string]$lines[0].text
+  Check "${case}: the line names the run's scene '$scene'" ($t -match [regex]::Escape($scene)) "line '$t'"
+  Check "${case}: the line says the outcome" ($t -match $words) "line '$t'"
+  if ($null -ne $active) { Check "${case}: the line names the active scene '$active'" ([string]$lines[0].active -ceq $active) "active '$($lines[0].active)'" }
+}
 Scope '(d) the undo log line (Invoke-Link)' 'Invoke-Link'
 if ($script:scopeOk) {
   Reset-Run
@@ -651,6 +674,52 @@ if ($script:scopeOk) {
   try { $cNc = ClickLink $lNc @((Win 1001 'claude' 'Draft' $t1)) } finally { $NoApply = $true }
   Check '(d) control: an Undo of a run that left the scene as it was puts the window back' (@($cNc.sent).Count -eq 1) "sent $(@($cNc.sent).Count)"
   Check '(d) an Undo of a run that left the scene as it was (changed false) still writes a log line' ([bool](@($script:logLines | Where-Object { $_.text -match '^Undid ' }).Count -ge 1)) "no log line; log lines: $(@($script:logLines | ForEach-Object { $_.text }) -join ' | ')"
+
+  # Each outcome, on its own run. The active scene is the one on screen after the click: the scene an undo put back (res.scene),
+  # or the scene on screen when the click changed none. The name in each line comes from the run's record, or from the link on a restart.
+  Reset-Run
+  $tUc = RunMoved $focus 'work' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lUc = LinkOf $tUc
+  $oUc = ClickLogged $lUc @((Win 1001 'claude' 'Draft' $t1)) 'focus'
+  Check-OutcomeLine '(d) undone, scene changed (control)' $oUc.lines $focus.name 'undid|undone' 'work'
+
+  Reset-Run
+  $tUs = RunMoved $focus 'focus' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lUs = LinkOf $tUs
+  $oUs = ClickLogged $lUs @((Win 1001 'claude' 'Draft' $t1)) 'focus'
+  Check-OutcomeLine '(d) undone, run left the scene as it was' $oUs.lines $focus.name 'undid|undone' 'focus'
+
+  # Later: an older run's Undo after a newer run replaced its record. The name rides in the link.
+  Reset-Run
+  $tLa = RunMoved $focus 'work' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lLa = LinkOf $tLa
+  $null = RunMoved $work 'focus' @((Moved 1002 'claude' 'Notes' $from1 $t1))
+  $oLa = ClickLogged $lLa @((Win 1001 'claude' 'Draft' $t1)) 'work'
+  Check-OutcomeLine '(d) later' $oLa.lines $focus.name 'later|replaced' 'work'
+
+  # Ended: a run after it moved no windows, so this run's Undo has ended.
+  Reset-Run
+  $tEn = RunMoved $focus 'work' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lEn = LinkOf $tEn
+  $null = RunMoved $work 'focus' @()
+  $oEn = ClickLogged $lEn @((Win 1001 'claude' 'Draft' $t1)) 'work'
+  Check-OutcomeLine '(d) ended' $oEn.lines $focus.name 'ended' 'work'
+
+  # Done: the second click on a run that its first click already undid.
+  Reset-Run
+  $tDo = RunMoved $focus 'work' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lDo = LinkOf $tDo
+  $null = ClickLogged $lDo @((Win 1001 'claude' 'Draft' $t1)) 'focus'
+  $oDo = ClickLogged $lDo @((Win 1001 'claude' 'Draft' $t1)) 'work'
+  Check-OutcomeLine '(d) done' $oDo.lines $focus.name 'already|done' 'work'
+
+  # Gone: a restart lost the record, so the scene name comes from the link alone.
+  Reset-Run
+  $lGo = 'tilewindows://undo?run=' + (New-RunId $focus.name)
+  $oGo = ClickLogged $lGo @((Win 1001 'claude' 'Draft' $t1)) 'work'
+  Check-OutcomeLine '(d) gone' $oGo.lines $focus.name 'restart|gone|lost' 'work'
+
+  # The Windows shape: Windows hands a toast's launch back as tilewindows://undo/?run=<id>, with a slash before ?. Invoke-Link must
+  # read that shape as the same run, and put back the windows that run moved.
+  Reset-Run
+  $tSl = RunMoved $focus 'work' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lSl = LinkOf $tSl
+  $cSl = ClickLink ($lSl -replace 'undo\?run=', 'undo/?run=') @((Win 1001 'claude' 'Draft' $t1))
+  Check '(d) an Undo link in the Windows shape (undo/?run=<id>) puts back the run it names' ([bool](@($cSl.sent).Count -eq 1 -and @($cSl.sent)[0].id -eq 1001 -and @($cSl.sent)[0].x -eq $from1.x -and @($cSl.sent)[0].y -eq $from1.y -and -not $cSl.err)) "sent $(Brief $cSl.sent), error '$($cSl.err)'"
 }
 $script:TileHome = $homeNever
 
