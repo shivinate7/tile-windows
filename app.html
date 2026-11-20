@@ -1674,7 +1674,7 @@ function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return false;settleF
 // so a resize, Merge or Join that drops a covered pin first still settles the right window: the note is keyed by the pin, never by its index.
 let closedFront=new WeakMap();
 function noteClosedFronts(s){closedFront=new WeakMap();const P=prev();if(!P||!s)return;
-  s.pins.forEach((pin,i)=>{const f=frontOfPin(i);if(f&&frontShut(P,i,pin))closedFront.set(pin,f)})}
+  (s.pins||[]).forEach((pin,i)=>{const f=frontOfPin(i);if(f&&frontShut(P,i,pin))closedFront.set(pin,f)})}
 function settleFront(x,pin){const F=closedFront.get(pin),b=pin.behind||[];
   if(!F)return;closedFront.delete(pin);const j=b.findIndex(e=>hitsWin(e,F));if(j<0)return;
   pin.app=b[j].app;pin.match=b[j].match||"";pin.behind=b.filter((_,k)=>k!==j);if(!pin.behind.length)delete pin.behind}
