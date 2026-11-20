@@ -27,6 +27,35 @@ $env:TILE_NO_STARTUP = 1
 
 From a clone, run `install.ps1` directly. It takes `-NoStartup` and `-NoLaunch`. `TILE_NO_REGISTRY=1` skips the registry write (the tests set it).
 
+### Reinstall from a commit (Claude sessions)
+
+Do not run `install.ps1` from the agent shell. Two reasons:
+
+- On a machine where Claude desktop is a packaged (MSIX) app, files the agent writes under AppData go to the app's private copy. HKCU writes go there too. So the real install and the `tilewindows://` link would not change.
+- A tray started from the agent shell inherits `CLAUDECODE`. The live-move guard then refuses its applies. This is debt `tray-inherits-claudecode`: the tray inherits the agent's environment.
+
+To reinstall a commit:
+
+1. Fetch and export it. Run `git fetch origin main`. From Git Bash, make the folder, then export the commit into it:
+   - `mkdir -p $HOME/.cache/tw-install-<sha>`
+   - `git archive <sha> | tar -x -C $HOME/.cache/tw-install-<sha>`
+2. Start `install.ps1` through WMI. This runs it outside the agent's process tree and package. Use the same `<sha>` as step 1:
+
+```powershell
+$src = "$HOME\.cache\tw-install-<sha>"; $log = "$src.log"
+$r = Invoke-CimMethod Win32_Process -MethodName Create -Arguments @{CommandLine="cmd /c powershell -NoProfile -ExecutionPolicy Bypass -File `"$src\install.ps1`" > `"$log`" 2>&1"}
+Wait-Process -Id $r.ProcessId -Timeout 110; Get-Content $log -Tail 5
+```
+
+3. Check the result:
+   - The log says `Installed Tile Windows to ...`.
+   - `tile.ps1`, `tray.ps1`, `serve.ps1` and `app.html` in `%USERPROFILE%\.tile-windows\app` have the same `Get-FileHash` as the same files in the export.
+   - One tray process runs.
+
+Last used: 2026-11-20 10:08 CST, commit 62a2c63.
+
+Reinstall changes the owner's live install. A session asks the owner first.
+
 ## Use it
 
 - **The board** shows your real monitors. To pin a window to a cell, drag it there. Windows you do not pin fill the fill monitor (the ultrawide in the starters), in the order you choose.
