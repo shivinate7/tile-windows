@@ -79,7 +79,7 @@ These are the four items PR 51 (Split Cell board) did not build. They are planne
 - The L1 split golden checks are re-pointed to item 6.
 
 **PR B, board** (`app.html`)
-- A still click on an empty cell or an open half selects it. A drag still draws a zone, including a 5px drag inside one cell.
+- A still click selects an empty cell or an open half. A drag still draws a zone, including a 5px drag inside one cell.
 - Empty Space inspector with Split Cell. Halves only while question 1 (key S) is open.
 - Open-half labels: "Open half / Fills last", "Stays empty / Fill is off", "Kept empty".
 - After a split on an empty cell, both halves stay one free block and read "Open half".
