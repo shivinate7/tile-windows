@@ -1,0 +1,1 @@
+- check-count-off-by-one: After PR 66 the full run reports +13 checks, not the +12 the sharding brief expected. The extra check is not yet explained. Seen: 2026-11-20 x1

@@ -1,0 +1,1 @@
+- refresh-live-in-retry-gap: Refresh stays live during loadAll's retry gap (0.4, 0.8 and 1.6 s, app.html:885-893). refresh (app.html:911) checks isBusy only, and loadAll never sets it, so a press can start a second load. Seen: 2026-11-20 x1

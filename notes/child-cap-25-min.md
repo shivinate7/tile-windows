@@ -1,0 +1,1 @@
+- child-cap-25-min: test/run.ps1 caps a child suite at 25 minutes ($suiteCapMs, run.ps1:59). The slowest shard is under 3 minutes, so a cap of 10 minutes would surface a hang sooner. Seen: 2026-11-20 x1

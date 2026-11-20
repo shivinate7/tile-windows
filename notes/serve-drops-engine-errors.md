@@ -1,0 +1,1 @@
+- serve-drops-engine-errors: serve.ps1 drops the engine's error records. Scene and apply never capture the error stream (serve.ps1:280, 286). Preview keeps error text only when the engine gives no output (serve.ps1:274-276). The page cannot say why a preview failed when the engine gives output with errors (PR 63). Seen: 2026-11-20 x1

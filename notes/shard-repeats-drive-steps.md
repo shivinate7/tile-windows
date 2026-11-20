@@ -1,0 +1,1 @@
+- shard-repeats-drive-steps: The test shards (test/shard.ps1, test/stack-lock.ps1, test/setup-page.ps1) each run every drive step between gates; only the gates are split. Shards take 136-164 s. Gating the drive steps would cut more. Seen: 2026-11-20 x1

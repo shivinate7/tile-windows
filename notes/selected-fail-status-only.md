@@ -1,0 +1,1 @@
+- selected-fail-status-only: A failed preview of the selected scene shows only in the status line, as on main before PR 63 (app.html:975-977). Seen: 2026-11-20 x1
