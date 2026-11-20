@@ -132,11 +132,34 @@ try {
   function SetProp($o, [string]$name, $value) { Add-Member -InputObject $o -Force -NotePropertyName $name -NotePropertyValue $value }
   # One case. An error inside it is one FAIL line naming the case, and the run goes on (the same helper engine-layouts.ps1 keeps).
   function Case([string]$name, [scriptblock]$body) { try { & $body } catch { $script:fail++; "FAIL  $name  threw: $($_.Exception.Message)" } }
-  # The frozen windows other than $skip: how many, which differ from their frozen rect, and whether the run placed exactly as many.
+  # The frozen windows other than $skip: how many, and which differ from their frozen rect.
   function SplitOthers($got, $fz, $skip) {
     $others = @($fz.Keys | ? { $_ -ne $skip })
     $bad = @($others | ? { -not (SameRect $got[$_] $fz[$_]) })
-    [pscustomobject]@{ n = $others.Count; bad = $bad; same = ($bad.Count -eq 0 -and $got.Count -eq $fz.Count) }
+    [pscustomobject]@{ n = $others.Count; bad = $bad; same = ($bad.Count -eq 0) }
+  }
+  # The frozen ids that the default entry left 'no free cell' (the fill ran out of blocks), read from its left list.
+  function SplitNoCell($set) {
+    $gold = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $goldenDir "$set.json"), $utf8))
+    @($gold.scenes.PSObject.Properties['default'].Value.left | ? { [string]$_.why -ceq 'no free cell' } | % { "$([int64]$_.id)" })
+  }
+  # layout-free item 6 (owner grant: yes): the split's open half takes one window that the frozen run left 'no free cell', when there is one. $k is
+  # 1001 in the split run, $f its frozen rect. The open half is the other half of $f's cell, at 1-based slot $slot.
+  function SplitOpenHalf([string]$label, $set, $got, $fz, $k, $f, [string]$slot, [bool]$stacked) {
+    $noCell = @(SplitNoCell $set)
+    $added = @($got.Keys | ? { -not $fz.ContainsKey($_) })
+    Check "${label} ${set}: scope, the frozen default left a window with no free cell, so the open half has one to take" ($noCell.Count -gt 0) 'the frozen left list has no no-free-cell entry'
+    $takes = if ($noCell.Count) { $added.Count -eq 1 -and $noCell -contains $added[0] } else { $added.Count -eq 0 }
+    Check "${label} ${set}: the open half takes one window the frozen run left with no free cell, and no other window is added" $takes "added: $($added -join ', ')"
+    if ($added.Count -ne 1) { return }
+    $e = $got[$added[0]]
+    Check "${label} ${set}: the added window takes 1-based slot $slot" ((@($e.slots) -join '+') -ceq $slot) "now $(@($e.slots) -join '+')"
+    $other = if ($stacked) {
+      [int]$e.x -eq [int]$k.x -and [int]$e.w -eq [int]$k.w -and [int]$e.y -eq [int]$k.y + [int]$k.h -and [int]$e.y + [int]$e.h -eq [int]$f.y + [int]$f.h
+    } else {
+      [int]$e.y -eq [int]$k.y -and [int]$e.h -eq [int]$k.h -and [int]$e.x -eq [int]$k.x + [int]$k.w -and [int]$e.x + [int]$e.w -eq [int]$f.x + [int]$f.w
+    }
+    Check "${label} ${set}: the added window is the other half of 1001's cell, with no gap or overlap" ([bool]$other) "now $(RectText $e), 1001 $(RectText $k), frozen cell $(RectText $f)"
   }
 
   Case 'L1 split, horizontal: default 5x2 becomes 10x2; 1001 keeps the left half of slot 1; every other frozen window keeps its rect' {
@@ -151,7 +174,8 @@ try {
       Check "L1 split ${set}: scope, the frozen default places 1001 in wide slot 1" ([bool]($f -and [string]$f.mon -ceq 'wide' -and (@($f.slots) -join '+') -ceq '1')) "frozen: $(RectText $f)"
       Check "L1 split ${set}: 1001 keeps the left half of slot 1 (same x, y and height, narrower)" ([bool]($f -and $k -and [int]$k.x -eq [int]$f.x -and [int]$k.y -eq [int]$f.y -and [int]$k.h -eq [int]$f.h -and [int]$k.w -gt 0 -and [int]$k.w -lt [int]$f.w)) "now $(RectText $k), frozen $(RectText $f)"
       $o = SplitOthers $got $fz '1001'
-      Check "L1 split ${set}: the other $($o.n) frozen windows keep their rects, and none is added" $o.same "differ: $($o.bad -join ', '); placed $($got.Count), frozen $($fz.Count)"
+      Check "L1 split ${set}: the other $($o.n) frozen windows keep their rects" $o.same "differ: $($o.bad -join ', ')"
+      SplitOpenHalf 'L1 split' $set $got $fz $k $f '2' $false
     }
   }
   Case 'L1 span, horizontal: the solo chrome pin spans both halves of slot 1 and keeps its rect; 1001 keeps the left half of slot 2' {
@@ -182,7 +206,8 @@ try {
       Check "L1 split stacked ${set}: scope, the frozen default places 1001 in wide slot 1" ([bool]($f -and [string]$f.mon -ceq 'wide' -and (@($f.slots) -join '+') -ceq '1')) "frozen: $(RectText $f)"
       Check "L1 split stacked ${set}: 1001 keeps the top half of slot 1 (same x, y and width, shorter)" ([bool]($f -and $k -and [int]$k.x -eq [int]$f.x -and [int]$k.y -eq [int]$f.y -and [int]$k.w -eq [int]$f.w -and [int]$k.h -gt 0 -and [int]$k.h -lt [int]$f.h)) "now $(RectText $k), frozen $(RectText $f)"
       $o = SplitOthers $got $fz '1001'
-      Check "L1 split stacked ${set}: the other $($o.n) frozen windows keep their rects, and none is added" $o.same "differ: $($o.bad -join ', '); placed $($got.Count), frozen $($fz.Count)"
+      Check "L1 split stacked ${set}: the other $($o.n) frozen windows keep their rects" $o.same "differ: $($o.bad -join ', ')"
+      SplitOpenHalf 'L1 split stacked' $set $got $fz $k $f '6' $true
     }
   }
 
