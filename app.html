@@ -1550,7 +1550,7 @@ function heldOff(x,w,mon,cells){const f=x.fill;if(!f||!f.held)return;
 function clearBoard(){const P=prev();if(!LIVE||!P)return;const n=P.placed.filter(p=>p.pin<0&&!p.behind).length;if(!n)return;
   edit(x=>{x.fill=x.fill||{};x.fill.off=true;delete x.fill.held;delete x.fill.keepEmpty},`Cleared the board. ${plural(n,"window")} ${n===1?"stays":"stay"} put, and Fill Empty Cells is off.`)}
 // id: the scene to change, by default the selected one. A caller that waits first passes the scene it started on.
-function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";freeNote=null;const s=work[id];hist.push({k:"edit",id,s:clone(s)});const tags=freeTags(s);freeMine.clear();fn(s);freeRelink(s,tags);if(msg)status(typeof msg==="function"?msg():msg);layoutEdited(id);render();preview(id);return true}
+function edit(fn,msg,id=selId){if(isBusy)return false;removeNote();picks=null;closeAsk(false);sceneMsg="";freeNote=null;const s=work[id];hist.push({k:"edit",id,s:clone(s)});const tags=freeTags(s);freeMine.clear();noteClosedFronts(s);fn(s);freeRelink(s,tags);if(msg)status(typeof msg==="function"?msg():msg);layoutEdited(id);render();preview(id);return true}
 /* ---------- Follow Again: the card menu drops a scene's own layout for this setup (decision monitor-setups, item 7) ---------- */
 let menuId=null;
 function closeMenu(back){const id=menuId;menuId=null;const m=$("cmenu");if(m)m.remove();
@@ -1670,9 +1670,13 @@ function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return false;settleF
   return b.length>0}
 // A pin whose front window is not open shows its first open back window as the front (tile.ps1, Pass). Before an edit moves, resizes or removes that pin,
 // the pin names the window on screen: its front entry becomes that window's, and the back entry that named it is dropped, so no window is listed twice.
-// The closed front's own entry goes (debt closed-front-stack). Call it before an edit adds or removes pins: the pin's index must still match the preview.
-function settleFront(x,pin){const i=x.pins.indexOf(pin),P=prev(),F=i>=0&&P&&frontOfPin(i),b=pin.behind||[];
-  if(!F||!frontShut(P,i,pin))return;const j=b.findIndex(e=>hitsWin(e,F));if(j<0)return;
+// The closed front's own entry goes (debt closed-front-stack). edit() notes each such pin's window on screen before its callback removes any pin,
+// so a resize, Merge or Join that drops a covered pin first still settles the right window: the note is keyed by the pin, never by its index.
+let closedFront=new WeakMap();
+function noteClosedFronts(s){closedFront=new WeakMap();const P=prev();if(!P||!s)return;
+  s.pins.forEach((pin,i)=>{const f=frontOfPin(i);if(f&&frontShut(P,i,pin))closedFront.set(pin,f)})}
+function settleFront(x,pin){const F=closedFront.get(pin),b=pin.behind||[];
+  if(!F)return;closedFront.delete(pin);const j=b.findIndex(e=>hitsWin(e,F));if(j<0)return;
   pin.app=b[j].app;pin.match=b[j].match||"";pin.behind=b.filter((_,k)=>k!==j);if(!pin.behind.length)delete pin.behind}
 // Into the bay: its pin goes, and the scene keeps it where it is. why: the entry's reason, when it is not "you kept it here".
 function bayEdit(x,id,grab=pinNow(x,id),promote=true,why){const w=winById(id);
