@@ -9,3 +9,5 @@ The geometry cases read their "before" rects right after `Fl-Open`, with no `Fl-
 They failed as one-offs on full runs of PR 58 and PR 60. Two other cases failed the same way under load: stack-lock "no scene after 30 s", and "page preview == engine: thursday-prep".
 
 Fix: wait for the board to settle inside `Fl-Open`, once, so each case that calls it gets the wait.
+
+stack-lock SlLoad: app.html loadAll fetches once, so one failed fetch leaves no scene; fix page-side, never by retrying in the test.

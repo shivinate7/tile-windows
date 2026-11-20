@@ -89,6 +89,15 @@
 #     locked pin keeps that pin, its lock and its space.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
+#
+# Shards: -Shard n -Of 3 runs only shard n's cases, so test\run.ps1 can run the file in three processes. The cases are numbered in the
+# order they are invoked, and the shards take contiguous ranges of that order (cuts below), so each shard keeps the order of its cases.
+# A run with no arguments runs every case. Each shard prints `cases shard n of Of ran R of T`, which run.ps1 checks: every case ran once.
+param([int]$Shard = 1, [int]$Of = 1)
+if (($Of -ne 1 -and $Of -ne 3) -or $Shard -lt 1 -or $Shard -gt $Of) { throw "setup-page shards: -Of is 1 or 3, and -Shard is 1 to -Of (got $Shard of $Of)" }
+$shardCuts = @(39, 79)   # shard 1 runs cases 1 to 39, shard 2 runs 40 to 79, shard 3 runs 80 to the last (about a third of the time each)
+$lo = $(if ($Shard -eq 1) { 1 } else { $shardCuts[$Shard - 2] + 1 })
+$hi = $(if ($Shard -ge $Of) { [int]::MaxValue } else { $shardCuts[$Shard - 1] })
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $serve = Join-Path $root 'serve.ps1'; $appHtml = Join-Path $root 'app.html'
@@ -96,11 +105,18 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
-# One case. An error inside it is one FAIL line, and the run goes on.
-function Case([string]$name, [scriptblock]$body) { try { & $body } catch { $script:fail++; "FAIL  $name  threw: $($_.Exception.Message)" } }
+# One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
+# every shard counts the same cases.
+$script:caseNo = 0; $script:caseRan = 0
+function Case([string]$name, [scriptblock]$body) {
+  $script:caseNo++
+  if ($script:caseNo -lt $lo -or $script:caseNo -gt $hi) { return }
+  $script:caseRan++
+  try { & $body } catch { $script:fail++; "FAIL  $name  threw: $($_.Exception.Message)" }
+}
 
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $edge) { 'SKIP  page cases: Microsoft Edge not found in either Program Files folder.'; exit 0 }
+if (-not $edge) { 'SKIP  page cases: Microsoft Edge not found in either Program Files folder.'; "cases shard $Shard of $Of ran 0 of 0"; exit 0 }
 
 # Run folder (test-temp-standard): <TEMP>\tile-windows-test-runs\<pid>-<UUID>, removed at the end. The sweep of old run folders is stack-lock.ps1's.
 $runRoot = Join-Path $env:TEMP 'tile-windows-test-runs'
@@ -2258,11 +2274,12 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
     foreach ($w in @($o.windows | ? { $minimized -contains [int]$_.id })) { $w | Add-Member -Force -NotePropertyName min -NotePropertyValue $true }
     ConvertTo-Json -Depth 10 -Compress -InputObject $o
   }
-  # Saves $layoutJson for the plugged setup, opens the page on Focus with $snapText, and selects the ultrawide. Answers whether it opened.
+  # Saves $layoutJson for the plugged setup, opens the page on Focus with $snapText, selects the ultrawide, and waits for the board to settle
+  # (Fl-Still), so each read after it sees the board the page drew, not one mid-slide. Answers whether it opened.
   function Fl-Open($sock, [string]$layoutJson, [string]$snapText = $flSnap) {
     Put-Split $layoutJson
     $ok = Open-Page $sock $url 'focus' $snapText
-    if ($ok) { [void](Fl-Select $sock 'Ultrawide') }
+    if ($ok) { [void](Fl-Select $sock 'Ultrawide'); Fl-Still $sock }
     $ok
   }
   # Selects a monitor in the Monitor section by its name, and waits until the page shows it selected.
@@ -2277,11 +2294,23 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
   }
   # The rects of the given tiles now: id -> {l, t, r, b, w, h}, or null for a tile not on the board.
   function Fl-Rects($sock, [int[]]$ids) { Js $sock ($freeJs + 'return rectsOf([' + (($ids | % { "$_" }) -join ',') + ']);') }
-  # Waits until the board is still before its rects are read: the page's POSTs have settled, no transition runs, and two polls read the same
-  # tile rects. A tile moves for 0.22 s after a monitor switch or a save (the tile transition in app.html), so a read taken at once reads a move.
+  # The board's settle, in the page. Each step waits two frames (or 1 s when no frame comes), then reads every tile rect. The board is still when
+  # the page's POSTs have settled, no relayout is queued (rlay), no preview is in flight (inflight), no CSS transition runs, and the rects read
+  # the same on two steps. A tile moves for 0.22 s after a monitor switch, a save or a drop (the tile transition in app.html), so a read taken at
+  # once reads a move. Wait-Tile-Rest waits for one tile in the split section; this waits for the whole board and its preview, so it keeps its own.
+  $flStillJs = @'
+const rects = () => [...document.querySelectorAll(".tile")].map(t => { const r = t.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].join(","); }).join("|");
+const moving = () => rlay !== 0 || Object.keys(inflight).length > 0 || document.getAnimations().some(a => a.playState === "running");
+const frames = () => Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), new Promise(r => setTimeout(r, 1000))]);
+await window.__h.settle();
+let last = null, still = 0; const t0 = performance.now();
+while (performance.now() - t0 < 10000 && still < 2) { await frames(); const g = rects(); still = (!moving() && g === last) ? still + 1 : 0; last = g; }
+return still >= 2;
+'@
+  # Waits until the board is still before its rects are read. A board still moving after 10 s throws, so the case that asked for the wait
+  # fails with that one cause and reads nothing from a moving board.
   function Fl-Still($sock) {
-    [void](Js $sock 'await window.__h.settle(); window.__still = null; return true')
-    [void](WaitFor $sock '(() => { const c = [...document.querySelectorAll(".tile")].map(t => { const r = t.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].join(","); }).join("|") + (document.getAnimations().some(a => a.playState === "running") ? "~" : ""); const same = window.__still === c; window.__still = c; return same && c.indexOf("~") < 0; })()' 10)
+    if ((Js $sock $flStillJs) -ne $true) { throw 'the board did not settle within 10 s' }
   }
   # The ids (of $ids) whose tile rect moved by more than half a pixel between two reads. A tile missing from either read counts as moved.
   function Fl-Moved($before, $after, [int[]]$ids) {
@@ -2385,7 +2414,6 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
       $opened = Fl-Open $ws (Fl-Json (Fl-Board) -grid)
       Check "free-on ($tag): the page opens on Focus with the 5 by 2 grid (control)" $opened 'the page did not open on Focus in time'
       if (-not $opened) { return }
-      Fl-Still $ws
       $before = Fl-Rects $ws $flIds
       $onBoard = @($flIds | ? { $before."$_" }).Count
       Check "free-on ($tag): all ten windows are on the board before the press (scope)" ($onBoard -eq 10) "on the board before: $onBoard of 10"
@@ -3157,7 +3185,6 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
     $held = Js $ws ($freeJs + 'const s = spaceOf(1); return !!s && !s.classList.contains("empty");')
     Check 'swap-held (F6): space 1 is held by the unpinned window (scope)' ($held -eq $true) 'space 1 is not held'
     if ($held -ne $true) { return }
-    Fl-Still $ws
     $from = Fl-Centre (Fl-Rects $ws @(1001)) 1001
     $to = Js $ws ($freeJs + $dropJs + "return spaceAt(1, 'centre');")
     $mid = Fl-Drag $ws $from[0] $from[1] $to.x $to.y $false ($freeJs + $dropJs + 'return dropInfo();')
@@ -3185,7 +3212,6 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
     $held = Js $ws ($freeJs + 'const s = spaceOf(0); return !!s && !s.classList.contains("empty");')
     Check 'behind-from (F7): space 0 is held by the unpinned window (scope)' ($held -eq $true) 'space 0 is not held'
     if ($held -ne $true) { return }
-    Fl-Still $ws
     $from = Fl-Centre (Fl-Rects $ws @(1001)) 1001
     $to = Js $ws ($freeJs + $dropJs + "return spaceAt(1, 'bottom');")
     $mid = Fl-Drag $ws $from[0] $from[1] $to.x $to.y $false ($freeJs + $dropJs + 'return dropInfo();')
@@ -3215,7 +3241,6 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
       $held = Js $ws ($freeJs + 'const s = spaceOf(0); return !!s && !s.classList.contains("empty");')
       Check "move-lock ($($v.tag), F8): space 0 is held (scope)" ($held -eq $true) 'space 0 is not held'
       if ($held -ne $true) { return }
-      Fl-Still $ws
       if ($v.pick -eq 'list') {
         $c = Js $ws ($freeJs + $dropJs + 'return bayCentre(1014);')
         if (-not $c) { Check "move-lock ($($v.tag), F8): window 1014 is in Windows That Stay Put (scope)" $false 'no entry for 1014 in Windows That Stay Put'; return }
@@ -3249,4 +3274,6 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue
 }
+if ($script:caseNo -gt 0 -and $script:caseRan -eq 0) { $script:fail++; "FAIL  setup-page shard $Shard of $Of ran no cases" }
+"cases shard $Shard of $Of ran $script:caseRan of $script:caseNo"
 if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { 'All checks passed.' }

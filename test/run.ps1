@@ -7,7 +7,7 @@ $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixtu
 $tmp = Join-Path $env:TEMP "tile-test-$PID"; New-Item -ItemType Directory $tmp | Out-Null
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
+function Check($name, $ok, $detail = '') { Start-Ready; if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 function Child { & powershell -NoProfile -ExecutionPolicy Bypass -File @args }
 # A string as JSON.stringify writes it (the page's encoder): escape \ and " only.
 # Count of a JSON array; -1 when it is missing (a crashed self-test must not pass).
@@ -30,10 +30,10 @@ function Start-Child($prof, $argLine, $extra = @{}) {
 # tray) can inherit a pipe and hold it open after the child exits, which would hold the output back. cmd does the file redirection,
 # because Start-Process does not give a reliable exit code for a redirected child. The child goes in a job object, so Stop-Suite
 # ends every process it started, including one that outlived it.
-function Start-Suite([string]$name, [string]$file) {
+function Start-Suite([string]$name, [string]$file, [string]$argLine = '') {
   $prof = Profile "suite-$name"
   $outFile = Join-Path $tmp "suite-$name.out"; $errFile = Join-Path $tmp "suite-$name.err"
-  $psi = New-Object Diagnostics.ProcessStartInfo 'cmd.exe', "/d /c powershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot $file)`" > `"$outFile`" 2> `"$errFile`""
+  $psi = New-Object Diagnostics.ProcessStartInfo 'cmd.exe', "/d /c powershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot $file)`"$(if ($argLine) { " $argLine" }) > `"$outFile`" 2> `"$errFile`""
   $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
   $psi.EnvironmentVariables['USERPROFILE'] = $prof; $psi.EnvironmentVariables['APPDATA'] = Join-Path $prof 'AppData\Roaming'
   # The job is made before the start: compiling the type takes seconds, and the child would run outside the job meanwhile.
@@ -43,6 +43,16 @@ function Start-Suite([string]$name, [string]$file) {
   # Assigned at once after the start. The child's own children are made later, so they land in the job with it.
   if ($job.ToInt64() -ne 0) { [void][SuiteJob]::Assign($job, $proc.Handle) }
   [pscustomobject]@{ Name = $name; Proc = $proc; Out = $outFile; Err = $errFile; Job = $job; Shown = $false }
+}
+# The most child files at once. Each is a powershell with its own Edge or server, and the machine is often near its memory limit (the
+# load brake reads busy above 85 % in use). origin/main starts 11 at once; this cap keeps the peak at or below that.
+$suiteCap = 8
+# Starts queued children while fewer than $suiteCap are running. Check calls it, so a slot that frees is refilled during the
+# inline checks, not only at the end of them.
+function Start-Ready {
+  while ($script:queue.Count -and @($script:suites | ? { -not $_.Proc.HasExited }).Count -lt $suiteCap) {
+    $q = $script:queue.Dequeue(); $script:suites += Start-Suite $q[0] $q[1] $q[2]
+  }
 }
 # The job object type: P/Invoke in a new type of its own. A job made here ends its processes when it is stopped, and when this
 # run's process ends, so a child cannot outlive the run.
@@ -155,6 +165,7 @@ $starters = [IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | Con
 function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $s | Add-Member -Force cats $starters.cats; $s | Add-Member -Force categories $starters.categories; ConvertTo-Json -Depth 10 -Compress $s }
 
 $form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $psrv = $null; $pfwd = $null; $tray = $null; $suites = @()
+$queue = New-Object Collections.Queue; $runStart = Get-Date
 
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
 # The run marks its children as the suite (TILE_TEST_SUITE): tile.ps1 refuses a live move under it unless TILE_TEST_ALLOW_LIVE is set.
@@ -196,12 +207,16 @@ try {
 
   # The child files start here, after the snapshot and title checks (they read the real windows), and run at once. Their output is
   # collected after the in-process sections below. The order of their starts is the order of the list.
-  $suites = @(
-    @('stack-lock', 'stack-lock.ps1'), @('run-undo', 'run-undo.ps1'), @('bay', 'bay.ps1'), @('fresh-screens', 'fresh-screens.ps1'),
-    @('golden-layouts', 'golden-layouts.ps1'), @('safe-moves', 'safe-moves.ps1'), @('setup-config', 'setup-config.ps1'),
-    @('engine-layouts', 'engine-layouts.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'), @('setup-page', 'setup-page.ps1'),
-    @('suite-kill', 'suite-kill.ps1')
-  ) | % { Start-Suite $_[0] $_[1] }
+  # Longest first. setup-page runs as three shards (its header says how), each with its own Edge, server and profile.
+  $queueList = @(
+    @('stack-lock', 'stack-lock.ps1'),
+    @('setup-page-1', 'setup-page.ps1', '-Shard 1 -Of 3'), @('setup-page-2', 'setup-page.ps1', '-Shard 2 -Of 3'), @('setup-page-3', 'setup-page.ps1', '-Shard 3 -Of 3'),
+    @('install-swap', 'install-swap.ps1'), @('safe-moves', 'safe-moves.ps1'), @('fresh-screens', 'fresh-screens.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'),
+    @('suite-kill', 'suite-kill.ps1'), @('bay', 'bay.ps1'), @('golden-layouts', 'golden-layouts.ps1'),
+    @('engine-layouts', 'engine-layouts.ps1'), @('run-undo', 'run-undo.ps1'), @('setup-config', 'setup-config.ps1')
+  )
+  foreach ($q in $queueList) { $queue.Enqueue($q) }
+  Start-Ready
 
   # 4. Server: token required; snapshot and dry-run apply work through it.
   $srv = Start-Child (Profile 'srv') "-File `"$serve`" -NoBrowser -DryRun"
@@ -540,9 +555,6 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $un2 = Start-Child $iprof "-File `"$(Join-Path $iapp 'uninstall.ps1')`" -Purge" @{ TILE_NO_REGISTRY = '1' }; $u2 = $un2.StandardOutput.ReadToEnd() + $un2.StandardError.ReadToEnd(); $un2.WaitForExit()
   Check 'uninstall -Purge removes the scenes too' ($un2.ExitCode -eq 0 -and -not (Test-Path -LiteralPath (Join-Path $iprof '.tile-windows')) -and -not (Test-Path -LiteralPath (Join-Path $iprog 'Tile Windows.lnk'))) $u2
 
-  # Install swap with a busy app folder (install.ps1's rename): its own file, dot-sourced in a child scope like move.ps1 (its checks count here).
-  & { . (Join-Path $PSScriptRoot 'install-swap.ps1') }
-
   # 10. -Default places windows as main's tile.ps1 does, on the fixture (a fixed snapshot, so windows cannot
   #     change between the two runs). It runs main's whole tree: tile.ps1 reads config.ps1 and scenes.json beside it.
   #     Minimized windows are left out of the snapshot: scenes now leave them minimized (decision: bay-and-group-zones),
@@ -562,6 +574,9 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   } finally { $env:TILE_HOME = $null }
   Check '-Default places windows as main does (fixture, no minimized windows)' ($a.Count -gt 0 -and ($a -join ' ') -ceq ($b -join ' ')) "main: $($a -join ' ') | this: $($b -join ' ')"
 
+  [Console]::Error.WriteLine("time  inline  $([int]((Get-Date) - $runStart).TotalSeconds) s")
+  # Every child is started before the collection: a queued child starts as a slot frees, and the wait polls the running ones.
+  while ($queue.Count) { Start-Ready; if ($queue.Count) { [void]@($suites | ? { -not $_.Proc.HasExited })[0].Proc.WaitForExit(250) } }
   # The child files, collected in list order. Each is waited for up to $suiteCapMs (25 minutes, well above the longest one). A child
   # still running then is stopped with its processes. Each child is stopped, then printed, and its FAIL lines count here: each FAIL
   # line, or 1 for a nonzero exit or a stop with none. A child whose collection throws counts one FAIL; the children after it still run.
@@ -575,6 +590,12 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
       $script:fail++; "FAIL  $($s.Name)  could not be collected: $_"
     }
   }
+  # Every page case runs in exactly one shard: each shard counts the same cases, and the shards' runs add up to that count.
+  $shardRuns = @($suites | ? { $_.Name -like 'setup-page-*' } | % { [regex]::Match((Read-SuiteFile $_.Out), 'cases shard (\d+) of (\d+) ran (\d+) of (\d+)') } | ? { $_.Success })
+  $shardTotals = @($shardRuns | % { [int]$_.Groups[4].Value } | Sort-Object -Unique)
+  $ranSum = (@($shardRuns | % { [int]$_.Groups[3].Value }) | Measure-Object -Sum).Sum
+  $wantShards = @($queueList | ? { $_[0] -like 'setup-page-*' }).Count
+  Check 'every page case runs in exactly one shard' ($shardRuns.Count -eq $wantShards -and $shardTotals.Count -eq 1 -and $ranSum -eq $shardTotals[0]) "shards reporting: $($shardRuns.Count) of $wantShards; ran $ranSum of totals $($shardTotals -join '/')"
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
