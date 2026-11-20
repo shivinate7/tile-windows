@@ -882,7 +882,17 @@ function monAt(x,y){return snap.monitors.find(m=>x>=m.x&&x<m.x+m.w&&y>=m.y&&y<m.
 const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
 
 /* ---------- Loading ---------- */
+// A dropped connection (fetch throws a TypeError) is tried again after 0.4, 0.8 and 1.6 s, 2.8 s in all; the footer error shows only when the last try fails too.
+// A reply the server sent with an error status is not tried again: it will not change by itself, and its text tells the user what to fix.
+const LOADWAIT=[400,800,1600];
 async function loadAll(){
+  for(let n=0;;n++){
+    const err=await loadOnce();
+    if(!(err instanceof TypeError&&n<LOADWAIT.length)){if(err)status(err instanceof TypeError?"Could not reach the server. Start Tile Windows again.":`Could not ${err.step}: ${err.message}`);return}
+    await new Promise(r=>setTimeout(r,LOADWAIT[n]))}
+}
+// One try at loading the page's data. Returns null on success, else the error, with the step it failed at in .step.
+async function loadOnce(){
   let step="read your windows";
   try{
     const s=await fetch("snapshot",{cache:"no-store"});if(!s.ok)throw new Error(await s.text());
@@ -895,7 +905,8 @@ async function loadAll(){
     lastKey=plug?plug.key:"";
     if(!selId||!work[selId])selId=(cfg.scenes.find(x=>x.id===st.active)||cfg.scenes[0]).id;
     setSnap(sj);await previewAll();
-  }catch(e){status(e instanceof TypeError?"Could not reach the server. Start Tile Windows again.":`Could not ${step}: ${e.message}`)}
+    return null;
+  }catch(e){if(e&&typeof e==="object")e.step=step;return e}
 }
 async function refresh(){if(isBusy&&!following)return;status("Reading your windows…");
   try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);await resnap(await r.json());hist=[];prevs={};await previewAll();status("Windows read again.")}
