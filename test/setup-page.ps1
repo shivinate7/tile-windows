@@ -96,22 +96,19 @@
 param([int]$Shard = 1, [int]$Of = 1)
 if (($Of -ne 1 -and $Of -ne 3) -or $Shard -lt 1 -or $Shard -gt $Of) { throw "setup-page shards: -Of is 1 or 3, and -Shard is 1 to -Of (got $Shard of $Of)" }
 $shardCuts = @(39, 79)   # shard 1 runs cases 1 to 39, shard 2 runs 40 to 79, shard 3 runs 80 to the last (about a third of the time each)
-$lo = $(if ($Shard -eq 1) { 1 } else { $shardCuts[$Shard - 2] + 1 })
-$hi = $(if ($Shard -ge $Of) { [int]::MaxValue } else { $shardCuts[$Shard - 1] })
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $serve = Join-Path $root 'serve.ps1'; $appHtml = Join-Path $root 'app.html'
 $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root 'scenes.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
+. (Join-Path $PSScriptRoot 'shard.ps1')
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1))
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
-$script:caseNo = 0; $script:caseRan = 0
 function Case([string]$name, [scriptblock]$body) {
-  $script:caseNo++
-  if ($script:caseNo -lt $lo -or $script:caseNo -gt $hi) { return }
-  $script:caseRan++
+  if (-not (Shard-Take)) { return }
   try { & $body } catch { $script:fail++; "FAIL  $name  threw: $($_.Exception.Message)" }
 }
 
@@ -3274,6 +3271,5 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-if ($script:caseNo -gt 0 -and $script:caseRan -eq 0) { $script:fail++; "FAIL  setup-page shard $Shard of $Of ran no cases" }
-"cases shard $Shard of $Of ran $script:caseRan of $script:caseNo"
+Shard-Report 'setup-page'
 if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { 'All checks passed.' }
