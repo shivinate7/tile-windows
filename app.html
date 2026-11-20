@@ -1230,7 +1230,7 @@ function view(){
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
 // A bay entry carries `why: COVERED` when a resize covered its window, or `why: MERGED` when a Merge moved it; tile.ps1 hands it back in left[].why, and BAYWHY words it.
 const COVERED="covered by a resize",MERGED="moved by a merge";
-const BAYWHY={"in the bay":"You kept it here",[COVERED]:"Covered by a resize",[MERGED]:"Moved by a merge","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","fill is off":"Fill is off","Its screen is unplugged":"Its screen is unplugged"};
+const BAYWHY={"in the bay":"You kept it here",[COVERED]:"Covered by a resize",[MERGED]:"Moved by a merge","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","half kept empty":"A half is kept empty: turn off Keep This Half Empty","fill is off":"Fill is off","Its screen is unplugged":"Its screen is unplugged"};
 // The reason a heading shows whole, on a second row when it does not fit, never cut with an ellipsis (a heading with any other reason is one row).
 const BAYWHOLE=BAYWHY["Its screen is unplugged"];
 const BAYNOWHY="Not in this scene";
