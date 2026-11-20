@@ -266,7 +266,8 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .hint,.over{font-size:12px;color:var(--muted);margin:0}
 .boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
 .boardbar .hint{margin:0;flex:1 1 300px}
-.boardbar .zwhy{flex:0 1 220px;display:block}
+/* The bar's height must not change when Free Layout switches on (layout() reads it, and a taller bar rescales the board), so the reason and the hint stay within the two lines the grid's hint takes. */
+.boardbar .zwhy{flex:0 1 230px;display:block;font-size:11.5px;line-height:1.3}
 .keys{font-size:12px;color:var(--muted)}
 .keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
 .keys ul{margin:4px 0 0;padding-left:18px}
@@ -1252,7 +1253,7 @@ function render(){
   cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
   const anyFree=!!(LIVE&&s&&snap.monitors.some(q=>mk(q)&&s.grids[mk(q)]&&isFree(s.grids[mk(q)])));
-  $("hint").textContent=anyFree?"Drag to a space to pin, or to the list to keep put. On a taken space, the circle swaps and the rest puts it behind. Drag a line to resize, and hold Shift to move the whole line. Right-click a window to split its space.":LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
+  $("hint").textContent=anyFree?"Drag to a space to pin, or to the list to keep put. Hold Shift to drag the whole line.":LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   {const fe=LIVE&&s?freeEmpty():"";if(fe)$("hint").textContent=fe;$("fillon").hidden=!fe}
   overText(V);renderSetbar();renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);renderPicks();renderFree();
