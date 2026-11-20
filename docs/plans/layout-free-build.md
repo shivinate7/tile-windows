@@ -58,6 +58,36 @@ Status: built in PR 51 (Split Cell board), merged at commit b1735e7. Records: no
   - the 27px halves at 1024 wide;
   - the right-click menu.
 
+**L2b. Split Cell deferred items** (`tile.ps1`, `app.html`; mockup in PR 69 (empty-cell mockup); needs L2)
+
+Status: planned; PR A in progress on branch `split-fill-last`.
+
+These are the four items PR 51 (Split Cell board) did not build. They are planned, not dropped.
+
+**Governing grants** (owner)
+- Layout-free item 2 (select an empty cell) and item 6 (open half fills last; Keep This Half Empty), in `docs/design/mockups/layout-free-notes.md`.
+- Mockup `docs/design/mockups/split-cell.html`. Its states: `fill-last`, `fill-keep`, `case-held`, `empty-select`, `empty-menu`, `empty-split`.
+- Notes S9 to S13 in `docs/design/mockups/split-cell-notes.md` (PR 69).
+
+**PR A, engine** (`tile.ps1`)
+- Fills last is on whenever `fill.unit` is larger than 1×1. No opt-in flag.
+- After every free whole block is taken, the fill uses open halves in reading order.
+- A zone fills its own open halves last, the same way.
+- Fill off: an open half stays empty.
+- New `fill.keepEmpty: [{mon, slots}]`. Slots are 0-based fine slots, keyed by monitor id only. A role template's grid has no fine slots.
+- A kept slot is never filled. A pin or a held window still wins.
+- The L1 split golden checks are re-pointed to item 6.
+
+**PR B, board** (`app.html`)
+- A still click on an empty cell or an open half selects it. A drag still draws a zone, including a 5px drag inside one cell.
+- Empty Space inspector with Split Cell. Halves only while question 1 (key S) is open.
+- Open-half labels: "Open half / Fills last", "Stays empty / Fill is off", "Kept empty".
+- After a split on an empty cell, both halves stay one free block and read "Open half".
+- Keep This Half Empty sits in the Open Half section.
+- `keepEmpty` is reslotted wherever the page reslots `fill.held`. Clear Board deletes it. The Fill Empty Cells toggles do not clear it. A kept half blocks halving the grid.
+
+**Departs from:** notes S12 first draft, which proposed a `splits: [{mon, slots}]` entry. PR 69 dropped it. The empty split stays one free block and saves nothing (S12, as drawn).
+
 **L3. Engine: Free Layout areas and item G** (`tile.ps1`; no designer; after L1, since both edit the `Pass` function)
 
 Status: built in PR 50 (free areas), merged at commit 74f87cb.
