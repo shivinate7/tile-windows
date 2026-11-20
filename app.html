@@ -347,6 +347,20 @@ h3.grp{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color
 min-height:28px;margin:1px 2px;vertical-align:middle;background:var(--panel);color:var(--ink);border:1px solid var(--muted);border-radius:6px;padding:3px 6px}
 .chips{display:flex;flex-wrap:wrap;gap:3px}
 .chips i{font:normal 11px var(--f);border:1px solid var(--line);border-radius:10px;padding:0 6px;color:var(--ink)}
+/* Inert: On, but it does nothing for its scene. Dashed edge, a triangle and words, so amber is never the only sign. */
+.chips i.inert{display:grid;grid-template-columns:auto 1fr;column-gap:4px;align-items:center;flex-basis:100%;border:1px dashed var(--ink);background:var(--hi-bg);border-radius:6px;padding:1px 6px 2px}
+.chips i.inert svg{width:12px;height:12px}
+.chips i.inert b{font-weight:600}
+.chips i.inert small{grid-column:2;color:var(--muted);font-size:11px;line-height:1.3}
+.switch input.inert:checked{background:var(--hi-bg);border:1.5px dashed var(--ink);box-shadow:none}
+.switch input.inert:checked::after{top:2px;left:14px;width:11px;height:11px;background:var(--ink)}
+.xstate{display:inline-flex;align-items:center;gap:5px;margin-top:2px;font:600 11px var(--f);font-style:normal;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)}
+.xstate svg{width:14px;height:14px;flex:none}
+@media (forced-colors:active){
+  .chips i.inert{border-color:CanvasText;forced-color-adjust:none;background:Canvas;color:CanvasText}
+  .chips i.inert small{color:CanvasText}
+  .switch input.inert:checked{forced-color-adjust:none;border:1.5px dashed ButtonText;background:Canvas}
+  .switch input.inert:checked::after{background:ButtonText}}
 fieldset.trig legend{padding:0;margin-bottom:4px;color:var(--muted)}
 .trig input[type=radio]{appearance:none;width:16px;height:16px;margin:0;flex:none;border:1.5px solid var(--muted);border-radius:50%;background:var(--panel)}
 .trig input[type=radio]:checked{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 3px var(--panel)}
@@ -603,7 +617,7 @@ dialog form{display:grid;gap:10px}
   .rail{flex-direction:row;align-items:stretch;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;padding:8px 12px;gap:12px}
   .rail>section{display:flex;flex-direction:column;gap:6px;flex:none}
   .cards{grid-auto-flow:column;grid-auto-columns:176px}
-  .card .pick small,.legend+.note,#recentbox{display:none}
+  .card .pick>small,.legend+.note,#recentbox{display:none}
   .mini{height:32px}
   .legend{grid-template-columns:repeat(2,auto);column-gap:6px}
   .canvas{padding:18px 14px}}
@@ -803,20 +817,27 @@ const edited=id=>!!work[id]&&(idm()?JSON.stringify(metaOf(work[id]))!==JSON.stri
 // A built-in scene is read-only except its trigger switches (.auto): Default carries the first-unlock and grid switches.
 const autoOnly=(a,b)=>{if(!b)return false;const f=o=>{const x=clone(o);["auto","opt","trigger","screens","setupKey"].forEach(k=>delete x[k]);if(x.claudeGrid)delete x.claudeGrid.at;return JSON.stringify(x)};return f(a)===f(b)};
 const railIds=()=>[...cfg.scenes.map(s=>s.id),...Object.keys(work).filter(id=>!saved(id))];
-const hasAny=s=>!!s&&(((s.trigger||{}).type&&s.trigger.type!=="manual")||AUTO.some(([k])=>(s.auto||{})[k]));
-const chipsOf=s=>AUTO.filter(([k])=>(s.auto||{})[k]).map(x=>x[4]);
+// A trigger counts only while it can do something: an On switch that does nothing for its scene (inertCase) is not a working trigger.
+const hasAny=s=>!!s&&(((s.trigger||{}).type&&s.trigger.type!=="manual")||AUTO.some(([k])=>(s.auto||{})[k]&&!inertCase(k,s)));
+const hasInert=s=>!!s&&AUTO.some(([k])=>inertCase(k,s));
+const chipsOf=s=>AUTO.filter(([k])=>(s.auto||{})[k]).map(x=>({l:x[4],why:(INERT[inertCase(x[0],s)]||[])[0]||""}));
 // A threshold's value: the scene's own, else the default from the config.
 const optGet=(s,f,o)=>o.scope==="setup"?s.setupKey:o.scope==="grid"?(s.claudeGrid||{}).at:((s.opt||{})[f]||{})[o.k]??(o.scope==="size"?(cfg.meetingSize||{}).at:((cfg.optDefaults||{})[f]||{})[o.k]);
 // Where two scenes hold the same extra trigger, the first in the rail wins (the tray takes the first in config order).
 function sameUsers(f,s){return railIds().map(i=>work[i]).filter(x=>x&&(x.auto||{})[f]&&(f!=="setup"||x.setupKey===s.setupKey))}
 function conflictNote(f,s){if(!["gaps","noext","setup"].includes(f)||!(s.auto||{})[f])return "";const u=sameUsers(f,s);if(u.length<2)return "";
   const others=u.filter(x=>x.id!==s.id).map(x=>x.name);return u[0].id===s.id?`Also used by ${others.join(", ")}. This scene is first in the rail, so it wins.`:`Also used by ${others.join(", ")}. ${u[0].name} is first in the rail and wins.`}
-// A switch that cannot do anything for this scene says so, instead of sitting on silently.
-function needNote(f,s){if(!(s.auto||{})[f])return "";const m=cfg.meetingSize||{};
-  if(f==="setup"&&!s.setupKey)return "Pick a setup, or this does nothing.";
-  if((f==="size"||f==="offer")&&s.id!==m.big&&s.id!==m.small)return "Only the scenes named in the meeting rule (Listen and Meetings) take part, so this does nothing here.";
-  if(f==="activity"&&cfg.activity&&!cfg.activity.some(a=>a.scene===s.id))return "No app in the activity map points at this scene, so this does nothing.";
+// A switch that is On but cannot do anything for this scene is inert. inertCase names which of the three cases holds ("" when it is working);
+// INERT gives each case its short reason (the rail chip) and its sentence (the note under the switch).
+function inertCase(f,s){if(!(s.auto||{})[f])return "";const m=cfg.meetingSize||{};
+  if(f==="setup"&&!s.setupKey)return "setup";
+  if((f==="size"||f==="offer")&&s.id!==m.big&&s.id!==m.small)return "call";
+  if(f==="activity"&&cfg.activity&&!cfg.activity.some(a=>a.scene===s.id))return "activity";
   return ""}
+const INERT={setup:["No setup picked","Pick a setup, or this does nothing."],
+  call:["Not a call scene","Only the scenes named in the meeting rule (Listen and Meetings) take part, so this does nothing here."],
+  activity:["No app maps here","No app in the activity map points at this scene, so this does nothing."]};
+const needNote=(f,s)=>(INERT[inertCase(f,s)]||[])[1]||"";
 const WARN='<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="var(--hi)" stroke="var(--ink)" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3.6" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".95" fill="var(--ink)"/></svg>';
 const warnNote=(id,t)=>`<p class="xwarn" id="${id}">${WARN}<span><span class="vh">Warning: </span>${esc(t)}</span></p>`;
 // The extra triggers that apply to this scene: the grid switch only where the scene carries a second grid.
@@ -828,9 +849,9 @@ function setupOptions(key){const ks=Object.keys(cfg.setups||{}).sort((a,b)=>setu
   return `<option value="">Pick a setup</option>`+ks.map(k=>`<option value="${esc(k)}"${k===key?" selected":""}>${esc(setupName(k))}</option>`).join("")}
 // Thresholds show only while their switch is on; a note sits under its switch, before the thresholds.
 function autoUI(s){const rows=autoRows(s),groups=[...new Set(rows.map(x=>x[3]))],big=s.id===(cfg.meetingSize||{}).big;
-  return groups.map(g=>`<h3 class="grp">${g}</h3>`+rows.filter(x=>x[3]===g).map(([k,l,h,,,opts])=>{const on=!!(s.auto||{})[k];
+  return groups.map(g=>`<h3 class="grp">${g}</h3>`+rows.filter(x=>x[3]===g).map(([k,l,h,,,opts])=>{const on=!!(s.auto||{})[k],dead=!!inertCase(k,s);
     const os=opts.filter(o=>!(o.scope==="size"&&!big)&&!(o.scope==="grid"&&!s.claudeGrid)),cn=autoNote(k,s);
-    return `<div class="xrow"><label class="switch"><input type="checkbox" data-auto="${k}" ${on?"checked":""} ${cn?`aria-describedby="xn-${k}"`:""}><span class="xt"><b>${l}</b><small>${esc(h)}</small></span>${on?'<span class="xon">On</span>':""}</label>
+    return `<div class="xrow"><label class="switch"><input type="checkbox" data-auto="${k}" ${on?"checked":""}${dead?' class="inert"':""} ${cn?`aria-describedby="xn-${k}"`:""}><span class="xt"><b>${l}</b><small>${esc(h)}</small>${dead?`<em class="xstate">${WARN}On, inactive</em>`:""}</span>${on&&!dead?'<span class="xon">On</span>':""}</label>
       ${cn?warnNote("xn-"+k,cn):""}
       ${on&&os.length?`<div class="xopt">${os.map(o=>o.scope==="setup"?`<label>${o.l} <select data-xf="${k}" data-xk="${o.k}" data-xs="setup" aria-label="${esc(l+": "+o.l)}">${setupOptions(s.setupKey)}</select></label>`:`<label>${o.l} <input type="number" min="1" max="${o.max}" step="1" data-xf="${k}" data-xk="${o.k}" data-xs="${o.scope||""}" value="${esc(optGet(s,k,o)??"")}" aria-label="${esc(l+": "+o.l+" "+o.u)}"> ${o.u}</label>`).join("")}</div>`:""}</div>`}).join("")).join("")}
 
@@ -843,8 +864,9 @@ function trigFields(s,t){
     +(t.type==="call"?`<label class="at"><input type="checkbox" id="back" ${t.back?"checked":""}><span>When the Call Ends, Go Back to the Scene Before</span></label>`:"")
     +(cn?`<div class="at">${warnNote("tn",cn)}</div>`:"")}
 // The one line the closed extras show: how many are on, and how many carry a warning.
-function xSummary(s){const rows=autoRows(s),n=rows.filter(([k])=>(s.auto||{})[k]).length,w=rows.filter(([k])=>autoNote(k,s)).length;
-  return `${n} on`+(w?` · ${WARN}${plural(w,"warning")}`:"")}
+// An inactive switch (inert) counts apart from a conflict warning; a switch with both counts in both.
+function xSummary(s){const rows=autoRows(s),n=rows.filter(([k])=>(s.auto||{})[k]).length,d=rows.filter(([k])=>inertCase(k,s)).length,w=rows.filter(([k])=>conflictNote(k,s)).length;
+  return `${n} on`+(d?` · ${WARN}${d} inactive`:"")+(w?` · ${WARN}${plural(w,"warning")}`:"")}
 // The scene box is redrawn on every edit; this names the focused control so the redraw can put focus back (keyboard users keep their place).
 function focusKey(e){if(!e||!e.closest||!e.closest("#scenebox"))return "";if(e.id)return "#"+e.id;if(e.tagName==="SUMMARY")return "#xtras>summary";
   if(e.name==="trig")return `input[name=trig][value="${e.value}"]`;return ["data-auto","data-day","data-xf","data-xk"].filter(a=>e.hasAttribute(a)).map(a=>`[${a}="${e.getAttribute(a)}"]`).join("")}
@@ -1411,8 +1433,9 @@ const CLOCK='<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-w
 const kindWord=id=>work[id].builtIn?"Built-in":saved(id)?"Custom":"Not saved",kindEdited=id=>!!(edited(id)&&saved(id));
 function renderRail(){
   if(LIVE){
-    const ids=railIds(),nOn=ids.filter(id=>hasAny(work[id])).length;
-    $("railsum").textContent=nOn?`${nOn} of ${ids.length} scenes have triggers on. The tray agent runs them.`:`No scene has a trigger on yet. Open a scene to switch one on.`;
+    const ids=railIds(),nOn=ids.filter(id=>hasAny(work[id])).length,nDead=ids.filter(id=>hasInert(work[id])).length;
+    $("railsum").textContent=(nOn?`${nOn} of ${ids.length} scenes have triggers on. The tray agent runs them.`:`No scene has a trigger on yet. Open a scene to switch one on.`)
+      +(nDead?` ${plural(nDead,"scene")} ${nDead===1?"has":"have"} a switch that does nothing.`:"");
     // The mark says whose layout a card shows. It says nothing while no scene follows another setup (every card would only say "own layout").
     const lst=Object.fromEntries(ids.map(id=>[id,layState(id)])),marks=ids.some(id=>lst[id]&&lst[id].name);
     // The cards are drawn again on every render (a preview answers, a save lands), so a button on a card that had focus is found again and gets it back.
@@ -1427,7 +1450,7 @@ function renderRail(){
       <button type="button" class="pick" data-pick="${esc(id)}" aria-pressed="${id===selId}"><span class="mini${fol?" follow":""}" aria-hidden="true">${miniHTML(prevs[id])}</span>
       <strong>${esc(s.name)}${on?'<span class="live">On screen</span>':""}</strong>${s.blurb?`<small>${esc(s.blurb)}</small>`:""}
       ${(s.trigger||{}).type&&s.trigger.type!=="manual"?`<span class="when">${CLOCK}${esc(trigText(s))}</span>`:""}
-      ${chipsOf(s).length?`<span class="chips" aria-label="Extra triggers on">${chipsOf(s).map(c=>`<i>${esc(c)}</i>`).join("")}</span>`:""}
+      ${chipsOf(s).length?`<span class="chips" aria-label="Extra triggers on">${chipsOf(s).map(c=>c.why?`<i class="inert">${WARN}<b><span class="vh">Warning: </span>${esc(c.l)}</b><small>${esc(c.why)}</small></i>`:`<i>${esc(c.l)}</i>`).join("")}</span>`:""}
       </button>
       <div class="crow"><span class="tag">${lmark}${kmark}${kedit}</span><span class="cact">${followName(id)?`<button type="button" class="btn cmenu" data-menu="${esc(id)}" aria-haspopup="menu" aria-expanded="${menuId===id}" aria-label="More for ${esc(s.name)}" title="More for ${esc(s.name)}">${MOREI}</button>`:""}<button type="button" class="btn" data-apply="${esc(id)}" ${isBusy?"disabled":""} aria-label="${verb()} ${esc(s.name)}">${verb()}</button></span></div></article>`}).join("");
     if(fsel){const n=$("cards").querySelector(fsel);if(n)n.focus()}
@@ -1461,7 +1484,7 @@ function renderInsp(V){
     <div class="field stack"><label for="sceneName">Name</label><input type="text" id="sceneName" name="sceneName" autocomplete="off" value="${esc(s.name)}" ${s.builtIn?"disabled title=\"Built-in scenes keep their name.\"":""} maxlength="40"></div>
     <p class="note" id="skind">${kindWord(selId)}${kindEdited(selId)?" · edited":""}</p>
     <h2>Triggers</h2>
-    <p class="callout${hasAny(s)?" warn":""}"><span${hasAny(s)?"":` class="off"`}><b>Triggers that are on move your windows without asking.</b> They run once you Save, and only while the tray agent runs. Applying by hand always works.</span><span${hasAny(s)?` class="off"`:""}>No trigger is on, so this scene changes your windows only when you apply it.</span></p>
+    <p class="callout${hasAny(s)?" warn":""}"><span${hasAny(s)?"":` class="off"`}><b>Triggers that are on move your windows without asking.</b> They run once you Save, and only while the tray agent runs. Applying by hand always works.</span><span${hasAny(s)?` class="off"`:""}>No ${hasInert(s)?"working ":""}trigger is on, so this scene changes your windows only when you apply it.</span></p>
     <fieldset class="trig"><legend>Main Trigger (Pick One)</legend>${TRIG.map(([v,l])=>`<div class="ropt"><label><input type="radio" name="trig" value="${v}" ${t.type===v?"checked":""}><span>${l}<small>${TRIGH[v]}</small></span></label>${t.type===v?trigFields(s,t):""}</div>`).join("")}</fieldset>
     <details class="xtras" id="xtras"${xOpen?" open":""}><summary><b>Extra Triggers</b><span class="xsum">${xSummary(s)}</span></summary><p class="note">Any number, each with its own switch.</p>${autoUI(s)}</details>
 

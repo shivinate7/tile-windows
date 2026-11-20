@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inert Trigger Switch</title>
+<style>
+/* Page shell: tokens copied from app.html :root, as run-undo.html does. No web fonts: the page opens from disk with no network.
+   The product CSS below (.card, .chips, .switch, .xrow, .xwarn, .callout) is copied from app.html; only the .inert rules and .xstate are new. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --select-ink:#FFFFFF; --screen:#F7F8F5;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D;
+  --ann-new:#C0267A; --ann-today:#4F574F;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --select-ink:#0A1226; --screen:#232824;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- Mockup shell (not product UI) ---------- */
+.mk{display:grid;gap:12px;padding:16px}
+.mk>*,.item,.shots{min-width:0}
+.banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel);max-width:1280px}
+.banner b{color:var(--ann-new)}
+.mkhead{display:grid;gap:4px}
+.mkhead h1{margin:0;font:700 20px var(--f-disp);letter-spacing:-.01em}
+.mkhead p{margin:0;color:var(--muted);max-width:80ch}
+.mkbar{display:grid;gap:8px}
+.mkgrp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkgrp>span{color:var(--muted);font-size:12px;min-width:44px}
+.mkseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.mkseg button{min-height:32px;border:0;background:transparent;padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.mkseg button+button{border-left:1px solid var(--line)}
+.mkseg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.mkopts{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;font-size:12.5px}
+.mkopts label{display:inline-flex;gap:6px;align-items:center;min-height:32px;cursor:pointer}
+.mkopts input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.mkopts .sep{color:var(--muted);font-size:12px}
+.item{display:grid;gap:10px;padding-top:6px}
+.item>h2{margin:12px 0 0;font:700 18px var(--f-disp);letter-spacing:-.01em}
+.item>p{margin:0;color:var(--muted);max-width:90ch}
+.shots{display:flex;flex-wrap:wrap;gap:34px 28px;align-items:flex-start}
+.shot{display:grid;gap:6px;min-width:0;max-width:100%}
+.shot.wide{flex-basis:100%}
+.shot h3.cap{margin:0;font:700 15px var(--f-disp);letter-spacing:-.01em}
+.shot .capn{margin:0;color:var(--muted);max-width:66ch}
+.kind{font:600 11px var(--f);padding:1px 6px;border-radius:3px;border:1px dashed var(--ann-new);color:var(--ann-new);margin-left:6px;vertical-align:2px}
+.kind.today{border-color:var(--ann-today);color:var(--ann-today)}
+.kind.pick{border-style:solid}
+.scroll{position:relative;overflow-x:auto;max-width:100%;border:1px solid var(--line);border-radius:8px}
+.abox{position:relative;outline:1.5px dashed var(--ann-new);outline-offset:3px;border-radius:8px;margin-top:22px}
+.abox.today{outline-color:var(--ann-today)}
+.abox>em{position:absolute;top:-22px;left:-4px;font:600 10.5px/1 var(--f);font-style:normal;white-space:nowrap;padding:2px 5px;border-radius:3px;background:var(--panel);color:var(--ann-new);border:1px dashed var(--ann-new);z-index:2}
+.abox.today>em{color:var(--ann-today);border-color:var(--ann-today)}
+.nolabels .abox{outline:0;margin-top:0}.nolabels .abox>em{display:none}
+.stage{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-start;padding:14px 16px 16px;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.stage.col{flex-direction:column;align-items:stretch}
+.stage h4{margin:0;font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.railsum{width:208px}
+.colw{display:grid;gap:8px;align-content:start}
+.colw>small{color:var(--muted);font-size:12px}
+
+/* ---------- Product CSS, copied from app.html ---------- */
+h2.s{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0;display:flex;align-items:center;justify-content:space-between;gap:6px}
+.note{font-size:12px;color:var(--muted);margin:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;border:1px solid var(--line);background:var(--panel);padding:5px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.cards{display:grid;gap:6px}
+.cat-code{--cat:var(--code)}.cat-browse{--cat:var(--browse)}.cat-comms{--cat:var(--comms)}.cat-other{--cat:var(--other)}
+.card{position:relative;display:grid;gap:4px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.card.sel{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.pick{display:grid;gap:5px;border:0;background:transparent;padding:0;text-align:left;min-width:0;border-radius:4px;cursor:default}
+.pick strong{font:700 15px var(--f-disp);letter-spacing:-.01em;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pick small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.mini{display:block;position:relative;height:32px;border-radius:4px;background:var(--canvas);overflow:hidden}
+.mini b{position:absolute;background:color-mix(in srgb,var(--cat) 75%,var(--panel));border-radius:1px}
+.crow{display:flex;justify-content:space-between;align-items:center;gap:6px;min-width:0}
+.tag{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.kd{display:inline-grid;place-items:center;width:16px;height:16px;flex:none;color:var(--muted)}
+.kd svg{width:13px;height:13px}
+.cact{display:flex;gap:4px;align-items:center;flex:none;margin-left:auto}
+.chips{display:flex;flex-wrap:wrap;gap:3px}
+.chips i{font:normal 11px var(--f);border:1px solid var(--line);border-radius:10px;padding:0 6px;color:var(--ink)}
+.cards.strip{grid-auto-flow:column;grid-auto-columns:176px}
+.cards.strip .pick>small{display:none}
+
+.switch{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:0 6px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+.switch input{appearance:none;width:30px;height:18px;border-radius:9px;background:var(--line);position:relative;margin:0;cursor:pointer;flex:none}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel)}
+.switch input:checked{background:var(--ink)} .switch input:checked::after{left:14px}
+.callout{display:grid;font-size:12px;color:var(--muted);margin:0;padding:8px 10px;border-left:3px solid var(--line);border-radius:4px}
+.callout>span{grid-area:1/1}
+.callout>.off{visibility:hidden}
+.callout b{color:var(--ink);font-weight:600}
+.callout.warn{background:var(--hi-bg);border-left-color:var(--hi);color:var(--ink)}
+details.xtras{border-top:1px solid var(--line);margin-top:6px}
+details.xtras>summary{display:flex;align-items:center;gap:8px;min-height:36px;cursor:pointer;list-style:none;font-size:12.5px;white-space:nowrap}
+details.xtras>summary::-webkit-details-marker{display:none}
+details.xtras>summary::before{content:"";width:6px;height:6px;border:solid var(--ink);border-width:0 1.5px 1.5px 0;transform:rotate(-45deg);margin:0 4px 0 2px;flex:none}
+details.xtras[open]>summary::before{transform:rotate(45deg)}
+.xsum{margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:12px}
+.xsum svg,.xwarn svg{width:14px;height:14px;flex:none}
+.xwarn{display:flex;gap:6px;align-items:flex-start;margin:0 0 4px 40px;padding:5px 8px;font-size:12px;color:var(--ink);background:var(--hi-bg);border-left:3px solid var(--hi);border-radius:4px}
+.xwarn svg{margin-top:1px}
+h3.grp{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:12px 0 2px}
+.xrow{display:grid;gap:2px;padding:4px 0;border-top:1px solid var(--line)}
+.xrow .switch{align-items:flex-start;white-space:normal;min-height:36px;padding:4px 0;gap:10px;width:100%}
+.xrow .switch input{margin-top:2px;box-shadow:inset 0 0 0 1px var(--muted)}
+.xrow .switch input:checked{box-shadow:none}
+.xt{display:grid;flex:1;min-width:0}
+.xt small{display:block;color:var(--muted);font-size:12px}
+.xon{font:600 11px var(--f);text-transform:uppercase;letter-spacing:.08em;color:var(--ink);align-self:center}
+.xopt{display:grid;gap:2px;padding:0 0 6px 40px;font-size:12px;color:var(--ink)}
+.xopt label{display:block;line-height:1.5}
+.xopt input[type=number]{width:54px;min-height:28px;margin:1px 2px;vertical-align:middle;background:var(--panel);color:var(--ink);border:1px solid var(--muted);border-radius:6px;padding:3px 6px}
+.xopt select{min-height:28px;margin:1px 2px;background:var(--panel);color:var(--ink);border:1px solid var(--muted);border-radius:6px;padding:3px 6px;max-width:100%}
+fieldset.trig{display:grid;gap:2px;border:0;margin:0;padding:0;min-width:0}
+fieldset.trig legend{padding:0;margin-bottom:4px;color:var(--muted)}
+.trig label{display:flex;gap:8px;align-items:center;min-height:34px}
+.trig label small{display:block;color:var(--muted);font-size:12px}
+.trig input[type=radio]{appearance:none;width:16px;height:16px;margin:0;flex:none;border:1.5px solid var(--muted);border-radius:50%;background:var(--panel)}
+.trig input[type=radio]:checked{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 3px var(--panel)}
+.field{display:flex;flex-direction:column;gap:4px}
+.field>label{color:var(--muted)}
+.field input[type=text]{min-height:32px;border:1px solid var(--line);border-radius:6px;padding:4px 8px;background:var(--panel)}
+
+/* ---------- New: the inert state ----------
+   Amber is already "attention" in this app (--hi, --hi-bg: the Dry Run bar, the warning notes). A dashed edge means "set, but not in effect" and
+   a triangle plus words carry it without colour. Nothing here relies on amber alone. */
+.chips i.inert{display:grid;grid-template-columns:auto 1fr;column-gap:4px;align-items:center;flex-basis:100%;border:1px dashed var(--ink);background:var(--hi-bg);border-radius:6px;padding:1px 6px 2px}
+.chips i.inert svg{width:12px;height:12px}
+.chips i.inert b{font-weight:600}
+.chips i.inert small{grid-column:2;color:var(--muted);font-size:11px;line-height:1.3}
+.chips i.inert.plain{display:inline-flex;gap:4px;align-items:center;flex-basis:auto;border-radius:10px;padding:0 6px}
+.chips i.inert.strike{display:inline-block;flex-basis:auto;background:transparent;border:1px dotted var(--muted);border-radius:10px;padding:0 6px;color:var(--muted)}
+.chips i.inert.strike s{text-decoration-thickness:1.5px}
+.switch input.inert:checked{background:var(--hi-bg);border:1.5px dashed var(--ink);box-shadow:none}
+.switch input.inert:checked::after{top:2px;left:14px;width:11px;height:11px;background:var(--ink)}
+.xstate{display:inline-flex;align-items:center;gap:5px;margin-top:2px;font:600 11px var(--f);font-style:normal;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)}
+.xstate svg{width:14px;height:14px;flex:none}
+.xrow.dim .switch{opacity:.55}
+@media (forced-colors:active){
+  .chips i.inert{border-color:CanvasText;forced-color-adjust:none;background:Canvas;color:CanvasText}
+  .chips i.inert small{color:CanvasText}
+  .switch input.inert:checked{forced-color-adjust:none;border:1.5px dashed ButtonText;background:Canvas}
+  .switch input.inert:checked::after{background:ButtonText}}
+
+/* ---------- Whole-screen frames (the board itself is unchanged and drawn as a stub) ---------- */
+.fr{display:grid;background:var(--panel);color:var(--ink);border-bottom:0}
+.fr.w1440{width:1440px;grid-template-columns:232px minmax(0,1fr) 268px;grid-template-areas:"top top top" "rail canvas insp"}
+.fr.w1024{width:1024px;grid-template-columns:minmax(0,1fr) 252px;grid-template-areas:"top top" "rail rail" "canvas insp"}
+.fr .top{grid-area:top;display:flex;align-items:center;gap:14px;padding:9px 16px;border-bottom:1px solid var(--line)}
+.fr .top b.brand{font:700 15px var(--f-disp);letter-spacing:-.01em}
+.fr .top span{color:var(--muted)}
+.fr .rail{grid-area:rail;padding:12px;display:flex;flex-direction:column;gap:8px;border-right:1px solid var(--line)}
+.fr.w1024 .rail{padding:8px 12px;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto}
+.fr .insp{grid-area:insp;border-left:1px solid var(--line);padding:4px 12px 16px}
+.fr .insp section{display:grid;gap:8px;padding:12px 0 8px}
+.fr .insp h2.s{color:var(--ink);font-size:12px;font-weight:700;letter-spacing:.1em}
+.fr .cv{grid-area:canvas;background:var(--canvas);display:grid;place-items:center;padding:18px 14px;min-height:260px}
+.fr .cv div{border:2px dashed var(--line);border-radius:8px;padding:28px 36px;color:var(--muted);text-align:center;max-width:420px;background:var(--panel)}
+</style>
+</head>
+<body>
+<main class="mk">
+<p class="banner"><b>Sample.</b> No figure, scene or count on this page is real. Scenes, counts and sizes are invented to show the states. Designer kind: informed.</p>
+<header class="mkhead">
+  <h1>Inert Trigger Switch</h1>
+  <p>An extra trigger switch can be On where it can do nothing, such as "Use This Scene for Calls of Its Size" on a scene that is not Listen or Meetings. Today its rail chip looks like a working one and the rail count includes it. New: the chip, the switch and the counts all say it is inactive, and why.</p>
+</header>
+<div class="mkbar">
+  <div class="mkgrp"><span>Show</span><div class="mkseg" id="segState" role="group" aria-label="Show"></div></div>
+  <div class="mkgrp"><span>Theme</span><div class="mkseg" id="segT" role="group" aria-label="Theme"></div></div>
+  <div class="mkgrp"><span>Hide</span><div class="mkopts" role="group" aria-label="Hide an option">
+    <label><input type="checkbox" data-o="plain"> Chip: mark only</label>
+    <label><input type="checkbox" data-o="strike"> Chip: struck through</label>
+    <label><input type="checkbox" data-o="dim"> Switch: dimmed row</label>
+    <label><input type="checkbox" data-o="quiet"> Counts: no rail sentence</label>
+    <label><input type="checkbox" data-o="working"> Counts: only working in the inspector</label>
+  </div></div>
+  <div class="mkgrp"><span>Labels</span><div class="mkopts"><label><input type="checkbox" id="oLabels"> Show Today and New labels</label></div></div>
+</div>
+<div id="frames"></div>
+</main>
+<script>
+"use strict";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
+/* Icons: WARN and the kind icons are app.html's. */
+const WARN='<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="var(--hi)" stroke="var(--ink)" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3.6" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".95" fill="var(--ink)"/></svg>';
+const KBUILT='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M7 1.4 12.2 4.2v5.6L7 12.6 1.8 9.8V4.2z"/><path d="M1.8 4.2 7 7l5.2-2.8M7 7v5.6"/></svg>';
+const KCUST='<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="4.6" r="2.4"/><path d="M2.4 12.6a4.6 4.6 0 0 1 9.2 0"/></svg>';
+
+/* The extra triggers this page needs, copied from app.html AUTO. why = the chip's short reason; note = needNote's words, unchanged.
+   The three reasons are the three cases of needNote(): setup with no setupKey, size or offer on a scene outside the meeting rule, activity with no app pointing here. */
+const SW={
+  desk:{l:"Put This Scene Back When I Return",h:"After a lock or a long idle, apply it again.",g:"At My Desk",chip:"Return"},
+  grid:{chip:"Grid"},
+  size:{l:"Use This Scene for Calls of Its Size",h:"Big calls go to Listen, others to Meetings, from the meeting file.",g:"Calls and Meetings",chip:"Call Size",why:"Not a call scene",note:"Only the scenes named in the meeting rule (Listen and Meetings) take part, so this does nothing here."},
+  offer:{l:"Offer This Scene Before a Meeting",h:"A tray notice asks first. Nothing moves unless you click it.",g:"Calls and Meetings",chip:"Offer",why:"Not a call scene",note:"Only the scenes named in the meeting rule (Listen and Meetings) take part, so this does nothing here."},
+  activity:{l:"Switch Here When My Work Suits It",h:"After a while in an app it suits, such as Claude, Procore, NetSuite, PowerPoint or Excel.",g:"At My Desk",chip:"Work Match",why:"No app maps here",note:"No app in the activity map points at this scene, so this does nothing."},
+  setup:{l:"Use This Scene on This Setup",h:"When this setup is plugged in. A rearranged setup is the same setup.",g:"Monitors",chip:"Setup",why:"No setup picked",note:"Pick a setup, or this does nothing."},
+  noext:{l:"Use This Scene When the External Monitors Go",h:"When only the laptop screen has been left for a while.",g:"Monitors",chip:"Laptop Only"}
+};
+/* sw: [key, inert]. rows: the inspector's Extra Triggers rows for the scene, [key, on, inert]. */
+const SCN=[
+  {id:"default",name:"Default",blurb:"Every window on its home screen.",k:"b",mini:[["code",4,4,40,24],["browse",50,4,40,24],["comms",4,32,86,0]],sw:[["desk"],["grid"]]},
+  {id:"focus",name:"Focus",blurb:"Claude and code in one big space.",k:"c",mini:[["code",4,4,60,24],["comms",68,4,22,24]],sw:[["desk"],["size",1]],
+    rows:[["desk",1,0],["size",1,1],["offer",0,0]]},
+  {id:"review",name:"Review",blurb:"Decks and sheets side by side.",k:"c",mini:[["other",4,4,40,24],["browse",48,4,42,24]],sw:[]},
+  {id:"solo",name:"Solo",blurb:"The laptop screen alone.",k:"c",mini:[["code",4,4,86,24]],sw:[["setup",1]],
+    rows:[["setup",1,1],["noext",0,0]]},
+  {id:"listen",name:"Listen",blurb:"A big call, notes to one side.",k:"b",mini:[["comms",4,4,50,24],["other",58,4,32,24]],sw:[["size"]]},
+  {id:"meetings",name:"Meetings",blurb:"A small call and its agenda.",k:"b",mini:[["comms",4,4,40,24],["browse",48,4,42,24]],sw:[["size"],["offer"]]}
+];
+const sc=id=>SCN.find(s=>s.id===id);
+const NSC=SCN.length;
+
+/* ---------- Rail ---------- */
+/* v: "today" draws every chip alike. "tag" is the picked chip; "plain" and "strike" are options. */
+function chip(k,inert,v,id){
+  const d=SW[k];
+  if(!inert||v==="today")return `<i>${esc(d.chip)}</i>`;
+  const idA=id?` id="${id}"`:"";
+  if(v==="plain")return `<i class="inert plain"${idA} title="${esc(d.chip+": on, but "+d.why.toLowerCase())}">${WARN}<span class="vh">Warning: </span>${esc(d.chip)}<span class="vh">. ${esc(d.why)}.</span></i>`;
+  if(v==="strike")return `<i class="inert strike"${idA} title="${esc(d.chip+": on, but "+d.why.toLowerCase())}"><s>${esc(d.chip)}</s><span class="vh"> is on but does nothing. ${esc(d.why)}.</span></i>`;
+  return `<i class="inert"${idA}>${WARN}<b><span class="vh">Warning: </span>${esc(d.chip)}</b><small>${esc(d.why)}</small></i>`}
+function mini(s){return `<span class="mini" aria-hidden="true">${s.mini.map(([c,x,y,w,h])=>`<b class="cat-${c}" style="--cat:var(--${c});left:${x}px;top:${y}px;width:${w}px;height:${h||3}px"></b>`).join("")}</span>`}
+/* A scene card as renderRail draws it. opts: sel, v (chip variant), id (id for the first inert chip). */
+function card(s,{sel=false,v="tag",id=""}={}){
+  const chips=s.sw.map(([k,i])=>chip(k,i,v,i&&id?id:"")).join("");
+  return `<article class="card${sel?" sel":""}"><div class="pick">${mini(s)}<strong>${esc(s.name)}</strong><small>${esc(s.blurb)}</small>${chips?`<span class="chips" aria-label="Extra triggers on">${chips}</span>`:""}</div>
+    <div class="crow"><span class="tag"><span class="kd" role="img" aria-label="${s.k==="b"?"Built-in":"Custom"}">${s.k==="b"?KBUILT:KCUST}</span></span><span class="cact"><button type="button" class="btn">Apply</button></span></div></article>`}
+/* The rail's one-line summary. today: every switch counts. New: only working ones, plus the inert count. */
+function railSum(v,quiet){
+  const on=SCN.filter(s=>s.sw.length),work=SCN.filter(s=>s.sw.some(([,i])=>!i)),dead=SCN.filter(s=>s.sw.some(([,i])=>i));
+  if(v==="today")return `${on.length} of ${NSC} scenes have triggers on. The tray agent runs them.`;
+  const a=work.length?`${work.length} of ${NSC} scenes have triggers on. The tray agent runs them.`:`No scene has a trigger on yet. Open a scene to switch one on.`;
+  return dead.length&&!quiet?`${a} ${plural(dead.length,"scene")} ${dead.length===1?"has":"have"} a switch that does nothing.`:a}
+function railBox(list,v,{w=208,strip=false,sel="",ids={}}={}){
+  return `<div style="width:${w}px"><div class="cards${strip?" strip":""}">${list.map(s=>card(s,{sel:s.id===sel,v,id:ids[s.id]||""})).join("")}</div></div>`}
+
+/* ---------- Inspector ---------- */
+const rowHTML=(k,on,inert,v,rid)=>{
+  const d=SW[k],show=on&&inert&&v!=="today",dim=on&&inert&&v==="dim";
+  const opt=!on?"":k==="desk"?`<div class="xopt"><label>After a lock of <input type="number" value="5" aria-label="After a lock of, minutes"> min.</label><label>Or idle for <input type="number" value="10" aria-label="Idle for, minutes"> min.</label></div>`
+    :k==="setup"?`<div class="xopt"><label>On <select aria-label="Setup"><option>Pick a setup</option></select></label></div>`:"";
+  const note=on&&inert?`<p class="xwarn">${WARN}<span><span class="vh">Warning: </span>${esc(d.note)}</span></p>`:"";
+  return `<div class="xrow${dim?" dim":""}"><label class="switch"><input type="checkbox"${rid&&on&&inert?` id="${rid}"`:""} ${on?"checked":""}${show&&v!=="dim"?' class="inert"':""}><span class="xt"><b>${esc(d.l)}</b><small>${esc(d.h)}</small>${show&&v!=="dim"?`<em class="xstate">${WARN}On, inactive</em>`:""}</span>${on&&!show?'<span class="xon">On</span>':""}</label>${note}${opt}</div>`}
+/* The Extra Triggers section. v: "today", "new" (picked), "dim" (option). sumMode: "on" counts every On switch, "working" only the working ones. */
+function xtras(s,v,sumMode="on",ids={}){
+  const rows=s.rows,n=rows.filter(r=>r[1]).length,dead=rows.filter(r=>r[1]&&r[2]).length;
+  const sum=v==="today"?`${n} on${dead?` · ${WARN}${plural(dead,"warning")}`:""}`
+    :`${sumMode==="working"?n-dead:n} on${dead?` · ${WARN}${dead} inactive`:""}`;
+  const groups=[...new Set(rows.map(r=>SW[r[0]].g))];
+  return `<details class="xtras" open><summary><b>Extra Triggers</b><span class="xsum"${ids.sum?` id="${ids.sum}"`:""}>${sum}</span></summary><p class="note">Any number, each with its own switch.</p>
+    ${groups.map(g=>`<h3 class="grp">${g}</h3>`+rows.filter(r=>SW[r[0]].g===g).map(r=>rowHTML(r[0],r[1],r[2],v,ids.row)).join("")).join("")}</details>`}
+const MAINT=[["Only When I Click Apply","I apply it myself.",1],["On a Schedule","On set days at a set time."],["When the Monitors Change","When a monitor is added or removed."],["When a Teams Call Starts","When Teams starts using the microphone."]];
+function callout(s,v){
+  const live=s.rows.some(r=>r[1]&&(v==="today"||!r[2]));
+  return `<p class="callout${live?" warn":""}"><span${live?"":' class="off"'}><b>Triggers that are on move your windows without asking.</b> They run once you Save, and only while the tray agent runs. Applying by hand always works.</span><span${live?' class="off"':""}>${v==="today"||!s.rows.some(r=>r[1]&&r[2])?"No trigger is on, so this scene changes your windows only when you apply it.":"No working trigger is on, so this scene changes your windows only when you apply it."}</span></p>`}
+function inspector(s,v,sumMode,ids){
+  return `<section><h2 class="s">Scene</h2><div class="field"><label>Name</label><input type="text" value="${esc(s.name)}" aria-label="Name"></div><p class="note">${s.k==="b"?"Built-in":"Custom"}</p></section>
+  <section><h2 class="s">Triggers</h2>${callout(s,v)}
+  <fieldset class="trig"><legend>Main Trigger (Pick One)</legend>${MAINT.map(([l,h,c],i)=>`<div><label><input type="radio" name="t-${s.id}-${v}" ${c?"checked":""}><span>${l}<small>${h}</small></span></label></div>`).join("")}</fieldset>
+  ${xtras(s,v,sumMode,ids)}</section>`}
+function frame(W,v){
+  const s=sc("focus");
+  const rail=`<h2 class="s">Scenes</h2><p class="note">${railSum(v==="today"?"today":"new")}</p>${railBox(SCN,v==="today"?"today":"tag",{w:W===1440?208:SCN.length*182,strip:W!==1440,sel:"focus"})}`;
+  return `<div class="scroll"><div class="fr w${W}"><div class="top"><b class="brand">Tile Windows</b><span>Scene: <b style="color:var(--ink)">Focus</b></span></div>
+    <aside class="rail" aria-label="Scenes">${rail}</aside><div class="cv"><div>Board and layout.<br>Not changed by this debt.</div></div>
+    <aside class="insp" aria-label="Scene">${inspector(s,v==="today"?"today":"new")}</aside></div></div>`}
+
+const ann=(html,label,today)=>`<div class="abox${today?" today":""}"><em>${label}</em>${html}</div>`;
+const stage=(inner,cls="")=>`<div class="stage${cls?" "+cls:""}">${inner}</div>`;
+
+/* ---------- Items and states ---------- */
+const ITEMS={
+  chips:["The rail chip","A trigger switch that is On but can do nothing wears a chip that looks like a working one. New: the chip is dashed and amber with a triangle, and says why in two or three words. Each is drawn in the rail at 1440 wide (a 208 px card) and in the strip at 1024 wide (a 176 px card)."],
+  switch:["The inspector switch","The switch is On and its amber note sits under it, so the row still reads as a working switch with a remark. New: the switch itself looks different and says \"On, inactive\". The note under it is the app's own words, unchanged."],
+  counts:["The counts","The rail says how many scenes have triggers on, and the inspector's Extra Triggers line says how many switches are on. Both count an inert switch today."],
+  only:["A scene whose only switch is inert","Today such a scene counts as having a trigger on, and the inspector's callout says its triggers move windows without asking. Neither is true."],
+  f1440:["Whole screen at 1440 wide","The rail on the left, the inspector on the right. The board is not part of this debt and is drawn as a stub."],
+  f1024:["Whole screen at 1024 wide","Below 1180 px the scenes become a strip over the board (app.html, max-width 1180px). The strip scrolls sideways, as it does today."]};
+/* [key, item, option ("", "today", or an option key), name, caption, draw(), picked] */
+const STATES=[
+  ["chips-today","chips","today","Chip as It Is",
+    "A scene that takes part in the meeting rule (Listen) and one that does not (Focus) show the same Call Size chip.",
+    ()=>stage(ann(railBox([sc("listen"),sc("focus")],"today",{w:208}),"Today: both chips alike",true)+ann(railBox([sc("focus")],"today",{w:176}),"Today: strip, 176 px wide",true))],
+  ["chip-tag","chips","","Dashed Tag with a Reason",
+    "The inert chip takes a row of its own. A triangle, a dashed edge and a two-line label: the chip's name, then why it does nothing. The working chips are unchanged. The three reasons are in the next picture.",
+    ()=>stage(ann(railBox([sc("listen"),sc("focus")],"tag",{w:208,ids:{focus:"chip-tag"}}),"New: working and inert chips")+ann(railBox([sc("focus")],"tag",{w:176}),"New: strip, 176 px wide")),true],
+  ["chip-why","chips","","The Three Reasons",
+    "One chip for each case where the switch does nothing: the scene is outside the meeting rule (two switches), no setup is picked, no app in the activity map points at the scene. The long sentence stays in the inspector.",
+    ()=>stage(["size","setup","activity"].map(k=>`<div class="colw"><div class="chips" style="width:200px;border:1px solid var(--line);border-radius:8px;padding:7px 8px">${chip(k,1,"tag")}</div><small>${esc(SW[k].note)}</small></div>`).join("").replace(/<small>/g,'<small style="max-width:200px">'))],
+  ["chip-plain","chips","plain","Mark Only",
+    "The same dashed edge and triangle on a chip that keeps its pill shape. The reason is in the hover title and for a screen reader, and in the inspector. A touch screen shows no hover title.",
+    ()=>stage(ann(railBox([sc("listen"),sc("focus")],"plain",{w:208,ids:{focus:"chip-plain"}}),"New, option: mark only")+ann(railBox([sc("focus")],"plain",{w:176}),"New, option: strip"))],
+  ["chip-strike","chips","strike","Struck Through",
+    "The inert chip is muted with a line through its name and a dotted edge. It reads as dead at once, and as removed more than as On.",
+    ()=>stage(ann(railBox([sc("listen"),sc("focus")],"strike",{w:208,ids:{focus:"chip-strike"}}),"New, option: struck through")+ann(railBox([sc("focus")],"strike",{w:176}),"New, option: strip"))],
+
+  ["sw-today","switch","today","Switch as It Is",
+    "On, with the word On at the right. The amber note below is the only sign. The Return row above is a working switch: the two rows look alike.",
+    ()=>stage(ann(`<div style="width:244px">${xtras({rows:[["desk",1,0],["size",1,1]]},"today")}</div>`,"Today: both rows look On",true))],
+  ["sw-inert","switch","","Dashed Amber Track and a Status Line",
+    "The track is amber with a dashed edge and its knob at the On end. \"On, inactive\" sits under the hint, with a triangle, and replaces the word On at the right. The note below is unchanged.",
+    ()=>stage(ann(`<div style="width:244px">${xtras({rows:[["desk",1,0],["size",1,1]]},"new","on",{row:"sw-inert"})}</div>`,"New: inert switch"))],
+  ["sw-dim","switch","dim","Dimmed Row",
+    "The whole row fades to about half strength, the track unchanged. It reads as disabled, but the switch is not disabled, and its hint and title lose contrast. A row with a picker in it (Pick a setup) would fade the way out too.",
+    ()=>stage(ann(`<div style="width:244px">${xtras({rows:[["desk",1,0],["size",1,1]]},"dim","on",{row:"sw-dim"})}</div>`,"New, option: dimmed row"))],
+
+  ["count-today","counts","today","Counts as They Are",
+    "Five of six scenes show as having triggers on, because Focus and Solo each hold a switch that does nothing. The inspector counts the same.",
+    ()=>stage(ann(`<div class="railsum"><p class="note" id="count-today">${railSum("today")}</p></div>`,"Today: rail line",true)+ann(`<div style="width:244px">${xtras(sc("focus"),"today")}</div>`,"Today: inspector line",true),"")],
+  ["count-sentence","counts","","Working Count and an Inactive Sentence",
+    "The rail counts a scene only if it has a working trigger, then says how many scenes hold a switch that does nothing. The inspector line keeps counting On switches and adds how many are inactive.",
+    ()=>stage(ann(`<div class="railsum"><p class="note" id="count-sentence">${railSum("new")}</p></div>`,"New: rail line")+ann(`<div style="width:244px">${xtras(sc("focus"),"new","on",{sum:"xsum-on"})}</div>`,"New: inspector line")),true],
+  ["count-quiet","counts","quiet","No Rail Sentence",
+    "The rail line is only the corrected count. Only the chip tells you a scene has an inactive switch.",
+    ()=>stage(ann(`<div class="railsum"><p class="note" id="count-quiet">${railSum("new",true)}</p></div>`,"New, option: count only"))],
+  ["xsum-working","counts","working","Inspector Counts Working Switches",
+    "The inspector line counts only the switches that work, so it matches the rail. Two switches show On, and the line says 1 on.",
+    ()=>stage(ann(`<div style="width:244px">${xtras(sc("focus"),"new","working",{sum:"xsum-working"})}</div>`,"New, option: working count"))],
+
+  ["only-today","only","today","Scene as It Is",
+    "Solo has one switch, Use This Scene on This Setup, with no setup picked. The rail card looks like a trigger scene and the callout warns that it moves windows.",
+    ()=>stage(ann(railBox([sc("solo")],"today",{w:208}),"Today: card",true)+ann(`<div style="width:244px">${callout(sc("solo"),"today")}${xtras(sc("solo"),"today")}</div>`,"Today: callout and switch",true))],
+  ["only","only","","Scene with Nothing Working",
+    "The card has the dashed chip and the callout says no working trigger is on. The switch row shows the way out: the picker sits under it at full strength.",
+    ()=>stage(ann(railBox([sc("solo")],"tag",{w:208,ids:{solo:"only-chip"}}),"New: card")+ann(`<div style="width:244px">${callout(sc("solo"),"new")}${xtras(sc("solo"),"new")}</div>`,"New: callout and switch")),true],
+
+  ["f1440","f1440","","Rail and Inspector, 1440",
+    "Focus is selected. Its Call Size chip is inert, and so is its switch. Solo's only chip is inert. The rail line counts four of six.",
+    ()=>frame(1440,"new"),true],
+  ["f1024","f1024","","Strip and Inspector, 1024",
+    "The same state in the strip over the board, where each card is 176 px wide.",
+    ()=>frame(1024,"new"),true]];
+
+/* ---------- State, hash, render ---------- */
+const OPTS=["plain","strike","dim","quiet","working"];
+const KEYS=[["chips","Chip"],["switch","Switch"],["counts","Counts"],["only","Only Inert"],["f1440","1440"],["f1024","1024"]];
+const V={s:"all",t:"",off:new Set(),labels:true};
+function readHash(){const h=new URLSearchParams(location.hash.slice(1));V.s=h.get("s")||"all";V.t=h.get("t")||"";V.labels=h.get("labels")!=="0";V.off=new Set((h.get("hide")||"").split(",").filter(Boolean))}
+function writeHash(){const p=[`s=${V.s}`];if(V.t)p.push(`t=${V.t}`);if(!V.labels)p.push("labels=0");if(V.off.size)p.push(`hide=${[...V.off].join(",")}`);history.replaceState(null,"","#"+p.join("&"))}
+function render(){
+  if(V.t)document.documentElement.dataset.theme=V.t;else delete document.documentElement.dataset.theme;
+  document.body.classList.toggle("nolabels",!V.labels);
+  if(V.s!=="all"&&!KEYS.some(k=>k[0]===V.s))V.s="all";
+  const segs=[["segState",[...KEYS,["all","All"]],"s"],["segT",[["","Match Windows"],["light","Light"],["dark","Dark"]],"t"]];
+  for(const [id,opts,k] of segs)document.getElementById(id).innerHTML=opts.map(([v,l])=>`<button type="button" data-k="${k}" data-v="${v}" aria-pressed="${V[k]===v}">${l}</button>`).join("");
+  for(const cb of document.querySelectorAll("[data-o]"))cb.checked=V.off.has(cb.dataset.o);
+  document.getElementById("oLabels").checked=V.labels;
+  let html="";
+  for(const key of KEYS.map(k=>k[0])){
+    if(V.s!=="all"&&V.s!==key)continue;
+    const list=STATES.filter(s=>s[1]===key&&(!s[2]||s[2]==="today"||!V.off.has(s[2])));
+    html+=`<section class="item" aria-labelledby="i-${key}"><h2 id="i-${key}">${ITEMS[key][0]}</h2><p>${ITEMS[key][1]}</p><div class="shots">`;
+    for(const [k,,o,name,cap,draw,pick] of list){
+      const tag=o==="today"?`<span class="kind today">Today</span>`:o?`<span class="kind">Option</span>`:`<span class="kind${pick?" pick":""}">${pick?"New, picked":"New"}</span>`;
+      html+=`<section class="shot${key==="f1440"||key==="f1024"?" wide":""}" id="f-${k}" aria-labelledby="h-${k}"><h3 class="cap" id="h-${k}">${name}${tag}</h3><p class="capn">${cap}</p>${draw()}</section>`}
+    html+="</div></section>"}
+  document.getElementById("frames").innerHTML=html;
+  writeHash()}
+document.addEventListener("click",e=>{const b=e.target.closest(".mkseg button");if(!b)return;V[b.dataset.k]=b.dataset.v;render()});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.dataset.o){if(t.checked)V.off.add(t.dataset.o);else V.off.delete(t.dataset.o);render();return}
+  if(t.id==="oLabels"){V.labels=t.checked;render()}});
+addEventListener("hashchange",()=>{readHash();render()});
+readHash();render();
+</script>
+</body>
+</html>

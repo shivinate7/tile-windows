@@ -450,9 +450,13 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $tsrv = Start-Child $tprof "-File `"$serve`" -NoBrowser -From `"$fixture`"" @{ TILE_HOME = $thome }
     $turl = $tsrv.StandardOutput.ReadLine(); $tst = SelfTest $turl 'triggers'
     [void](Invoke-WebRequest -UseBasicParsing "${turl}quit" -Method Post -Body 'quit')
-    Check 'page: with triggers on, the rail shows each scene''s extra triggers as chips' ($tst.chips.default -eq 'Return,Call Size,Gap' -and $tst.chips.focus -eq 'Gap' -and $tst.railsum -like '2 of 7 scenes have triggers on*') ($tst | ConvertTo-Json -Compress)
+    # The inert trigger switch's design (docs/design/mockups/inert-trigger-switch.html, its notes, choices 1, 2 and 7): a chip of a switch that
+    # does nothing carries its hidden "Warning: " lead and its reason; the rail line counts the scenes with a working trigger, then says how many
+    # hold a switch that does nothing.
+    Check 'page: with triggers on, the rail shows each scene''s extra triggers as chips, an inert one with its reason' ($tst.chips.default -eq 'Return,Warning: Call SizeNot a call scene,Gap' -and $tst.chips.focus -eq 'Gap' -and $tst.railsum -like '2 of 7 scenes have triggers on*1 scene has a switch that does nothing.') ($tst | ConvertTo-Json -Compress)
     Check 'page: two scenes with the same extra trigger each say so beside the switch, and the first in the rail wins' ($tst.gaps.default -like 'Also used by Focus. This scene is first*' -and $tst.gaps.focus -like 'Also used by Default. Default is first*') ($tst | ConvertTo-Json -Compress)
-    Check 'page: a switch that does nothing here says so beside it, and the closed extras count the warnings' ($tst.size -like '*does nothing here.' -and $tst.summary -like '3 on*2 warnings') ($tst | ConvertTo-Json -Compress)
+    # Choice 9 of the same mockup: the closed extras count the switches that are On, and the inactive ones and the warnings apart (middle dots).
+    Check 'page: a switch that does nothing here says so beside it, and the closed extras count the inactive switch apart from the warning' ($tst.size -like '*does nothing here.' -and $tst.summary -ceq "3 on $([char]0x00B7) 1 inactive $([char]0x00B7) 1 warning") ($tst | ConvertTo-Json -Compress)
     Check 'page: the trigger section has no disabled control' ($tst.disabled -eq 0) ($tst | ConvertTo-Json -Compress)
     Check 'page: the callout keeps its height when the last trigger goes off' ($tst.callout.on -gt 0 -and $tst.callout.on -eq $tst.callout.off) ($tst | ConvertTo-Json -Compress)
   }
