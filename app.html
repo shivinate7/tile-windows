@@ -1661,7 +1661,10 @@ async function saveLayout(id){
   finally{svBusy[id]=false;render()}}
 const unsavedCount=()=>Object.keys(unsaved).filter(i=>work[i]).reduce((n,i)=>n+unsaved[i],0);
 const retrySave=()=>{for(const id of Object.keys(failed))if(!stale[id])saveLayout(id)};
-const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
+// A pin made by a drag matches the title's lead words (the part before " - ") when no sibling window of the app has a title containing them
+// (the engine matches by contains), so a browser tab whose title changes keeps its pin. Otherwise it keeps the whole title.
+const matchFor=w=>{const sib=snap.windows.filter(x=>x.app===w.app);if(sib.length<2)return"";const lead=w.title.split(" - ")[0];
+  return lead&&!sib.some(x=>x.id!==w.id&&x.title.toLowerCase().includes(lead.toLowerCase()))?lead:w.title};
 // force: the owner confirmed moving a locked tile (askMove); every other caller still refuses it.
 function pinWin(id,mon,slot,cs=1,rs=1,force=false){
   const w=winById(id);
