@@ -882,7 +882,17 @@ function monAt(x,y){return snap.monitors.find(m=>x>=m.x&&x<m.x+m.w&&y>=m.y&&y<m.
 const clamp=(v,a,b)=>Math.min(Math.max(v,a),b);
 
 /* ---------- Loading ---------- */
+// A dropped connection (fetch throws a TypeError) is tried again after 0.4, 0.8 and 1.6 s, 2.8 s in all; the footer error shows only when the last try fails too.
+// A reply the server sent with an error status is not tried again: it will not change by itself, and its text tells the user what to fix.
+const LOADWAIT=[400,800,1600];
 async function loadAll(){
+  for(let n=0;;n++){
+    const err=await loadOnce();
+    if(!(err instanceof TypeError&&n<LOADWAIT.length)){if(err)status(err instanceof TypeError?"Could not reach the server. Start Tile Windows again.":`Could not ${err.step}: ${err.message}`);return}
+    await new Promise(r=>setTimeout(r,LOADWAIT[n]))}
+}
+// One try at loading the page's data. Returns null on success, else the error, with the step it failed at in .step.
+async function loadOnce(){
   let step="read your windows";
   try{
     const s=await fetch("snapshot",{cache:"no-store"});if(!s.ok)throw new Error(await s.text());
@@ -895,7 +905,8 @@ async function loadAll(){
     lastKey=plug?plug.key:"";
     if(!selId||!work[selId])selId=(cfg.scenes.find(x=>x.id===st.active)||cfg.scenes[0]).id;
     setSnap(sj);await previewAll();
-  }catch(e){status(e instanceof TypeError?"Could not reach the server. Start Tile Windows again.":`Could not ${step}: ${e.message}`)}
+    return null;
+  }catch(e){if(e&&typeof e==="object")e.step=step;return e}
 }
 async function refresh(){if(isBusy&&!following)return;status("Reading your windows…");
   try{const r=await fetch("snapshot",{cache:"no-store"});if(!r.ok)throw new Error("server said "+r.status);await resnap(await r.json());hist=[];prevs={};await previewAll();status("Windows read again.")}
@@ -951,11 +962,19 @@ function setSnap(d){
 const inflight={};
 async function newestPrev(id){while(inflight[id])await inflight[id];return prevs[id]}
 function preview(id){const p=previewRun(id).finally(()=>{if(inflight[id]===p)delete inflight[id]});inflight[id]=p;return p}
+// A scene whose newest preview failed, by id: its old preview is dropped, so the board never draws windows the scene did not place.
+const pfail={};
 async function previewRun(id){
   const n=pseq[id]=(pseq[id]||0)+1;
-  try{const r=await post("preview",withCats(work[id]));if(!r.ok)throw new Error(await r.text());const j=await r.json();
-    if(pseq[id]!==n)return;prevs[id]=j;if(id===selId){optim=null;flLive=null}render()}
-  catch(e){status("Preview failed: "+e.message)}}
+  try{const r=await post("preview",withCats(work[id]));if(!r.ok)throw new Error((await r.text()).trim()||"The server said "+r.status);
+    // An answer with no body, or no layout in it, is a failure too.
+    const j=await r.json().catch(()=>null);if(!j||!Array.isArray(j.placed)||!Array.isArray(j.left))throw new Error("The server gave no layout");
+    if(pseq[id]!==n)return;delete pfail[id];prevs[id]=j;if(id===selId){optim=null;flLive=null}render()}
+  catch(e){if(pseq[id]!==n)return;
+    const why=mgFail(e),sc=cfg.scenes.find(x=>x.id===id)||work[id]||{};
+    // Status line only: a toast here would replace the Undo toast that follows a live apply.
+    pfail[id]=why;delete prevs[id];if(id===selId){optim=null;flLive=null}
+    const msg=`Preview failed for ${sc.name||id}: ${why}`;status(msg);render()}}
 async function previewAll(){await preview(selId);for(const s of cfg.scenes)if(s.id!==selId)await preview(s.id);
   for(const id in work)if(!saved(id)&&id!==selId)await preview(id)}
 
@@ -3003,7 +3022,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="revert"){edit(s=>{Object.keys(s).forEach(k=>delete s[k]);Object.assign(s,clone(saved(selId)))},"Reverted to the saved scene.");sceneMsg="Reverted to the saved scene.";render()}
   else if(t.id==="del"){const s=scene();if(s.builtIn)return;const f=await ask(`Delete ${s.name}?`,`<p class="note">The scene and its trigger go away. Your windows do not move.</p>`,"Delete",true);if(!f)return;
     const next=clone(cfg);next.scenes=next.scenes.filter(x=>x.id!==selId);
-    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){clearTimeout(svT[selId]);delete svT[selId];delete svAgain[selId];delete work[selId];delete prevs[selId];delete unsaved[selId];delete failed[selId];delete stale[selId];delete lq[selId];delete lsaved[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
+    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){clearTimeout(svT[selId]);delete svT[selId];delete svAgain[selId];delete work[selId];delete prevs[selId];delete pfail[selId];delete unsaved[selId];delete failed[selId];delete stale[selId];delete lq[selId];delete lsaved[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
   else if(t.id==="editcats")editCats();
   else if(t.id==="quit"){if(!await ask("Stop the Tile Windows server?",`<p class="note">This page stops working until you open Tile Windows again. Your scenes are saved. Your windows do not move.</p>`,"Stop Server",true))return;try{await post("quit","quit")}catch(_){}document.body.innerHTML='<p style="padding:24px;font:15px system-ui">Server stopped. You can close this tab.</p>'}
 });
@@ -3114,7 +3133,8 @@ async function selftestTriggers(){
 async function selftestScenes(){
 
   const out={drawn:{},names:[],cell:cellRect({x:0,y:0,w:1365,h:1001},{c:2,r:2},0,0,1,1)};
-  for(const s of cfg.scenes){selId=s.id;await preview(s.id);
+  out.previewFailed=[];
+  for(const s of cfg.scenes){selId=s.id;await preview(s.id);if(pfail[s.id])out.previewFailed.push("preview failed for "+s.id);
     out.drawn[s.id]=Object.entries(drawn).filter(([,d])=>d.kind==="pin"||d.kind==="fill"||d.kind==="zone").map(([id,d])=>({id:+id,x:d.x,y:d.y,w:d.w,h:d.h}))}
   // Into the bay and back: the scene records it, the engine leaves it, the bay shows it; placing it takes it out.
   const zs=cfg.scenes.find(s=>(s.zones||[]).length);

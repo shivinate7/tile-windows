@@ -268,7 +268,12 @@ try {
         }
         'POST preview' {
           if (-not ($body = Body $ctx $req '{')) { continue }
-          Send $ctx 200 'application/json' ((& $tile -Scene $body -From $snap -Json 3>$null) -join '')
+          # An engine that fails without throwing leaves no output: that is an error answer, never a 200 the page would read as a layout.
+          $got = @(& $tile -Scene $body -From $snap -Json 3>$null 2>&1)
+          $text = (@($got | ? { $_ -isnot [Management.Automation.ErrorRecord] }) -join '')
+          if ($text.Trim()) { Send $ctx 200 'application/json' $text; continue }
+          $why = @($got | ? { $_ -is [Management.Automation.ErrorRecord] } | % { "$($_.Exception.Message)".Trim() } | ? { $_ })[0]
+          Send $ctx 500 'text/plain' $(if ($why) { $why } else { 'The engine gave no answer.' })
         }
         'POST scene' {
           if (-not ($body = Body $ctx $req '{')) { continue }
