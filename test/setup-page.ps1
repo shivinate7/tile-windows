@@ -103,6 +103,13 @@
 #   Free Layout review fixes (PR 58, round 2; F6 to F8): a drag from a space onto a space held by an unpinned window swaps, and that window
 #     takes the space the dragged one left; Put Behind from a space leaves the space it left naming nothing; Move To onto a space held by a
 #     locked pin keeps that pin, its lock and its space.
+#   Inert trigger switch (debt inert-trigger-switch; mockup docs/design/mockups/inert-trigger-switch.html): an extra switch that is On and can
+#     do nothing for its scene is inert (needNote's three cases: Call Size on a scene that is not Listen or Meetings, Setup with no setup picked,
+#     Work Match on a scene the activity map does not name). Rail: a chip is a child of its card's .chips. An inert chip carries a class that names
+#     the state, or words past its name; a working chip stays its bare name. The rail line counts the scenes with a working trigger and says how
+#     many hold a switch that does nothing; with none working it reads No scene has a trigger on yet. Inspector: an inert On row reads inactive,
+#     a working row (a conflict note does not make one inert) keeps a bare On, the Extra Triggers line reads N on, N inactive, N warning, and
+#     the callout of a scene with only inert switches reads No working trigger is on. The control checks hold on the page as it stands.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 #
@@ -120,7 +127,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 155
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 158
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -4250,6 +4257,131 @@ function () {
     $left = @(Ax-Named $ws 'Open half|Stays empty|Kept empty')
     $leftOn23 = @(@($left) | ? { $_.slot -eq 2 -or $_.slot -eq 3 })
     Check 'split open: after Undo cells 2 and 3 are no longer named Open half (the split marks are reverted)' ($leftOn23.Count -eq 0) "named halves: $(Half-Text $leftOn23)"
+  }
+
+  # Inert trigger switch (debt inert-trigger-switch; mockup docs/design/mockups/inert-trigger-switch.html). A switch is inert when it is On and can do
+  # nothing for its scene. needNote in app.html names three such cases, and each is drawn here: Call Size on a scene that is neither Listen nor
+  # Meetings, Setup with no setup picked, and Work Match on a scene no entry of the activity map points at (the starters map Focus and Review).
+  # Every main trigger stays manual, so only the extra switches decide what the rail and the inspector say.
+  function Inert-Config([hashtable]$on, [hashtable]$setupKey = @{}) {
+    $cfg = New-Config
+    foreach ($id in $on.Keys) {
+      $sc = @($cfg.scenes | ? { $_.id -eq $id })[0]
+      foreach ($k in $on[$id]) { $sc.auto.$k = $true }
+      if ($setupKey.ContainsKey($id)) { $sc | Add-Member -Force -NotePropertyName setupKey -NotePropertyValue $setupKey[$id] }
+    }
+    $cfg
+  }
+  # Mixed: four scenes have a working switch (Default, Focus, Meetings, Listen), and three hold an inert one (Focus, Review, Solo). Focus holds both
+  # kinds: its Gap is shared with Default, which is a conflict note and not inertness. Listen's Call Size is the working twin of Focus's inert one.
+  $inertMixed = @{ default = @('gaps'); focus = @('size', 'gaps', 'activity'); meetings = @('setup'); review = @('setup'); solo = @('activity'); listen = @('size') }
+  # Nothing working: two scenes hold only an inert switch (Review's Setup with no setup picked, Solo's Work Match).
+  $inertOnly = @{ review = @('setup'); solo = @('activity') }
+  # The chips of the mixed rail: scene, chip name, and whether its switch is inert.
+  $inertChips = @(
+    [pscustomobject]@{ scene = 'focus'; label = 'Call Size'; inert = $true }, [pscustomobject]@{ scene = 'review'; label = 'Setup'; inert = $true }
+    [pscustomobject]@{ scene = 'solo'; label = 'Work Match'; inert = $true }, [pscustomobject]@{ scene = 'default'; label = 'Gap'; inert = $false }
+    [pscustomobject]@{ scene = 'focus'; label = 'Gap'; inert = $false }, [pscustomobject]@{ scene = 'focus'; label = 'Work Match'; inert = $false }
+    [pscustomobject]@{ scene = 'meetings'; label = 'Setup'; inert = $false }, [pscustomobject]@{ scene = 'listen'; label = 'Call Size'; inert = $false }
+  )
+  # A chip is a child of its card's .chips. It is found by its name at the start of its words, past any hidden "Warning: " lead, so a chip that
+  # gains a reason line is still found. `extra` is the letters its words (text, aria-label, title) hold once its name is taken out.
+  $inertChipsJs = @'
+const want = __WANT__;
+const bare = e => e.textContent.replace(/\s+/g, " ").trim().replace(/^Warning:\s*/i, "");
+return { chips: want.map(([scene, label]) => {
+  const b = [...document.querySelectorAll("[data-pick]")].find(x => x.dataset.pick === scene);
+  const card = b ? b.closest("article.card") : null;
+  const c = card ? [...card.querySelectorAll(".chips > *")].find(x => bare(x).startsWith(label)) : null;
+  if (!c) return { scene: scene, label: label, found: false };
+  const all = [c.getAttribute("aria-label") || "", c.getAttribute("title") || "", c.textContent].join(" ");
+  return { scene: scene, label: label, found: true, cls: c.getAttribute("class") || "", text: c.textContent.replace(/\s+/g, " ").trim(), extra: all.split(label).join(" ").replace(/Warning:/gi, "").replace(/[^A-Za-z]/g, "") };
+}) };
+'@
+  # The rail's line and how many scene cards it sits over.
+  $inertRailJs = 'return { sum: document.getElementById("railsum").textContent.replace(/\s+/g, " ").trim(), cards: document.querySelectorAll("#cards article.card").length }'
+  # The callout of the open scene, as a person reads it: the text that is not hidden (the two texts share one cell, and the other is visibility:hidden).
+  $inertCalloutJs = 'const c = document.querySelector("#scenebox .callout"); if (!c) return null; return [...c.children].filter(e => getComputedStyle(e).visibility !== "hidden").map(e => e.textContent).join(" ").replace(/\s+/g, " ").trim()'
+  # A switch row of the inspector, by its data-auto key: the words it shows without its note and its thresholds, and whether a bare "On" is among them.
+  $inertRowsJs = @'
+const row = k => { const i = document.querySelector('#scenebox input[data-auto="' + k + '"]'); return i ? i.closest(".xrow") : null };
+const stat = k => { const r = row(k); if (!r) return null; const c = r.cloneNode(true); c.querySelectorAll(".xwarn, .xopt").forEach(n => n.remove());
+  return { checked: r.querySelector("input").checked, text: c.textContent.replace(/\s+/g, " ").trim(), bareOn: [...c.querySelectorAll("*")].some(e => e.children.length === 0 && e.textContent.trim() === "On") } };
+const s = document.querySelector("#scenebox .xsum");
+return { size: stat("size"), gaps: stat("gaps"), activity: stat("activity"), sum: s ? s.textContent.replace(/\s+/g, " ").trim() : null };
+'@
+  # Picks a scene's card, as a user does, and waits for its inspector.
+  function Inert-Select($sock, [string]$scene) {
+    [void](Js $sock ('document.querySelector("[data-pick=__S__]").click(); return true'.Replace('__S__', $scene)))
+    WaitFor $sock ('selId === "__S__" && !!document.querySelector("#scenebox .callout")'.Replace('__S__', $scene))
+  }
+
+  Case 'inert switch, rail: the chip of a switch that does nothing is marked apart from a working chip, and the rail counts only scenes with a working trigger' {
+    Put-Config (Inert-Config $inertMixed @{ meetings = $plugKey })
+    $opened = Open-Page $ws $url 'focus'
+    Check 'inert switch: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $rail = Js $ws $inertRailJs
+    Check 'inert switch: the rail draws the 7 scenes (scope)' ($rail.cards -eq 7) "scene cards: $($rail.cards)"
+    $want = '[' + (($inertChips | % { '["' + $_.scene + '","' + $_.label + '"]' }) -join ',') + ']'
+    $got = @((Js $ws ($inertChipsJs.Replace('__WANT__', $want))).chips)
+    $lost = @($got | ? { -not $_.found } | % { "$($_.label) on $($_.scene)" })
+    Check 'inert switch: each of the 8 switches that are on shows a chip on its card (scope)' ($got.Count -eq 8 -and $lost.Count -eq 0) "no chip for: $($lost -join ', ')"
+    if ($lost.Count -gt 0) { return }
+    for ($i = 0; $i -lt $inertChips.Count; $i++) {
+      $t = $inertChips[$i]; $c = $got[$i]
+      # Marked: a class that names the state, or words past the chip's name. Neither is on a chip today.
+      $marked = ($c.cls -match 'inert|inactive') -or ($c.extra.Length -gt 0)
+      $seen = "class '$($c.cls)', words '$($c.text)'"
+      if ($t.inert) { Check "inert switch: the $($t.label) chip of $($t.scene), a switch that does nothing, is marked apart from a working chip" $marked $seen }
+      else { Check "inert switch: the $($t.label) chip of $($t.scene), a working switch, is unchanged (control)" (-not $marked -and $c.text -ceq $t.label) $seen }
+    }
+    Check 'inert switch: the rail line counts the 4 scenes with a working trigger, and not the 2 that hold only an inert switch' ($rail.sum -match '^4 of 7 scenes have triggers on') "rail line: '$($rail.sum)'"
+    Check 'inert switch: the rail line says that 3 scenes hold a switch that does nothing' ($rail.sum -match '\b3\b[^.]*does nothing') "rail line: '$($rail.sum)'"
+  }
+
+  Case 'inert switch, nothing working: the rail says no scene has a trigger on, and the callout of a scene with only inert switches says no working trigger is on' {
+    Put-Config (Inert-Config $inertOnly)
+    $opened = Open-Page $ws $url 'solo'
+    Check 'inert switch: the page opens on Solo (control)' $opened 'the page did not open on Solo in time'
+    if (-not $opened) { return }
+    $rail = Js $ws $inertRailJs
+    Check 'inert switch: the rail draws the 7 scenes (scope)' ($rail.cards -eq 7) "scene cards: $($rail.cards)"
+    Check 'inert switch: with only inert switches on, the rail says no scene has a trigger on yet' ($rail.sum -match '^No scene has a trigger on yet') "rail line: '$($rail.sum)'"
+    Check 'inert switch: with only inert switches on, the rail line says that 2 scenes hold a switch that does nothing' ($rail.sum -match '\b2\b[^.]*does nothing') "rail line: '$($rail.sum)'"
+    $say = Js $ws $inertCalloutJs
+    Check 'inert switch: the inspector of Solo shows a callout (scope)' ($null -ne $say) 'no callout in the inspector'
+    Check 'inert switch: the callout of Solo, which holds only an inert switch, says no working trigger is on' ([string]$say -match 'No working trigger is on') "callout reads: '$say'"
+    Check 'inert switch: that callout does not say triggers move windows without asking' ([string]$say -notmatch 'move your windows without asking') "callout reads: '$say'"
+    # Control: a scene with no switch on keeps its callout.
+    $sel = Inert-Select $ws 'meetings'
+    Check 'inert switch: Meetings opens in the inspector (control)' $sel 'the inspector did not open on Meetings in time'
+    if (-not $sel) { return }
+    $none = Js $ws $inertCalloutJs
+    Check 'inert switch: a scene with no switch on still reads that no trigger is on (control)' ([string]$none -match '^No trigger is on') "callout reads: '$none'"
+  }
+
+  Case 'inert switch, inspector: the switch that does nothing reads On, inactive, and the line of extra triggers counts it apart from a conflict warning' {
+    Put-Config (Inert-Config $inertMixed @{ meetings = $plugKey })
+    $opened = Open-Page $ws $url 'focus'
+    Check 'inert switch: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $r = Js $ws $inertRowsJs
+    $onAll = $r.size -and $r.gaps -and $r.activity -and $r.size.checked -and $r.gaps.checked -and $r.activity.checked
+    Check 'inert switch: Focus shows its Call Size, Gap and Work Match switches, all On (scope)' ([bool]$onAll) "rows: $(ConvertTo-Json -Compress -InputObject $r)"
+    if (-not $onAll) { return }
+    Check 'inert switch: the Call Size switch of Focus, which does nothing there, reads inactive' ($r.size.text -match 'inactive') "row reads: '$($r.size.text)'"
+    Check 'inert switch: the Gap switch of Focus, which has a conflict note only, still reads a bare On and not inactive (control)' ($r.gaps.bareOn -and $r.gaps.text -notmatch 'inactive') "row reads: '$($r.gaps.text)'"
+    Check 'inert switch: the Work Match switch of Focus, which the activity map points at, still reads a bare On and not inactive (control)' ($r.activity.bareOn -and $r.activity.text -notmatch 'inactive') "row reads: '$($r.activity.text)'"
+    Check 'inert switch: the line of extra triggers counts the 3 switches that are On (control)' ([string]$r.sum -match '^3 on\b') "line reads: '$($r.sum)'"
+    Check 'inert switch: the line of extra triggers says 1 inactive' ([string]$r.sum -match '\b1 inactive\b') "line reads: '$($r.sum)'"
+    Check 'inert switch: the line of extra triggers still counts the conflict as 1 warning, apart from the inactive switch' ([string]$r.sum -match '\b1 warning\b' -and [string]$r.sum -notmatch '\b2 warnings\b') "line reads: '$($r.sum)'"
+    # Control: a scene with a working trigger keeps its callout.
+    $sel = Inert-Select $ws 'default'
+    Check 'inert switch: Default opens in the inspector (control)' $sel 'the inspector did not open on Default in time'
+    if (-not $sel) { return }
+    $live = Js $ws $inertCalloutJs
+    Check 'inert switch: a scene with a working trigger still reads that triggers move windows without asking (control)' ([string]$live -match 'Triggers that are on move your windows without asking') "callout reads: '$live'"
   }
 
 } catch {
