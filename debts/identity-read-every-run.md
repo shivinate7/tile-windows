@@ -10,4 +10,4 @@ Likelihood: measured once, 637-739 ms over 3 samples of a whole -Monitors run. N
 
 Recovery: not a fault. None needed.
 
-Fix: read identity only when the monitor set has changed. Measure a scene run before and after.
+Fix: when the monitor set changes, read identity. Measure a scene run before and after.
