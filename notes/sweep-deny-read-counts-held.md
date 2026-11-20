@@ -1,0 +1,1 @@
+- sweep-deny-read-counts-held: A file the user cannot read keeps its folder with a false "open in another process" warning. Find-RunFolderHeld counts any failed open as held (test/run-folders.ps1:12).
