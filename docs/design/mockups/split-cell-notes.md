@@ -118,11 +118,13 @@ S9. **A still click selects an empty cell; a drag draws a zone** (layout-free it
     state `empty-select`). Today a press on an empty cell starts a zone draw (`app.html`
     stage `pointerdown`, `zdraw`). `endZone()` counts the press as still when it starts and ends in
     one cell and moves under 5px; a plain still click then only clears `zanchor` and `selZone`.
-    New: that one branch selects the cell. A drag of 5px or more, or across cells, draws a zone as
+    The selected window stays selected. New: that one branch selects the cell and clears the
+    window selection, since the inspector switches to Empty Space (as `freePick()` does for a Free
+    Layout space). A drag of 5px or more, or across cells, draws a zone as
     today, a 5px wobble inside one cell included (a one-cell zone). Shift+click corners and
     Ctrl+click Merge picks stay as today. The teaching is a note, not the board hint: the Empty
     Space section says "Drag across cells to draw a zone.", at the selection. Departs from:
-    `endZone()` plain still click clears the selection; now it selects. Gain: the hint line does
+    `endZone()` plain still click clears only a selected zone; now it selects the cell. Gain: the hint line does
     not grow (S7's loss), and the zone words show where the click was. Loss: a person who never
     clicks an empty cell does not see the zone line. Pick: as drawn.
 
@@ -166,7 +168,7 @@ S13. **Keyboard reach.** Today only tiles and open halves take focus. Tab reache
 - A right-click on the board opens the split menu, not the browser's menu (S2).
 - A filled window becomes pinned when it splits (layout-free item 5).
 - A tile under 40px wide drops its lock, Stay Put, grip and stack badge (S5, layout-free item 12).
-- A still click on an empty cell selects it; today it clears the selection (S9, `endZone()`).
+- A still click on an empty cell selects it; today it clears only a selected zone (S9, `endZone()`).
 - An empty cell takes focus (S13).
 
 ## Input needed
