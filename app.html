@@ -1762,6 +1762,8 @@ function putBehind(aId,bId){
   // The new stack's cues (the strip and the badge) wear a blue ring for about 1.5 seconds.
   flashId=bId;clearTimeout(flashT);flashT=setTimeout(()=>{flashId=null;for(const q of stage.querySelectorAll(".peek.flash,.stk.ring"))q.classList.remove("flash","ring")},1500);
   const ok=edit(x=>{
+    // A's own pin may show A as its front only because its real front is closed: name A as the front first, so A is not listed twice.
+    if(gA)settleFront(x,gA);
     let fb=pinNow(x,bId);if(!fb){pinEdit(x,bId,mon,bb.r*GC(g)+bb.c,bb.cs,bb.rs,null);fb=x.pins[0]}
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
     x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
