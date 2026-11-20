@@ -1,1 +1,0 @@
-- preview-fail-no-empty-case: No test covers the preview route's empty-engine path, which answers 500 (serve.ps1:269-276, PR 63). test/preview-proxy.ps1 forces a 500 from a stand-in, so it tests the page's handling of a 500, not the server's answer. Seen: 2026-11-20 x1

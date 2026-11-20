@@ -1,1 +1,0 @@
-- free-drop-trailer-wrong-model: Commit ec81eb2 (PR 80) names Claude Opus 5.5 in its trailer, but Sonnet 5.5 ran. Merged history keeps the wrong name, so the report should name the right model.

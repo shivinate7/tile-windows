@@ -1,1 +1,0 @@
-- inert-switch-announces-moves: Turning an inert switch On announces 'It moves windows without asking once you Save.' while the row reads 'On, inactive' (app.html:3277). The text is the same on main.
