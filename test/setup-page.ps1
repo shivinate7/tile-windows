@@ -2374,7 +2374,8 @@ return still >= 2;
     [string](Js $sock ($freeJs + 'return pageText();'))
   }
   # A pointer drag as a mouse makes it: a press at (x0, y0), ten moves to (x1, y1), a release. Shift is held when $shift. $probe, a page
-  # expression, is read while the button is still down, and its value is returned.
+  # expression, is read while the button is still down, and its value is returned. After the release it waits for the page's POSTs and then for
+  # the board to be still (Fl-Still): the tiles slide to the drop's rects for the length of the tile transition, so a rect read at once reads a move.
   function Fl-Drag($sock, [double]$x0, [double]$y0, [double]$x1, [double]$y1, [bool]$shift = $false, [string]$probe = '') {
     $m = $(if ($shift) { 8 } else { 0 })
     [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x0; y = $y0; modifiers = $m })
@@ -2383,6 +2384,7 @@ return still >= 2;
     $mid = $(if ($probe) { Js $sock $probe } else { $null })
     [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x1; y = $y1; button = 'left'; buttons = 0; clickCount = 1; modifiers = $m })
     [void](Js $sock 'await window.__h.settle(); return true')
+    Fl-Still $sock
     $mid
   }
   # The area of window $id in a saved layout: the one whose pin names that window, or $null.
