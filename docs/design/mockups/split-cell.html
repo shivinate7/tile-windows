@@ -261,6 +261,10 @@ input[type=text]{width:100%}
 .area.sel{outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent);z-index:4;color:var(--ink)}
 .area.prevw{z-index:5;border-color:var(--select);color:var(--select);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--select) 18%,var(--screen)) 0 4px,var(--screen) 4px 8px)}
 .area small{display:block;font:400 10.5px var(--f);color:var(--muted)}
+/* A selected empty cell: the open half's selection ring on the cell's own dashed box, with no words (the inspector names it). */
+.esel{position:absolute;z-index:6;border-radius:2px;outline:3px solid var(--ink);outline-offset:-1px;box-shadow:0 0 0 5px color-mix(in srgb,var(--ink) 22%,transparent)}
+.menu.up{transform:translateY(-100%)}
+.menu button.mi .mt{display:grid;gap:1px}
 .area.tiny .lab,.area.tiny small{display:none}
 .area .kept{display:block;width:12px;height:12px;margin:0 auto 2px;color:var(--muted)}
 .divider{position:absolute;z-index:6;width:12px;transform:translateX(-50%);pointer-events:none}
@@ -370,6 +374,9 @@ const STATES=[
   ["fast-side","Fast Split: Always Side by Side","side","Always Side by Side (proposed)","Proposed, question K: the same trigger, but the fast split is always Side by Side and the window keeps the left half. On this board it gives the owner's 10×2 example. A stacked split goes through the menu.","fast-side-result"],
   ["fill-last","A New Window, Every Cell Taken","last","Half Fills Last","Notepad opened after the split. Every whole cell is taken, so the fill puts it in the open half, at half width (about 410 px here). Before that, the fill never takes the half: a split never pulls a window across the board.","fill-last-half"],
   ["fill-keep","Keep This Half Empty","keep","Keep This Half Empty","The open half is selected. Keep This Half Empty is on, so the fill never uses it, and the new Notepad window waits in Windows That Stay Put. Owner grant: yes.","fill-keep-half"],
+  ["empty-select","Select an Empty Cell","","Every option","Excel is closed, so cell 10 is empty. A still click on it selects it: the selection ring, and the inspector's Window section becomes Empty Space, with Split Cell. A drag across cells still draws a zone, as today; the Empty Space section says so.","empty-select-cell"],
+  ["empty-menu","Split an Empty Cell: Choose How","","Every option","S on the selected empty cell. The split menu opens under the cell (above it here, with no room below); a right-click and the inspector's Split Cell open the same menu. With no window, nobody keeps a half, so the menu has two items. The focused item previews both halves hatched.","empty-menu-menu"],
+  ["empty-split","Split an Empty Cell","","Every option","Split Cell 10 side by side. The grid is 10×2 and every other window keeps its size. Both halves are empty, and no window holds either, so they stay one free block: the next new window may fill both at once. The left half (cell 19) is selected, so Keep This Half Empty and Join Halves act on it at once. With no Fills last line, the label claims only what is true.","empty-split-half"],
   ["case-stack","Split a Stacked Tile","","Every option","Claude in cell 8 had Terminal behind it. After the split, Terminal stays behind Claude in the kept half: the strip and the badge go with the front window.","case-stack-result"],
   ["case-lock","Split a Locked Tile","","Every option","Right-click on the locked Terminal. Every split item is off with today's lock reason, and the menu leads on with Unlock Terminal at the top.","case-lock-menu"],
   ["case-zone","Split a Cell in a Zone","","Every option","File Explorer sits in the Other zone over cells 9 and 10. After the split the zone covers cells 17 to 20, both halves of the split cell included. The zone fills its open half last, as the board does.","case-zone-result"],
@@ -443,6 +450,15 @@ function splitPop(o,pos){const off=o.lockWhy,sOff=off||o.side.off,tOff=off||o.st
     <div class="pacts">${off?`<button type="button" class="btn pri">Unlock ${esc(o.name)}</button>`:`<button type="button" class="btn pri">Split</button>`}<button type="button" class="btn">Cancel</button></div>
     ${o.join?`<button type="button" class="btn">Join Halves</button>`:""}</div>`}
 
+/* The split menu on an empty cell: no window keeps a half, so one item per direction, and the glyph draws both halves dashed. */
+function glyph2(dir){const r=dir==="side"?[[1,1,12,16],[13,1,12,16]]:[[1,1,24,8],[1,9,24,8]];
+  return `<svg class="gl" viewBox="0 0 26 18" aria-hidden="true">${r.map(q=>`<rect class="o" x="${q[0]+.6}" y="${q[1]+.6}" width="${q[2]-1.2}" height="${q[3]-1.2}" rx="1.5"/>`).join("")}</svg>`}
+function emptyMenu(o,pos){const hd=`${o.F}-mh`;
+  const it=(dir,lab,grid)=>`<button type="button" role="menuitem" class="mi${o.foc===dir?" foc":""}">${glyph2(dir)}<span class="mt"><b>${lab}</b><small>${esc(grid)}</small></span></button>`;
+  return `<div class="menu split${o.up?" up":""}" role="menu" id="${o.F}-menu" aria-labelledby="${hd}" style="left:${pos.l.toFixed(1)}px;top:${pos.t.toFixed(1)}px">
+    <p class="mh" id="${hd}">Split Cell ${esc(o.cell)}</p>${it("side","Side by Side",o.side)}${it("stacked","Stacked",o.stacked)}
+    <p class="mf">Enter splits. Esc closes.</p></div>`}
+
 /* ---------- Each state ---------- */
 function scenario(st,G,F){
   const W=BASE.map(w=>({mon:"wide",...w,f:[...w.f]}));const by=Object.fromEntries(W.map(w=>[w.id,w]));
@@ -491,6 +507,21 @@ function scenario(st,G,F){
   if(st==="fill-keep"){const b=openHalf({lab:"Kept empty",sub:"",sel:true,id:`${F}-half`,icon:true});
     sc.bay=[{app:"Notepad",cat:"other",title:"notes.txt - Notepad",why:"No free cell"},...BAY0];sc.emptySel="keep";
     sc.anns+=ann(b,"Kept Empty",{up:true});sc.msg="Cell 4 is kept empty. Notepad stays put.";}
+
+  // Excel is closed, so cell 10 (the last slot in fill order) is the one empty cell with fill on.
+  if(st==="empty-select"||st==="empty-menu"||st==="empty-split")by.xl.hide=true;
+  if(st==="empty-select"||st==="empty-menu"){const c=R(G,"wide",.8,.5,.2,.5),mb=monBox(G,"wide");sc.emptySel="cell";
+    sc.extra+=`<div class="esel" id="${F}-cell" tabindex="0" role="button" aria-pressed="true" aria-label="Ultrawide cell 10, empty" style="${css(c)}"></div>`;
+    if(st==="empty-select"){sc.extra+=at(I.arrow,c.l+c.w*.5,c.t+c.h*.45);sc.anns+=ann(c,"Still Click Selects",{up:true,end:true});sc.msg="Selected Ultrawide cell 10. It is empty."}
+    else{const hw=c.w/2-1;for(const l of [c.l,c.l+c.w/2+1])sc.extra+=`<div class="area prevw" style="${css({l,t:c.t,w:hw,h:c.h})}"><span class="lab">${hw<40?"":"Open half"}</span></div>`;
+      sc.extra+=`<div class="divider" style="left:${(c.l+c.w/2).toFixed(1)}px;top:${c.t.toFixed(1)}px;height:${c.h.toFixed(1)}px"></div>`;
+      sc.extra+=emptyMenu({F,cell:"10",side:"Grid goes to 10×2",stacked:"Grid goes to 5×4",foc:"side",up:true},{l:Math.max(mb.l+4,c.l+c.w-244),t:c.t-6});
+      sc.msg="Split cell 10: choose how.";sc.keysOpen=true}}
+  if(st==="empty-split"){sc.grid=[10,2];sc.split=true;sc.emptySel="split";
+    for(const [f,sel] of [[[.8,.5,.1,.5],true],[[.9,.5,.1,.5],false]]){const b=wr(f);sc.areas.push({b,lab:"Open half",sub:"",tiny:b.w<40,sel,id:sel?`${F}-half`:null})}
+    sc.extra+=dnote(wr([.8,.5,.1,.5]),"Split cell 10. Both halves are empty.",10);
+    sc.anns+=ann(wr([.8,.5,.2,.5]),"Both Halves Open",{up:true,end:true});
+    sc.msg="Split cell 10. Both halves are empty.";}
 
   if(st==="case-stack"){sc.grid=[10,2];by.cc.f=[.4,.5,.1,.5];by.cc.pin=true;by.cc.back={app:"Terminal",cat:"code"};sc.sel="cc";sc.split=true;
     const b=wr([.5,.5,.1,.5]);sc.areas.push({b,lab:"Open half",sub:"Fills last",tiny:b.w<40});
@@ -574,6 +605,12 @@ function winSec(sc,F){
   if(sc.emptySel==="keep")return `<section class="isec"><h2>Open Half</h2><div class="abox"><em>New: Open Half</em><div class="win"><div class="t">Ultrawide cell 4</div><div class="m">The open half of cell 2. Claude keeps the other half.</div>
     <label class="switch lockrow"><input type="checkbox" role="switch" checked><span class="xt"><b>Keep This Half Empty</b><small>The fill never puts a window here.</small></span></label>
     <button type="button" class="btn">Join Halves</button><p class="note">Join Halves gives the whole cell back to Claude.</p></div></div></section>`;
+  // Empty Space: app.html's heading for a selected free space (renderInsp() winh), with its fill sentence (freeSpaceHTML()).
+  if(sc.emptySel==="cell")return `<section class="isec"><h2>Empty Space</h2><div class="abox"><em>New: Empty Space</em><div class="win"><div class="t">Ultrawide cell 10</div><div class="m"><span class="num">819 × 840 px.</span> Fill Empty Cells is on, so the next new window fills it.</div>
+    <button type="button" class="btn" aria-haspopup="menu">Split Cell</button><p class="note">Drag across cells to draw a zone.</p></div></div></section>`;
+  if(sc.emptySel==="split")return `<section class="isec"><h2>Open Half</h2><div class="abox"><em>New: Open Half</em><div class="win"><div class="t">Ultrawide cell 19</div><div class="m">The left half of cell 10. The right half, cell 20, is empty too, so the next new window may fill both.</div>
+    <label class="switch lockrow"><input type="checkbox" role="switch"><span class="xt"><b>Keep This Half Empty</b><small>The fill never puts a window here.</small></span></label>
+    <button type="button" class="btn">Join Halves</button><p class="note">Join Halves makes cell 10 one empty cell, and the grid 5×2 again.</p></div></div></section>`;
   const w=sc.sel&&sc.wins.find(x=>x.id===sc.sel);
   if(!w)return `<section class="isec"><h2>Window</h2><p class="note">Click a window on the board to change it here.</p></section>`;
   const head=`<div class="field" style="min-height:0"><span style="display:flex;gap:6px;align-items:center;color:var(--ink)"><i class="sw"></i>${esc(w.app)}</span><select aria-label="Category of ${esc(w.app)}"><option>${w.cat==="other"?"Other":"Code"}</option></select></div><div class="t">${esc(w.title)}</div>`;
@@ -603,7 +640,7 @@ function frame(st,w){const zoom=st==="small-zoom";const G={S:zoom?ZSCALE[w]:SCAL
     ${card("Meetings","Teams big on the ultrawide.",false,[["comms",27,8,25,56],["code",53,8,12,27],["comms",81,6,16,44]])}</div></section>
     <section><h2>Categories</h2><div class="legend">${[["code","Code",5],["browse","Browse",2],["comms","Comms",3],["other","Other",3]].map(([c,l,n])=>`<button type="button" class="lg cat-${c}" aria-pressed="true"><i class="sw"></i>${l}<span class="ct">${n}</span></button>`).join("")}</div><p class="note">Click a category to fade it on the board.</p></section></aside>`;
   const keys=`<details class="keys"${sc.keysOpen?" open":""}><summary>Keyboard</summary><ul><li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
-    <li><span class="abox inl">S or Shift+F10 opens Split Cell on the selected window or open half. J joins a split cell.</span></li>
+    <li><span class="abox inl">S or Shift+F10 opens Split Cell on the selected window, open half or empty cell. J joins a split cell. Tab reaches each empty cell and open half after the windows.</span></li>
     <li><span class="abox inl" style="outline-style:dotted;outline-color:var(--hi)">Proposed: Shift+S splits it in half at once.</span></li>
     <li>Delete unpins it. K keeps it where it is (off the board). L locks it. B brings the window behind it to the front.</li><li>Esc cancels a drag, a resize or a split.</li></ul></details>`;
   const bayH=`<section class="bay" aria-label="Windows That Stay Put"><h2>Windows That Stay Put <span class="note">${sc.bay.length===1?"1 window":sc.bay.length+" windows"}</span></h2>${sc.bay.length?`<div class="bgrps"><div class="bgrp"><h3 class="bh"><i class="sw cat-other"></i>Other</h3><ul>${sc.bay.map(b=>`<li><button type="button" class="chip cat-${b.cat}" title="${esc(b.why)}"><b>${esc(b.app)}</b><span>${esc(b.title)}</span></button></li>`).join("")}</ul></div></div>`:`<p class="note">No window stays put.</p>`}</section>`;
@@ -633,6 +670,10 @@ const SAVES={
 "fill-keep":`"fill": { "mon": "wide", "unit": [2, 1],
   "keepEmpty": [ { "mon": "wide", "slots": [3] } ] }
 // Proposed field name. Join Halves removes the entry.`,
+"empty-split":`"grids": { "wide": { "c": 10, "r": 2, "mult": [2, 1] } },
+"fill": { "mon": "wide", "apps": ["claude", "chrome", "*"], "unit": [2, 1] }
+// Nothing else changes. No window holds slot 18 or 19, so they are one free 2×1 block,
+// and the next fill may put one window across both. Keep This Half Empty adds a keepEmpty entry.`,
 "case-held":`"fill": { "mon": "wide", "off": true, "unit": [2, 1],
   "held": [
     { "app": "claude", "title": "Refactor the grid solver", "mon": "wide", "slots": [0, 1] },
