@@ -736,6 +736,35 @@ Use-TileLock { [void]$ready.Set(); [void]$release.WaitOne(120000) }
       Remove-Item -LiteralPath $new -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
+  # The same caller with a locked old folder (a stray Edge holds CrashpadMetrics-active.pma): it must not throw, must keep that folder,
+  # must remove the other old folder, keep the new one, and write one warning line naming the locked folder. The clock is fixed (P5).
+  Case 'run folder: the sweep skips an old sibling run folder that another process holds open' {
+    $lockNow = [datetime]::new(2001, 1, 1, 12, 0, 0)
+    $lockRoot = Join-Path $runDir 'sweep-locked'; New-Item -ItemType Directory -Path $lockRoot | Out-Null
+    $lockedRun = Join-Path $lockRoot ('4-{0}' -f [guid]::NewGuid().ToString('n'))
+    $otherRun = Join-Path $lockRoot ('5-{0}' -f [guid]::NewGuid().ToString('n'))
+    $freshRun = Join-Path $lockRoot ('6-{0}' -f [guid]::NewGuid().ToString('n'))
+    foreach ($d in $lockedRun, $otherRun, $freshRun) { New-Item -ItemType Directory -Path $d | Out-Null }
+    $lockHeld = $null
+    try {
+      $lockHeld = [IO.File]::Open((Join-Path $lockedRun 'CrashpadMetrics-active.pma'), [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+      [IO.File]::WriteAllText((Join-Path $otherRun 'a.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $freshRun 'a.txt'), 'x')
+      [IO.Directory]::SetLastWriteTime($lockedRun, $lockNow.AddDays(-3)); [IO.Directory]::SetLastWriteTime($otherRun, $lockNow.AddDays(-3))
+      [IO.Directory]::SetLastWriteTime($freshRun, $lockNow.AddHours(-1))
+      $refused = $false; try { [IO.File]::Delete((Join-Path $lockedRun 'CrashpadMetrics-active.pma')) } catch { $refused = $true }
+      Check 'sweep, locked: a file held open refuses a delete (the fixture holds it)' $refused
+      $threw = $null; $warn = @()
+      try { $warn = @(Remove-OldRunFolders -Root $lockRoot -Own '' -Now $lockNow 3>&1 | Where-Object { $_ -is [Management.Automation.WarningRecord] }) } catch { $threw = $_.Exception.Message }
+      Check 'sweep, locked: the sweep does not throw on a locked old run folder' ($null -eq $threw) "threw: $threw"
+      Check 'sweep, locked: the locked old run folder stays' (Test-Path -LiteralPath $lockedRun) 'the locked folder was removed'
+      Check 'sweep, locked: the other old run folder goes' (-not (Test-Path -LiteralPath $otherRun)) 'the other old folder is still there'
+      Check 'sweep, locked: the new run folder stays' (Test-Path -LiteralPath $freshRun) 'the newer folder was removed'
+      Check 'sweep, locked: one warning line names the skipped folder' ($warn.Count -eq 1 -and $warn[0].Message.Contains((Split-Path $lockedRun -Leaf))) "warnings: $($warn.Count)"
+    } finally {
+      if ($lockHeld) { $lockHeld.Dispose() }
+      Remove-Item -LiteralPath $lockRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
 } finally {
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue
