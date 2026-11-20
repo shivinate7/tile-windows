@@ -130,7 +130,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 162
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 163
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -2340,6 +2340,12 @@ return still >= 2;
   function Fl-Still($sock) {
     if ((Js $sock $flStillJs) -ne $true) { throw 'the board did not settle within 10 s' }
   }
+  # Slows the tile transition (app.html: .tile, .peek and .hdl) to $ms, as a mutant of the page would. A rule on the same selectors, later in
+  # the sheet, sets only the duration, so the page's own transition: none rules (a tile held by the pointer, the still frames of a layout)
+  # still win. Answers the duration a tile computes now, or null when no tile is drawn.
+  function Fl-Slow($sock, [int]$ms) {
+    Js $sock ('const s = document.createElement("style"); s.textContent = ".tile,.peek,.hdl{transition-duration:' + $ms + 'ms}"; document.head.appendChild(s); const t = document.querySelector(".tile"); return t ? getComputedStyle(t).transitionDuration : null;')
+  }
   # The ids (of $ids) whose tile rect moved by more than half a pixel between two reads. A tile missing from either read counts as moved.
   function Fl-Moved($before, $after, [int[]]$ids) {
     @($ids | ? {
@@ -3369,6 +3375,34 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
     if (-not $p0) { return }
     $got = Fl-BehindOf $L1 0
     Check 'stack-swap: the stack, Projects and Quarterly roadmap, moves with Pin parser edge cases (control)' ($got -ceq $flStackWant) "behind list of the pin on space 0: '$got', the holder's was '$flStackWant'"
+  }
+
+  Case 'drag-settle (guard): with the tile transition slowed to 2 s, no tile is still moving when Fl-Drag returns' {
+    # Mutant: Fl-Drag returns once the page's POSTs settle, with the tiles still sliding to their new rects (the tile transition, app.html
+    # .tile). The cases that read rects after a drag (drag-segment, drag-line, Go Around) then read a half-grown tile. At 0.22 s that is a
+    # flake; at 2 s it is a miss every run.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board))
+    Check 'drag-settle: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $dur = Fl-Slow $ws 2000
+    Check 'drag-settle: a tile now computes a 2 s transition (scope)' ([string]$dur -match '^2s(, 2s)*$') "tile transition duration: '$dur'"
+    if ([string]$dur -notmatch '^2s(, 2s)*$') { return }
+    $r0 = Fl-Rects $ws $flIds
+    $okTiles = ($null -ne $r0.'1001') -and ($null -ne $r0.'1002')
+    Check 'drag-settle: both windows are on the board (scope)' $okTiles 'tile 1001 or 1002 is not on the board'
+    if (-not $okTiles) { return }
+    $sp = Fl-SeamV $r0 1001 1002
+    [void](Fl-Drag $ws $sp[0] $sp[1] ($sp[0] + 40) $sp[1])
+    $r1 = Fl-Rects $ws $flIds
+    $rest = WaitFor $ws 'document.getAnimations().every(a => a.playState !== "running")' 15
+    Check 'drag-settle: the board comes to rest within 15 s (scope)' $rest 'a tile was still animating 15 s after the drop'
+    if (-not $rest) { return }
+    $r2 = Fl-Rects $ws $flIds
+    $grew = $r2.'1001'.w - $r0.'1001'.w
+    Check 'drag-settle: the drag grew the left window by at least 20 px once the board rested (scope)' ($grew -ge 20) ("grew by " + [Math]::Round($grew, 1) + " px")
+    if ($grew -lt 20) { return }
+    $mv = @(Fl-Moved $r1 $r2 $flIds)
+    Check 'drag-settle: no tile moves after Fl-Drag returns' ($mv.Count -eq 0) "moved after the drag returned: $($mv -join ', ')"
   }
 
   # ---- Split Cell: empty cells and open halves (layout-free items 2 and 6; split-cell-notes S9 to S13; plan lane L2b, PR B) ---------
