@@ -123,12 +123,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (253). Shard 1 runs
-# gates 1 to 67 (the cases before the Board feedback section), shard 2 gates 68 to 171 (before the stack tweaks ruling section), shard 3
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (254). Shard 1 runs
+# gates 1 to 68 (the cases before the Board feedback section), shard 2 gates 69 to 172 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
-$shardCuts = @(67, 171)
+$shardCuts = @(68, 172)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 253
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 254
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -136,7 +136,7 @@ function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $sc
 $SlTempRoot = Join-Path $env:TEMP 'tile-windows-test-runs'
 $SlRunName = '^\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 . (Join-Path $PSScriptRoot 'run-folders.ps1')
-function SlSweep($dir, $olderThan) { Invoke-RunFolderSweep $dir $SlRunName $olderThan }
+function SlSweep($dir, $olderThan, $now = (Get-Date)) { Invoke-RunFolderSweep $dir $SlRunName $olderThan $now }
 # The sweep, proven on its own folder: an old run folder goes, a new one stays.
 $proof = Join-Path $env:TEMP ('tile-windows-sweep-proof-' + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory $proof | Out-Null
@@ -158,6 +158,40 @@ SlSweep $proof ([TimeSpan]::FromDays(1))
 Check 'run folders: the sweep removes an old run folder whose path is past 260 characters' (-not [IO.Directory]::Exists('\\?\' + $longRun)) "path length $($longDeep.Length)"
   }
 Remove-RunFolder $proof
+# A run folder that another process holds open (a stray Edge's CrashpadMetrics-active.pma). The sweep must not throw, must leave that
+# folder in place, must still remove the other old folder and keep the new one, and must write one warning line that names the locked
+# folder. Its own run folder under the temp root (test-temp-standard), so the sweep sees only this case's folders. The clock is
+# synthetic: every time comes from $lockNow, and no real date is read (P5).
+$lockNow = [datetime]::new(2001, 1, 1, 12, 0, 0)
+$lockRun = Join-Path $SlTempRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item -ItemType Directory -Force $lockRun | Out-Null
+$lockDir = Join-Path $lockRun 'sweep'; New-Item -ItemType Directory $lockDir | Out-Null
+# Named so the locked folder sorts first: a sweep that throws there would also miss the other old folder.
+$lockedRun = Join-Path $lockDir ('4-' + [guid]::NewGuid().ToString()); $otherRun = Join-Path $lockDir ('5-' + [guid]::NewGuid().ToString())
+$freshRun = Join-Path $lockDir ('6-' + [guid]::NewGuid().ToString())
+foreach ($d in $lockedRun, $otherRun, $freshRun) { New-Item -ItemType Directory $d | Out-Null }
+$lockHeld = $null; $lockFile = Join-Path $lockedRun 'CrashpadMetrics-active.pma'
+try {
+  $lockHeld = [IO.File]::Open($lockFile, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+  [IO.File]::WriteAllText((Join-Path $otherRun 'a.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $freshRun 'a.txt'), 'x')
+  # Each folder's time is set after its files exist: creating a file moves its folder's last write time.
+  [IO.Directory]::SetLastWriteTime($lockedRun, $lockNow.AddDays(-3)); [IO.Directory]::SetLastWriteTime($otherRun, $lockNow.AddDays(-3))
+  [IO.Directory]::SetLastWriteTime($freshRun, $lockNow.AddHours(-1))
+  # Scope first (P7): the held file refuses a delete, so the sweep below meets a real lock.
+  $refused = $false; try { [IO.File]::Delete($lockFile) } catch { $refused = $true }
+  $threw = $null; $warn = @()
+  try { $warn = @(SlSweep $lockDir ([TimeSpan]::FromDays(1)) $lockNow 3>&1 | ? { $_ -is [Management.Automation.WarningRecord] }) } catch { $threw = $_.Exception.Message }
+  if (Shard-Take) {
+Check 'run folders: a file held open refuses a delete (the fixture holds it)' $refused
+Check 'run folders: the sweep does not throw on a locked old run folder' ($null -eq $threw) "threw: $threw"
+Check 'run folders: the locked old run folder stays' (Test-Path -LiteralPath $lockedRun)
+Check 'run folders: the other old run folder goes' (-not (Test-Path -LiteralPath $otherRun))
+Check 'run folders: the new run folder stays' (Test-Path -LiteralPath $freshRun)
+Check 'run folders: one warning line names the skipped folder' ($warn.Count -eq 1 -and $warn[0].Message.Contains((Split-Path $lockedRun -Leaf))) "warnings: $($warn.Count)"
+  }
+} finally {
+  if ($lockHeld) { $lockHeld.Dispose() }
+  Remove-RunFolder $lockRun
+}
 
 # ---------- Engine: tile.ps1 -Scene on the fixture (dry run) ----------
 # Fixture: claude 1001 'Refactor the grid solver', 1002 'Pin parser edge cases', 1003 'Draft release notes',
