@@ -81,6 +81,8 @@
 #     This Half Empty sends fill.keepEmpty [{mon, slots}]. A second split remaps keepEmpty like fill.held; Join Halves on a kept half drops its
 #     entry; a kept half blocks halving; Clear Board deletes keepEmpty; the Fill Empty Cells switch keeps it (guard). Tab reaches each empty
 #     cell. The labels match tile.ps1's fill-last slot in a dry run. Names come from the accessibility tree (Accessibility.getFullAXTree).
+#     A free half inside a zone is named Open half and Zone fills last (fill on), and the slot is the one tile.ps1 gives the zone's next
+#     window; a zone's whole free block keeps its plain empty name, and an open half outside any zone keeps Fills last (controls).
 #   Split Cell, selection and stacks: a selected empty cell is still the cell the user picked after Undo or a Columns change, or it is
 #     cleared. Join Halves on an empty half takes the front window of the other half, never a window stacked behind it. A split that doubles
 #     nothing is one page-only undo step: Undo sends no POST, names the split in the status, and keeps the saved pins.
@@ -115,7 +117,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 143
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 148
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -3732,6 +3734,94 @@ function () {
     $h = @(Wait-Halves $ws)
     $page = ((@($h | ? { $_.name -match 'Fills last' } | % { $_.slot })) | Sort-Object) -join ','
     Check 'split open: the page names Fills last on the open half the engine fills last (labels match tile.ps1)' ($page -ne '' -and $page -eq $engine) "page names Fills last on slot(s): '$page'; engine: '$engine'; named halves: $(Half-Text $h)"
+  }
+
+  # ---- Split Cell: a free half inside a zone (layout-free item 6; split-cell-notes S6; debt zone-fills-last-label) ---------------
+  # Cell 0 holds window 0 and the zone holds cells 0 and 1, so cell 1 is the zone's free half. The zone's app is POWERPNT, which no pin
+  # holds, so the dry run's extra window 1016 (POWERPNT) is the one the zone takes. Cell 3 is an open half outside every zone (cell 2 is
+  # window 1's), so it still reads Fills last.
+  $zoneHalf = [pscustomobject]@{ mon = 'U1'; app = 'POWERPNT'; slots = @(0, 1) }
+  $zoneHalfSeed = @(Split-Pin 0 @(0)) + @(Split-Pin 1 @(2)) + @(2..9 | % { Split-Pin $_ @((2 * $_), (2 * $_ + 1)) })
+  $zoneHalfLayout = Split-Json 5 2 $zoneHalfSeed '2,1' '2,1' @($zoneHalf) @{ apps = @('*') }
+  # A zone's whole free block: cells 18 and 19 hold no window, and cell 1 is an open half outside the zone. Nine windows, so the fill has none to place.
+  $zoneWholeZone = [pscustomobject]@{ mon = 'U1'; app = 'POWERPNT'; slots = @(18, 19) }
+  $zoneWholeSeed = @(Split-Pin 0 @(0)) + @(1..8 | % { Split-Pin $_ @((2 * $_), (2 * $_ + 1)) })
+  $zoneWholeLayout = Split-Json 5 2 $zoneWholeSeed '2,1' '2,1' @($zoneWholeZone) @{ apps = @('*') }
+  $nineWinSnap = ConvertTo-Json -Depth 10 -Compress -InputObject ([pscustomobject]@{ monitors = @($snapObj.monitors); windows = @($snapObj.windows | ? { $splitWinIds[0..8] -contains [int]$_.id }) })
+
+  Case 'split open: a free half inside a zone is named Open half and Zone fills last, with fill on' {
+    Put-Split $zoneHalfLayout
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with a zone on a free half, fill on (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $named = @(Wait-Halves $ws '(?i)empty|open half' 2)
+    $z = @($named | ? { $_.slot -eq 1 })
+    Check 'split open: the zone half, cell 2 (slot 1), is named on the board (scope)' ($z.Count -eq 1) "named halves: $(Half-Text $named)"
+    if ($z.Count -ne 1) { return }
+    Check 'split open: the zone half is named "Open half" and "Zone fills last", not as a whole empty cell' ($z[0].name -cmatch 'Open half' -and $z[0].name -match 'Zone fills last') "name: '$($z[0].name)'"
+  }
+
+  Case 'split open: an open half outside the zone, on the same board, is named Open half and Fills last, not Zone fills last (control)' {
+    Put-Split $zoneHalfLayout
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with a zone beside an open half, fill on (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $named = @(Wait-Halves $ws '(?i)empty|open half' 2)
+    $out = @($named | ? { $_.slot -eq 3 })
+    Check 'split open: the open half outside the zone, cell 4 (slot 3), is named on the board (scope)' ($out.Count -eq 1) "named halves: $(Half-Text $named)"
+    if ($out.Count -ne 1) { return }
+    Check 'split open: the open half outside any zone is named "Open half" and "Fills last", not "Zone fills last" (control)' ($out[0].name -cmatch 'Open half' -and $out[0].name -match 'Fills last' -and $out[0].name -notmatch 'zone fills last') "name: '$($out[0].name)'"
+  }
+
+  Case 'split open: the zone half the page names Zone fills last is the slot tile.ps1 gives the zone window in a dry run (labels match the engine)' {
+    $zoneScene = ConvertTo-Json -Depth 12 -Compress -InputObject ([pscustomobject]@{ id = 'zonehalf'; name = 'Zone half'; grids = [pscustomobject]@{ U1 = [pscustomobject]@{ c = 5; r = 2; mult = @(2, 1) } }; pins = @($zoneHalfSeed); zones = @($zoneHalf); fill = [pscustomobject]@{ mon = 'U1'; apps = @('*'); skip = @(); sort = 'app'; unit = @(2, 1) } })
+    # The same board with one more window, 1016, that no pin holds: the dry run places it through the zone (zone index 0), not the fill.
+    $engSnap = ConvertTo-Json -Depth 10 -Compress -InputObject ([pscustomobject]@{ monitors = @($snapObj.monitors); windows = @($snapObj.windows | ? { $splitWinIds -contains [int]$_.id -or [int]$_.id -eq 1016 }) })
+    $se = Split-Engine $zoneScene $engSnap
+    $extra = @(@($se.placed) | ? { $_ -and [int64]$_.id -eq 1016 })
+    Check 'split open: tile.ps1 places the extra window 1016 in a dry run (scope)' ($extra.Count -eq 1) "placed: $(@($se.placed).Count), 1016 placed: $($extra.Count)"
+    if ($extra.Count -ne 1) { return }
+    Check 'split open: tile.ps1 places 1016 through the zone, zone index 0 (scope)' ([int]$extra[0].zone -eq 0) "zone index: $($extra[0].zone)"
+    if ([int]$extra[0].zone -ne 0) { return }
+    $engine = ((@(Split-Ints $extra[0].slots | % { $_ - 1 })) | Sort-Object) -join ','
+    Check 'split open: tile.ps1 gives the zone window cell 2 (slot 1), the zone half (control)' ($engine -eq '1') "engine slot(s) (0-based): '$engine'"
+    Put-Split $zoneHalfLayout
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with the same layout (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $h = @(Wait-Halves $ws '(?i)empty|open half' 2)
+    $page = ((@($h | ? { $_.name -match 'Zone fills last' } | % { $_.slot })) | Sort-Object) -join ','
+    Check 'split open: the page names Zone fills last on the slot tile.ps1 gives the zone window (labels match the engine)' ($page -ne '' -and $page -eq $engine) "page names Zone fills last on slot(s): '$page'; engine: '$engine'; named halves: $(Half-Text $h)"
+  }
+
+  Case 'split open: at 1024 a zone half under 40px draws no words, and its name still reads Open half and Zone fills last' {
+    Put-Split $zoneHalfLayout
+    Set-View $ws 1024 768
+    try {
+      $opened = Open-Page $ws $url 'focus' $tenWinSnap
+      Check 'split open: the page opens on Focus with the zone half, at 1024 (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $named = @(Wait-Halves $ws '(?i)empty|open half' 2)
+      $z = @($named | ? { $_.slot -eq 1 })
+      Check 'split open: at 1024 the zone half, cell 2 (slot 1), is named on the board (scope)' ($z.Count -eq 1) "named halves: $(Half-Text $named)"
+      if ($z.Count -ne 1) { return }
+      Check 'split open: at 1024 the zone half is under 40px wide (scope)' ($z[0].w -gt 0 -and $z[0].w -lt 40) "width: $($z[0].w)"
+      if (-not ($z[0].w -gt 0 -and $z[0].w -lt 40)) { return }
+      Check 'split open: under 40px the zone half draws no words, the dashed box alone' ($z[0].words -eq '') "words drawn: '$($z[0].words)'"
+      Check 'split open: under 40px the zone half keeps its name, Open half and Zone fills last' ($z[0].name -cmatch 'Open half' -and $z[0].name -match 'Zone fills last') "name: '$($z[0].name)'"
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split open: a zone whose free block holds no open half names its cells as today, with no Open half label (control)' {
+    Put-Split $zoneWholeLayout
+    $opened = Open-Page $ws $url 'focus' $nineWinSnap
+    Check 'split open: the page opens on Focus with a zone on a whole free block (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $named = @(Wait-Halves $ws '(?i)empty|open half' 3)
+    $block = @($named | ? { $_.slot -eq 18 -or $_.slot -eq 19 })
+    Check 'split open: the zone whole block, slots 18 and 19, is named on the board (scope)' ($block.Count -eq 2) "named: $(Half-Text $named)"
+    if ($block.Count -ne 2) { return }
+    Check 'split open: the zone whole block reads as empty cells, with no Open half or Zone fills last (control)' (@($block | ? { $_.name -match 'empty' -and $_.name -notmatch 'Open half|zone fills last' }).Count -eq 2) "names: $(Half-Text $block)"
   }
 
   # ---- Split Cell: the selection after a grid change, the stack behind a half, and a split that doubles nothing ----------------------
