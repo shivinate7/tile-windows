@@ -115,7 +115,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 141
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 143
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -3829,6 +3829,68 @@ function () {
     if (-not $grown) { return }
     $sel = Selected-Cells $ws
     Check 'split open: after More Columns no cell is selected, or the cell the user picked is (slot 6, row 2 column 1); slot 5 is a different place' ($sel.Count -eq 0 -or ($sel.Count -eq 1 -and $sel[0] -eq 6)) "selected slot(s) after More Columns: $(@($sel) -join ',') (slot 5 is row 1, column 6)"
+  }
+
+  Case 'split open: scene switch then More Columns keeps scene A''s selection' {
+    # Focus (5 by 2) has window 1001 pinned, and cell 6 (slot 5) is picked on it. Meetings is a second scene on the same monitor, 5 by 2 too.
+    # More Columns is pressed while Meetings is shown, so Focus's grid does not change: its selection must stay on slot 5, not move to slot 6.
+    $cfg = New-Config; Add-Layout $cfg 'focus' $plugKey (Split-Json 5 2 @(Split-Pin 0 @(0))); Add-Layout $cfg 'meetings' $plugKey (Split-Json 5 2 @()); Put-Config $cfg
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with window 1001 pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Empty-Select $ws 5 'cell 6 (slot 5, row 2 column 1)'
+    if (-not $script:emptySel) { return }
+    $picked = Selected-Cells $ws
+    Check 'split open: cell 6 is the one selected on Focus before the scene switch (scope)' ($picked.Count -eq 1 -and $picked[0] -eq 5) "selected slot(s): $(@($picked) -join ',')"
+    if ($picked.Count -ne 1) { return }
+    [void](Select-Scene $ws 'meetings' 'Meetings')
+    $more = Js $ws 'const b = document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]"); return !!b && !b.disabled;'
+    Check 'split open: the Columns More button is enabled for Meetings on the same monitor (scope)' ($more -eq $true) 'no enabled More Columns button in the Monitor section'
+    if ($more -ne $true) { return }
+    [void](Js $ws 'document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]").click(); return true;')
+    $grown = WaitFor $ws 'snap.monitors.find(q => q.role === "wide").el.querySelectorAll(".cell").length === 12' 10
+    Check 'split open: More Columns in Meetings makes its ultrawide grid 6 by 2 (scope)' $grown 'the ultrawide does not show 12 fine cells after More Columns in Meetings'
+    if (-not $grown) { return }
+    [void](Select-Scene $ws 'focus' 'Focus')
+    $fine = WaitFor $ws 'snap.monitors.find(q => q.role === "wide").el.querySelectorAll(".cell").length === 10' 10
+    Check 'split open: back on Focus the ultrawide shows its 5 by 2 grid, 10 cells (scope)' $fine 'Focus does not show 10 fine cells'
+    if (-not $fine) { return }
+    $sel = Selected-Cells $ws
+    Check 'split open: Focus keeps cell 6 (slot 5) selected after More Columns in Meetings, and the selection does not move to cell 7 (slot 6)' ($sel.Count -eq 1 -and $sel[0] -eq 5) "selected slot(s) on Focus: $(@($sel) -join ',') (slot 5 is cell 6, slot 6 is cell 7)"
+  }
+
+  Case 'split open: scene switch, More Columns in Meetings, then Undo there keeps scene A''s selection' {
+    # The same setup, then Undo of the More Columns in Meetings. Undo changes Meetings' grid back and must not clear Focus's selection.
+    $cfg = New-Config; Add-Layout $cfg 'focus' $plugKey (Split-Json 5 2 @(Split-Pin 0 @(0))); Add-Layout $cfg 'meetings' $plugKey (Split-Json 5 2 @()); Put-Config $cfg
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with window 1001 pinned, for the Undo variant (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Empty-Select $ws 5 'cell 6 (slot 5, row 2 column 1), for the Undo variant'
+    if (-not $script:emptySel) { return }
+    $picked = Selected-Cells $ws
+    Check 'split open: cell 6 is the one selected on Focus before the scene switch, for the Undo variant (scope)' ($picked.Count -eq 1 -and $picked[0] -eq 5) "selected slot(s): $(@($picked) -join ',')"
+    if ($picked.Count -ne 1) { return }
+    [void](Select-Scene $ws 'meetings' 'Meetings')
+    $more = Js $ws 'const b = document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]"); return !!b && !b.disabled;'
+    Check 'split open: the Columns More button is enabled for Meetings, for the Undo variant (scope)' ($more -eq $true) 'no enabled More Columns button in the Monitor section'
+    if ($more -ne $true) { return }
+    [void](Js $ws 'document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]").click(); return true;')
+    $grown = WaitFor $ws 'snap.monitors.find(q => q.role === "wide").el.querySelectorAll(".cell").length === 12' 10
+    Check 'split open: More Columns in Meetings makes its ultrawide grid 6 by 2, for the Undo variant (scope)' $grown 'the ultrawide does not show 12 fine cells after More Columns in Meetings'
+    if (-not $grown) { return }
+    [void](Js $ws 'await window.__h.settle(); return true')
+    $beforeUndo = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws $undoJs)
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $beforeUndo) 10)
+    $undone = Layout-Posts-After $ws $beforeUndo
+    Check 'split open: Undo sends one POST /layout that restores Meetings to its 5 by 2 grid (scope)' ($undone.Count -eq 1 -and -not ((ConvertFrom-Json $undone[0].body).layout.grids.U1.mult)) "POST /layout count: $($undone.Count), bodies: $(Post-Text $undone)"
+    if ($undone.Count -ne 1) { return }
+    [void](Select-Scene $ws 'focus' 'Focus')
+    $fine = WaitFor $ws 'snap.monitors.find(q => q.role === "wide").el.querySelectorAll(".cell").length === 10' 10
+    Check 'split open: back on Focus after the Undo the ultrawide shows its 5 by 2 grid, 10 cells (scope)' $fine 'Focus does not show 10 fine cells'
+    if (-not $fine) { return }
+    $sel = Selected-Cells $ws
+    Check 'split open: after Undo in Meetings, Focus keeps cell 6 (slot 5) selected: it is not cleared, and it does not move to cell 7 (slot 6)' ($sel.Count -eq 1 -and $sel[0] -eq 5) "selected slot(s) on Focus after Undo: $(@($sel) -join ',') (slot 5 is cell 6, slot 6 is cell 7)"
   }
 
   Case 'split open: Join Halves on an empty half whose other half holds Claude with Terminal stacked behind takes Claude, not the back window' {
