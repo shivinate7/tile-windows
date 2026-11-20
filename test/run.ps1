@@ -1,5 +1,6 @@
-# Checks for tile.ps1, serve.ps1, app.html, tray.ps1 (its automatic triggers: triggers.ps1) and install.ps1. Plain asserts; moves no window
-# (every place call is a dry run) and touches no real profile (servers, tray and installer get a temp one).
+# Checks for tile.ps1, serve.ps1, app.html, tray.ps1 (its automatic triggers: triggers.ps1) and install.ps1. Plain asserts; moves none of your
+# windows (every place call is a dry run, except safe-moves.ps1 case 9, which starts one throwaway window, moves only that one, and closes it)
+# and touches no real profile (servers, tray and installer get a temp one).
 # Run: powershell -NoProfile -ExecutionPolicy Bypass -File test\run.ps1
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
