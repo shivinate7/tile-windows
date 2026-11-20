@@ -121,6 +121,7 @@
 #     window. Bring to Front lists the promoted window behind the new front once, never twice. A move or resize keeps the window the front of
 #     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Keep Where It Is leaves no pin naming it.
 #     With a covered pin at a lower index than the closed front's pin, a resize or a Merge keeps the promoted window the front too.
+#     A promoted window put behind another window is listed once across the pins, and no entry is left with no open window.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 param([int]$Shard = 1, [int]$Of = 1)
@@ -129,12 +130,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (269). Shard 1 runs
-# gates 1 to 68 (the cases before the Board feedback section), shard 2 gates 69 to 172 (before the stack tweaks ruling section), shard 3
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (271). Shard 1 runs
+# gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
-$shardCuts = @(68, 172)
+$shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 269
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 271
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -484,6 +485,9 @@ function SlPlacedOf($id) { SlGet "prevs[selId].placed.find(p => p.id === $id) ||
 # how many stack entries the engine found no open window for; whether window $id is the front (not behind, in a pin) on exactly the
 # cells $cells (1-based, as placed[] gives them, "4" or "4,5"); and every placed window as "<id> f|b p<pin> [cells]" for a failure's detail.
 function SlBehindCount($pin, $text) { @($pin.behind | ? { "$($_.match)" -like "*$text*" }).Count }
+# How many entries of a scene's pins name the window with this app and title: a pin's own front, and each entry of its behind list.
+# An entry names the window as the engine matches it: the same app, and its match text within the title (any title when it has no match).
+function SlNamesCount($pins, $app, $title) { $n = 0; foreach ($p in @($pins)) { foreach ($e in @($p) + @($p.behind)) { if ($e -and "$($e.app)" -eq $app -and $title.ToLower().Contains("$($e.match)".ToLower())) { $n++ } } }; $n }
 function SlBehindRows { [int](SlJs "document.querySelectorAll('#win .bstack li').length") }
 function SlMissingCount { [int](SlJs "(prevs[selId].missing || []).length") }
 function SlFrontOn($id, $cells) { $p = SlPlacedOf $id; [bool]($p -and $p.pin -ge 0 -and -not $p.behind -and (SlCells $p) -eq $cells) }
@@ -793,6 +797,8 @@ $pinsFrontGone = SlPins '{"app":"claude","match":"Nonexistent","mon":"wide","slo
 $pinsFullFrontGone = $pinsFull.Replace('{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}', '{"app":"claude","match":"Nonexistent","mon":"wide","slots":[0],"behind":[{"app":"claude","match":"Refactor"}]}')
 # A front that is not open, with a back window whose entry has no title match (the inspector then prints "Not open").
 $pinsNoMatchGone = SlPins '{"app":"claude","match":"Nonexistent","mon":"wide","slots":[3],"behind":[{"app":"notepad"}]}'
+# A promoted window put behind Quarterly: the closed front's scene (pinsFrontGone) with Quarterly beside it.
+$pinsPromotedPut = SlPins ($pinsFrontGone.Trim('[]')) '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1]}'
 # Growth: Refactor (slot 0) grows over Quarterly, which carries Draft release behind it. pinsGrowFree grows wide, over slot 1;
 # pinsGrowFreeDown grows tall, over slot 5. Slots are 0-based: the first free cell is slot 2 for a wide grow, slot 1 for a tall one.
 $pinsGrowFree = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"chrome","match":"Quarterly","mon":"wide","slots":[1],"behind":[{"app":"claude","match":"Draft release"}]}'
@@ -1223,6 +1229,37 @@ try {
   $pnt = SlBehindText
   if (Shard-Take) {
   Check 'promoted, no title match: Behind This Window does not read "Not open" for the promoted window' ("$pnt" -notlike '*Not open*') "Behind This Window: $pnt"
+  }
+
+  # Put Behind of a promoted window (debt putbehind-promoted-listed-twice, decision stack-and-lock). The closed front's window
+  # (Draft release notes) is promoted to the front, then dropped behind Quarterly. Its closed pin goes with the drop, so its stale
+  # entry for the window must go too: the window is listed once across the pins, and no entry is left with no open window.
+  SlCase (SlSceneJson $pinsPromotedPut)
+  $pbFront = SlFrontOn 1003 '4'
+  SlMarkEngine
+  SlDropNoSettle (SlAt (SlBox 1003) 0.5 0.5) (SlAt (SlBox 1006) 0.5 0.85)
+  $pbLand = SlWaitBehind 1003
+  $pbScene = SlGet 'work[selId]'; $pbNames = SlNamesCount $pbScene.pins 'claude' 'Draft release notes'; $pbMissing = SlMissingCount
+  if (Shard-Take) {
+  Check 'promoted put behind, scope: before the drop, the promoted window is the open front of the closed pin' ([bool]$pbFront) "placed: $(SlPlacedBrief)"
+  Check 'promoted put behind, scope: the drop puts the promoted window behind Quarterly' ([bool]$pbLand.behind) "fresh: $($pbLand.fresh), placed 1003 behind: $($pbLand.behind)"
+  Check 'promoted put behind: the window is listed once across the pins' ($pbNames -eq 1) "listed $pbNames times; pins: $(SlShort $pbScene.pins)"
+  Check 'promoted put behind: no entry is left with no open window' ($pbMissing -eq 0) "entries with no open window: $pbMissing; pins: $(SlShort $pbScene.pins)"
+  }
+
+  # Control: a normal window (Refactor, an open front) put behind Quarterly the same way is listed once, and no entry is left with no
+  # open window. It passes on the old code, so the promoted case fails on what the drop does to its closed pin, not on the read.
+  SlCase (SlSceneJson $pinsCQ)
+  $cbFront = SlFrontOn 1001 '1'
+  SlMarkEngine
+  SlDropNoSettle (SlAt (SlBox 1001) 0.5 0.5) (SlAt (SlBox 1006) 0.5 0.85)
+  $cbLand = SlWaitBehind 1001
+  $cbScene = SlGet 'work[selId]'; $cbNames = SlNamesCount $cbScene.pins 'claude' 'Refactor the grid solver'; $cbMissing = SlMissingCount
+  if (Shard-Take) {
+  Check 'put behind, control scope: before the drop, Refactor is the open front of its pin' ([bool]$cbFront) "placed: $(SlPlacedBrief)"
+  Check 'put behind, control scope: the drop puts Refactor behind Quarterly' ([bool]$cbLand.behind) "fresh: $($cbLand.fresh), placed 1001 behind: $($cbLand.behind)"
+  Check 'put behind, control: a window put behind is listed once across the pins' ($cbNames -eq 1) "listed $cbNames times; pins: $(SlShort $cbScene.pins)"
+  Check 'put behind, control: no entry is left with no open window' ($cbMissing -eq 0) "entries with no open window: $cbMissing; pins: $(SlShort $cbScene.pins)"
   }
 
   # Spanned drop: the whole 2x2 block is the target. Put Behind stacks behind it and keeps its span. Swap gives the block
