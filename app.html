@@ -608,6 +608,9 @@ dialog form{display:grid;gap:10px}
 .space small{position:relative;display:block;font-size:11px;color:var(--muted)}
 .space:not(.lent) small{white-space:nowrap}
 .space.nar{padding:6px 4px}.space.nar small{font-size:10px}.space.nar small.fn{white-space:normal}
+/* A space whose words do not fit (renderSpaces measures): tiny drops the size line, vert runs the label down the space, mute drops the label. */
+.space.tiny small{display:none}.space.vert{padding:6px 3px;align-items:center}.space.vert .lab{writing-mode:vertical-rl;white-space:nowrap;line-height:1.1}
+.space.mute .lab,.space.mute small{display:none}
 .space .fn{color:var(--select);font-weight:600}
 .space.gap{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--muted) 14%,transparent) 0 6px,transparent 6px 12px)}
 .space.lent{outline-color:var(--select)}
@@ -625,8 +628,10 @@ dialog form{display:grid;gap:10px}
 .bprev span{position:absolute;left:4px;top:4px;padding:1px 5px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px var(--f);white-space:nowrap}
 .bprev.sm span{font-size:10px;padding:0 3px}
 @media (forced-colors:active){.bprev{border-color:Highlight}}
-#reslist details{margin-top:4px;font-size:12px;color:var(--muted)}
-#reslist .btn{margin-top:4px}
+#reslist li{line-height:1.45}
+#reslist li>span:first-child{font-weight:700;text-align:center}
+#reslist .rb{display:grid;gap:4px;justify-items:start}
+#reslist details{font-size:12px;color:var(--muted)}
 .seam{position:absolute;z-index:6;display:grid;place-items:center;touch-action:none}
 .seam.v{width:12px;transform:translateX(-50%);cursor:ew-resize}
 .seam.h{height:12px;transform:translateY(-50%);cursor:ns-resize}
@@ -2265,7 +2270,14 @@ function renderSpaces(){
         e.innerHTML=parts.map(p=>{const a=info.list[p.j],pr=areaPx(m,{rect:p.rect}),bw=a.occ?catOf(a.occ.app):"other",sc=G.S;
           return `<i class="${p.dir} cat-${bw}" style="left:${(pr.x-o.r.x)*sc}px;top:${(pr.y-o.r.y)*sc}px;width:${pr.w*sc}px;height:${pr.h*sc}px"></i>`}).join("")+
           `<span class="lab">${esc(spaceWords(o))}<small>Lent for now</small></span>`}
-      stage.appendChild(e)})}}
+      stage.appendChild(e)})}
+  // A space whose words do not fit is measured once the spaces are on the board (its scroll width is wider than its box), and its words give way in steps, each measured again:
+  // the size line goes, the label runs down the space, then the label goes. The outline still says "empty", and the title keeps every word.
+  const wide=e=>e.scrollWidth>e.clientWidth+1,tall=e=>wide(e)||e.scrollHeight>e.clientHeight+1;
+  let clipped=[...stage.querySelectorAll(".space:not(.held)")].filter(wide);
+  for(const e of clipped){e.classList.add("tiny");const t=[],w=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);while(w.nextNode())t.push(w.currentNode.textContent.trim());e.title=t.filter(Boolean).join(". ")}
+  clipped=clipped.filter(wide);for(const e of clipped)e.classList.add("vert");
+  for(const e of clipped.filter(tall))e.classList.add("mute")}
 // The selected space, when it is still on the board.
 function freeSelected(){if(!selSp||selSp.id!==selId||selWin||!LIVE||!snap)return null;
   const m=snap.monitors.find(q=>mk(q)===selSp.key),info=m&&freeFill(freeInfo(m)),o=info&&info.list.find(q=>q.i===selSp.i);return o?{info,o}:null}
@@ -2312,10 +2324,10 @@ function freeSpaceHTML(sel){
     const b=freeBeside(info,o),lk=["left","above","right","below"].flatMap(d=>b[d]).find(q=>q.lock),lkn=lk&&appName(s.pins[lk.pin].app);
     return `<div class="win cat-${catOf(app)}">${head}<div class="m">${esc(o.gone.kind==="closed"?"Closed":"Minimized")}. No window beside it can take its space${lk?`: ${esc(nameList(["left","above","right","below"].flatMap(d=>b[d]).filter(q=>q.lock).map(q=>appName(s.pins[q.pin].app))))} ${["left","above","right","below"].flatMap(d=>b[d]).filter(q=>q.lock).length>1?"are":"is"} locked`:""}. The space stays empty until ${esc(appName(app))} ${o.gone.kind==="closed"?"opens":"is restored"} again.</div>${lk?`<button type="button" class="btn" id="unlocksp" data-pin="${lk.pin}">Unlock ${esc(lkn)}</button><p class="note">${esc(lkn)} then takes the space.</p>`:""}</div>`}
   // The fill takes the open spaces in reading order, so only the first one open is next.
-  const nextOpen=info.list.find(q=>q.pin<0&&!q.a.app&&!q.occ),pl=closeGapPlan(info,o),fill=s.fill&&s.fill.mon===info.key,
+  const nextOpen=info.list.find(q=>q.pin<0&&!q.a.app&&!q.occ),pl=closeGapPlan(info,o),fill=s.fill&&s.fill.mon===info.key,filler=fill&&!s.fill.off&&(s.fill.apps||[]).length,
     grew=t=>{const a=areaPx(info.m,{rect:t.to}),b=t.q.r;return a.w!==b.w?a.w-b.w:a.h-b.h},
     nm=pl.strips.map(t=>`${t.q.occ?appName(t.q.occ.app):"A window"} grows ${grew(t)} px`);
-  return `<div class="win"><div class="t num">${size}</div><div class="m">${fill&&!s.fill.off?o===nextOpen?"Fill Empty Cells is on, so the next new window fills it.":"Fill Empty Cells is on. The spaces before this one fill first.":"Nothing fills it. Drag a window here, or turn on Fill Empty Cells."}</div>
+  return `<div class="win"><div class="t num">${size}</div><div class="m">${filler?o===nextOpen?"Fill Empty Cells is on, so the next new window fills it.":"Fill Empty Cells is on. The spaces before this one fill first.":fill&&!s.fill.off?"Nothing fills it. Fill Empty Cells is on, but it fills with no app yet. Drag a window here.":"Nothing fills it. Drag a window here, or turn on Fill Empty Cells."}</div>
     <button type="button" class="btn" id="closegap" ${pl.strips.length?"":'disabled aria-describedby="whycg"'}>Close Gap</button>
     ${pl.strips.length?`<p class="note" id="whycg">${esc(nameList(pl.strips.map(t=>t.q.occ?appName(t.q.occ.app):"A window")))}, beside it, ${pl.strips.length>1?"meet in the middle":"take it"}: ${esc(nameList(nm))}.</p>`:`<p class="why" id="whycg"><span>No window beside it can take its space. Unlock one, or drag a line.</span></p>`}</div>`}
 // Drop on a space (F7): a window from the list or another space goes to this space; a window already there swaps. One edit.
@@ -2487,21 +2499,29 @@ function freeApplyRow(p,nm,dry){
   // The live size fits and only the restore rect is off (a snapped window Windows later falls back to): there is no line to move, so no Give It.
   if(Math.abs(+q[1]-p.w)<=20&&Math.abs(+q[2]-p.h)<=20&&(Math.abs(+q[3]-p.w)>20||Math.abs(+q[4]-p.h)>20))return["bad",`${nm(p)} is the right size now, but Windows remembers ${q[3]} × ${q[4]} px for it. It may go back to that size later.`,rawBehind(p.note)];
   if(Math.max(+q[1]-p.w,+q[2]-p.h)<0)return["bad",`${nm(p)} stayed ${q[1]} × ${q[2]} px and does not fill its space.`,rawBehind(p.note)];
-  const ax=+q[1]-p.w>=+q[2]-p.h?0:1,need=ax?+q[2]:+q[1],space=ax?p.h:p.w,over=Math.max(need-space,0);
-  return["bad",`${nm(p)} will not go under ${need} px ${ax?"tall":"wide"}${over?`, so it covers ${over} px of the space beside it`:""}.`,
+  const ax=+q[1]-p.w>=+q[2]-p.h?0:1,need=ax?+q[2]:+q[1],space=ax?p.h:p.w,over=Math.max(need-space,0),fo=freeOfWin(p.id),gs=fo&&freeGiveSeg(freeFill(fo.info),fo.o,ax),
+    // The windows on the far side of the line Give It moves are the ones this window covers. A window of the same app is named with its title, so the row does not read "of Claude" under Claude.
+    by=gs?nameList([...new Set((gs.dir>0?gs.sg.B:gs.sg.A).map(a=>{const h=a.occ||(a.pin>=0?s.pins[a.pin]:a.a),n=a.occ?a.occ.app:h.app,t=a.occ?a.occ.title:h.match||h.title;
+      return n?`${appName(n)}${String(n).toLowerCase()===String(p.app).toLowerCase()&&t?`: ${t}`:""}`:""}).filter(Boolean))]):"";
+  return["bad",`${nm(p)} will not go under ${need} px ${ax?"tall":"wide"}${over?`, so it covers ${over} px of ${by||"the space beside it"}`:""}.`,
     `<button type="button" class="btn" data-fix="giveit" data-id="${p.id}" data-ax="${ax}" data-need="${need}">Give It ${need} px</button>${rawBehind(p.note)}`]}
 function freeMissRow(m){
   if(!/not in a free area/.test(m.why||""))return null;
   const s=scene(),pin=s.pins.find(p=>p.app===m.app&&(p.match||"")===(m.match||""));if(!pin||!isFree(s.grids[pin.mon]))return null;
   return["bad",`${appName(m.app)}${m.match?` "${m.match}"`:""} is pinned, but no space on the board holds it.`,
     `<button type="button" class="btn" data-fix="space" data-app="${esc(m.app)}" data-match="${esc(m.match||"")}">Give It a Space</button>${rawBehind(m.why)}`]}
+// The line a space is widened by: the one on its right (or below), else the one on its left (or above), with the direction it moves. The areas on the far side are the ones it covers.
+function freeGiveSeg(info,o,ax,segs=freeSegs(info)){
+  let sg=segs.find(q=>q.ax===ax&&q.A.includes(o)&&!q.locked),dir=1;
+  if(!sg){sg=segs.find(q=>q.ax===ax&&q.B.includes(o));dir=-1}
+  return sg?{sg,dir}:null}
 // Widen the window's space to need px by moving the line on its right (or its left, at the monitor's edge), one edit.
 function freeGiveIt(id,ax,need){
   const fo=freeOfWin(id);if(!fo){status("That window is not on the board.");return}
   const{info,o}=fo,segs=freeSegs(info),extra=need-(ax?o.r.h:o.r.w);if(extra<=0){status("It already has that much room.");return}
-  let sg=segs.find(q=>q.ax===ax&&q.A.includes(o)&&!q.locked),dir=1;
-  if(!sg){sg=segs.find(q=>q.ax===ax&&q.B.includes(o));dir=-1}
-  if(!sg){status("No line is beside it to move.");return}
+  const gs=freeGiveSeg(info,o,ax,segs);
+  if(!gs){status("No line is beside it to move.");return}
+  const{sg,dir}=gs;
   if(sg.locked){status(`${lockNames([sg]).join(" and ")} is locked, so this line does not move.`);return}
   const set=segSet(segs,sg,false),[lb,ub]=segBounds(info.m,set.move),d=Math.round(clamp(dir*extra,lb,ub));
   if(!d){status(`Smallest size: ${FLOORPX[0]} × ${FLOORPX[1]} px. The line stops here.`);return}
@@ -2841,7 +2861,7 @@ function mergePicks(){const i=pickInfo();if(!i||!i.rect||i.lockedW||i.lockedPin|
 /* ---------- Apply, Undo, results ---------- */
 function busy(b){isBusy=b;render()}
 function showResults(sum,rows){$("fileout").hidden=true;$("sum").textContent=sum;
-  $("reslist").innerHTML=rows.map(([cls,txt,extra])=>`<li><span class="${cls}">${cls==="ok"?"✓":cls==="bad"?"✗":"·"}</span><span>${esc(txt)}${extra||""}</span></li>`).join("")}
+  $("reslist").innerHTML=rows.map(([cls,txt,extra])=>`<li><span class="${cls}">${cls==="ok"?"✓":cls==="bad"?"✗":"·"}</span><span${extra?' class="rb"':""}>${esc(txt)}${extra||""}</span></li>`).join("")}
 async function applyScene(){
   const s=scene();if(!s||isBusy)return;
   busy(true);toast(`${serverDry?"Previewing":"Applying"} ${s.name}…`,"",{sticky:true});
