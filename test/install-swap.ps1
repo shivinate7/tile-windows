@@ -79,13 +79,15 @@ function Wait-Exit($proc, [int]$ms) {
 }
 
 # A holder: a child powershell whose working directory is $app, so it holds the folder until its Release event is set.
-# Up is true once the holder has started and set its Ready event.
-function New-Holder([string]$app, [string]$tag) {
+# Up is true once the holder has started and set its Ready event. A positive $exitLagMs keeps it alive that long after the event, as the
+# time a process takes to exit does (about 1 s on a quiet machine, seconds on a loaded one): the folder is held until it ends.
+function New-Holder([string]$app, [string]$tag, [int]$exitLagMs = 0) {
   $name = "tile-swap-$PID-$tag-" + [guid]::NewGuid().ToString('N')
   $ready = New-Object Threading.EventWaitHandle($false, [Threading.EventResetMode]::ManualReset, "$name-ready")
   $release = New-Object Threading.EventWaitHandle($false, [Threading.EventResetMode]::ManualReset, "$name-release")
   $file = Join-Path $run "hold-$tag.ps1"
-  [IO.File]::WriteAllText($file, "`$r = [Threading.EventWaitHandle]::OpenExisting('$name-ready'); `$l = [Threading.EventWaitHandle]::OpenExisting('$name-release'); [void]`$r.Set(); [void]`$l.WaitOne(120000)", [Text.Encoding]::ASCII)
+  $lag = if ($exitLagMs -gt 0) { "; Start-Sleep -Milliseconds $exitLagMs" } else { '' }
+  [IO.File]::WriteAllText($file, "`$r = [Threading.EventWaitHandle]::OpenExisting('$name-ready'); `$l = [Threading.EventWaitHandle]::OpenExisting('$name-release'); [void]`$r.Set(); [void]`$l.WaitOne(120000)$lag", [Text.Encoding]::ASCII)
   $psi = New-Object Diagnostics.ProcessStartInfo 'powershell', "-NoProfile -ExecutionPolicy Bypass -File `"$file`""
   $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.WorkingDirectory = $app
   $p = [Diagnostics.Process]::Start($psi)
@@ -302,25 +304,29 @@ try {
   # ---- Case 4 (green control): tray.pid names a holder that lets go 24 s after the install starts. ----
   # The install waits up to 10 s on tray.pid, then retries the rename for 15 s. Without that wait the retry starts near 4 s and gives
   # up near 19 s, so a 24 s holder fails. With the wait, the retry starts near 14 s and gets through by about 29 s.
-  $p4 = Make-Profile 'pidwait'
-  $old4 = New-OldApp $p4
-  Check 'setup (live tray.pid): a first install puts the old app in place (nine files)' $old4.Ok "first install exit $($old4.Code): $(@($old4.Err.Result.Trim() -split "`r?`n")[0])"
-  if ($old4.Ok) {
-    $h4 = New-Holder (Join-Path $p4 '.tile-windows\app') 'pidwait'
-    Check 'holder (live tray.pid): its process is up and has set its ready event' $h4.Up 'the holder did not start'
-    if ($h4.Up) {
-      [IO.File]::WriteAllText((Join-Path $p4 '.tile-windows\tray.pid'), "$($h4.Proc.Id)", [Text.Encoding]::ASCII)
-      $held4 = Test-Held (Join-Path $p4 '.tile-windows\app')
-      Check 'holder (live tray.pid): a rename of the app folder is refused while the holder holds it' $held4 'the holder does not hold the folder: the rename went through'
-      if ($held4) {
-        $i4 = Start-Install $p4 '-NoStartup -NoLaunch'
-        if (-not $i4.Proc.WaitForExit($holdTrayMs)) { [void]$h4.Release.Set() }  # the folder frees up 24 s after the install starts
-        $exited4 = Wait-Exit $i4.Proc 60000
-        [void]$h4.Release.Set()
-        Check 'install waits for the live tray.pid holder and exits 0 once the folder frees up' ($exited4 -and $i4.Proc.ExitCode -eq 0) "exit $($i4.Proc.ExitCode): $(@($i4.Err.Result.Trim() -split "`r?`n")[0])"
-        $st4 = Get-AppState $p4
-        Check 'the new app replaces the old one after the tray.pid holder lets go' ($st4.Count -eq 9 -and $null -ne $st4.Stamp -and $st4.Stamp -ne $marker) "$($st4.Count) files, tile.ps1 time $($st4.Stamp)"
-        Check 'no staging or old folder is left after the tray.pid wait' ($st4.Staging -eq 0) "$($st4.Staging) app.* folder(s) left beside the app"
+  # Run twice: with a holder that exits as soon as it is released (4), and with one that takes 8 s to exit after it is released (4b).
+  foreach ($spec4 in @(@('pidwait', 0, ''), @('pidwait-slow', 8000, ' (the holder takes 8 s to exit once released)'))) {
+    $tag4 = $spec4[0]; $lag4 = $spec4[1]; $lbl4 = $spec4[2]
+    $p4 = Make-Profile $tag4
+    $old4 = New-OldApp $p4
+    Check "setup (live tray.pid$lbl4): a first install puts the old app in place (nine files)" $old4.Ok "first install exit $($old4.Code): $(@($old4.Err.Result.Trim() -split "`r?`n")[0])"
+    if ($old4.Ok) {
+      $h4 = New-Holder (Join-Path $p4 '.tile-windows\app') $tag4 $lag4
+      Check "holder (live tray.pid$lbl4): its process is up and has set its ready event" $h4.Up 'the holder did not start'
+      if ($h4.Up) {
+        [IO.File]::WriteAllText((Join-Path $p4 '.tile-windows\tray.pid'), "$($h4.Proc.Id)", [Text.Encoding]::ASCII)
+        $held4 = Test-Held (Join-Path $p4 '.tile-windows\app')
+        Check "holder (live tray.pid$lbl4): a rename of the app folder is refused while the holder holds it" $held4 'the holder does not hold the folder: the rename went through'
+        if ($held4) {
+          $i4 = Start-Install $p4 '-NoStartup -NoLaunch'
+          if (-not $i4.Proc.WaitForExit($holdTrayMs)) { [void]$h4.Release.Set() }  # the folder frees up 24 s after the install starts
+          $exited4 = Wait-Exit $i4.Proc 60000
+          [void]$h4.Release.Set()
+          Check "install waits for the live tray.pid holder and exits 0 once the folder frees up$lbl4" ($exited4 -and $i4.Proc.ExitCode -eq 0) "exit $($i4.Proc.ExitCode): $(@($i4.Err.Result.Trim() -split "`r?`n")[0])"
+          $st4 = Get-AppState $p4
+          Check "the new app replaces the old one after the tray.pid holder lets go$lbl4" ($st4.Count -eq 9 -and $null -ne $st4.Stamp -and $st4.Stamp -ne $marker) "$($st4.Count) files, tile.ps1 time $($st4.Stamp)"
+          Check "no staging or old folder is left after the tray.pid wait$lbl4" ($st4.Staging -eq 0) "$($st4.Staging) app.* folder(s) left beside the app"
+        }
       }
     }
   }
