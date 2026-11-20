@@ -3490,6 +3490,10 @@ function () {
     $opened = Open-Page $ws $url 'focus' $tenWinSnap
     Check 'split open: the page opens on Focus with one open half (control)' $opened 'the page did not open on Focus in time'
     if (-not $opened) { return }
+    # Wait for the half's name before the press: until the preview lands, a tile can still sit on cell 1.
+    $named = @(Wait-Halves $ws)
+    Check 'split open: the open half is named on cell 1 before the press (scope)' (@($named | ? { $_.slot -eq 1 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 1 }).Count -ne 1) { return }
     $c = Cell-Click $ws 1
     Check 'split open: open half cell 1 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 1 is not drawn, or the press hits: $($c.hit)"
     if ($null -eq $c -or -not $c.on) { return }
@@ -3547,6 +3551,10 @@ function () {
     $opened = Open-Page $ws $url 'focus' $tenWinSnap
     Check 'split open: the page opens on Focus with one open half (control)' $opened 'the page did not open on Focus in time'
     if (-not $opened) { return }
+    # Wait for the half's name before the press (see the still-click case above).
+    $named = @(Wait-Halves $ws)
+    Check 'split open: the open half is named on cell 1 before the press (scope)' (@($named | ? { $_.slot -eq 1 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 1 }).Count -ne 1) { return }
     $c = Cell-Click $ws 1
     Check 'split open: open half cell 1 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 1 is not drawn, or the press hits: $($c.hit)"
     if ($null -eq $c -or -not $c.on) { return }
@@ -3560,7 +3568,7 @@ function () {
     $sent = Layout-Posts-After $ws $before
     Check 'split open: Keep This Half Empty sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
     $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
-    $ke = if ($lay) { @(@($lay.fill.keepEmpty) | ? { $_ }) } else { @() }
+    $ke = @(if ($lay) { @($lay.fill.keepEmpty) | ? { $_ } })
     Check 'split open: the POST carries fill.keepEmpty [{mon U1, slots [1]}] and no other entry' ($ke.Count -eq 1 -and [string]$ke[0].mon -ceq 'U1' -and ((Split-Ints $ke[0].slots) -join ',') -eq '1') "fill.keepEmpty: $(Kept-Text $ke)"
     $kept = @(Wait-Halves $ws 'Kept empty')
     Check 'split open: the half reads Kept empty, on slot 1' ($kept.Count -eq 1 -and $kept[0].slot -eq 1) "named halves: $(Half-Text $kept)"
@@ -3586,6 +3594,10 @@ function () {
     $opened = Open-Page $ws $url 'focus' $oneWinSnap
     Check 'split open: the page opens on Focus with an empty split and one kept half (control)' $opened 'the page did not open on Focus in time'
     if (-not $opened) { return }
+    # Wait for the kept half's name before the press (see the still-click case above).
+    $named = @(Wait-Halves $ws)
+    Check 'split open: the kept half is named on cell 1 before the press (scope)' (@($named | ? { $_.slot -eq 1 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 1 }).Count -ne 1) { return }
     $c = Cell-Click $ws 1
     Check 'split open: the kept half at cell 1 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 1 is not drawn, or the press hits: $($c.hit)"
     if ($null -eq $c -or -not $c.on) { return }
