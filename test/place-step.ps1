@@ -3,10 +3,11 @@
 # One read of the live desktop, as the -Json snapshot text (serve.ps1 reads it the same way).
 function Read-Desktop([string]$tile) { (& $tile -Json 2>$null) -join '' }
 # Feeds a snapshot back to -PlaceFile -DryRun and says whether every window in it matched: Ok, the engine's last line (Last), and the
-# window count of the snapshot (N). $file is where the snapshot text is written for the engine to read.
+# window count of the snapshot (N). $file is where the snapshot text is written for the engine to read. The engine reads its windows from
+# that same file (-From), not from the desktop again, so a window that opens or closes after the snapshot was read cannot change the answer.
 function Test-PlaceDryRun([string]$tile, [string]$snapText, [string]$file) {
   [IO.File]::WriteAllText($file, $snapText, (New-Object Text.UTF8Encoding $false))
   $n = @(($snapText | ConvertFrom-Json).windows).Count
-  $last = @(& $tile -PlaceFile $file -DryRun 3>$null)[-1]
+  $last = @(& $tile -PlaceFile $file -From $file -DryRun 3>$null)[-1]
   [pscustomobject]@{ Ok = ($last -eq "Placed $n of $n (0 unmatched)."); Last = $last; N = $n }
 }

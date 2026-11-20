@@ -198,7 +198,8 @@ try {
   Check 'snapshot JSON parses' ($snap.monitors.Count -ge 1 -and $null -ne $snap.windows)
   Check 'snapshot gives the widest monitor the wide role' (@($snap.monitors | ? { $_.role -eq 'wide' })[0].w -eq ($snap.monitors.w | Measure-Object -Maximum).Maximum)
 
-  # 2. Feeding the snapshot back to -PlaceFile -DryRun matches every window.
+  # 2. Feeding the snapshot back to -PlaceFile -DryRun matches every window. The desktop is read once (above); the dry run reads that
+  #    snapshot, so a window that closes in between cannot fail the check (test\place-dryrun.ps1). The live -PlaceFile read is the title check below.
   $pd = Test-PlaceDryRun $tile $snapText (Join-Path $tmp 'snap.json')
   Check '-Place -DryRun matches all windows' $pd.Ok $pd.Last
 

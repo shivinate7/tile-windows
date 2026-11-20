@@ -13,7 +13,7 @@
 #     engine ignores a window the snapshot did not list).
 #   Closed window (red): the dry run matches all windows when a window closes between the two reads. The engine finds a window by its id
 #     first and then by its title, so a closed window is the one change that leaves a snapshot window unmatched. Old code: the dry run reads
-#     the desktop again and says "Placed N-1 of N (1 unmatched)".
+#     the desktop again and says "Placed N-1 of N (1 unmatched)". Now it reads the snapshot file (-From), so the closed window is still there.
 # A title change between the reads is not probed: tile.ps1 matches by id before the title, so a retitled window should still match, but that
 # is read from the code and unmeasured here.
 # Copied on purpose: the throwaway window below repeats the one run.ps1 starts for its title check. run.ps1 runs its checks at the top level,
