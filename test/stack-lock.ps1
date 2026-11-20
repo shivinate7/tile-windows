@@ -3,8 +3,8 @@
 # over the DevTools protocol, on a dry-run server (nothing moves), then read the scene and the tile boxes back. A red
 # case fails on its outcome: the scene or the boxes end up wrong. A missing control only makes the drag do nothing.
 # Page load (before the Sora cases): one dropped snapshot fetch must not leave the board empty.
-# Preview POST (after the page load cases): previewRun sends its POST again once, after a short wait, when the first is a dropped
-# connection (a TypeError). A 500 reply and an unreadable 200 reply are not sent again. The cases call preview(id) and read prevs, selId and #msg.
+# Preview POST (after the page load cases): previewRun sends its POST again after each dropped connection (a TypeError), on the loadAll
+# schedule: four tries in all. A 500 reply and an unreadable 200 reply are not sent again. The cases call preview(id) and read prevs, selId and #msg.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\stack-lock.ps1
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
 #
@@ -129,12 +129,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (269). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (270). Shard 1 runs
 # gates 1 to 68 (the cases before the Board feedback section), shard 2 gates 69 to 172 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(68, 172)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 269
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 270
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -615,7 +615,8 @@ function PlFaultOff($id) { if ($id) { [void](SlSend 'Page.removeScriptToEvaluate
 # meet -mode, and runs one preview(id) of it. The wrapper is armed after the load, so the page's own previews are neither failed nor
 # counted (PlFaultOn is a new-document script for the snapshot request, set before the load, and counts failures, not every POST; it
 # cannot arm late, answer with a status or a body, or count the POSTs the cases here compare). Modes: 'drop-once' (the first POST is a
-# TypeError, as a dropped connection gives; later ones go on to the server), 'drop-always', 'status500' (a 500 reply with a text) and
+# TypeError, as a dropped connection gives; later ones go on to the server), 'drop-twice' (the first two are, the third goes on),
+# 'drop-always', 'status500' (a 500 reply with a text) and
 # 'badbody' (a 200 reply that is not JSON). The call is capped at 20 s in the page. Returns the page's read; ok is the scope: the page
 # held the scene's preview with none in flight, the wrapper saw a POST, and the call finished.
 function PvDrive([string]$mode) {
@@ -625,14 +626,15 @@ function PvDrive([string]$mode) {
 (() => {
   const MODE = '__MODE__', ID = selId, orig = window.fetch;
   window.__pvOrig = orig;
-  window.__pv = { id: ID, posts: 0, before: !!prevs[ID], idle: !inflight[ID], old: prevs[ID] };
+  window.__pv = { id: ID, posts: 0, before: !!prevs[ID], idle: !inflight[ID], old: prevs[ID], at: [] };
   window.fetch = function (input, init) {
     const u = String(typeof input === 'string' ? input : (input && input.url) || input);
     let bid = null;
     try { bid = JSON.parse(init.body).id; } catch (e) {}
     if (/(^|\/)preview(\?|$)/.test(u) && init && init.method === 'POST' && bid === ID) {
       const n = ++window.__pv.posts;
-      if (MODE === 'drop-always' || (MODE === 'drop-once' && n === 1)) return Promise.reject(new TypeError('Failed to fetch'));
+      window.__pv.at.push(document.getElementById('msg').textContent.trim());
+      if (MODE === 'drop-always' || (MODE === 'drop-once' && n === 1) || (MODE === 'drop-twice' && n <= 2)) return Promise.reject(new TypeError('Failed to fetch'));
       if (MODE === 'status500') return Promise.resolve(new Response('Server out of order.', { status: 500 }));
       if (MODE === 'badbody') return Promise.resolve(new Response('not json', { status: 200 }));
     }
@@ -646,7 +648,7 @@ function PvDrive([string]$mode) {
   const p = window.__pv;
   const done = await Promise.race([preview(p.id).then(() => 'done'), new Promise(r => setTimeout(() => r('hung'), 20000))]);
   const now = prevs[p.id];
-  return JSON.stringify({ done: done, posts: p.posts, before: p.before, idle: p.idle, drawn: !!now, fresh: !!now && now !== p.old && Array.isArray(now.placed), msg: document.getElementById('msg').textContent.trim() });
+  return JSON.stringify({ done: done, posts: p.posts, at: p.at, before: p.before, idle: p.idle, drawn: !!now, fresh: !!now && now !== p.old && Array.isArray(now.placed), msg: document.getElementById('msg').textContent.trim() });
 })()
 '@
   try {
@@ -656,7 +658,7 @@ function PvDrive([string]$mode) {
     $text = SlJs $drive
     if (-not $text) { return [pscustomobject]@{ ready = $false; ok = $false; diag = "the page read failed: $script:jsErr" } }
     $r = $text | ConvertFrom-Json
-    [pscustomobject]@{ ready = $true; ok = [bool]($r.before -and $r.idle -and $r.posts -ge 1 -and $r.done -eq 'done'); diag = ''; done = $r.done; posts = $r.posts; before = $r.before; idle = $r.idle; drawn = $r.drawn; fresh = $r.fresh; msg = $r.msg }
+    [pscustomobject]@{ ready = $true; ok = [bool]($r.before -and $r.idle -and $r.posts -ge 1 -and $r.done -eq 'done'); diag = ''; done = $r.done; posts = $r.posts; before = $r.before; idle = $r.idle; drawn = $r.drawn; fresh = $r.fresh; msg = $r.msg; at = @($r.at) }
   } finally {
     [void](SlJs "(() => { if (window.__pvOrig) { window.fetch = window.__pvOrig; delete window.__pvOrig; } return true; })()")
   }
@@ -2946,12 +2948,11 @@ try {
   }
   }
 
-  # ---------- Preview POST: the first POST of a preview is dropped ----------
-  # app.html previewRun posts once. A dropped connection (fetch throws a TypeError) fails the scene's preview at once, though the
-  # server is fine. loadAll already tries a dropped fetch again (PR 65); previewRun does not. The target: previewRun sends the POST
-  # again once, after a short wait, and only on a TypeError; then it fails as today. A 500 reply and an unreadable 200 reply are not sent again. PvDrive
-  # arms the fault after the load and runs one preview of the scene, so each group counts the POSTs of that one call. Each group is one
-  # gate. Its scope Check goes first: the page held the scene's preview, the fault met a POST, and the call finished.
+  # ---------- Preview POST: a dropped connection is sent again ----------
+  # app.html previewRun sends the POST again after each dropped connection (fetch throws a TypeError), on the loadAll schedule
+  # (LOADWAIT: 0.4, 0.8 and 1.6 s): four tries in all, then it fails as today. A 500 reply and an unreadable 200 reply are not sent
+  # again. PvDrive arms the fault after the load and runs one preview of the scene, so each group counts the POSTs of that one call.
+  # Each group is one gate. Its scope Check goes first: the page held the scene's preview, the fault met a POST, and the call finished.
   if (Shard-Take) {
   $pvOnce = PvDrive 'drop-once'
   Check 'preview POST, dropped once, scope: the fault dropped a POST of the scene''s preview and the call finished' ([bool]$pvOnce.ok) (PvWhy $pvOnce)
@@ -2960,9 +2961,18 @@ try {
   }
 
   if (Shard-Take) {
+  $pvTwice = PvDrive 'drop-twice'
+  Check 'preview POST, dropped twice, scope: the fault dropped the first two POSTs of the scene''s preview and the call finished' ([bool]$pvTwice.ok) (PvWhy $pvTwice)
+  Check 'preview POST, dropped twice, red: the POST is sent again after each drop until one is answered (three POSTs)' ([bool]($pvTwice.ok -and $pvTwice.posts -eq 3)) "POSTs seen: $($pvTwice.posts) (three are due)"
+  Check 'preview POST, dropped twice, red: the scene''s preview is drawn from the third answer, with no Preview failed line' ([bool]($pvTwice.ok -and $pvTwice.fresh -and $pvTwice.msg -notlike 'Preview failed*')) "fresh preview: $($pvTwice.fresh); status: '$($pvTwice.msg)'"
+  }
+
+  if (Shard-Take) {
   $pvDown = PvDrive 'drop-always'
+  $pvDownLast = [string](@($pvDown.at) | Select-Object -Last 1)
   Check 'preview POST, every POST dropped, scope: the fault dropped a POST of the scene''s preview and the call finished' ([bool]$pvDown.ok) (PvWhy $pvDown)
-  Check 'preview POST, every POST dropped, red: the POST is sent once more, then the page gives up (two POSTs)' ([bool]($pvDown.ok -and $pvDown.posts -eq 2)) "POSTs seen: $($pvDown.posts)"
+  Check 'preview POST, every POST dropped, red: the POST is sent again after each drop, four POSTs in all (the first and three more)' ([bool]($pvDown.ok -and $pvDown.posts -eq 4)) "POSTs seen: $($pvDown.posts) (four tries are due)"
+  Check 'preview POST, every POST dropped, control: no Preview failed line is up when the last try goes out' ([bool]($pvDown.ok -and -not ($pvDownLast -like 'Preview failed*'))) "status at the last try: '$pvDownLast'"
   Check 'preview POST, every POST dropped, control: it fails as today (the status line names the scene and the stopped server, and no preview is kept)' ([bool]($pvDown.ok -and $pvDown.msg -ceq 'Preview failed for Stack and lock: The app server stopped answering' -and -not $pvDown.drawn)) "status: '$($pvDown.msg)'; preview kept: $($pvDown.drawn)"
   }
 
