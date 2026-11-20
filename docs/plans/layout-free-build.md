@@ -60,7 +60,7 @@ Status: built in PR 51 (Split Cell board), merged at commit b1735e7. Records: no
 
 **L2b. Split Cell deferred items** (`tile.ps1`, `app.html`; mockup in PR 69 (empty-cell mockup); needs L2)
 
-Status: built in PR 70 (engine), merged at commit 6abe62a, and PR 72 (board), merged at commit 8392b9f. Records: debt `zone-fills-last-label`; notes `split-memo-not-snapshotted`, `wait-halves-first-poll`, `fill-unit-grid-mismatch`, `even-split-page-only`, `kept-half-wait-reason`.
+Status: built in PR 70 (engine), merged at commit 6abe62a, PR 72 (board), merged at commit 8392b9f, and PR 74 (zone label), merged at commit e248489. Records: notes `split-memo-not-snapshotted`, `wait-halves-first-poll`, `fill-unit-grid-mismatch`, `even-split-page-only`, `kept-half-wait-reason`.
 
 Open owner questions (non-blocking; the build default holds until the owner rules):
 - **Zone capacity under a split.** Should a zone hold one window per whole block, then its open halves (built, per item 6 "the same way"), or one window per fine cell as on main? Build default: one window per whole block, then its open halves. Asked 2026-11-20 03:00 CST. Status: open.

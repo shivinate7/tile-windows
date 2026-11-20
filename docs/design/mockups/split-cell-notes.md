@@ -164,7 +164,7 @@ S13. **Keyboard reach.** Today only tiles and open halves take focus. Tab reache
 
 S14. **Fills last on a half.** "Fills last" shows only when fill is on and has an app to place, else "Open half" (PR 72, the board). The words stay true.
 S15. **Halves at the monitor edge.** A half sits on the engine's cell rect, so a half at the monitor edge is narrower, like an edge tile (PR 72, the board; design review).
-S16. **"Zone fills last" not built.** S6's zone label waits on debt `zone-fills-last-label`; the engine fills zone halves last (PR 70, the engine).
+S16. **"Zone fills last" built in PR 74, the board.** The label shows on the fill monitor only, as the engine fills zone halves last (PR 70, the engine). A zone half offers Keep This Half Empty but not Join Halves. The zone keeps the half, and its Keep line reads "No window goes here."
 
 ## Departs from today
 
