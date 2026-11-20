@@ -18,6 +18,7 @@
 #     pins[i].slots   a span is the whole block of cells, as today.
 #     bay             [{app, title}], as today. Take Out writes here, and so does a resize: every window its span covers goes
 #                     here with its stack, whether or not a cell is free (ruling 2026-11-16, decisions/stack-and-lock.md).
+#     pins may be left out, as in an older scene file: tile.ps1 reads none, and the page keeps the scene raw, so an edit on it still applies.
 #   tile.ps1 -Scene -From <fixture> -Json, placed[]: a stacked window has behind = true, pin = its front pin's index,
 #     and slots, x, y, w, h equal to the front's. A minimized stacked window is placed too (Apply restores it).
 #   app.html, names read by the harness (keep them): work, selId, prevs, preview(id), els (window id -> its tile element,
@@ -115,6 +116,11 @@
 #     disabled (forced-color-adjust: none, or the computed colour is GrayText).
 #     Ruling 2026-11-16 13:29 CST: a block with no room clear of the Swap circle, even for the icon at 8 px or more, shows no Put
 #     Behind label. Its solid border and the circle carry the cue. Forced colours drops box-shadow, so the icon-alone chip has a border.
+#   Closed front (decision stack-and-lock, debt closed-front-stack): when a pin's front window is not open, the first open back window is
+#     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Keep Where It Is act on that
+#     window. Bring to Front lists the promoted window behind the new front once, never twice. A move or resize keeps the window the front of
+#     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Keep Where It Is leaves no pin naming it.
+#     With a covered pin at a lower index than the closed front's pin, a resize or a Merge keeps the promoted window the front too.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 param([int]$Shard = 1, [int]$Of = 1)
@@ -123,12 +129,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (254). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (269). Shard 1 runs
 # gates 1 to 68 (the cases before the Board feedback section), shard 2 gates 69 to 172 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(68, 172)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 254
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 269
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -198,8 +204,10 @@ Check 'run folders: one warning line names the skipped folder' ($warn.Count -eq 
 # 1004 'Claude' (minimized); chrome 1005 'Pull request 212', 1006 'Quarterly roadmap', 1007 'quoted'; WindowsTerminal
 # 1008 'pwsh - tiler', 1009 'pwsh - docs watch'. Wide grid 5x2; slots are 0-based in a scene, 1-based in placed[].
 function SlPlace($scene) { (& $tile -Scene $scene -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json }
+# A null $pins leaves the pins key out, as a scene file may (the page keeps such a scene raw).
 function SlSceneJson($pins, $fill = '[]', $extra = '', $off = '', $grid = '"c":5,"r":2') {
-  '{"id":"sl","name":"Stack and lock","trigger":{"type":"manual","days":[],"time":"09:00"},"grids":{"wide":{' + $grid + '}},"pins":' + $pins + ',"fill":{"mon":"wide","apps":' + $fill + ',"skip":[],"sort":"app"' + $off + '}' + $extra + '}'
+  $pinsKey = if ($null -eq $pins) { '' } else { ',"pins":' + $pins }
+  '{"id":"sl","name":"Stack and lock","trigger":{"type":"manual","days":[],"time":"09:00"},"grids":{"wide":{' + $grid + '}}' + $pinsKey + ',"fill":{"mon":"wide","apps":' + $fill + ',"skip":[],"sort":"app"' + $off + '}' + $extra + '}'
 }
 # A dry-run engine call (no window moves): the scene as tile.ps1 -Scene reads it, placed[] and left[] back. The fixture is the shared one unless a second argument names another.
 function SlDry($scene, $from = $fixture) { (& $tile -Scene $scene -From $from -DryRun -Json 3>$null) -join '' | ConvertFrom-Json }
@@ -472,6 +480,14 @@ function SlFewer($k) { [void](SlStep 'g' $k '-1') }
 # The text of the inspector's Behind This Window list ('' when it is not drawn), and a placed window by id (null when none).
 function SlBehindText { SlJs "(() => { const b = document.querySelector('#win .bstack'); return b ? b.textContent : ''; })()" }
 function SlPlacedOf($id) { SlGet "prevs[selId].placed.find(p => p.id === $id) || null" }
+# The closed-front cases read: how many entries of a pin's behind list name $text; the rows of the inspector's Behind This Window list;
+# how many stack entries the engine found no open window for; whether window $id is the front (not behind, in a pin) on exactly the
+# cells $cells (1-based, as placed[] gives them, "4" or "4,5"); and every placed window as "<id> f|b p<pin> [cells]" for a failure's detail.
+function SlBehindCount($pin, $text) { @($pin.behind | ? { "$($_.match)" -like "*$text*" }).Count }
+function SlBehindRows { [int](SlJs "document.querySelectorAll('#win .bstack li').length") }
+function SlMissingCount { [int](SlJs "(prevs[selId].missing || []).length") }
+function SlFrontOn($id, $cells) { $p = SlPlacedOf $id; [bool]($p -and $p.pin -ge 0 -and -not $p.behind -and (SlCells $p) -eq $cells) }
+function SlPlacedBrief { $all = SlGet "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, behind: !!p.behind, slots: p.slots }))"; (@($all) | % { "$($_.id) $(if ($_.behind) { 'b' } else { 'f' }) p$($_.pin) [$(@($_.slots) -join ',')]" }) -join '; ' }
 # Hit boxes for the badge cases: the badge (its box, widened by its ::after inset), the grip, the lock and Stay Put, on the
 # board. An element that is not drawn, or has pointer-events none, has no hit box (null). The text point is the centre of the
 # badge's visible text; hitAt names what the page would hit there.
@@ -707,7 +723,8 @@ function SlBadgeText($id) { SlJs "(() => { const t = els.get($id), s = t && t.qu
 function SlBayIds { @(("$(SlJs "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => b.dataset.bay).join(',')")") -split ',' | ? { $_ } | % { [int]$_ }) }
 # Call before the drop: keeps the engine's current answer, so the wait below can tell when a new one has replaced it, and
 # records the page's uncaught errors from then on, so a red case names the exception that stopped the redraw.
-function SlMarkEngine { [void](SlJs "(window.bfEngine = prevs[selId], window.bfErrs = [], addEventListener('error', e => window.bfErrs.push(String(e.message) + ' at ' + String((e.error && e.error.stack) || '').split('\n')[1].trim())), true)") }
+# -Rejections also records an unhandled promise rejection, as an edit run from a promise (the Fill Empty Cells switch) raises.
+function SlMarkEngine([switch]$Rejections) { [void](SlJs "(window.bfEngine = prevs[selId], window.bfErrs = [], addEventListener('error', e => window.bfErrs.push(String(e.message) + ' at ' + String((e.error && e.error.stack) || '').split('\n')[1].trim())), true)"); if ($Rejections) { [void](SlJs "addEventListener('unhandledrejection', e => window.bfErrs.push('unhandled rejection: ' + String((e.reason && e.reason.message) || e.reason)))") } }
 # A passive wait, no action: the page polls until the engine's answer to the drop replaces the marked one (bounded by a count,
 # a hang guard only), then two frames. It never calls preview() itself, since a settle would redraw the board and hide a stale screen.
 # Returns fresh (an answer came back) and behind (the engine placed window $id behind).
@@ -2709,6 +2726,180 @@ try {
   Check 'forced colours, guard: a disabled Merge reads as disabled (its text is GrayText, or it opts out of forced colours)' ([bool]($fcMergeState -eq 'disabled' -and $fcMerge -and ($fcMerge.color -eq $fcMerge.gray -or $fcMerge.fca -eq 'none'))) "Merge: $(SlShort $fcMerge)"
   }
   SlSend 'Emulation.setEmulatedMedia' @{ features = @() }
+
+  # ---------- Closed front in a stack (decision stack-and-lock, debt closed-front-stack) ----------
+  # A pin whose front is not open: Apply makes its first open back window the front (tile.ps1, Pass), so the board shows that window as the
+  # front while the scene still names the closed one. Here the closed front is closedapp (match empty), and Draft release (claude, 1003) is
+  # promoted over Quarterly (chrome, 1006). The pin has to be this shape: if the closed front were claude with a match, a move would copy that
+  # match and the engine would promote the same window again. Refactor (claude, 1001) is the window that wrongly takes the front instead.
+  # A move, a resize, Delete and Keep Where It Is act on the window on screen; Bring to Front swaps it with the one behind. The scene's
+  # closed entry is not asserted: the debt's fix drops it. The same actions on an open front (Refactor over the same two windows) are the
+  # controls, and each action's own control shows it ran, so a red is never a key or a button that did nothing.
+  $pinsCF = SlPins '{"app":"closedapp","match":"","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}'
+  $pinsOF = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}'
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF); SlPark
+  $cfMiss = SlGet "(prevs[selId].missing || []).filter(m => m.app === 'closedapp').length"
+  $cfQ = SlPlacedOf 1006
+  if (Shard-Take) {
+  Check 'closed front, scope: Draft release is the front on cell 4, and the closed app''s pin is missing its window' ([bool]((SlFrontOn 1003 '4') -and $cfMiss -eq 1)) "missing closedapp: $cfMiss; placed: $(SlPlacedBrief)"
+  Check 'closed front, scope: Quarterly is behind Draft release on cell 4' ([bool]($cfQ -and $cfQ.behind -eq $true -and $cfQ.pin -eq 0 -and (SlCells $cfQ) -eq '4')) "placed: $(SlPlacedBrief)"
+  }
+
+  # (a) Bring to Front: the promoted window goes behind, once, and the one behind it comes to the front.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  SlClick (SlAt (SlBox 1003) 0.5 0.5)
+  $cbPress = SlBtnPress '#win' 'Bring to Front'
+  $cbPin = @((SlGet 'work[selId]').pins)[0]
+  $cbRows = SlBehindRows; $cbMissing = SlMissingCount
+  if (Shard-Take) {
+  Check 'closed front, Bring to Front, control: Quarterly is the front of the pin, with Draft release behind it' ([bool]($cbPress -and $cbPin -and "$($cbPin.match)" -like '*Quarterly*' -and (SlBehindCount $cbPin 'Draft release') -ge 1)) "pressed: $cbPress; pin: $(SlShort $cbPin)"
+  Check 'closed front, Bring to Front, red: Draft release is in the pin''s behind list once, not twice' ((SlBehindCount $cbPin 'Draft release') -eq 1) "pin: $(SlShort $cbPin)"
+  Check 'closed front, Bring to Front, red: the inspector lists one window behind the front' ($cbRows -eq 1) "Behind This Window rows: $cbRows"
+  Check 'closed front, Bring to Front, red: Apply finds an open window for every entry in the stack' ($cbMissing -eq 0) "windows with no open match: $cbMissing; pin: $(SlShort $cbPin)"
+  }
+
+  # (b) An arrow move: the window that is moved stays the front of its pin on the new cell.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  SlKey 1003 'ArrowRight' 39
+  $mvQ = SlPlacedOf 1006
+  if (Shard-Take) {
+  Check 'closed front, arrow move, control: the pin moved one cell right, with Quarterly behind it on cell 5' ([bool]($mvQ -and $mvQ.behind -eq $true -and (SlCells $mvQ) -eq '5')) "placed: $(SlPlacedBrief)"
+  Check 'closed front, arrow move, red: Draft release, the window that was moved, is the front on cell 5' (SlFrontOn 1003 '5') "placed: $(SlPlacedBrief)"
+  }
+
+  # (b) Shift+arrow resize (the grip's path): the window that is resized stays the front of its two-cell span.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  SlKey 1003 'ArrowRight' 39 8
+  $rzQ = SlPlacedOf 1006
+  if (Shard-Take) {
+  Check 'closed front, Shift+arrow resize, control: the pin spans cells 4 and 5, with Quarterly behind it' ([bool]($rzQ -and $rzQ.behind -eq $true -and (SlCells $rzQ) -eq '4,5')) "placed: $(SlPlacedBrief)"
+  Check 'closed front, Shift+arrow resize, red: Draft release, the window that was resized, is the front of cells 4 and 5' (SlFrontOn 1003 '4,5') "placed: $(SlPlacedBrief)"
+  }
+
+  # (b) Delete: one press takes the window on screen off the cell, and the window behind it takes the cell.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  $dlBefore = ConvertTo-Json -Depth 8 -Compress (SlGet 'work[selId]')
+  SlKey 1003 'Delete' 46
+  $dlAfter = ConvertTo-Json -Depth 8 -Compress (SlGet 'work[selId]')
+  $dlD = SlPlacedOf 1003
+  if (Shard-Take) {
+  Check 'closed front, Delete, control: one press changes the scene' ($dlBefore -ne $dlAfter) "scene: $dlAfter"
+  Check 'closed front, Delete, red: one press takes Draft release off cell 4' ([bool]((-not $dlD) -or (SlCells $dlD) -ne '4')) "placed: $(SlPlacedBrief)"
+  Check 'closed front, Delete, red: Quarterly, the window behind, is the front on cell 4' (SlFrontOn 1006 '4') "placed: $(SlPlacedBrief)"
+  }
+
+  # (b) Keep Where It Is (Windows That Stay Put): the window leaves the pin, so no pin still names it.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  SlClick (SlAt (SlBox 1003) 0.5 0.5)
+  $kpPress = SlBtnPress '#win' 'Keep Where It Is'
+  $kpS = SlGet 'work[selId]'
+  $kpNamed = @($kpS.pins | ? { "$($_.match)" -like '*Draft release*' -or (SlHasBehind $_ 'Draft release') })
+  if (Shard-Take) {
+  Check 'closed front, Keep Where It Is, control: Draft release is in Windows That Stay Put' ([bool]($kpPress -and (SlHasBay $kpS 'Draft release'))) "pressed: $kpPress; bay: $(SlShort $kpS.bay)"
+  Check 'closed front, Keep Where It Is, red: no pin still names Draft release' ($kpNamed.Count -eq 0) "pins: $(SlShort $kpS.pins)"
+  }
+
+  # Controls on an open front (Refactor over the same two windows): the same three actions already work.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsOF)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $ofPress = SlBtnPress '#win' 'Bring to Front'
+  $ofPin = @((SlGet 'work[selId]').pins)[0]
+  $ofMissing = SlMissingCount
+  if (Shard-Take) {
+  Check 'open front, Bring to Front, control: Draft release is the front, with Refactor once behind it and no window missing' ([bool]($ofPress -and $ofPin -and "$($ofPin.match)" -like '*Draft release*' -and (SlBehindCount $ofPin 'Refactor') -eq 1 -and $ofMissing -eq 0)) "pressed: $ofPress; missing: $ofMissing; pin: $(SlShort $ofPin)"
+  }
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsOF)
+  SlKey 1001 'ArrowRight' 39
+  if (Shard-Take) {
+  Check 'open front, arrow move, control: Refactor, the window that was moved, is the front on cell 5' (SlFrontOn 1001 '5') "placed: $(SlPlacedBrief)"
+  }
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsOF)
+  SlKey 1001 'Delete' 46
+  if (Shard-Take) {
+  Check 'open front, Delete, control: one press lets Draft release, the window behind, take cell 4 as the front' (SlFrontOn 1003 '4') "placed: $(SlPlacedBrief)"
+  }
+
+  # ---------- Edit on a scene with no pins key (debt closed-front-stack: each edit settles the closed fronts, and reads pins first) ----------
+  # A scene file may leave the pins key out. tile.ps1 reads it as an empty list, and the page keeps the scene as it is. An edit on it must
+  # raise no page error, apply, and add one undo entry. The edit is the Fill order select: it changes only the scene's fill sort.
+  SlViewport 1440 900; SlCase (SlSceneJson $null '["*"]'); SlPark
+  $npKeys = SlJs "'pins' in work[selId]"
+  $npSort0 = SlJs 'work[selId].fill.sort'
+  $npCtl = SlJs "(() => { const s = document.getElementById('sort'); return !!s && !s.disabled; })()"
+  SlMarkEngine -Rejections
+  $npN0 = SlJs 'hist.length'
+  [void](SlJs "(() => { const s = document.getElementById('sort'); if (!s) return false; s.value = 'title'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()")
+  SlSettle
+  $npSort1 = SlJs 'work[selId].fill.sort'
+  $npN1 = SlJs 'hist.length'
+  $npErr = SlJs "(window.bfErrs || []).slice(0, 3).join(' | ')"
+  if (Shard-Take) {
+  Check 'no pins key, scope: the scene has no pins key, the Fill order select is enabled, and its order is App Order' ([bool](-not $npKeys -and $npCtl -and "$npSort0" -eq 'app')) "pins key: $npKeys; select enabled: $npCtl; order: $npSort0"
+  Check 'no pins key, red: the edit raises no page error' ([bool]("$npErr" -eq '')) "page error: $npErr"
+  Check 'no pins key, red: the edit applies, so the fill order is Title A to Z' ("$npSort1" -eq 'title') "fill order after the edit: $npSort1"
+  Check 'no pins key, control: the edit adds exactly one undo entry' ([bool]($npN1 -eq ($npN0 + 1))) "undo entries: $npN0 before, $npN1 after"
+  }
+
+  # ---------- Closed front, covered pin at a lower index (debt closed-front-stack) ----------
+  # The closed front's pin is index 1 here, after the covered pin (Pull request, chrome, cell 5) at index 0; the controls swap the two.
+  # A resize or a Merge removes the covered pin before it settles the closed front, so the closed front's index shifts. The promoted
+  # window (Draft release, on screen) is then not written into the pin, and the pin the edit makes names claude with no title, which
+  # the engine answers with the first claude window (Refactor). A swap settles both pins first, so its index is not shifted.
+  $pinsCFLow = SlPins '{"app":"chrome","match":"Pull request","mon":"wide","slots":[4]}' '{"app":"closedapp","match":"","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}'
+  $pinsCFHigh = SlPins '{"app":"closedapp","match":"","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}' '{"app":"chrome","match":"Pull request","mon":"wide","slots":[4]}'
+  $pinsCFSwap = SlPins '{"app":"chrome","match":"Pull request","mon":"wide","slots":[1]}' '{"app":"closedapp","match":"","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}'
+
+  # Resize: Shift+Right grows the closed front over cells 4 and 5, which covers Pull request. Scope first: the growth and the bay.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCFLow)
+  SlKey 1003 'ArrowRight' 39 8
+  $rlLow = SlGet 'work[selId]'
+  if (Shard-Take) {
+  Check 'closed front, resize, scope: the closed front''s pin spans cells 4 and 5, and Pull request is in Windows That Stay Put (covered pin at a lower index)' ([bool](@($rlLow.pins | ? { (SlCells $_) -eq '3,4' }).Count -eq 1 -and (SlHasBay $rlLow 'Pull request'))) "pins: $(SlShort $rlLow.pins); bay: $(SlShort $rlLow.bay)"
+  Check 'closed front, resize, red: Draft release, the window on screen, is the front of cells 4 and 5 (covered pin at a lower index)' (SlFrontOn 1003 '4,5') "placed: $(SlPlacedBrief)"
+  }
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCFHigh)
+  SlKey 1003 'ArrowRight' 39 8
+  $rlHigh = SlGet 'work[selId]'
+  if (Shard-Take) {
+  Check 'closed front, resize, scope, control: the closed front''s pin spans cells 4 and 5, and Pull request is in Windows That Stay Put (covered pin at a higher index)' ([bool](@($rlHigh.pins | ? { (SlCells $_) -eq '3,4' }).Count -eq 1 -and (SlHasBay $rlHigh 'Pull request'))) "pins: $(SlShort $rlHigh.pins); bay: $(SlShort $rlHigh.bay)"
+  Check 'closed front, resize, control: Draft release is the front of cells 4 and 5 (covered pin at a higher index)' (SlFrontOn 1003 '4,5') "placed: $(SlPlacedBrief)"
+  }
+
+  # Merge: Draft release is picked first, so it is the keeper; Pull request is picked on cell 5. The block is cells 4 and 5.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCFLow)
+  SlCtrlClick (SlAt (SlBox 1003) 0.5 0.5)
+  SlCtrlClick (SlAt (SlBox 1005) 0.5 0.5)
+  $mgLowState = SlBtnState '.mbar' 'Merge'
+  $mgLowPress = SlBtnPress '.mbar' 'Merge'
+  $mgLow = SlGet 'work[selId]'
+  if (Shard-Take) {
+  Check 'closed front, Merge, scope: Merge is enabled, and the press makes the closed front''s pin span cells 4 and 5, with Pull request in Windows That Stay Put (covered pin at a lower index)' ([bool]($mgLowState -eq 'enabled' -and $mgLowPress -and @($mgLow.pins | ? { (SlCells $_) -eq '3,4' }).Count -eq 1 -and (SlHasBay $mgLow 'Pull request'))) "Merge: $mgLowState; pressed: $mgLowPress; pins: $(SlShort $mgLow.pins); bay: $(SlShort $mgLow.bay)"
+  Check 'closed front, Merge, red: Draft release, the keeper, is the front of cells 4 and 5 (covered pin at a lower index)' (SlFrontOn 1003 '4,5') "placed: $(SlPlacedBrief)"
+  }
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCFHigh)
+  SlCtrlClick (SlAt (SlBox 1003) 0.5 0.5)
+  SlCtrlClick (SlAt (SlBox 1005) 0.5 0.5)
+  $mgHighState = SlBtnState '.mbar' 'Merge'
+  $mgHighPress = SlBtnPress '.mbar' 'Merge'
+  $mgHigh = SlGet 'work[selId]'
+  if (Shard-Take) {
+  Check 'closed front, Merge, scope, control: Merge is enabled, and the press makes the closed front''s pin span cells 4 and 5, with Pull request in Windows That Stay Put (covered pin at a higher index)' ([bool]($mgHighState -eq 'enabled' -and $mgHighPress -and @($mgHigh.pins | ? { (SlCells $_) -eq '3,4' }).Count -eq 1 -and (SlHasBay $mgHigh 'Pull request'))) "Merge: $mgHighState; pressed: $mgHighPress; pins: $(SlShort $mgHigh.pins); bay: $(SlShort $mgHigh.bay)"
+  Check 'closed front, Merge, control: Draft release is the front of cells 4 and 5 (covered pin at a higher index)' (SlFrontOn 1003 '4,5') "placed: $(SlPlacedBrief)"
+  }
+
+  # Swap: the closed front's window is dragged onto Pull request's cell (cell 2), and the drop is on the swap circle at the block's centre.
+  # The swap settles both pins before any pin is removed, so the index does not shift here. It passes on c2c2904: a control of the swap path.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCFSwap)
+  [void](SlCircleDrop 1003 1 1 1 0 0)
+  if (Shard-Take) {
+  Check 'closed front, swap, scope: the swap puts Pull request on cell 4 as its front' (SlFrontOn 1005 '4') "placed: $(SlPlacedBrief)"
+  Check 'closed front, swap, control: Draft release, the window dragged, is the front of cell 2 after the swap' (SlFrontOn 1003 '2') "placed: $(SlPlacedBrief)"
+  }
 
   # ---------- Page load: the first data fetch fails once ----------
   # app.html loadAll fetches the snapshot once, so one dropped fetch (a TypeError, as a dropped connection gives) must not leave the
