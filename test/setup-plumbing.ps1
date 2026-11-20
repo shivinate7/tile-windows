@@ -9,7 +9,7 @@
 #   Tray, a failed read: Read-Monitors (tray.ps1) on a failed tile.ps1 -Monitors returns no monitors or the last good set, never throws, and
 #   never the Windows screen list (no ids, so its key differs). The tick passes Get-MonitorKey of it to Step-Tray: a failed read fires
 #   no display trigger, and neither does the good read after it, for the same monitors.
-#   Tray, a failed read is read again (debt tray-monitors-read-no-retry): when the tick's read gives no monitors, it reads again on a later
+#   Tray, a failed read is read again: when the tick's read gives no monitors, it reads again on a later
 #   tick, so a monitor change that landed during the failed read fires its display scene once a read succeeds. The retries are bounded:
 #   a read that keeps failing is not read every tick forever (the cases cap it at 50 tile.ps1 -Monitors runs in 600 ticks; the builder
 #   names the real count). A good read is read once, and a display change after a long failure is read and fires.
@@ -724,7 +724,7 @@ try {
     Check 'tray: the good read after a failed read fires no display trigger (same monitors)' ($a3 -eq '') "applied: '$a3'"
   }
 
-  # ---- Tray: a failed monitor read is read again (debt tray-monitors-read-no-retry) ----
+  # ---- Tray: a failed monitor read is read again ----
   # The tick clears its dirty mark before it reads, so a read that fails (Read-Monitors gives $null) was dropped: a monitor change that landed
   # during it fired nothing until the next display change. The retry belongs in the tick, which tray.ps1 keeps in $timer.add_Tick below -Lib's
   # return. So these cases take the tick's own text from tray.ps1 by the parser (as Read-Monitors above) and run it one tick per synthetic

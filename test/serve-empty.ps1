@@ -1,4 +1,4 @@
-# Checks for serve.ps1 when the engine gives no output (debt serve-empty-200). POST scene and POST apply must answer 500 with a body, as POST preview
+# Checks for serve.ps1 when the engine gives no output. POST scene and POST apply must answer 500 with a body, as POST preview
 # does (serve.ps1, since PR 63), never a 200 with an empty body. The board reads each reply as JSON, so an empty 200 shows as a JSON parse error
 # in the results line under Undo and Apply; a 500 shows the server's text.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\serve-empty.ps1

@@ -625,7 +625,7 @@ try {
     }
   }
 
-  # ---- Config lock: a wait that times out does not run the block unlocked (debt config-lock-wait-ignored) ----
+  # ---- Config lock: a wait that times out does not run the block unlocked ----
   # Use-TileLock waits 10 s for the lock. When another writer holds it that long, the block must not run, and the caller gets an error
   # to show. An abandoned lock (its holder died) is still taken and the block runs. The holder is a second powershell: the lock is a
   # mutex, and a mutex re-enters on the thread that owns it, so a hold from this thread would never time out. The holder takes the lock

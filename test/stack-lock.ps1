@@ -3,8 +3,8 @@
 # over the DevTools protocol, on a dry-run server (nothing moves), then read the scene and the tile boxes back. A red
 # case fails on its outcome: the scene or the boxes end up wrong. A missing control only makes the drag do nothing.
 # Page load (before the Sora cases): one dropped snapshot fetch must not leave the board empty.
-# Preview POST (after the page load cases): previewRun sends its POST again once, after a short wait, when the first is a dropped
-# connection (a TypeError). A 500 reply and an unreadable 200 reply are not sent again. The cases call preview(id) and read prevs, selId and #msg.
+# Preview POST (after the page load cases): previewRun sends its POST again after each dropped connection (a TypeError), on the loadAll
+# schedule: four tries in all. A 500 reply and an unreadable 200 reply are not sent again. The cases call preview(id) and read prevs, selId and #msg.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\stack-lock.ps1
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
 #
@@ -116,7 +116,7 @@
 #     disabled (forced-color-adjust: none, or the computed colour is GrayText).
 #     Ruling 2026-11-16 13:29 CST: a block with no room clear of the Swap circle, even for the icon at 8 px or more, shows no Put
 #     Behind label. Its solid border and the circle carry the cue. Forced colours drops box-shadow, so the icon-alone chip has a border.
-#   Closed front (decision stack-and-lock, debt closed-front-stack): when a pin's front window is not open, the first open back window is
+#   Closed front (decision stack-and-lock): when a pin's front window is not open, the first open back window is
 #     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Keep Where It Is act on that
 #     window. Bring to Front lists the promoted window behind the new front once, never twice. A move or resize keeps the window the front of
 #     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Keep Where It Is leaves no pin naming it.
@@ -130,12 +130,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (271). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (272). Shard 1 runs
 # gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 271
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 272
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -166,7 +166,7 @@ Check 'run folders: the sweep removes an old run folder whose path is past 260 c
   }
 Remove-RunFolder $proof
 # A run folder that another process holds open (a stray Edge's CrashpadMetrics-active.pma). The sweep must not throw, must leave that
-# folder in place, must still remove the other old folder and keep the new one, and must write one warning line that names the locked
+# folder in place with every file in it, must still remove the other old folder and keep the new one, and must write one warning line that names the locked
 # folder. Its own run folder under the temp root (test-temp-standard), so the sweep sees only this case's folders. The clock is
 # synthetic: every time comes from $lockNow, and no real date is read (P5).
 $lockNow = [datetime]::new(2001, 1, 1, 12, 0, 0)
@@ -179,12 +179,14 @@ foreach ($d in $lockedRun, $otherRun, $freshRun) { New-Item -ItemType Directory 
 $lockHeld = $null; $lockFile = Join-Path $lockedRun 'CrashpadMetrics-active.pma'
 try {
   $lockHeld = [IO.File]::Open($lockFile, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-  [IO.File]::WriteAllText((Join-Path $otherRun 'a.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $freshRun 'a.txt'), 'x')
+  # a.txt is free and sorts before the held file: a delete that goes file by file takes it before it reaches the held one.
+  [IO.File]::WriteAllText((Join-Path $lockedRun 'a.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $otherRun 'a.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $freshRun 'a.txt'), 'x')
   # Each folder's time is set after its files exist: creating a file moves its folder's last write time.
   [IO.Directory]::SetLastWriteTime($lockedRun, $lockNow.AddDays(-3)); [IO.Directory]::SetLastWriteTime($otherRun, $lockNow.AddDays(-3))
   [IO.Directory]::SetLastWriteTime($freshRun, $lockNow.AddHours(-1))
   # Scope first (P7): the held file refuses a delete, so the sweep below meets a real lock.
   $refused = $false; try { [IO.File]::Delete($lockFile) } catch { $refused = $true }
+  $freeBefore = Test-Path -LiteralPath (Join-Path $lockedRun 'a.txt')
   $threw = $null; $warn = @()
   try { $warn = @(SlSweep $lockDir ([TimeSpan]::FromDays(1)) $lockNow 3>&1 | ? { $_ -is [Management.Automation.WarningRecord] }) } catch { $threw = $_.Exception.Message }
   if (Shard-Take) {
@@ -194,6 +196,9 @@ Check 'run folders: the locked old run folder stays' (Test-Path -LiteralPath $lo
 Check 'run folders: the other old run folder goes' (-not (Test-Path -LiteralPath $otherRun))
 Check 'run folders: the new run folder stays' (Test-Path -LiteralPath $freshRun)
 Check 'run folders: one warning line names the skipped folder' ($warn.Count -eq 1 -and $warn[0].Message.Contains((Split-Path $lockedRun -Leaf))) "warnings: $($warn.Count)"
+Check 'run folders: the unlocked file is in the locked folder before the sweep' $freeBefore
+Check 'run folders: the sweep keeps the unlocked file in the locked old run folder' (Test-Path -LiteralPath (Join-Path $lockedRun 'a.txt')) 'a.txt went before the held file refused the delete'
+Check 'run folders: the sweep keeps the held file in the locked old run folder' (Test-Path -LiteralPath $lockFile)
   }
 } finally {
   if ($lockHeld) { $lockHeld.Dispose() }
@@ -619,7 +624,8 @@ function PlFaultOff($id) { if ($id) { [void](SlSend 'Page.removeScriptToEvaluate
 # meet -mode, and runs one preview(id) of it. The wrapper is armed after the load, so the page's own previews are neither failed nor
 # counted (PlFaultOn is a new-document script for the snapshot request, set before the load, and counts failures, not every POST; it
 # cannot arm late, answer with a status or a body, or count the POSTs the cases here compare). Modes: 'drop-once' (the first POST is a
-# TypeError, as a dropped connection gives; later ones go on to the server), 'drop-always', 'status500' (a 500 reply with a text) and
+# TypeError, as a dropped connection gives; later ones go on to the server), 'drop-twice' (the first two are, the third goes on),
+# 'drop-always', 'status500' (a 500 reply with a text) and
 # 'badbody' (a 200 reply that is not JSON). The call is capped at 20 s in the page. Returns the page's read; ok is the scope: the page
 # held the scene's preview with none in flight, the wrapper saw a POST, and the call finished.
 function PvDrive([string]$mode) {
@@ -629,14 +635,15 @@ function PvDrive([string]$mode) {
 (() => {
   const MODE = '__MODE__', ID = selId, orig = window.fetch;
   window.__pvOrig = orig;
-  window.__pv = { id: ID, posts: 0, before: !!prevs[ID], idle: !inflight[ID], old: prevs[ID] };
+  window.__pv = { id: ID, posts: 0, before: !!prevs[ID], idle: !inflight[ID], old: prevs[ID], at: [] };
   window.fetch = function (input, init) {
     const u = String(typeof input === 'string' ? input : (input && input.url) || input);
     let bid = null;
     try { bid = JSON.parse(init.body).id; } catch (e) {}
     if (/(^|\/)preview(\?|$)/.test(u) && init && init.method === 'POST' && bid === ID) {
       const n = ++window.__pv.posts;
-      if (MODE === 'drop-always' || (MODE === 'drop-once' && n === 1)) return Promise.reject(new TypeError('Failed to fetch'));
+      window.__pv.at.push(document.getElementById('msg').textContent.trim());
+      if (MODE === 'drop-always' || (MODE === 'drop-once' && n === 1) || (MODE === 'drop-twice' && n <= 2)) return Promise.reject(new TypeError('Failed to fetch'));
       if (MODE === 'status500') return Promise.resolve(new Response('Server out of order.', { status: 500 }));
       if (MODE === 'badbody') return Promise.resolve(new Response('not json', { status: 200 }));
     }
@@ -650,7 +657,7 @@ function PvDrive([string]$mode) {
   const p = window.__pv;
   const done = await Promise.race([preview(p.id).then(() => 'done'), new Promise(r => setTimeout(() => r('hung'), 20000))]);
   const now = prevs[p.id];
-  return JSON.stringify({ done: done, posts: p.posts, before: p.before, idle: p.idle, drawn: !!now, fresh: !!now && now !== p.old && Array.isArray(now.placed), msg: document.getElementById('msg').textContent.trim() });
+  return JSON.stringify({ done: done, posts: p.posts, at: p.at, before: p.before, idle: p.idle, drawn: !!now, fresh: !!now && now !== p.old && Array.isArray(now.placed), msg: document.getElementById('msg').textContent.trim() });
 })()
 '@
   try {
@@ -660,7 +667,7 @@ function PvDrive([string]$mode) {
     $text = SlJs $drive
     if (-not $text) { return [pscustomobject]@{ ready = $false; ok = $false; diag = "the page read failed: $script:jsErr" } }
     $r = $text | ConvertFrom-Json
-    [pscustomobject]@{ ready = $true; ok = [bool]($r.before -and $r.idle -and $r.posts -ge 1 -and $r.done -eq 'done'); diag = ''; done = $r.done; posts = $r.posts; before = $r.before; idle = $r.idle; drawn = $r.drawn; fresh = $r.fresh; msg = $r.msg }
+    [pscustomobject]@{ ready = $true; ok = [bool]($r.before -and $r.idle -and $r.posts -ge 1 -and $r.done -eq 'done'); diag = ''; done = $r.done; posts = $r.posts; before = $r.before; idle = $r.idle; drawn = $r.drawn; fresh = $r.fresh; msg = $r.msg; at = @($r.at) }
   } finally {
     [void](SlJs "(() => { if (window.__pvOrig) { window.fetch = window.__pvOrig; delete window.__pvOrig; } return true; })()")
   }
@@ -2764,7 +2771,7 @@ try {
   }
   SlSend 'Emulation.setEmulatedMedia' @{ features = @() }
 
-  # ---------- Closed front in a stack (decision stack-and-lock, debt closed-front-stack) ----------
+  # ---------- Closed front in a stack (decision stack-and-lock) ----------
   # A pin whose front is not open: Apply makes its first open back window the front (tile.ps1, Pass), so the board shows that window as the
   # front while the scene still names the closed one. Here the closed front is closedapp (match empty), and Draft release (claude, 1003) is
   # promoted over Quarterly (chrome, 1006). The pin has to be this shape: if the closed front were claude with a match, a move would copy that
@@ -2859,7 +2866,7 @@ try {
   Check 'open front, Delete, control: one press lets Draft release, the window behind, take cell 4 as the front' (SlFrontOn 1003 '4') "placed: $(SlPlacedBrief)"
   }
 
-  # ---------- Edit on a scene with no pins key (debt closed-front-stack: each edit settles the closed fronts, and reads pins first) ----------
+  # ---------- Edit on a scene with no pins key (each edit settles the closed fronts, and reads pins first) ----------
   # A scene file may leave the pins key out. tile.ps1 reads it as an empty list, and the page keeps the scene as it is. An edit on it must
   # raise no page error, apply, and add one undo entry. The edit is the Fill order select: it changes only the scene's fill sort.
   SlViewport 1440 900; SlCase (SlSceneJson $null '["*"]'); SlPark
@@ -2880,7 +2887,7 @@ try {
   Check 'no pins key, control: the edit adds exactly one undo entry' ([bool]($npN1 -eq ($npN0 + 1))) "undo entries: $npN0 before, $npN1 after"
   }
 
-  # ---------- Closed front, covered pin at a lower index (debt closed-front-stack) ----------
+  # ---------- Closed front, covered pin at a lower index ----------
   # The closed front's pin is index 1 here, after the covered pin (Pull request, chrome, cell 5) at index 0; the controls swap the two.
   # A resize or a Merge removes the covered pin before it settles the closed front, so the closed front's index shifts. The promoted
   # window (Draft release, on screen) is then not written into the pin, and the pin the edit makes names claude with no title, which
@@ -2983,12 +2990,11 @@ try {
   }
   }
 
-  # ---------- Preview POST: the first POST of a preview is dropped ----------
-  # app.html previewRun posts once. A dropped connection (fetch throws a TypeError) fails the scene's preview at once, though the
-  # server is fine. loadAll already tries a dropped fetch again (PR 65); previewRun does not. The target: previewRun sends the POST
-  # again once, after a short wait, and only on a TypeError; then it fails as today. A 500 reply and an unreadable 200 reply are not sent again. PvDrive
-  # arms the fault after the load and runs one preview of the scene, so each group counts the POSTs of that one call. Each group is one
-  # gate. Its scope Check goes first: the page held the scene's preview, the fault met a POST, and the call finished.
+  # ---------- Preview POST: a dropped connection is sent again ----------
+  # app.html previewRun sends the POST again after each dropped connection (fetch throws a TypeError), on the loadAll schedule
+  # (LOADWAIT: 0.4, 0.8 and 1.6 s): four tries in all, then it fails as today. A 500 reply and an unreadable 200 reply are not sent
+  # again. PvDrive arms the fault after the load and runs one preview of the scene, so each group counts the POSTs of that one call.
+  # Each group is one gate. Its scope Check goes first: the page held the scene's preview, the fault met a POST, and the call finished.
   if (Shard-Take) {
   $pvOnce = PvDrive 'drop-once'
   Check 'preview POST, dropped once, scope: the fault dropped a POST of the scene''s preview and the call finished' ([bool]$pvOnce.ok) (PvWhy $pvOnce)
@@ -2997,9 +3003,18 @@ try {
   }
 
   if (Shard-Take) {
+  $pvTwice = PvDrive 'drop-twice'
+  Check 'preview POST, dropped twice, scope: the fault dropped the first two POSTs of the scene''s preview and the call finished' ([bool]$pvTwice.ok) (PvWhy $pvTwice)
+  Check 'preview POST, dropped twice, red: the POST is sent again after each drop until one is answered (three POSTs)' ([bool]($pvTwice.ok -and $pvTwice.posts -eq 3)) "POSTs seen: $($pvTwice.posts) (three are due)"
+  Check 'preview POST, dropped twice, red: the scene''s preview is drawn from the third answer, with no Preview failed line' ([bool]($pvTwice.ok -and $pvTwice.fresh -and $pvTwice.msg -notlike 'Preview failed*')) "fresh preview: $($pvTwice.fresh); status: '$($pvTwice.msg)'"
+  }
+
+  if (Shard-Take) {
   $pvDown = PvDrive 'drop-always'
+  $pvDownLast = [string](@($pvDown.at) | Select-Object -Last 1)
   Check 'preview POST, every POST dropped, scope: the fault dropped a POST of the scene''s preview and the call finished' ([bool]$pvDown.ok) (PvWhy $pvDown)
-  Check 'preview POST, every POST dropped, red: the POST is sent once more, then the page gives up (two POSTs)' ([bool]($pvDown.ok -and $pvDown.posts -eq 2)) "POSTs seen: $($pvDown.posts)"
+  Check 'preview POST, every POST dropped, red: the POST is sent again after each drop, four POSTs in all (the first and three more)' ([bool]($pvDown.ok -and $pvDown.posts -eq 4)) "POSTs seen: $($pvDown.posts) (four tries are due)"
+  Check 'preview POST, every POST dropped, control: no Preview failed line is up when the last try goes out' ([bool]($pvDown.ok -and -not ($pvDownLast -like 'Preview failed*'))) "status at the last try: '$pvDownLast'"
   Check 'preview POST, every POST dropped, control: it fails as today (the status line names the scene and the stopped server, and no preview is kept)' ([bool]($pvDown.ok -and $pvDown.msg -ceq 'Preview failed for Stack and lock: The app server stopped answering' -and -not $pvDown.drawn)) "status: '$($pvDown.msg)'; preview kept: $($pvDown.drawn)"
   }
 

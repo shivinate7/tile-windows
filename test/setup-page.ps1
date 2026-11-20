@@ -103,7 +103,7 @@
 #   Free Layout review fixes (PR 58, round 2; F6 to F8): a drag from a space onto a space held by an unpinned window swaps, and that window
 #     takes the space the dragged one left; Put Behind from a space leaves the space it left naming nothing; Move To onto a space held by a
 #     locked pin keeps that pin, its lock and its space.
-#   Inert trigger switch (debt inert-trigger-switch; mockup docs/design/mockups/inert-trigger-switch.html): an extra switch that is On and can
+#   Inert trigger switch (mockup docs/design/mockups/inert-trigger-switch.html): an extra switch that is On and can
 #     do nothing for its scene is inert (needNote's three cases: Call Size on a scene that is not Listen or Meetings, Setup with no setup picked,
 #     Work Match on a scene the activity map does not name). Rail: a chip is a child of its card's .chips. An inert chip carries a class that names
 #     the state, or words past its name; a working chip stays its bare name. The rail line counts the scenes with a working trigger and says how
@@ -111,7 +111,7 @@
 #     a working row (a conflict note does not make one inert) keeps a bare On, the Extra Triggers line reads N on, N inactive, N warning, and
 #     the callout of a scene with only inert switches reads No working trigger is on. The control checks hold on the page as it stands.
 #     On the strip (under 1180 px) an inert chip's reason line is shown, as it is at 1440.
-#   Free Layout stacked space (debt free-drop-behind-stack): a window put on a space whose pin has a behind stack, by a drop from the list
+#   Free Layout stacked space: a window put on a space whose pin has a behind stack, by a drop from the list
 #     or by Move To, takes the stack: the new pin's behind list is the holder's, as the grid's swapInto hands it on.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
@@ -3294,7 +3294,7 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
     }
   }
 
-  # ---- Free Layout, debt free-drop-behind-stack: a window put on a stacked space takes the stack -----------------------------------
+  # ---- Free Layout: a window put on a stacked space takes the stack -----------------------------------
   # Space 1 is held by Pin parser edge cases (1002), with Quarterly roadmap (1006) and Projects (1010) stacked behind it in the grid's
   # behind form. The grid's swapInto hands the holder's behind list to the window that takes its cell. freeAssign must do the same, so the
   # windows behind the holder stay in the layout. The seed's stack is $flStack (Fl-Board -behind); $flStackWant is its list, sorted.
@@ -4346,7 +4346,7 @@ function () {
     Check 'split open: after Undo cells 2 and 3 are no longer named Open half (the split marks are reverted)' ($leftOn23.Count -eq 0) "named halves: $(Half-Text $leftOn23)"
   }
 
-  # Inert trigger switch (debt inert-trigger-switch; mockup docs/design/mockups/inert-trigger-switch.html). A switch is inert when it is On and can do
+  # Inert trigger switch (mockup docs/design/mockups/inert-trigger-switch.html). A switch is inert when it is On and can do
   # nothing for its scene. needNote in app.html names three such cases, and each is drawn here: Call Size on a scene that is neither Listen nor
   # Meetings, Setup with no setup picked, and Work Match on a scene no entry of the activity map points at (the starters map Focus and Review).
   # Every main trigger stays manual, so only the extra switches decide what the rail and the inspector say.
