@@ -55,7 +55,9 @@ while ($true) {
       if ($null -eq $er) { Reply $res 502 'text/plain; charset=utf-8' ($utf8.GetBytes('No answer from the server.')) $null }
       else {
         # The error answer is read and closed, so its connection goes back to the pool.
-        $sr = New-Object IO.StreamReader($er.GetResponseStream(), $utf8); $text = $sr.ReadToEnd(); $sr.Close(); $er.Close()
+        # Windows PowerShell has read the answer's stream by now, so its text is in ErrorDetails; the stream is the fallback.
+        $text = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { [string]$_.ErrorDetails.Message } else { $sr = New-Object IO.StreamReader($er.GetResponseStream(), $utf8); $sr.ReadToEnd() }
+        $er.Close()
         Reply $res ([int]$er.StatusCode) ($er.ContentType) ($utf8.GetBytes($text)) $er.Headers
       }
     }

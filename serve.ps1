@@ -59,6 +59,16 @@ function Body($ctx, $req, $open) {
   $body
 }
 $fromArg = @{}; if ($From) { $fromArg.From = $From }
+# The JSON the engine run prints, or $null after answering 500 with its error text. An engine that fails without throwing leaves no output:
+# that is an error answer, never a 200 the page would read as a result.
+function Invoke-Engine($ctx, [scriptblock]$run) {
+  $got = @(& $run 3>$null 2>&1)
+  $text = (@($got | ? { $_ -isnot [Management.Automation.ErrorRecord] }) -join '')
+  if ($text.Trim()) { return $text }
+  $why = @($got | ? { $_ -is [Management.Automation.ErrorRecord] } | % { "$($_.Exception.Message)".Trim() } | ? { $_ })[0]
+  Send $ctx 500 'text/plain' $(if ($why) { $why } else { 'The engine gave no answer.' })
+  $null
+}
 # The plugged-in monitors, with ids: from the -From snapshot, else tile.ps1 -Monitors.
 function Get-Plugged {
   if ($From) { return @((ConvertFrom-Json ([IO.File]::ReadAllText($From, [Text.Encoding]::UTF8))).monitors | % { $_ }) }
@@ -268,22 +278,20 @@ try {
         }
         'POST preview' {
           if (-not ($body = Body $ctx $req '{')) { continue }
-          # An engine that fails without throwing leaves no output: that is an error answer, never a 200 the page would read as a layout.
-          $got = @(& $tile -Scene $body -From $snap -Json 3>$null 2>&1)
-          $text = (@($got | ? { $_ -isnot [Management.Automation.ErrorRecord] }) -join '')
-          if ($text.Trim()) { Send $ctx 200 'application/json' $text; continue }
-          $why = @($got | ? { $_ -is [Management.Automation.ErrorRecord] } | % { "$($_.Exception.Message)".Trim() } | ? { $_ })[0]
-          Send $ctx 500 'text/plain' $(if ($why) { $why } else { 'The engine gave no answer.' })
+          if ($null -eq ($text = Invoke-Engine $ctx { & $tile -Scene $body -From $snap -Json })) { continue }
+          Send $ctx 200 'application/json' $text
         }
         'POST scene' {
           if (-not ($body = Body $ctx $req '{')) { continue }
-          $out = (& $tile -Scene $body -Json -DryRun:$dry @fromArg 3>$null) -join ''
+          if ($null -eq ($out = Invoke-Engine $ctx { & $tile -Scene $body -Json -DryRun:$dry @fromArg })) { continue }
+          # Logged only once the engine answered: a failed run is not a run that moved nothing.
           if (-not $dry) { $s = ConvertFrom-Json $body; $n = @((ConvertFrom-Json $out).placed | ? { $_.note -eq 'moved' }).Count; Add-TileLog ([string]$s.id) "$($s.name) applied from the app. Moved $n window(s)." }
           Send $ctx 200 'application/json' $out
         }
         'POST apply' {
           if (-not ($body = Body $ctx $req '[')) { continue }
-          Send $ctx 200 'application/json' ((& $tile -Place $body -Json -DryRun:$dry @fromArg 3>$null) -join '')
+          if ($null -eq ($out = Invoke-Engine $ctx { & $tile -Place $body -Json -DryRun:$dry @fromArg })) { continue }
+          Send $ctx 200 'application/json' $out
         }
         'POST note' { Clear-TileNote; Send $ctx 200 'text/plain' 'Dismissed' }
         'POST quit' {
