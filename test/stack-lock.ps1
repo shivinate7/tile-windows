@@ -165,7 +165,7 @@ Check 'run folders: the sweep removes an old run folder whose path is past 260 c
   }
 Remove-RunFolder $proof
 # A run folder that another process holds open (a stray Edge's CrashpadMetrics-active.pma). The sweep must not throw, must leave that
-# folder in place, must still remove the other old folder and keep the new one, and must write one warning line that names the locked
+# folder in place with every file in it, must still remove the other old folder and keep the new one, and must write one warning line that names the locked
 # folder. Its own run folder under the temp root (test-temp-standard), so the sweep sees only this case's folders. The clock is
 # synthetic: every time comes from $lockNow, and no real date is read (P5).
 $lockNow = [datetime]::new(2001, 1, 1, 12, 0, 0)
@@ -178,12 +178,14 @@ foreach ($d in $lockedRun, $otherRun, $freshRun) { New-Item -ItemType Directory 
 $lockHeld = $null; $lockFile = Join-Path $lockedRun 'CrashpadMetrics-active.pma'
 try {
   $lockHeld = [IO.File]::Open($lockFile, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-  [IO.File]::WriteAllText((Join-Path $otherRun 'a.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $freshRun 'a.txt'), 'x')
+  # a.txt is free and sorts before the held file: a delete that goes file by file takes it before it reaches the held one.
+  [IO.File]::WriteAllText((Join-Path $lockedRun 'a.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $otherRun 'a.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $freshRun 'a.txt'), 'x')
   # Each folder's time is set after its files exist: creating a file moves its folder's last write time.
   [IO.Directory]::SetLastWriteTime($lockedRun, $lockNow.AddDays(-3)); [IO.Directory]::SetLastWriteTime($otherRun, $lockNow.AddDays(-3))
   [IO.Directory]::SetLastWriteTime($freshRun, $lockNow.AddHours(-1))
   # Scope first (P7): the held file refuses a delete, so the sweep below meets a real lock.
   $refused = $false; try { [IO.File]::Delete($lockFile) } catch { $refused = $true }
+  $freeBefore = Test-Path -LiteralPath (Join-Path $lockedRun 'a.txt')
   $threw = $null; $warn = @()
   try { $warn = @(SlSweep $lockDir ([TimeSpan]::FromDays(1)) $lockNow 3>&1 | ? { $_ -is [Management.Automation.WarningRecord] }) } catch { $threw = $_.Exception.Message }
   if (Shard-Take) {
@@ -193,6 +195,9 @@ Check 'run folders: the locked old run folder stays' (Test-Path -LiteralPath $lo
 Check 'run folders: the other old run folder goes' (-not (Test-Path -LiteralPath $otherRun))
 Check 'run folders: the new run folder stays' (Test-Path -LiteralPath $freshRun)
 Check 'run folders: one warning line names the skipped folder' ($warn.Count -eq 1 -and $warn[0].Message.Contains((Split-Path $lockedRun -Leaf))) "warnings: $($warn.Count)"
+Check 'run folders: the unlocked file is in the locked folder before the sweep' $freeBefore
+Check 'run folders: the sweep keeps the unlocked file in the locked old run folder' (Test-Path -LiteralPath (Join-Path $lockedRun 'a.txt')) 'a.txt went before the held file refused the delete'
+Check 'run folders: the sweep keeps the held file in the locked old run folder' (Test-Path -LiteralPath $lockFile)
   }
 } finally {
   if ($lockHeld) { $lockHeld.Dispose() }
