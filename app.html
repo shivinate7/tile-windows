@@ -1970,13 +1970,15 @@ function cellItems(m,g,s,P){
   // A zone fills from its own free cells (tile.ps1 zones step), so a free cell of a part-taken block inside a zone is an open half the zone fills last.
   // Only the fill monitor has a unit (tile.ps1 passes Unit for the fill monitor only), so a zone on another monitor fills a whole cell first and names no half.
   // An earlier zone has its cells first: the engine marks a zone's cells used before the next zone.
-  const zused=new Set();
-  if(f)for(const z of s.zones||[])if(z.mon===role){const zf=new Set(z.slots.filter(v=>v<n&&free(v)&&!kept.has(v)&&!zused.has(v)));for(const v of z.slots)zused.add(v);
-    for(const c of openHalves(cols,rows,ux,uy,zf).flat())zhalf.add(c)}
+  // A kept cell stays a zone half (zkept) when it would be one were it not kept: the zone keeps it either way.
+  const zused=new Set(),zkept=new Set();
+  if(f)for(const z of s.zones||[])if(z.mon===role){const zf=new Set(z.slots.filter(v=>v<n&&free(v)&&!kept.has(v)&&!zused.has(v))),zk=new Set(z.slots.filter(v=>v<n&&free(v)&&!zused.has(v)));for(const v of z.slots)zused.add(v);
+    for(const c of openHalves(cols,rows,ux,uy,zf).flat())zhalf.add(c);
+    for(const c of openHalves(cols,rows,ux,uy,zk).flat())if(kept.has(c))zkept.add(c)}
   const add=(kind,slots,lab,sub,inZone)=>{const b=bbox(slots,g),name=lab?lab+(sub?", "+sub.toLowerCase():""):`${mon} cell ${baseCells(b,g)}, empty`;
     items.push({key:role+":"+slots[0],role,m,g,kind,slots,lab,sub,name,inZone:!!inZone})};
   for(let i=0;i<n;i++){if(!free(i))continue;
-    if(kept.has(i))add("kept",[i],"Kept empty","");
+    if(kept.has(i))add("kept",[i],"Kept empty","",zkept.has(i));
     else if(half.has(i))add("half",[i],off?"Stays empty":"Open half",off?"Fill is off":filler?"Fills last":"");
     else if(zhalf.has(i))add("half",[i],off?"Stays empty":"Open half",off?"Fill is off":"Zone fills last",true);
     else if(memo.has(i))add("memo",[i],"Open half","");
@@ -2045,6 +2047,7 @@ function keepHalf(on){const sel=cellSel();if(!sel||isBusy||!idm())return false;c
 // Join Halves on a selected open half: the window in the other half takes the whole base cell and the kept entries on it go (joinCell, one edit); with no window there the cell is just whole and empty again.
 function joinHalf(){const sel=cellSel();if(!sel||isBusy)return false;
   const{m,g,role,item}=sel,[mx,my]=MXY(g);if(mx===1&&my===1){status("This cell is not split.");return false}
+  if(item.inZone){status("The zone keeps this half.");return false}
   const slot=item.slots[0],cols=GC(g),c0=Math.floor(slot%cols/mx)*mx,r0=Math.floor(Math.floor(slot/cols)/my)*my,cells=cellsOf(c0,r0,mx,my,g),
     w=cells.map(i=>placedAt(prev(),role,m,g,i)).find(Boolean);
   if(w)return joinCell(w.id,cells);
