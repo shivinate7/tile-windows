@@ -374,7 +374,8 @@ const STATES=[
   ["fast-side","Fast Split: Always Side by Side","side","Always Side by Side (proposed)","Proposed, question K: the same trigger, but the fast split is always Side by Side and the window keeps the left half. On this board it gives the owner's 10×2 example. A stacked split goes through the menu.","fast-side-result"],
   ["fill-last","A New Window, Every Cell Taken","last","Half Fills Last","Notepad opened after the split. Every whole cell is taken, so the fill puts it in the open half, at half width (about 410 px here). Before that, the fill never takes the half: a split never pulls a window across the board.","fill-last-half"],
   ["fill-keep","Keep This Half Empty","keep","Keep This Half Empty","The open half is selected. Keep This Half Empty is on, so the fill never uses it, and the new Notepad window waits in Windows That Stay Put. Owner grant: yes.","fill-keep-half"],
-  ["empty-select","Select an Empty Cell","","Every option","Excel is closed, so cell 10 is empty. A still click on it selects it: the selection ring, and the inspector's Window section becomes Empty Space. S opens Split Cell under the cell (above it here, with no room below). With no window, nobody keeps a half, so the menu has two items. The focused item previews both halves hatched. A drag across cells still draws a zone, as today.","empty-select-cell"],
+  ["empty-select","Select an Empty Cell","","Every option","Excel is closed, so cell 10 is empty. A still click on it selects it: the selection ring, and the inspector's Window section becomes Empty Space, with Split Cell. A drag across cells still draws a zone, as today; the Empty Space section says so.","empty-select-cell"],
+  ["empty-menu","Split an Empty Cell: Choose How","","Every option","S on the selected empty cell. The split menu opens under the cell (above it here, with no room below); a right-click and the inspector's Split Cell open the same menu. With no window, nobody keeps a half, so the menu has two items. The focused item previews both halves hatched.","empty-menu-menu"],
   ["empty-split","Split an Empty Cell","","Every option","Split Cell 10 side by side. The grid is 10×2 and every other window keeps its size. Both halves are open; the left half (cell 19) is selected, so Keep This Half Empty and Join Halves act on it at once. Proposed: the layout saves the split itself (notes S12), because no pin marks either half.","empty-split-half"],
   ["case-stack","Split a Stacked Tile","","Every option","Claude in cell 8 had Terminal behind it. After the split, Terminal stays behind Claude in the kept half: the strip and the badge go with the front window.","case-stack-result"],
   ["case-lock","Split a Locked Tile","","Every option","Right-click on the locked Terminal. Every split item is off with today's lock reason, and the menu leads on with Unlock Terminal at the top.","case-lock-menu"],
@@ -508,14 +509,14 @@ function scenario(st,G,F){
     sc.anns+=ann(b,"Kept Empty",{up:true});sc.msg="Cell 4 is kept empty. Notepad stays put.";}
 
   // Excel is closed, so cell 10 (the last slot in fill order) is the one empty cell with fill on.
-  if(st==="empty-select"||st==="empty-split")by.xl.hide=true;
-  if(st==="empty-select"){const c=R(G,"wide",.8,.5,.2,.5),mb=monBox(G,"wide");sc.emptySel="cell";
-    const hw=c.w/2-1;for(const l of [c.l,c.l+c.w/2+1])sc.extra+=`<div class="area prevw" style="${css({l,t:c.t,w:hw,h:c.h})}"><span class="lab">${hw<40?"":"Open half"}</span></div>`;
-    sc.extra+=`<div class="divider" style="left:${(c.l+c.w/2).toFixed(1)}px;top:${c.t.toFixed(1)}px;height:${c.h.toFixed(1)}px"></div>`;
+  if(st==="empty-select"||st==="empty-menu"||st==="empty-split")by.xl.hide=true;
+  if(st==="empty-select"||st==="empty-menu"){const c=R(G,"wide",.8,.5,.2,.5),mb=monBox(G,"wide");sc.emptySel="cell";
     sc.extra+=`<div class="esel" id="${F}-cell" tabindex="0" role="button" aria-pressed="true" aria-label="Ultrawide cell 10, empty" style="${css(c)}"></div>`;
-    sc.extra+=emptyMenu({F,cell:"10",side:"Grid goes to 10×2",stacked:"Grid goes to 5×4",foc:"side",up:true},{l:Math.max(mb.l+4,c.l+c.w-244),t:c.t-6});
-    sc.anns+=ann(c,"Still Click Selects",{end:true});
-    sc.msg="Selected Ultrawide cell 10. It is empty.";sc.keysOpen=true}
+    if(st==="empty-select"){sc.extra+=at(I.arrow,c.l+c.w*.5,c.t+c.h*.45);sc.anns+=ann(c,"Still Click Selects",{up:true,end:true});sc.msg="Selected Ultrawide cell 10. It is empty."}
+    else{const hw=c.w/2-1;for(const l of [c.l,c.l+c.w/2+1])sc.extra+=`<div class="area prevw" style="${css({l,t:c.t,w:hw,h:c.h})}"><span class="lab">${hw<40?"":"Open half"}</span></div>`;
+      sc.extra+=`<div class="divider" style="left:${(c.l+c.w/2).toFixed(1)}px;top:${c.t.toFixed(1)}px;height:${c.h.toFixed(1)}px"></div>`;
+      sc.extra+=emptyMenu({F,cell:"10",side:"Grid goes to 10×2",stacked:"Grid goes to 5×4",foc:"side",up:true},{l:Math.max(mb.l+4,c.l+c.w-244),t:c.t-6});
+      sc.msg="Split cell 10: choose how.";sc.keysOpen=true}}
   if(st==="empty-split"){sc.grid=[10,2];sc.split=true;sc.emptySel="split";
     for(const [f,sel] of [[[.8,.5,.1,.5],true],[[.9,.5,.1,.5],false]]){const b=wr(f);sc.areas.push({b,lab:"Open half",sub:"Fills last",tiny:b.w<40,sel,id:sel?`${F}-half`:null})}
     sc.extra+=dnote(wr([.8,.5,.1,.5]),"Split cell 10. Both halves are empty.",10);

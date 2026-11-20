@@ -23,7 +23,8 @@ by default, because at 1440 a half is today's narrow tile.
 | `fast-side` | Fast split, always side by side (proposed) | `side` | `fast-side-result` |
 | `fill-last` | A new window takes the open half last | `last` | `fill-last-half` |
 | `fill-keep` | Keep This Half Empty | `keep` | `fill-keep-half` |
-| `empty-select` | Select an empty cell; the two-item split menu | shared | `empty-select-cell` |
+| `empty-select` | Select an empty cell | shared | `empty-select-cell` |
+| `empty-menu` | S on an empty cell: the two-item split menu | shared | `empty-menu-menu` |
 | `empty-split` | Split an empty cell; both halves open | shared | `empty-split-half` |
 | `case-stack` | Split a stacked tile | shared | `case-stack-result` |
 | `case-lock` | Right-click a locked tile | shared | `case-lock-menu` |
@@ -132,7 +133,7 @@ S10. **The Empty Space section** (state `empty-select`). The Window section's he
     (opens the menu, S1) and the zone line (S9). No Keep This Cell Empty: the grant covers halves
     only. Gain: one name for empty space in both layouts. Loss: none found. Pick: as drawn.
 
-S11. **The split menu on an empty cell has two items** (state `empty-select`). No window keeps a
+S11. **The split menu on an empty cell has two items** (state `empty-menu`). No window keeps a
     half, so each direction is one item: Side by Side, Stacked, each with what the grid becomes.
     The glyph draws both halves dashed, and the preview hatches both halves. S, Shift+F10, a
     right-click and the inspector's Split Cell open this same menu, as on a window. Halves only
@@ -172,7 +173,7 @@ S13. **Keyboard reach.** Today only tiles and open halves take focus. Tab reache
 
 - Owner grant: yes. Keep This Half Empty (layout-free item 6, state `fill-keep`).
 - Owner grant: yes. Empty-cell selection, for Split Cell on an open cell (layout-free item 2).
-  Drawn in states `empty-select` and `empty-split` (S9 to S13).
+  Drawn in states `empty-select`, `empty-menu` and `empty-split` (S9 to S13).
 - Owner grant: yes. A split of an empty cell saves the split (proposed `splits`), so its halves
   fill as halves, not as one block as layout-free item 6 reads (S12).
 - Question K: the fast split's trigger (Shift+S, double-click, or both) and its rule (S3).
