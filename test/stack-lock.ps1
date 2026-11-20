@@ -122,6 +122,9 @@
 #     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Keep Where It Is leaves no pin naming it.
 #     With a covered pin at a lower index than the closed front's pin, a resize or a Merge keeps the promoted window the front too.
 #     A promoted window put behind another window is listed once across the pins, and no entry is left with no open window.
+#   Explicit Save on the role board (debt save-drops-closed-stay-put): the fixture has no monitor ids, so the page runs the role board, and Save
+#     keeps the Windows That Stay Put entry (bay) and the held entry (fill.held) of a closed window, as an autosave does.
+#     The window is open again later: a dry run of the saved scene leaves it in the bay, and with no entry the fill takes it.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 param([int]$Shard = 1, [int]$Of = 1)
@@ -130,12 +133,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (272). Shard 1 runs
-# gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the stack tweaks ruling section), shard 3
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (277). Shard 1 runs
+# gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the explicit Save section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 272
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 277
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -2212,6 +2215,88 @@ try {
   }
   [void](Invoke-WebRequest -UseBasicParsing "$($script:url)quit" -Method Post -Body 'quit'); [void]$srvDup.WaitForExit(5000)
   $script:url = $urlMain
+  SlViewport 1440 900
+
+  # ---------- An explicit Save keeps the list entries of closed windows (debt save-drops-closed-stay-put) ----------
+  # Role board only. The fixture's monitors carry no id, so the page has no setup key (idm() is false) and Save posts the scene's own
+  # Windows That Stay Put list (bay) and held list (fill.held) through forSave, which drops the entry of every window that is not open
+  # (app.html stripIds). With a setup key a layout goes by POST /layout whole and an explicit Save strips nothing, so setup-page.ps1 cannot
+  # reach this. An autosave keeps the closed windows' entries (setup-page.ps1, the autosave case), and an explicit Save is to keep them too.
+  # The saved scene is read back from the server, then run through the engine on a copy of the fixture that has the closed window open
+  # again: its entry holds that window in the bay, and with no entry the fill takes it. saveScene() is what the Save button calls.
+  $svClosedA = 'Closed notes for the retro'; $svClosedB = 'Closed docs - Example'; $svOpen = 'pwsh - docs watch'
+  $svFx = Join-Path $run 'fixture-reopen.json'
+  $svFxDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+  $svFxDoc.windows = @($svFxDoc.windows) + [pscustomobject]@{ id = 1021; app = 'claude'; title = $svClosedA; x = 3000; y = 100; w = 800; h = 600 }
+  [IO.File]::WriteAllText($svFx, (ConvertTo-Json -Depth 10 -Compress $svFxDoc), $utf8)
+  # What an engine answer did with window $id: the cell it was placed in, or why it was left. A missing answer reads 'no answer'.
+  function SvFate($r, $id) {
+    $p = @(@($r.placed) | ? { $_.id -eq $id })[0]; if ($p) { return "placed in cell $((@($p.slots) | Sort-Object) -join '+')" }
+    $l = @(@($r.left) | ? { $_.id -eq $id })[0]; if ($l) { return "left: $($l.why)" }
+    'no answer'
+  }
+  # The ids whose cells differ between two engine answers.
+  function SvDiffPlaced($a, $b) { $ma = SlCellMap @($a.placed); $mb = SlCellMap @($b.placed); @((@($ma.Keys) + @($mb.Keys)) | Select-Object -Unique | ? { $ma[$_] -ne $mb[$_] }) }
+  # Two closed windows (claude, chrome) and one open (WindowsTerminal 1009) in the list.
+  $svBay = ',"bay":[{"app":"claude","title":"' + $svClosedA + '"},{"app":"WindowsTerminal","title":"' + $svOpen + '"},{"app":"chrome","title":"' + $svClosedB + '"}]'
+  SlViewport 1440 900; SlCase (SlSceneJson '[]' '["*"]' $svBay)
+  $svRole = SlGet 'idm()'
+  $svListed = SlGet 'work[selId].bay.length'
+  $svOpenNow = SlGet "snap.windows.filter(w => w.app === 'WindowsTerminal' && w.title === '$svOpen').length"
+  $svClosedNow = SlGet "snap.windows.filter(w => w.title === '$svClosedA' || w.title === '$svClosedB').length"
+  $svPage = SlGet 'work[selId]'
+  [void](SlJs 'saveScene().then(() => true)'); SlSettle
+  $svSaved = SlSavedScene
+  $svSavedBay = @(@($svSaved.bay) | ? { $_ })
+  $svKeptClosed = @($svSavedBay | ? { "$($_.title)" -ceq $svClosedA -or "$($_.title)" -ceq $svClosedB }).Count
+  $svKeptOpen = @($svSavedBay | ? { "$($_.app)" -ceq 'WindowsTerminal' -and "$($_.title)" -ceq $svOpen }).Count
+  $svDryPage = SlDry (ConvertTo-Json -Depth 12 -Compress $svPage) $svFx
+  $svDrySaved = if ($svSaved) { SlDry (ConvertTo-Json -Depth 12 -Compress $svSaved) $svFx } else { $null }
+  if (Shard-Take) {
+  Check 'explicit save, scope: the page is on the role board, where Save posts the scene''s own lists' ($svRole -eq $false) "idm(): $svRole"
+  Check 'explicit save, scope: the scene lists two closed windows and one open window' ($svListed -eq 3 -and $svOpenNow -eq 1 -and $svClosedNow -eq 0) "list entries: $svListed; open windows matching the open entry: $svOpenNow; open windows matching a closed entry: $svClosedNow"
+  }
+  if (Shard-Take) {
+  Check 'explicit save: the saved scene keeps the Windows That Stay Put entries of the closed windows' ($svKeptClosed -eq 2) "entries of closed windows kept: $svKeptClosed of 2; saved list: $(SlShort $svSavedBay)"
+  Check 'explicit save, control: the saved scene keeps the Windows That Stay Put entry of the open window' ($svKeptOpen -eq 1) "entries of the open window kept: $svKeptOpen of 1; saved list: $(SlShort $svSavedBay)"
+  }
+  if (Shard-Take) {
+  Check 'reopen, control: a dry run of the scene as the page held it leaves the reopened window in the bay' ((SvFate $svDryPage 1021) -ceq 'left: in the bay') "window 1021 after the reopen: $(SvFate $svDryPage 1021)"
+  Check 'reopen: a dry run of the saved scene leaves the reopened window in the bay, as the page''s scene does' ((SvFate $svDrySaved 1021) -ceq 'left: in the bay') "window 1021 after the reopen: $(SvFate $svDrySaved 1021); entries kept in the saved list: $($svSavedBay.Count)"
+  }
+
+  # An empty list: an explicit Save of a scene whose list is empty leaves the engine placing every window, the reopened one too, as the
+  # page's own scene does. The outcome is read, not the saved list's shape (Save may write the empty list or leave it out).
+  SlCase (SlSceneJson '[]' '["*"]' ',"bay":[]')
+  $ebEmpty = SlGet 'Array.isArray(work[selId].bay) && work[selId].bay.length === 0'
+  $ebPage = SlGet 'work[selId]'
+  [void](SlJs 'saveScene().then(() => true)'); SlSettle
+  $ebSaved = SlSavedScene
+  $ebDryPage = SlDry (ConvertTo-Json -Depth 12 -Compress $ebPage) $svFx
+  $ebDrySaved = if ($ebSaved) { SlDry (ConvertTo-Json -Depth 12 -Compress $ebSaved) $svFx } else { $null }
+  $ebDiff = if ($ebDrySaved) { @(SvDiffPlaced $ebDryPage $ebDrySaved) } else { @('no saved scene') }
+  if (Shard-Take) {
+  Check 'explicit save, empty list, scope: the scene holds an empty Windows That Stay Put list' ($ebEmpty -eq $true) "empty list: $ebEmpty"
+  Check 'explicit save, empty list, control: a dry run of the saved scene places each window in the cell the page''s scene does' ([bool]($ebDryPage -and @($ebDryPage.placed).Count -gt 0 -and $ebDiff.Count -eq 0)) "windows placed on the page's scene: $(@($ebDryPage.placed).Count); ids in different cells: $($ebDiff -join ',')"
+  }
+
+  # Held windows ride the same stripIds line: with Fill Empty Cells off, a held entry keeps a window in its cell, and Save drops the entry
+  # of a window that is closed. One closed (claude, 'Closed notes for the retro') and one open (notepad 1014).
+  $shHeld = '[{"app":"claude","title":"' + $svClosedA + '","mon":"wide","slots":[0]},{"app":"notepad","title":"todo.txt - Notepad","mon":"wide","slots":[1]}]'
+  SlCase (SlSceneJson '[]' '["*"]' '' (SlHeldFill $shHeld))
+  $shListed = SlGet 'work[selId].fill.held.length'
+  $shOpenNow = SlGet "snap.windows.filter(w => w.app === 'notepad' && w.title === 'todo.txt - Notepad').length"
+  $shClosedNow = SlGet "snap.windows.filter(w => w.title === '$svClosedA').length"
+  [void](SlJs 'saveScene().then(() => true)'); SlSettle
+  $shSaved = SlSavedScene
+  $shSavedHeld = @(@($shSaved.fill.held) | ? { $_ })
+  $shKeptClosed = @($shSavedHeld | ? { "$($_.app)" -ceq 'claude' -and "$($_.title)" -ceq $svClosedA }).Count
+  $shKeptOpen = @($shSavedHeld | ? { "$($_.app)" -ceq 'notepad' }).Count
+  if (Shard-Take) {
+  Check 'explicit save, held, scope: the scene holds one closed window and one open window' ($shListed -eq 2 -and $shOpenNow -eq 1 -and $shClosedNow -eq 0) "held entries: $shListed; open windows matching the open entry: $shOpenNow; open windows matching the closed entry: $shClosedNow"
+  Check 'explicit save, held: the saved scene keeps the held entry of the closed window' ($shKeptClosed -eq 1) "entries of the closed window kept: $shKeptClosed of 1; saved held list: $(SlShort $shSavedHeld)"
+  Check 'explicit save, held, control: the saved scene keeps the held entry of the open window' ($shKeptOpen -eq 1) "entries of the open window kept: $shKeptOpen of 1; saved held list: $(SlShort $shSavedHeld)"
+  }
   SlViewport 1440 900
 
   # ---------- Ruling 2026-11-16 (decisions/stack-and-lock.md, stack tweaks): circle, padlock, locked drag, covered windows, Merge ----------
