@@ -1,5 +1,5 @@
-# Checks for install.ps1's swap when the installed app folder is busy, for its tray.pid wait, and for uninstall.ps1's tray.pid
-# removal. The swap renames the old app aside (the Rename-Item retry loop in install.ps1), and a process whose working directory is
+# Checks for install.ps1's swap when the installed app folder is busy, for its tray.pid wait, for uninstall.ps1's tray.pid
+# removal, and for the environment install.ps1 gives the tray it starts. The swap renames the old app aside (the Rename-Item retry loop in install.ps1), and a process whose working directory is
 # that folder makes the rename fail: "being used by another process". Each case has its own scope:
 #   Frees up (case 1): a holder keeps the app folder busy and lets go 8 s after the install starts. The install waits the holder
 #     out, swaps the new app in, and leaves no staging or old folder.
@@ -13,6 +13,14 @@
 #   Name collision (case 6): app.old-<install pid> already exists, so the rename fails for a reason that is not a lock. The install
 #     must fail with its own error, not the "in use" message that follows its 15 s retry. Fast failure has no clock check here;
 #     the missing "in use" text stands in for it.
+#   Tray environment (case 7, debt tray-inherits-claudecode): install.ps1 starts the tray with -Open. Run from a shell that carries an
+#     agent marker (a name the live-move guard in tile.ps1 reads, other than the suite flag TILE_TEST_SUITE and the opt-in
+#     TILE_TEST_ALLOW_LIVE; today only CLAUDECODE), the tray must not inherit the marker, or the guard refuses its live applies. The
+#     marker names come from the guard's own syntax tree in tile.ps1, so a marker added there is picked up. The tray runs from a copy
+#     of the app whose tray.ps1 writes the variables it inherited to a file and returns, so no tray, server or browser starts.
+#     Red on 17a4bed: the tray inherits CLAUDECODE (7b). Green controls: 7c the suite flag still reaches the tray (a tray a test starts
+#     stays guarded); 7d the install's other variables and its profile reach the tray; 7e the calling shell keeps its marker; 7f with no
+#     marker the tray sees none (a Start-menu start). 7a scope checks come first and are never the red.
 # Scope before subject (P7): each case checks that the holder is up and that a rename of the folder is refused before it reads
 # the install's result. Each check names one cause.
 # Why 8 s: on the dev machine install.ps1 reaches its rename about 4 s after it starts (most of that is dot-sourcing tray.ps1 -Lib),
@@ -50,9 +58,15 @@ $env:USERPROFILE = Join-Path $run 'suite-home'; $env:APPDATA = Join-Path $env:US
 # A fresh temp profile for one case.
 function Make-Profile([string]$name) { $p = Join-Path $run $name; New-Item -ItemType Directory -Force (Join-Path $p 'AppData\Roaming') | Out-Null; $p }
 
-# One install.ps1 run in a child powershell, into the profile given, with no registry writes.
-function Start-Install([string]$prof, [string]$flags) {
-  $p = Start-Child $prof "-File `"$(Join-Path $root 'install.ps1')`" $flags" @{ TILE_SOURCE = $root; TILE_NO_REGISTRY = '1' }
+# One install.ps1 run in a child powershell, into the profile given, with no registry writes. $extra adds or overrides child
+# environment variables (TILE_SOURCE too). A non-empty $after, a PowerShell snippet, makes the install run by call in a session that
+# then runs the snippet, so it can read what the install left in the calling session; the default runs it as -File.
+function Start-Install([string]$prof, [string]$flags, [hashtable]$extra = @{}, [string]$after = '') {
+  $childEnv = @{ TILE_SOURCE = $root; TILE_NO_REGISTRY = '1' }
+  foreach ($k in $extra.Keys) { $childEnv[$k] = $extra[$k] }
+  $inst = Join-Path $root 'install.ps1'
+  $argLine = if ($after) { "-Command `"& '$inst' $flags | Out-Null; $after`"" } else { "-File `"$inst`" $flags" }
+  $p = Start-Child $prof $argLine $childEnv
   [void]$started.Add($p)
   [pscustomobject]@{ Proc = $p; Out = $p.StandardOutput.ReadToEndAsync(); Err = $p.StandardError.ReadToEndAsync() }
 }
@@ -146,6 +160,78 @@ function Test-Unwaitable([int]$id) {
   $tp = Get-Process -Id $id -ErrorAction SilentlyContinue
   if (-not $tp -or $tp.ProcessName -notmatch '^(powershell|pwsh)$') { return $false }
   try { [void]$tp.WaitForExit(0); return $false } catch { return $true }
+}
+
+# ---- Case 7 helpers: the environment install.ps1 gives the tray it starts. ----
+function Get-ScriptTree([string]$text) { [Management.Automation.Language.Parser]::ParseInput($text, [ref]$null, [ref]$null) }
+
+# The environment variable names the live-move guard in tile.ps1 reads, from its syntax tree: the one `if` whose body throws the
+# refusal. Empty when that statement is not found exactly once.
+function Get-GuardEnvNames {
+  $tree = Get-ScriptTree ([IO.File]::ReadAllText((Join-Path $root 'tile.ps1')))
+  $guards = @($tree.FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Clauses[0].Item2.Extent.Text -match 'would move windows' }, $true))
+  if ($guards.Count -ne 1) { return @() }
+  $vars = $guards[0].Clauses[0].Item1.FindAll({ param($n) $n -is [Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -like 'env:*' }, $true)
+  @($vars | ForEach-Object { $_.VariablePath.UserPath.Substring(4) } | Sort-Object -Unique)
+}
+
+# A copy of the product's top-level files in $dir, to install from. Its tray.ps1 gets a probe right after the file's own
+# `if ($Lib) { return }` (found in the syntax tree, so a string or comment that looks like it does not count): a -Lib run returns as
+# before, and any other run writes the variables named in $names, as inherited, to $probe and returns, so no tray, server or browser
+# starts however the install launches it. Returns how many such statements were found; the probe is added only when it is exactly one.
+function New-ProbeSource([string]$dir, [string]$probe, [string[]]$names) {
+  New-Item -ItemType Directory -Force $dir | Out-Null
+  foreach ($f in Get-ChildItem -LiteralPath $root -File) { Copy-Item -LiteralPath $f.FullName -Destination $dir -Force }
+  $tray = Join-Path $dir 'tray.ps1'; $text = [IO.File]::ReadAllText($tray)
+  $hooks = @((Get-ScriptTree $text).FindAll({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Clauses.Count -eq 1 -and $n.Clauses[0].Item1.Extent.Text -eq '$Lib' -and $n.Clauses[0].Item2.Extent.Text -match '^\{\s*return\s*\}$' }, $false))
+  if ($hooks.Count -eq 1) {
+    $code = @'
+
+# env probe (test): a run that is not -Lib writes the variables it inherited, then returns.
+$probeLines = @(foreach ($probeName in @(@@NAMES@@)) { $probeName + '=[' + [Environment]::GetEnvironmentVariable($probeName) + ']' }) + ('open=[' + $Open.IsPresent + ']')
+[IO.File]::WriteAllText('@@PROBE@@', ($probeLines -join "`n"), [Text.Encoding]::ASCII); return
+'@
+    $code = $code.Replace('@@NAMES@@', (($names | ForEach-Object { "'$_'" }) -join ',')).Replace('@@PROBE@@', $probe)
+    [IO.File]::WriteAllText($tray, $text.Insert($hooks[0].Extent.EndOffset, $code), (New-Object Text.UTF8Encoding $false))
+  }
+  $hooks.Count
+}
+
+# One install into a fresh profile, from a probe source, with every name in $markers set to $marker in the install's environment
+# ('1' is a shell that carries the agent markers, '' one that carries none). The caller's other variables the install reads or passes on
+# are pinned. Returns: Hooks (see New-ProbeSource), Exited and Code (the install), Err, Probe (name -> value the tray wrote; $null when
+# it wrote nothing within 60 s, a bound well above the install's own few seconds) and Caller (name -> value the calling session held
+# once the install returned).
+function Invoke-TrayEnvRun([string]$tag, [string]$marker, [string[]]$markers) {
+  $prof = Make-Profile "trayenv-$tag"; $src = Join-Path $run "probe-src-$tag"; $probe = Join-Path $run "probe-$tag.txt"
+  $res = [pscustomobject]@{ Hooks = 0; Exited = $false; Code = $null; Err = ''; Probe = $null; Caller = @{}; Profile = $prof }
+  $res.Hooks = New-ProbeSource $src $probe (@($markers) + 'TILE_TEST_SUITE', 'TILE_ENVPROBE_KEEP', 'USERPROFILE')
+  if ($res.Hooks -ne 1) { return $res }
+  $e = @{ TILE_SOURCE = $src; TILE_NO_LAUNCH = ''; TILE_DRY_START = ''; TILE_HOME = ''; TILE_TEST_SWAP_FAIL = ''; TILE_TEST_ALLOW_LIVE = ''; TILE_TEST_SUITE = '1'; TILE_ENVPROBE_KEEP = "keep-$tag" }
+  foreach ($m in $markers) { $e[$m] = $marker }
+  $quoted = ($markers | ForEach-Object { "'$_'" }) -join ','
+  $after = "foreach (`$n in @($quoted)) { [Console]::Out.WriteLine('caller-' + `$n + '=[' + [Environment]::GetEnvironmentVariable(`$n) + ']') }"
+  $i = Start-Install $prof '-NoStartup' $e $after
+  $res.Exited = Wait-Exit $i.Proc 120000; $res.Code = $i.Proc.ExitCode
+  # A process the install started could hold its pipes after it exits, so the reads are bounded.
+  [void]$i.Out.Wait(30000); [void]$i.Err.Wait(30000)
+  $res.Err = if ($i.Err.IsCompleted) { "$($i.Err.Result)".Trim() } else { '' }
+  $outText = if ($i.Out.IsCompleted) { "$($i.Out.Result)" } else { '' }
+  foreach ($c in [regex]::Matches($outText, '(?m)^caller-(\w+)=\[([^\]\r\n]*)\]')) { $res.Caller[$c.Groups[1].Value] = $c.Groups[2].Value }
+  # The tray starts on its own clock, so poll for its probe file with a cap, not a fixed wait.
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.ElapsedMilliseconds -lt 60000 -and -not $res.Probe) {
+    try { $t = [IO.File]::ReadAllText($probe) } catch { $t = '' }
+    if ($t -match '(?m)^open=\[') {
+      $seen = @{}; foreach ($l in ($t -split "`n")) { if ($l -match '^(\w+)=\[(.*)\]\s*$') { $seen[$Matches[1]] = $Matches[2] } }
+      $res.Probe = $seen
+    } else { Start-Sleep -Milliseconds 100 }
+  }
+  # The probe returns at once, so no tray should still run. One that does carries this run folder in its command line: stop it.
+  try {
+    foreach ($w in @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($run) -and $_.CommandLine -match 'tray\.ps1' })) { Stop-Process -Id $w.ProcessId -Force -ErrorAction SilentlyContinue }
+  } catch { }
+  $res
 }
 
 try {
@@ -267,6 +353,40 @@ try {
     Check 'a name collision leaves the old app in place' ($st6.Count -eq 9 -and $st6.Stamp -eq $marker) "$($st6.Count) files, tile.ps1 time $($st6.Stamp)"
     Check 'a name collision is not reported as the app folder being in use' ($err6 -notmatch 'in use') "reported: $(@($err6.Trim() -split "`r?`n")[0])"
     Check 'a name collision leaves no app.new-* staging folder' (@(Get-ChildItem -LiteralPath (Join-Path $p6 '.tile-windows') -Filter 'app.new-*' -Force -ErrorAction SilentlyContinue).Count -eq 0) "app.new-* folder(s) left beside the app"
+  }
+
+  # ---- Case 7: the environment install.ps1 gives the tray it starts (debt tray-inherits-claudecode). ----
+  # The marker names are what tile.ps1's guard reads, less the suite flag and the opt-in. A shell with every marker set is an agent's;
+  # one with none set is the Start menu's. Each run installs once and reads what the tray (the probe) inherited.
+  $guardNames = @(Get-GuardEnvNames)
+  $markers = @($guardNames | Where-Object { $_ -notin 'TILE_TEST_SUITE', 'TILE_TEST_ALLOW_LIVE' })
+  $guardOk = ($guardNames -contains 'TILE_TEST_SUITE') -and ($markers -contains 'CLAUDECODE')
+  Check 'setup (tray env): the guard in tile.ps1 reads TILE_TEST_SUITE and the agent marker CLAUDECODE' $guardOk "the guard reads: $($guardNames -join ', ')"
+  if ($guardOk) {
+    foreach ($spec in @(@('agent', '1'), @('plain', ''))) {
+      $tag = $spec[0]; $tr = Invoke-TrayEnvRun $tag $spec[1] $markers
+      $seen = if ($tr.Probe) { ($tr.Probe.Keys | Sort-Object | ForEach-Object { "$_=[$($tr.Probe[$_])]" }) -join ' ' } else { 'no probe file' }
+      Check "7a scope ($tag): the probe is added to tray.ps1 at its one -Lib return" ($tr.Hooks -eq 1) "found $($tr.Hooks) such statements, so no probe was added"
+      if ($tr.Hooks -ne 1) { continue }
+      Check "7a scope ($tag): the install exits 0" ($tr.Exited -and $tr.Code -eq 0) "exit $($tr.Code): $(@($tr.Err -split "`r?`n")[0])"
+      Check "7a scope ($tag): the install starts the tray with -Open (the probe wrote its line)" ($tr.Probe -and $tr.Probe['open'] -eq 'True') "probe: $seen"
+      if (-not $tr.Probe) { continue }
+      Check "7a scope ($tag): the tray inherits the install's other variables (the probe reads a real environment)" ($tr.Probe['TILE_ENVPROBE_KEEP'] -eq "keep-$tag") "probe: $seen"
+      if ($tag -eq 'agent') {
+        foreach ($m in $markers) {
+          Check "7b the tray install.ps1 starts does not inherit $m (set to 1 in the install's shell)" ($tr.Probe[$m] -eq '') "the tray saw $m=[$($tr.Probe[$m])], so the live-move guard refuses its live applies"
+        }
+        Check '7c the suite flag TILE_TEST_SUITE still reaches the tray (a tray a test starts stays guarded)' ($tr.Probe['TILE_TEST_SUITE'] -eq '1') "the tray saw TILE_TEST_SUITE=[$($tr.Probe['TILE_TEST_SUITE'])]"
+        Check "7d the tray runs in the install's profile (USERPROFILE reaches it)" ($tr.Probe['USERPROFILE'] -eq $tr.Profile) "the tray saw USERPROFILE=[$($tr.Probe['USERPROFILE'])]"
+        foreach ($m in $markers) {
+          Check "7e the shell that ran the install keeps $m after it returns" ($tr.Caller[$m] -eq '1') "the shell held $m=[$($tr.Caller[$m])] after the install"
+        }
+      } else {
+        foreach ($m in $markers) {
+          Check "7f with no $m in the shell, the tray sees none (a start like the Start menu's)" ($tr.Probe[$m] -eq '') "the tray saw $m=[$($tr.Probe[$m])]"
+        }
+      }
+    }
   }
 } catch {
   $script:fail++; "FAIL  swap cases stopped: $_"
