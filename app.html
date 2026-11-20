@@ -1953,7 +1953,7 @@ function placedAt(P,role,m,g,i){const r=cellRect(m,g,i%GC(g),Math.floor(i/GC(g))
   return P.placed.find(p=>!p.behind&&p.mon===role&&cx>=p.x&&cx<p.x+p.w&&cy>=p.y&&cy<p.y+p.h)}
 // Every free place on a grid monitor, in reading order: a whole empty cell (kind block: one unit block, or one cell when the fill has no unit), a free cell in a zone (zone), an open half
 // (half, which the fill takes last), a half a split of an empty cell just made (memo, not saved: S12), or a kept half (kept). A free whole block in a split grid reads as an empty cell, not a half.
-// Words (S6): "Open half" with "Fills last" while the fill is on and has an app; "Stays empty" with "Fill is off"; "Kept empty". Only the fill monitor has a unit, so another monitor's halves are the split's own.
+// Words (S6): "Open half" with "Fills last" while the fill is on and has an app, or "Zone fills last" for a free half inside a zone; "Stays empty" with "Fill is off"; "Kept empty". Only the fill monitor has a unit, so another monitor's halves are the split's own.
 function cellItems(m,g,s,P){
   const role=mk(m),cols=GC(g),rows=GR(g),n=cols*rows,[mx,my]=MXY(g),f=s.fill&&s.fill.mon===role?s.fill:null,off=!!(f&&f.off),taken=new Set(),zone=new Set(),kept=new Set();
   for(let i=0;i<n;i++)if(placedAt(P,role,m,g,i))taken.add(i);
@@ -1964,14 +1964,20 @@ function cellItems(m,g,s,P){
   if(idm())for(const k of(s.fill&&s.fill.keepEmpty)||[])if(k&&k.mon===role)for(const v of k.slots)if(Number.isInteger(v)&&v>=0&&v<n)kept.add(v);
   const free=i=>!taken.has(i),[ux,uy]=f?MXY({mult:f.unit}):[mx,my],spare=new Set();
   for(let i=0;i<n;i++)if(free(i)&&!zone.has(i)&&!kept.has(i))spare.add(i);
-  const half=new Set(openHalves(cols,rows,ux,uy,spare).flat()),
+  const half=new Set(openHalves(cols,rows,ux,uy,spare).flat()),zhalf=new Set(),
     memo=halfMemo&&halfMemo.sid===selId&&halfMemo.role===role&&halfMemo.dims===cols+"x"+rows&&halfMemo.slots.every(free)?new Set(halfMemo.slots):new Set(),
     filler=!!f&&!off&&(f.apps||[]).length>0,mon=monName(m),items=[],blocks=new Map();
+  // A zone fills from its own free cells (tile.ps1 zones step), so a free cell of a part-taken block inside a zone is an open half the zone fills last.
+  // An earlier zone has its cells first: the engine marks a zone's cells used before the next zone.
+  const zused=new Set();
+  for(const z of s.zones||[])if(z.mon===role){const zf=new Set(z.slots.filter(v=>v<n&&free(v)&&!kept.has(v)&&!zused.has(v)));for(const v of z.slots)zused.add(v);
+    for(const c of openHalves(cols,rows,ux,uy,zf).flat())zhalf.add(c)}
   const add=(kind,slots,lab,sub)=>{const b=bbox(slots,g),name=lab?lab+(sub?", "+sub.toLowerCase():""):`${mon} cell ${baseCells(b,g)}, empty`;
     items.push({key:role+":"+slots[0],role,m,g,kind,slots,lab,sub,name})};
   for(let i=0;i<n;i++){if(!free(i))continue;
     if(kept.has(i))add("kept",[i],"Kept empty","");
     else if(half.has(i))add("half",[i],off?"Stays empty":"Open half",off?"Fill is off":filler?"Fills last":"");
+    else if(zhalf.has(i))add("half",[i],off?"Stays empty":"Open half",off?"Fill is off":"Zone fills last");
     else if(memo.has(i))add("memo",[i],"Open half","");
     else if(zone.has(i))add("zone",[i],"","");
     else{const id=Math.floor(Math.floor(i/cols)/uy)*Math.ceil(cols/ux)+Math.floor(i%cols/ux);if(!blocks.has(id))blocks.set(id,[]);blocks.get(id).push(i)}}
