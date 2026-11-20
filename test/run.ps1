@@ -143,11 +143,28 @@ function SelfTest($url, $hook) {
   if (-not $e.WaitForExit(120000)) { Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*$tmp\edge-$hook*" } | % { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; return $null }
   if ((Get-Content -Raw -Encoding UTF8 $dom) -match '<pre id="selftest">(.*?)</pre>') { [Net.WebUtility]::HtmlDecode($matches[1]) | ConvertFrom-Json }
 }
+# One dry-run server behind test\preview-proxy.ps1, with the proxy's switches in $proxyArgs, and the page hook $hook run through the
+# proxy. Returns the hook's JSON ($null when the page did not answer), the scenes the proxy failed (counted in $countName, in the run
+# folder) and the page's URL. Both preview cases use it. Its processes end before it returns.
+function Invoke-PreviewCase([string]$prof, [string]$hook, [string]$proxyArgs, [string]$countName) {
+  $phome = Join-Path $prof '.tile-windows'; New-Item -ItemType Directory $phome | Out-Null
+  $srv = Start-Child $prof "-File `"$serve`" -NoBrowser -From `"$fixture`"" @{ TILE_HOME = $phome }
+  $target = $srv.StandardOutput.ReadLine(); $count = Join-Path $tmp $countName
+  $fwd = Start-Child $prof "-File `"$(Join-Path $PSScriptRoot 'preview-proxy.ps1')`" -Target `"$target`" -CountFile `"$count`" $proxyArgs"
+  try {
+    $purl = $fwd.StandardOutput.ReadLine(); $res = SelfTest $purl $hook
+    [pscustomobject]@{ Url = $purl; Result = $res; Forced = @(Get-Content -LiteralPath $count -ErrorAction SilentlyContinue | ? { $_ }) }
+  } finally {
+    try { [void](Invoke-WebRequest -UseBasicParsing "${target}quit" -Method Post -Body 'quit') } catch { }
+    if (-not $srv.WaitForExit(5000)) { $srv.Kill() }
+    if (-not $fwd.HasExited) { $fwd.Kill() }
+  }
+}
 # A starter scene as the page sends it: the scene plus the category map.
 $starters = [IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json
 function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $s | Add-Member -Force cats $starters.cats; $s | Add-Member -Force categories $starters.categories; ConvertTo-Json -Depth 10 -Compress $s }
 
-$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray = $null; $suites = @()
+$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $psrv = $null; $pfwd = $null; $tray = $null; $suites = @()
 $queue = New-Object Collections.Queue; $runStart = Get-Date
 
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
@@ -377,6 +394,40 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $bb = $ss.bay
     Check 'page: a window sent to the bay leaves the board, shows in the bay, and comes back when placed' ($bb -and $bb.why -eq 'in the bay' -and $bb.chip -and $bb.kept -eq 2 -and $bb.back) ($bb | ConvertTo-Json -Compress)
     Check 'page cell size rounds like tile.ps1 ([int], to even)' ($ss.cell.w -eq [int](1365 / 2) -and $ss.cell.h -eq [int](1001 / 2)) ($ss.cell | ConvertTo-Json -Compress)
+    # A /preview that fails for one scene: test\preview-proxy.ps1 stands in front of a real dry-run server. It answers thursday-prep once
+    # (the load draws it), then 500 for each later preview of it. The self-test must say that preview failed, and must draw no windows
+    # for thursday-prep: not solo's, and not the answer the page held before the failure.
+    $pc = Invoke-PreviewCase (Profile 'pfail') 'scenes' '-Fail thursday-prep -PassFirst 1' 'preview-forced.txt'
+    $pst = $pc.Result; $forced = $pc.Forced
+    Check 'preview failure case: the proxy started with a tokened URL' ($pc.Url -match '^http://127\.0\.0\.1:\d+/[0-9a-f]{32}/$') $pc.Url
+    Check 'preview failure case: the self-test ran' ($null -ne $pst)
+    # Scope first: the failed previews are thursday-prep's, and no other scene's.
+    Check 'preview failure case: the proxy failed thursday-prep, and no other scene' ($forced.Count -ge 1 -and @($forced | ? { $_ -ne 'thursday-prep' }).Count -eq 0) "failed: $($forced -join ',')"
+    if ($null -ne $pst) {
+      $dt = { param($d, $id) (@($d.drawn.$id) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }) -join ' ' }
+      Check 'page: a failed preview is reported as preview failed for thursday-prep' ((ConvertTo-Json -Depth 10 -Compress $pst) -match 'preview failed for thursday-prep') 'the self-test has no such line'
+      $tp = & $dt $pst 'thursday-prep'; $sp = & $dt $pst 'solo'
+      Check 'page: a failed preview draws no windows for thursday-prep' ($tp -eq '') "thursday-prep still draws: $tp"
+      Check 'page: solo still draws its own windows in that run' ($sp -ne '') 'solo draws nothing, so the check above proves nothing'
+      # Green control: the six other scenes draw what the unfailed run drew.
+      $others = @($starters.scenes.id | ? { $_ -ne 'thursday-prep' })
+      $differ = @($others | ? { (& $dt $pst $_) -cne (& $dt $ss $_) -or -not (& $dt $ss $_) })
+      Check 'preview failure case: the other six scenes draw what the unfailed run drew' ($others.Count -eq 6 -and $differ.Count -eq 0) "differ: $($differ -join ',')"
+    }
+    # An Apply that offers Undo, then a failed preview of the same scene. The proxy answers the Apply as a live one (-LiveApply) and
+    # fails thursday-prep's previews after its first. test\preview-driver.js applies the scene at #selftest-applyfail, and reads the
+    # toast when the failed preview names itself in the status line. The Undo button must still show then.
+    $ac = Invoke-PreviewCase (Profile 'applyfail') 'applyfail' ('-Fail thursday-prep -PassFirst 1 -LiveApply -Driver "' + (Join-Path $PSScriptRoot 'preview-driver.js') + '"') 'apply-forced.txt'
+    $ar = $ac.Result; $aforced = $ac.Forced
+    Check 'apply then failed preview: the self-test ran and the page loaded' ($null -ne $ar -and $ar.loaded) "$($ar | ConvertTo-Json -Compress)"
+    # Scope first: the failed previews are thursday-prep's, and no other scene's.
+    Check 'apply then failed preview: the proxy failed thursday-prep, and no other scene' ($aforced.Count -ge 1 -and @($aforced | ? { $_ -ne 'thursday-prep' }).Count -eq 0) "failed: $($aforced -join ',')"
+    Check 'apply then failed preview: the Apply offered Undo' (@($ar.toasts | ? { $_.undo -and $_.text -like 'Moved *' }).Count -ge 1) "toasts: $(@($ar.toasts | % { "$($_.text) undo=$($_.undo)" }) -join ' | ')"
+    Check 'apply then failed preview: the preview failed after the Apply' ($ar.failed) "status: $($ar.msg)"
+    # The subject: the failed preview must leave the Undo button where the Apply put it.
+    Check 'apply then failed preview: the Undo button stays visible' ($ar.failed -and -not $ar.toastHidden -and -not $ar.undoHidden) "toast: $($ar.toastText) | status: $($ar.msg)"
+    # Green control: the failure is still said on the status line.
+    Check 'apply then failed preview: the status line names the failed preview' ($ar.msg -like 'Preview failed for Thursday Prep*') "status: $($ar.msg)"
     $sb = SelfTest $furl 'builtin'
     Check 'page: a built-in scene saves a change to its trigger switches, and nothing else' ($sb.builtIn -and $sb.idleDisabled -and $sb.autoEnabled -and $sb.saved -and $sb.otherDisabled) ($sb | ConvertTo-Json -Compress)
     Check 'page Save as new writes the scene to config.json' (@($ss.names) -contains 'Selftest copy' -and ([IO.File]::ReadAllText($fcfg, $utf8)).Contains('"Selftest copy"')) (@($ss.names) -join ',')
@@ -549,7 +600,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
   if ($form -and -not $form.HasExited) { Stop-Process -Id $form.Id -Force }
-  foreach ($p in $srv, $fsrv, $ssrv, $tsrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
+  foreach ($p in $srv, $fsrv, $ssrv, $tsrv, $psrv, $pfwd, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
   # A child the loop did not collect (the run stopped first) is stopped, and its output printed, so none of it is dropped.
   foreach ($s in $suites) { if (-not $s.Shown) { Stop-Suite $s; Show-Suite $s $false } }
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
