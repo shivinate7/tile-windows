@@ -2,7 +2,7 @@
 
 Mockup: `split-cell.html`, beside this file. Lane L2 of Layout Free (decision `layout-free`).
 The rules of a split are items 1-13 of `layout-free-notes.md` (items 5-13 rewritten for Finer
-Grid). This file holds only the mockup's own choices, numbered S1 to S8, and cites those items.
+Grid). This file holds only the mockup's own choices, numbered S1 to S13, and cites those items.
 
 Owner rulings drawn: a split doubles the grid along its direction (5×2 to 10×2); the split cell
 becomes two halves; every other one-cell window spans two cells; nothing else moves (2026-11-17
@@ -23,6 +23,8 @@ by default, because at 1440 a half is today's narrow tile.
 | `fast-side` | Fast split, always side by side (proposed) | `side` | `fast-side-result` |
 | `fill-last` | A new window takes the open half last | `last` | `fill-last-half` |
 | `fill-keep` | Keep This Half Empty | `keep` | `fill-keep-half` |
+| `empty-select` | Select an empty cell; the two-item split menu | shared | `empty-select-cell` |
+| `empty-split` | Split an empty cell; both halves open | shared | `empty-split-half` |
 | `case-stack` | Split a stacked tile | shared | `case-stack-result` |
 | `case-lock` | Right-click a locked tile | shared | `case-lock-menu` |
 | `case-zone` | Split a cell in a zone | shared | `case-zone-result` |
@@ -111,16 +113,68 @@ S8. **Save shapes.** The "Saves in the layout as" blocks use the L1 plan's field
     setup now, so the blocks show only the changed keys. Gain: the builder sees each state's data.
     Loss: a field name here may differ from L1's. Pick: L1's names win.
 
+S9. **A still click selects an empty cell; a drag draws a zone** (layout-free item 2, owner grant;
+    state `empty-select`). Today a press on an empty cell starts a zone draw (`app.html`
+    stage `pointerdown`, `zdraw`). `endZone()` counts the press as still when it starts and ends in
+    one cell and moves under 5px; a plain still click then only clears `zanchor` and `selZone`.
+    New: that one branch selects the cell. A drag of 5px or more, or across cells, draws a zone as
+    today, a 5px wobble inside one cell included (a one-cell zone). Shift+click corners and
+    Ctrl+click Merge picks stay as today. The teaching is a note, not the board hint: the Empty
+    Space section says "Drag across cells to draw a zone.", at the selection. Departs from:
+    `endZone()` plain still click clears the selection; now it selects. Gain: the hint line does
+    not grow (S7's loss), and the zone words show where the click was. Loss: a person who never
+    clicks an empty cell does not see the zone line. Pick: as drawn.
+
+S10. **The Empty Space section** (state `empty-select`). The Window section's heading becomes
+    "Empty Space", the heading `app.html` already gives a selected Free Layout space
+    (`renderInsp()`, `winh`), with its fill sentence ("Fill Empty Cells is on, so the next new
+    window fills it.", `freeSpaceHTML()`). It names the cell and its size, and holds Split Cell
+    (opens the menu, S1) and the zone line (S9). No Keep This Cell Empty: the grant covers halves
+    only. Gain: one name for empty space in both layouts. Loss: none found. Pick: as drawn.
+
+S11. **The split menu on an empty cell has two items** (state `empty-select`). No window keeps a
+    half, so each direction is one item: Side by Side, Stacked, each with what the grid becomes.
+    The glyph draws both halves dashed, and the preview hatches both halves. S, Shift+F10, a
+    right-click and the inspector's Split Cell open this same menu, as on a window. Halves only
+    while question S is open. Departs from: S1, whose groups are "Claude Keeps Left/Right". Gain:
+    one click splits, with no choice that means nothing. Loss: the menu's shape changes with what
+    is selected. Not drawn: two inline buttons in the inspector instead of a menu (a second home
+    for the split choices). Pick: the two-item menu.
+
+S12. **After a split on an empty cell** (state `empty-split`). Both halves are open, with "Open
+    half" and "Fills last" (S6), and under 40px the dashed box alone. The left (or top) half is
+    selected, so Keep This Half Empty and Join Halves act at once. The Open Half section reads
+    "The left half of cell 10. The right half, cell 20, is empty too." Join Halves "makes cell 10
+    one empty cell, and the grid 5×2 again" (item 9). Gap: no pin sits on either half. Under
+    layout-free item 6 as written, the two halves are one free aligned 2×1 block, so the fill
+    takes both at once as a whole cell, and nothing in the layout marks cell 10 as split; the next
+    join anywhere would halve the grid back (`halveGrid()` reads pins, zones and held entries
+    only). Proposed: save the split itself, as `splits: [{mon, slots}]`; the fill treats its
+    halves as halves, and `halveGrid()` counts it. Departs from: layout-free item 6, which would
+    fill the pair as one block. Owner grant: yes (item 6 changes for an empty split). Gain: the
+    split the owner made stays, and "Fills last" is true. Loss: a third kind of entry for
+    `halveGrid()` and the fill to read. Pick: save the split.
+
+S13. **Keyboard reach.** Today only tiles and open halves take focus. Tab reaches each empty cell
+    after the windows, as an open half (S6); S opens its split menu. The keyboard list says so.
+    Gain: the split works with no mouse. Loss: one more tab stop per empty cell (few, while fill
+    is on). Pick: as drawn.
+
 ## Departs from today
 
 - A right-click on the board opens the split menu, not the browser's menu (S2).
 - A filled window becomes pinned when it splits (layout-free item 5).
 - A tile under 40px wide drops its lock, Stay Put, grip and stack badge (S5, layout-free item 12).
+- A still click on an empty cell selects it; today it clears the selection (S9, `endZone()`).
+- An empty cell takes focus (S13).
 
 ## Input needed
 
 - Owner grant: yes. Keep This Half Empty (layout-free item 6, state `fill-keep`).
 - Owner grant: yes. Empty-cell selection, for Split Cell on an open cell (layout-free item 2).
+  Drawn in states `empty-select` and `empty-split` (S9 to S13).
+- Owner grant: yes. A split of an empty cell saves the split (proposed `splits`), so its halves
+  fill as halves, not as one block as layout-free item 6 reads (S12).
 - Question K: the fast split's trigger (Shift+S, double-click, or both) and its rule (S3).
 - Open: Menu List or Popover (S1). Pick: Menu List.
 - Open: 1024 halves (S5). Pick: Initial Only.
