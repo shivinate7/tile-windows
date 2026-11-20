@@ -21,7 +21,7 @@
 #     Text: "Put back N windows." or "Put back N of M windows.", then " You moved <app> since, so it stays." or " <app> closed".
 #   Get-UndoProtocolKeys(): rows {path, name, value} for HKCU:\Software\Classes\tilewindows (name 'URL Protocol') and for its
 #     shell\open\command (value runs tray.ps1 with %1). Pure: it writes nothing. install.ps1 and uninstall.ps1 call it.
-#   Env gate TILE_NO_REGISTRY=1: install.ps1 and uninstall.ps1 skip the protocol keys. test\run.ps1 sets it on every installer run.
+#   Env gate TILE_NO_REGISTRY=1: install.ps1 and uninstall.ps1 skip the protocol keys. test\run.ps1 sets it on its own installer runs and pins it empty for its suite children (Get-SuiteEnv). run-undo.ps1 runs no installer.
 #   The -NoIcon tray start in test\run.ps1 shows and clears no toast.
 # Popup Undo link (brief, 2026-11-19): every launch a toast carries is read as [uri] reads it (the form Windows hands back, scheme://undo/?run=<id>,
 #   with the slash before ?) and must pass the tray's $linkOk. The launcher is the top-level `if ($Link)` branch after `if ($Lib) { return }`. The suite

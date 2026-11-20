@@ -25,6 +25,12 @@ function Start-Child($prof, $argLine, $extra = @{}) {
   foreach ($k in $extra.Keys) { $psi.EnvironmentVariables[$k] = $extra[$k] }
   [Diagnostics.Process]::Start($psi)
 }
+# The variables a child reads from its environment, and the suite's value for each. An empty value reads as unset, as the code tests
+# them for truth. TILE_TEST_SUITE is the suite's own flag. A caller's shell reaches no child through these names.
+function Get-SuiteEnv {
+  @{ TILE_TEST_SUITE = '1'; TILE_HOME = ''; TILE_SCREENS_FILE = ''; TILE_DRY_START = ''; TILE_TEST_ALLOW_LIVE = ''; TILE_TEST_TITLE = ''
+    TILE_TEST_MAIN = ''; TILE_TEST_SWAP_FAIL = ''; TILE_SOURCE = ''; TILE_NO_REGISTRY = ''; TILE_NO_STARTUP = ''; TILE_NO_LAUNCH = ''; CLAUDECODE = '' }
+}
 # A child test file in its own powershell, started now and run at once with the others. Its profile is a folder under this run's temp
 # folder, so no child reads or writes another's profile. Its output goes to files, not pipes: a process the child starts (an Edge, a
 # tray) can inherit a pipe and hold it open after the child exits, which would hold the output back. cmd does the file redirection,
@@ -36,17 +42,21 @@ function Start-Suite([string]$name, [string]$file, [string]$argLine = '') {
   $psi = New-Object Diagnostics.ProcessStartInfo 'cmd.exe', "/d /c powershell -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $PSScriptRoot $file)`"$(if ($argLine) { " $argLine" }) > `"$outFile`" 2> `"$errFile`""
   $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
   $psi.EnvironmentVariables['USERPROFILE'] = $prof; $psi.EnvironmentVariables['APPDATA'] = Join-Path $prof 'AppData\Roaming'
+  $pins = Get-SuiteEnv; foreach ($k in $pins.Keys) { $psi.EnvironmentVariables[$k] = $pins[$k] }
   # The job is made before the start: compiling the type takes seconds, and the child would run outside the job meanwhile.
   Add-SuiteJobType
   $job = [SuiteJob]::Create()
   $proc = [Diagnostics.Process]::Start($psi)
   # Assigned at once after the start. The child's own children are made later, so they land in the job with it.
   if ($job.ToInt64() -ne 0) { [void][SuiteJob]::Assign($job, $proc.Handle) }
-  [pscustomobject]@{ Name = $name; Proc = $proc; Out = $outFile; Err = $errFile; Job = $job; Shown = $false }
+  [pscustomobject]@{ Name = $name; Proc = $proc; Out = $outFile; Err = $errFile; Job = $job; Shown = $false; Started = Get-Date; Hung = $false }
 }
 # The most child files at once. Each is a powershell with its own Edge or server, and the machine is often near its memory limit (the
 # load brake reads busy above 85 % in use). origin/main starts 11 at once; this cap keeps the peak at or below that.
 $suiteCap = 8
+# A child still running this long after its start is stopped: 25 minutes, well above the longest child. The drain stops a child at
+# this cap, and the collection waits on each child up to it.
+$suiteCapMs = 1500000
 # Starts queued children while fewer than $suiteCap are running. Check calls it, so a slot that frees is refilled during the
 # inline checks, not only at the end of them.
 function Start-Ready {
@@ -209,7 +219,7 @@ try {
   # collected after the in-process sections below. The order of their starts is the order of the list.
   # Longest first. setup-page runs as three shards (its header says how), each with its own Edge, server and profile.
   $queueList = @(
-    @('stack-lock', 'stack-lock.ps1'),
+    @('stack-lock-1', 'stack-lock.ps1', '-Shard 1 -Of 3'), @('stack-lock-2', 'stack-lock.ps1', '-Shard 2 -Of 3'), @('stack-lock-3', 'stack-lock.ps1', '-Shard 3 -Of 3'),
     @('setup-page-1', 'setup-page.ps1', '-Shard 1 -Of 3'), @('setup-page-2', 'setup-page.ps1', '-Shard 2 -Of 3'), @('setup-page-3', 'setup-page.ps1', '-Shard 3 -Of 3'),
     @('install-swap', 'install-swap.ps1'), @('safe-moves', 'safe-moves.ps1'), @('fresh-screens', 'fresh-screens.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'),
     @('suite-kill', 'suite-kill.ps1'), @('bay', 'bay.ps1'), @('golden-layouts', 'golden-layouts.ps1'),
@@ -576,26 +586,42 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
 
   [Console]::Error.WriteLine("time  inline  $([int]((Get-Date) - $runStart).TotalSeconds) s")
   # Every child is started before the collection: a queued child starts as a slot frees, and the wait polls the running ones.
-  while ($queue.Count) { Start-Ready; if ($queue.Count) { [void]@($suites | ? { -not $_.Proc.HasExited })[0].Proc.WaitForExit(250) } }
+  while ($queue.Count) {
+  foreach ($s in @($suites | ? { -not $_.Proc.HasExited -and ((Get-Date) - $_.Started).TotalMilliseconds -gt $suiteCapMs })) { $s.Hung = $true; Stop-Suite $s }
+  Start-Ready
+  if ($queue.Count) { [void]@($suites | ? { -not $_.Proc.HasExited })[0].Proc.WaitForExit(250) }
+}
   # The child files, collected in list order. Each is waited for up to $suiteCapMs (25 minutes, well above the longest one). A child
   # still running then is stopped with its processes. Each child is stopped, then printed, and its FAIL lines count here: each FAIL
   # line, or 1 for a nonzero exit or a stop with none. A child whose collection throws counts one FAIL; the children after it still run.
-  $suiteCapMs = 1500000
   foreach ($s in $suites) {
     try {
-      $hung = -not $s.Proc.WaitForExit($suiteCapMs)
+      # The cap runs from the child's own start, so a child past its cap is not waited on again: its wait is what is left of the cap.
+      $left = [Math]::Max(0, [int]($suiteCapMs - ((Get-Date) - $s.Started).TotalMilliseconds))
+      $hung = [bool]$s.Hung -or -not $s.Proc.WaitForExit($left)
       Stop-Suite $s
       Show-Suite $s $hung
     } catch {
       $script:fail++; "FAIL  $($s.Name)  could not be collected: $_"
     }
   }
-  # Every page case runs in exactly one shard: each shard counts the same cases, and the shards' runs add up to that count.
-  $shardRuns = @($suites | ? { $_.Name -like 'setup-page-*' } | % { [regex]::Match((Read-SuiteFile $_.Out), 'cases shard (\d+) of (\d+) ran (\d+) of (\d+)') } | ? { $_.Success })
-  $shardTotals = @($shardRuns | % { [int]$_.Groups[4].Value } | Sort-Object -Unique)
-  $ranSum = (@($shardRuns | % { [int]$_.Groups[3].Value }) | Measure-Object -Sum).Sum
-  $wantShards = @($queueList | ? { $_[0] -like 'setup-page-*' }).Count
-  Check 'every page case runs in exactly one shard' ($shardRuns.Count -eq $wantShards -and $shardTotals.Count -eq 1 -and $ranSum -eq $shardTotals[0]) "shards reporting: $($shardRuns.Count) of $wantShards; ran $ranSum of totals $($shardTotals -join '/')"
+  # Every case of a sharded file runs in exactly one shard (test\shard.ps1): each shard counts the same cases, and the shards' ran and
+  # skipped cases add up to that count. A run with no Microsoft Edge skips its page cases and counts each one, so the SKIP line names
+  # the count and a skipped page never passes silently. One check per family of shard children.
+  foreach ($fam in @(@('setup-page-*', 'every page case runs in exactly one shard'), @('stack-lock-*', 'every stack-lock case runs in exactly one shard'))) {
+    $shardRuns = @($suites | ? { $_.Name -like $fam[0] } | % { [regex]::Match((Read-SuiteFile $_.Out), 'cases shard (\d+) of (\d+) ran (\d+) of (\d+), skipped (\d+)(?:: ([^\r\n]*))?') } | ? { $_.Success })
+    $shardTotals = @($shardRuns | % { [int]$_.Groups[4].Value } | Sort-Object -Unique)
+    $total = if ($shardTotals.Count -eq 1) { $shardTotals[0] } else { 0 }
+    $ranSum = (@($shardRuns | % { [int]$_.Groups[3].Value }) | Measure-Object -Sum).Sum
+    $skipSum = (@($shardRuns | % { [int]$_.Groups[5].Value }) | Measure-Object -Sum).Sum
+    $wantShards = @($queueList | ? { $_[0] -like $fam[0] }).Count
+    $idle = @($shardRuns | ? { ([int]$_.Groups[3].Value + [int]$_.Groups[5].Value) -eq 0 }).Count
+    if ($skipSum -gt 0) {
+      $why = @($shardRuns | ? { $_.Groups[6].Success } | % { $_.Groups[6].Value }) | Select-Object -First 1
+      "SKIP  $($fam[0] -replace '-\*$', ''): $skipSum of $total gates skipped ($why)"
+    }
+    Check $fam[1] ($shardRuns.Count -eq $wantShards -and $shardTotals.Count -eq 1 -and $total -gt 0 -and ($ranSum + $skipSum) -eq $total -and $idle -eq 0) "shards reporting: $($shardRuns.Count) of $wantShards; ran $ranSum + skipped $skipSum of total $($shardTotals -join '/'); shards that ran or skipped none: $idle"
+  }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
