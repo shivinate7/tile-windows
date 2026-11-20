@@ -3942,8 +3942,9 @@ function () {
     Check 'split open: J on the zone half sends no POST /layout' ($sent.Count -eq 0) "POST /layout count: $($sent.Count), bodies: $(Post-Text $sent)"
     $said = [string](Js $ws 'return document.getElementById("msg").textContent;')
     Check 'split open: J on the zone half does not report "Joined cell N." (status: see detail)' ($said -notmatch '^Joined cell \d+\.') "status: '$said'"
+    # tile.ps1 numbers slots from 1 (its -Json slots are $_ + 1), and the page's placed list uses the same numbers. Window 1001 on its own half, cell 1, reads 1.
     $held = Js $ws 'const q = prev() && prev().placed.find(x => x.id === 1001 && !x.behind); return q ? q.slots : null'
-    Check 'split open: window 1001 still holds slot 0, its own half (both halves stay)' (((Split-Ints $held) -join ',') -eq '0') "window 1001 holds slot(s): '$((Split-Ints $held) -join ',')'"
+    Check 'split open: window 1001 still holds its own half, slot 1 in the 1-based numbering (both halves stay)' (((Split-Ints $held) -join ',') -eq '1') "window 1001 holds slot(s) (1-based): '$((Split-Ints $held) -join ',')'"
     $halves = @(Ax-Named $ws '(?i)empty|open half')
     $stays = @($halves | ? { $_.slot -eq 1 -and $_.name -match 'Zone fills last' })
     Check 'split open: the zone half still reads "Zone fills last" on slot 1 (both halves stay)' ($stays.Count -eq 1) "named halves: $(Half-Text $halves)"
