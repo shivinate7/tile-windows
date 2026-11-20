@@ -7,9 +7,10 @@ function Remove-RunFolder([string]$path) {
 }
 # Removes the folders under $dir whose names match $nameRx and whose last write is older than $olderThan, as of $now. A folder that
 # cannot be deleted (a file in it is open in another process) is skipped: one warning line names it, and the sweep goes on.
-function Invoke-RunFolderSweep([string]$dir, [string]$nameRx, [TimeSpan]$olderThan, [datetime]$now = (Get-Date)) {
+# $except is one folder's full path that is left alone (the caller's own run folder).
+function Invoke-RunFolderSweep([string]$dir, [string]$nameRx, [TimeSpan]$olderThan, [datetime]$now = (Get-Date), [string]$except = '') {
   if (-not (Test-Path -LiteralPath $dir)) { return }
-  @(Get-ChildItem -LiteralPath $dir -Directory | ? { $_.Name -match $nameRx -and $_.LastWriteTime -lt $now.Subtract($olderThan) }) | % {
+  @(Get-ChildItem -LiteralPath $dir -Directory | ? { $_.Name -match $nameRx -and $_.FullName -ne $except -and $_.LastWriteTime -lt $now.Subtract($olderThan) }) | % {
     $p = $_.FullName
     try { Remove-RunFolder $p } catch { $why = $_.Exception.Message -replace '\s+', ' '; Write-Warning "run folder sweep skipped ${p}: $why" }
   }
