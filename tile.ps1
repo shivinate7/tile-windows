@@ -184,18 +184,20 @@ function Move-Win($win, $x, $y, $ww, $hh) {
 # Free Layout areas (scene grids[mon].free.areas). An area is a rect in fractions of the work area, [fx, fy, fw, fh], plus a pin (an index into the scene's
 # pins), an app and title, or nothing.
 # Pixel lines: each line is rounded once per monitor, so two areas that meet at one fraction share one pixel. A fraction is first rounded to 9 places, so
-# a sum such as f + (1 - f) lands on the same line as 1. [Math]::Round rounds half to even, as the [int] casts in Pass do.
+# a sum such as f + (1 - f) lands on the same line as 1. [Math]::Round rounds half to even, as the [int] casts in Pass do. Each line is then held inside the
+# work area (0 to W, 0 to H), so a rect past an edge is cut at the edge and one wholly outside comes out 0 px wide or high.
 function Get-AreaPixelRects($rects, [int]$W, [int]$H) {
   $out = New-Object System.Collections.ArrayList
   foreach ($r in @($rects)) {
-    $x0 = [int][Math]::Round([Math]::Round([double]$r[0], 9) * $W); $x1 = [int][Math]::Round([Math]::Round([double]$r[0] + [double]$r[2], 9) * $W)
-    $y0 = [int][Math]::Round([Math]::Round([double]$r[1], 9) * $H); $y1 = [int][Math]::Round([Math]::Round([double]$r[1] + [double]$r[3], 9) * $H)
+    $x0 = [Math]::Max(0, [Math]::Min($W, [int][Math]::Round([Math]::Round([double]$r[0], 9) * $W))); $x1 = [Math]::Max(0, [Math]::Min($W, [int][Math]::Round([Math]::Round([double]$r[0] + [double]$r[2], 9) * $W)))
+    $y0 = [Math]::Max(0, [Math]::Min($H, [int][Math]::Round([Math]::Round([double]$r[1], 9) * $H))); $y1 = [Math]::Max(0, [Math]::Min($H, [int][Math]::Round([Math]::Round([double]$r[1] + [double]$r[3], 9) * $H)))
     [void]$out.Add([int[]]@($x0, $y0, ($x1 - $x0), ($y1 - $y0)))
   }
   , $out.ToArray()
 }
 
-# One monitor's free areas, ready for Pass. Returns $null when no area has a usable rect. Else: Rects (pixel rects relative to the work area, in reading
+# One monitor's free areas, ready for Pass. An area is dropped when its rect is not four finite numbers, or has no width or height, or is under 1 px wide or high
+# once rounded and cut to the work area. Returns $null when no area has a usable rect. Else: Rects (pixel rects relative to the work area, in reading
 # order: top line, then left line), Pins (pin entries whose Slots are one area's position in Rects; a named area is a pin entry with Named set), and Missing
 # (pins on this monitor that no area holds, and areas whose pin is not in the scene). The fill takes the areas no pin or name holds, in Rects order.
 function Resolve-FreeAreas($areas, $scenePins, [string]$role, [int]$W, [int]$H) {
@@ -210,7 +212,10 @@ function Resolve-FreeAreas($areas, $scenePins, [string]$role, [int]$W, [int]$H) 
     $okIdx += $i; $fr += , $d
   }
   if (-not $okIdx.Count) { return $null }
-  $px = Get-AreaPixelRects $fr $W $H
+  $px0 = Get-AreaPixelRects $fr $W $H
+  $keep = @(0..($okIdx.Count - 1) | ? { $px0[$_][2] -ge 1 -and $px0[$_][3] -ge 1 })
+  if (-not $keep.Count) { return $null }
+  $okIdx = @($keep | % { $okIdx[$_] }); $px = @($keep | % { , $px0[$_] })
   $order = @(0..($okIdx.Count - 1) | Sort-Object { $px[$_][1] }, { $px[$_][0] }, { $_ })
   $slotOf = @{}; $rects = @()
   for ($s = 0; $s -lt $order.Count; $s++) { $slotOf[$okIdx[$order[$s]]] = $s; $rects += , $px[$order[$s]] }
