@@ -16,6 +16,7 @@
 #     pins[i].slots   a span is the whole block of cells, as today.
 #     bay             [{app, title}], as today. Take Out writes here, and so does a resize: every window its span covers goes
 #                     here with its stack, whether or not a cell is free (ruling 2026-11-16, decisions/stack-and-lock.md).
+#     pins may be left out, as in an older scene file: tile.ps1 reads none, and the page keeps the scene raw, so an edit on it still applies.
 #   tile.ps1 -Scene -From <fixture> -Json, placed[]: a stacked window has behind = true, pin = its front pin's index,
 #     and slots, x, y, w, h equal to the front's. A minimized stacked window is placed too (Apply restores it).
 #   app.html, names read by the harness (keep them): work, selId, prevs, preview(id), els (window id -> its tile element,
@@ -126,12 +127,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (263). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (264). Shard 1 runs
 # gates 1 to 67 (the cases before the Board feedback section), shard 2 gates 68 to 171 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(67, 171)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 263
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 264
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -167,8 +168,10 @@ Remove-RunFolder $proof
 # 1004 'Claude' (minimized); chrome 1005 'Pull request 212', 1006 'Quarterly roadmap', 1007 'quoted'; WindowsTerminal
 # 1008 'pwsh - tiler', 1009 'pwsh - docs watch'. Wide grid 5x2; slots are 0-based in a scene, 1-based in placed[].
 function SlPlace($scene) { (& $tile -Scene $scene -From $fixture -Json 3>$null) -join '' | ConvertFrom-Json }
+# A null $pins leaves the pins key out, as a scene file may (the page keeps such a scene raw).
 function SlSceneJson($pins, $fill = '[]', $extra = '', $off = '', $grid = '"c":5,"r":2') {
-  '{"id":"sl","name":"Stack and lock","trigger":{"type":"manual","days":[],"time":"09:00"},"grids":{"wide":{' + $grid + '}},"pins":' + $pins + ',"fill":{"mon":"wide","apps":' + $fill + ',"skip":[],"sort":"app"' + $off + '}' + $extra + '}'
+  $pinsKey = if ($null -eq $pins) { '' } else { ',"pins":' + $pins }
+  '{"id":"sl","name":"Stack and lock","trigger":{"type":"manual","days":[],"time":"09:00"},"grids":{"wide":{' + $grid + '}}' + $pinsKey + ',"fill":{"mon":"wide","apps":' + $fill + ',"skip":[],"sort":"app"' + $off + '}' + $extra + '}'
 }
 # A dry-run engine call (no window moves): the scene as tile.ps1 -Scene reads it, placed[] and left[] back. The fixture is the shared one unless a second argument names another.
 function SlDry($scene, $from = $fixture) { (& $tile -Scene $scene -From $from -DryRun -Json 3>$null) -join '' | ConvertFrom-Json }
@@ -632,7 +635,8 @@ function SlBadgeText($id) { SlJs "(() => { const t = els.get($id), s = t && t.qu
 function SlBayIds { @(("$(SlJs "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => b.dataset.bay).join(',')")") -split ',' | ? { $_ } | % { [int]$_ }) }
 # Call before the drop: keeps the engine's current answer, so the wait below can tell when a new one has replaced it, and
 # records the page's uncaught errors from then on, so a red case names the exception that stopped the redraw.
-function SlMarkEngine { [void](SlJs "(window.bfEngine = prevs[selId], window.bfErrs = [], addEventListener('error', e => window.bfErrs.push(String(e.message) + ' at ' + String((e.error && e.error.stack) || '').split('\n')[1].trim())), true)") }
+# -Rejections also records an unhandled promise rejection, as an edit run from a promise (the Fill Empty Cells switch) raises.
+function SlMarkEngine([switch]$Rejections) { [void](SlJs "(window.bfEngine = prevs[selId], window.bfErrs = [], addEventListener('error', e => window.bfErrs.push(String(e.message) + ' at ' + String((e.error && e.error.stack) || '').split('\n')[1].trim())), true)"); if ($Rejections) { [void](SlJs "addEventListener('unhandledrejection', e => window.bfErrs.push('unhandled rejection: ' + String((e.reason && e.reason.message) || e.reason)))") } }
 # A passive wait, no action: the page polls until the engine's answer to the drop replaces the marked one (bounded by a count,
 # a hang guard only), then two frames. It never calls preview() itself, since a settle would redraw the board and hide a stale screen.
 # Returns fresh (an answer came back) and behind (the engine placed window $id behind).
@@ -2728,6 +2732,27 @@ try {
   SlKey 1001 'Delete' 46
   if (Shard-Take) {
   Check 'open front, Delete, control: one press lets Draft release, the window behind, take cell 4 as the front' (SlFrontOn 1003 '4') "placed: $(SlPlacedBrief)"
+  }
+
+  # ---------- Edit on a scene with no pins key (debt closed-front-stack: each edit settles the closed fronts, and reads pins first) ----------
+  # A scene file may leave the pins key out. tile.ps1 reads it as an empty list, and the page keeps the scene as it is. An edit on it must
+  # raise no page error, apply, and add one undo entry. The edit is the Fill order select: it changes only the scene's fill sort.
+  SlViewport 1440 900; SlCase (SlSceneJson $null '["*"]'); SlPark
+  $npKeys = SlJs "'pins' in work[selId]"
+  $npSort0 = SlJs 'work[selId].fill.sort'
+  $npCtl = SlJs "(() => { const s = document.getElementById('sort'); return !!s && !s.disabled; })()"
+  SlMarkEngine -Rejections
+  $npN0 = SlJs 'hist.length'
+  [void](SlJs "(() => { const s = document.getElementById('sort'); if (!s) return false; s.value = 'title'; s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()")
+  SlSettle
+  $npSort1 = SlJs 'work[selId].fill.sort'
+  $npN1 = SlJs 'hist.length'
+  $npErr = SlJs "(window.bfErrs || []).slice(0, 3).join(' | ')"
+  if (Shard-Take) {
+  Check 'no pins key, scope: the scene has no pins key, the Fill order select is enabled, and its order is App Order' ([bool](-not $npKeys -and $npCtl -and "$npSort0" -eq 'app')) "pins key: $npKeys; select enabled: $npCtl; order: $npSort0"
+  Check 'no pins key, red: the edit raises no page error' ([bool]("$npErr" -eq '')) "page error: $npErr"
+  Check 'no pins key, red: the edit applies, so the fill order is Title A to Z' ("$npSort1" -eq 'title') "fill order after the edit: $npSort1"
+  Check 'no pins key, control: the edit adds exactly one undo entry' ([bool]($npN1 -eq ($npN0 + 1))) "undo entries: $npN0 before, $npN1 after"
   }
 
   # ---------- Closed front, covered pin at a lower index (debt closed-front-stack) ----------
