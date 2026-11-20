@@ -624,10 +624,12 @@ function Get-CellPair($v) {
 }
 # $Cols and $Rows count the cells of the finished grid. With $mult (the scene's grids[mon].mult) each base cell is divided mx by my, so $Cols is the
 # base columns times mx. A cell edge comes from the base grid first, then the division, so a window outside a split cell keeps its undivided rect.
-# $unit (fill.unit): each filled window takes one aligned block of ux by uy cells.
+# $unit (fill.unit): each filled window takes one aligned block of ux by uy cells. When the unit is larger than 1x1, a zone and the fill take
+# every free whole block first, then the open halves (the free cells of part-taken blocks) in reading order (layout-free item 6).
+# $keep (fill.keepEmpty, 0-based slots of this monitor, id-keyed scenes only): cells that no zone or fill window takes; a pin or a held window still does.
 # $areaRects (Free Layout areas): pixel rects relative to the work area, in reading order. A slot is then an area's position in it, and $Cols is how many
 # areas there are; the fill takes the open areas in that order. A pin entry with Named set (an area named by app and title) is never reported missing.
-function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all', $held = @(), $phantom = $false, $mult = $null, $unit = $null, $areaRects = $null) {
+function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $order, $sort, $isWide, $role, $zones = @(), $phase = 'all', $held = @(), $phantom = $false, $mult = $null, $unit = $null, $areaRects = $null, $keep = @()) {
   $scene = $phase -ne 'all'
   $all = @(@($pins.App) + @($fill | ? { $pins.App -notcontains $_ }) | ? { $_ })
   if (-not $script:roleState.ContainsKey("$role")) { $script:roleState["$role"] = @{ used = @{}; pinned = 0 } }
@@ -686,6 +688,30 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # The left (top) edge of cell $i: whole base cells, then whole sub cells. Edge $Cols is the base grid's end, so the last sub takes the remainder.
   function EdgeX($i) { [Math]::Floor($i / $mx) * $baseW + ($i % $mx) * $subW }
   function EdgeY($i) { [Math]::Floor($i / $my) * $baseH + ($i % $my) * $subH }
+  # The cells a window can take, as arrays of slots in the order they are used. $spare holds the free slots (a hashtable). First every aligned block of
+  # ux by uy cells that is wholly free, row by row. Then, when the unit is larger than 1x1, the open halves: free cells inside the block area that no
+  # free block holds, in reading order. Open halves that form a rectangle go to one window, and a rectangle never reaches past one unit span along
+  # an axis where the unit is larger than 1, so a window in an open half never gets more than half a cell's width (or height).
+  function Get-OpenUnits($spare) {
+    $bw = [int][Math]::Floor($Cols / $ux); $bh = [int][Math]::Floor($Rows / $uy)
+    $rest = @{}
+    for ($b = 0; $b -lt $bw * $bh; $b++) {
+      $bs = @(for ($rr = 0; $rr -lt $uy; $rr++) { for ($cc = 0; $cc -lt $ux; $cc++) { [int]([Math]::Floor($b / $bw) * $uy + $rr) * $Cols + ($b % $bw) * $ux + $cc } })
+      if (@($bs | ? { -not $spare.ContainsKey($_) }).Count) { foreach ($c in $bs) { if ($spare.ContainsKey($c)) { $rest[$c] = 1 } } } else { , $bs }
+    }
+    if ($ux -eq 1 -and $uy -eq 1) { return }
+    foreach ($s in @($rest.Keys | Sort-Object)) {
+      if (-not $rest.ContainsKey($s)) { continue }
+      $c0 = $s % $Cols; $r0 = [int][Math]::Floor($s / $Cols)
+      $cEnd = if ($ux -gt 1) { ([int][Math]::Floor($c0 / $ux) + 1) * $ux } else { $Cols }
+      $rEnd = if ($uy -gt 1) { ([int][Math]::Floor($r0 / $uy) + 1) * $uy } else { $Rows }
+      $w = 1; while ($c0 + $w -lt $cEnd -and $rest.ContainsKey($r0 * $Cols + $c0 + $w)) { $w++ }
+      $h = 1; while ($r0 + $h -lt $rEnd -and -not @(0..($w - 1) | ? { -not $rest.ContainsKey(($r0 + $h) * $Cols + $c0 + $_) }).Count) { $h++ }
+      $rect = @(for ($rr = 0; $rr -lt $h; $rr++) { for ($cc = 0; $cc -lt $w; $cc++) { ($r0 + $rr) * $Cols + $c0 + $cc } })
+      foreach ($c in $rect) { $rest.Remove($c) }
+      , $rect
+    }
+  }
   function Put($it, $slots, $pin, $zone = -1, [switch]$behind) {
     $cs = $slots | % { $_ % $Cols }; $rs = $slots | % { [Math]::Floor($_ / $Cols) }
     $c0 = ($cs | Measure -Min).Minimum; $c1 = ($cs | Measure -Max).Maximum
@@ -736,13 +762,16 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # Fill Empty Cells off (scene fill.off): pins and held windows (fill.held) are placed. The zone and fill steps place nothing; the
   # scene names the other windows, which stay where they are, once every pass has run (see the sweep after the phase loop).
   $fillOff = $scene -and $script:sceneFillOff
+  # A kept cell counts as taken for the zones and the fill. The pins and held phases ran first, so a pin or a held window on it already won.
+  if ($phase -in 'zones', 'fill') { foreach ($ks in $keep) { $used[[int]$ks] = 1 } }
   if ($phase -eq 'zones' -and -not $fillOff) {
     $zkeys = KeysFor { FillIdx $_.App $script:zFill }
     foreach ($z in $zones) {
       $cand = @($items | ? { -not $script:claimed.ContainsKey("$($_.H)") -and $_.Title -ne 'Program Manager' -and (& $up) -and $(if ($z.App) { $_.App -eq $z.App } else { $a = $_.App; -not ($script:zSkip | ? { $a -like $_ }) -and $(if ($script:cats -and $script:cats.$a) { [string]$script:cats.$a } else { 'other' }) -eq $z.Cat }) } | Sort-Object $zkeys)
-      $zc = @($z.Slots | Sort-Object | ? { -not $used.ContainsKey($_) }); $z.Slots | % { $used[$_] = 1 }
-      $k = [Math]::Min($cand.Count, $zc.Count)
-      for ($i = 0; $i -lt $k; $i++) { Put $cand[$i] @($zc[$i]) (-1) $z.Index }
+      $zf = @{}; foreach ($c in @($z.Slots | ? { -not $used.ContainsKey($_) })) { $zf[[int]$c] = 1 }; $z.Slots | % { $used[$_] = 1 }
+      $zu = @(Get-OpenUnits $zf)
+      $k = [Math]::Min($cand.Count, $zu.Count)
+      for ($i = 0; $i -lt $k; $i++) { Put $cand[$i] $zu[$i] (-1) $z.Index }
       foreach ($it in ($cand | Select-Object -Skip $k)) { $script:claimed["$($it.H)"] = 1; $script:left += [pscustomobject]@{ id = [int64]$it.H; app = $it.App; title = $it.Title; why = $(if ($phantom) { $script:unpluggedWhy } else { 'zone full' }) } }
     }
   }
@@ -750,12 +779,8 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # Free windows fill the open slots row by row.
   if ($phase -in 'all', 'fill' -and -not $fillOff) {
     $free = @($free | ? { -not $script:claimed.ContainsKey("$($_.H)") } | Sort-Object (KeysFor 'Rank'))
-    # Blocks of ux by uy cells, row by row; a block with any cell taken is not open.
-    $bw = [int][Math]::Floor($Cols / $ux); $bh = [int][Math]::Floor($Rows / $uy)
-    $open = @(for ($b = 0; $b -lt $bw * $bh; $b++) {
-      $bs = @(for ($rr = 0; $rr -lt $uy; $rr++) { for ($cc = 0; $cc -lt $ux; $cc++) { [int]([Math]::Floor($b / $bw) * $uy + $rr) * $Cols + ($b % $bw) * $ux + $cc } })
-      if (-not @($bs | ? { $used.ContainsKey($_) }).Count) { , $bs }
-    })
+    $spare = @{}; for ($i = 0; $i -lt $Cols * $Rows; $i++) { if (-not $used.ContainsKey($i)) { $spare[$i] = 1 } }
+    $open = @(Get-OpenUnits $spare)
     $n = [Math]::Min($free.Count, $open.Count)
     for ($i = 0; $i -lt $n; $i++) { Put $free[$i] $open[$i] (-1) }
     $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = $(if ($phantom) { $script:unpluggedWhy } else { 'no free cell' }) } })
@@ -853,6 +878,7 @@ foreach ($role in $passKeys) {
   if ($phantom -and -not $idMode) { Write-Warning "No $role monitor. That part of the scene is skipped." }
   if ($phantom) { $scr = [pscustomobject]@{ Name = "unplugged $role"; X = 0; Y = 0; W = 100 * $gc; H = 100 * $gr } }
   $passes += [pscustomobject]@{ Scr = $scr; Phantom = $phantom; C = $gc; R = $gr; Fill = $(if ($isFill) { @($sc.fill.apps) } else { @() }); Pins = $ps; Zones = $zs; Held = $hs; Role = $role; Mult = $mult; Unit = $(if ($isFill -and -not $fr) { $sc.fill.unit }); AreaRects = $(if ($fr) { , $fr.Rects })
+    Keep = @(if ($idMode -and -not $fr) { foreach ($kp in @($sc.fill.keepEmpty | ? { $_ })) { if ([string]$kp.mon -eq $role) { @($kp.slots | ? { $null -ne $_ } | % { [int]$_ } | ? { $_ -ge 0 -and $_ -lt $gc * $gr }) } } })
     Skip = $(if ($isFill) { @($Skip + @($sc.fill.skip) | ? { $_ }) } else { $Skip }); Sort = $(if ($sc.fill.sort) { [string]$sc.fill.sort } else { 'app' }) }
 }
 # Gap fill: the pins phase finds each window's area (as a dry run, so Put moves nothing); item G then decides the moves (Get-GapMoves). Zones, held
@@ -866,7 +892,7 @@ if ($GapFill) {
   $gp = @()
   foreach ($q in $passes) {
     if (-not $q.AreaRects -or $q.Phantom) { continue }
-    $found = @(Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones 'pins' $q.Held $q.Phantom $q.Mult $q.Unit $q.AreaRects | ? { $_ -and $_.id })
+    $found = @(Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones 'pins' $q.Held $q.Phantom $q.Mult $q.Unit $q.AreaRects $q.Keep | ? { $_ -and $_.id })
     $locked = @(foreach ($pn in $q.Pins) { if ($pn.Index -ge 0 -and @($sc.pins)[$pn.Index].lock -eq $true) { @($pn.Slots)[0] } })
     $wins = @(foreach ($o in $found) { [pscustomobject]@{ id = [int64]$o.id; slot = [int]@($o.slots)[0] - 1; cur = [int[]]@($o.from.x, $o.from.y, $o.from.w, $o.from.h) } })
     foreach ($mv in @(Get-GapMoves $q.AreaRects @($q.Scr.X, $q.Scr.Y) @($q.Scr.W, $q.Scr.H) $wins $locked $absentLast $lastMap)) {
@@ -882,7 +908,7 @@ if ($GapFill) {
 }
 foreach ($phase in 'pins', 'held', 'zones', 'fill') {
   foreach ($q in $passes) {
-    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase $q.Held $q.Phantom $q.Mult $q.Unit $q.AreaRects
+    $r = Pass $q.Scr $q.C $q.R 0 $q.Fill $q.Pins $q.Skip ([string]$sc.fill.order) $q.Sort ($q.Role -eq 'wide') $q.Role $q.Zones $phase $q.Held $q.Phantom $q.Mult $q.Unit $q.AreaRects $q.Keep
     if ($Json) { $out += @($r) } else { $r }
   }
 }
