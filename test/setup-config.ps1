@@ -763,6 +763,22 @@ Use-TileLock { [void]$ready.Set(); [void]$release.WaitOne(120000) }
       Remove-Item -LiteralPath $lockRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
+  # The caller's own run folder is kept even when it is over a day old: the sweep leaves $Own alone by path, not by age (P5: fixed clock).
+  Case 'run folder: the sweep keeps its own run folder even when that folder is over a day old' {
+    $ownNow = [datetime]::new(2001, 1, 1, 12, 0, 0)
+    $ownRoot = Join-Path $runDir 'sweep-own'; New-Item -ItemType Directory -Path $ownRoot | Out-Null
+    $ownOld = Join-Path $ownRoot ('7-{0}' -f [guid]::NewGuid().ToString('n'))
+    $otherOld = Join-Path $ownRoot ('8-{0}' -f [guid]::NewGuid().ToString('n'))
+    foreach ($d in $ownOld, $otherOld) { New-Item -ItemType Directory -Path $d | Out-Null }
+    try {
+      [IO.Directory]::SetLastWriteTime($ownOld, $ownNow.AddDays(-3)); [IO.Directory]::SetLastWriteTime($otherOld, $ownNow.AddDays(-3))
+      Remove-OldRunFolders -Root $ownRoot -Own $ownOld -Now $ownNow
+      Check 'sweep, own: the own run folder stays although it is over a day old' (Test-Path -LiteralPath $ownOld) 'the own folder was removed'
+      Check 'sweep, own: another old run folder goes' (-not (Test-Path -LiteralPath $otherOld)) 'the other old folder is still there'
+    } finally {
+      Remove-Item -LiteralPath $ownRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
 } finally {
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
   Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue
