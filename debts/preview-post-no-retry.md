@@ -4,6 +4,8 @@ Decision: none. Found in app.html, function previewRun (line 967), whose POST is
 
 previewRun posts once. A dropped connection (fetch throws a TypeError) goes to its catch (lines 974-977). That catch drops the scene's preview and sets the status line to "Preview failed for <scene>: The app server stopped answering". loadAll retries the same error after 0.4, 0.8 and 1.6 s (app.html:885-893, PR 65). previewRun has no such retry.
 
+Run evidence (2026-11-20): a full run on PR 74's head stopped in test/bay.ps1 with "no scene after 30 s". BayLoad (test/bay.ps1:191-202) only re-waits, and the preview POST (app.html previewRun) has no retry or timeout, so this is the likely path. Not reproduced in 5 runs.
+
 Harm: a transient server blip shows a failed preview for a scene, though the server is fine. The board stops drawing that scene's preview until the next preview of it.
 
 Likelihood: unmeasured. How often a preview hits a dropped connection is not measured.

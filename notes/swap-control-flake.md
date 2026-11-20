@@ -1,0 +1,1 @@
+- swap-control-flake: test/stack-lock.ps1:869 (gate 27, shard 1), "control: a drop on the centre of a taken cell, inside the Swap circle, still swaps", failed once in a full run on 2026-11-20 (claude none, chrome 457,328). 0 of 5 runs on PR 74's head and 0 of 5 on main. No overlay under the drop point: elementFromPoint returns a tile. Cause unknown. Seen: 2026-11-20 x1
