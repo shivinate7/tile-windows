@@ -21,6 +21,17 @@
 #     Red on 17a4bed: the tray inherits CLAUDECODE (7b). Green controls: 7c the suite flag still reaches the tray (a tray a test starts
 #     stays guarded); 7d the install's other variables and its profile reach the tray; 7e the calling shell keeps its marker; 7f with no
 #     marker the tray sees none (a Start-menu start). 7a scope checks come first and are never the red.
+#   Second rename frees up (case 8, debt install-second-rename-no-retry): a process holds the install's staging folder app.new-<pid> as
+#     its working directory, so the second rename (app.new-<pid> to app) is refused, while the first (app to app.old-<pid>) is not.
+#     The holder lets go 3 s after the install has moved the old app aside. The install must retry that rename as it retries the
+#     first one: exit 0, the new app in place, no staging or old folder left. Red on ad8a0b8: the second rename has no retry, so the
+#     install fails at once and rolls back, so the exit check, the new-app check and the leftover-folder check all go red.
+#   Second rename never frees up (case 9, a green control): the same hold, never released before the install exits. The install gives
+#     up in bounded time, exits non-zero because of the lock, and puts the old app back. It holds before and after the fix: it guards
+#     a fix that retries for ever, or that drops the failure and exits 0 with no app.
+#     Both cases keep the staging holder ahead of the renames with a gate: tray.pid names a first holder (a stand-in for a running
+#     tray), and the install waits on that process, up to 10 s, before it renames anything. The gate is released only once the staging
+#     holder is up and checked, so the hold is in place however slow the machine is, with no fixed sleep.
 # Scope before subject (P7): each case checks that the holder is up and that a rename of the folder is refused before it reads
 # the install's result. Each check names one cause.
 # Why 8 s: on the dev machine install.ps1 reaches its rename about 4 s after it starts (most of that is dot-sourcing tray.ps1 -Lib),
@@ -50,6 +61,7 @@ New-Item -ItemType Directory -Force $run | Out-Null
 $marker = [DateTime]::new(2001, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)  # a fixed old time for the old tile.ps1: a swapped-in copy has another
 $holdMs = 8000
 $holdTrayMs = 24000  # case 4: the holder named by tray.pid lets go this long after the install starts (see that case)
+$holdNewMs = 3000  # case 8: the staging holder lets go this long after the install has moved the old app aside (the second rename is next)
 $started = New-Object Collections.ArrayList  # every process this file starts; the finally kills what still runs
 $holders = New-Object Collections.ArrayList
 $savedEnv = @{ USERPROFILE = $env:USERPROFILE; APPDATA = $env:APPDATA }
@@ -234,6 +246,51 @@ function Invoke-TrayEnvRun([string]$tag, [string]$marker, [string[]]$markers) {
   $res
 }
 
+# ---- Cases 8 and 9 helper: the second rename (app.new-<pid> to app) meets a lock (debt install-second-rename-no-retry). ----
+# One install into a fresh profile, with a process holding the install's staging folder app.new-<install pid> as its working directory.
+# The folder is named by the install's own pid, so the holder starts after the install does. The gate keeps the holder ahead of the
+# renames: tray.pid names a first holder, and the install waits on that process (up to 10 s) before it renames anything. The gate is
+# released once the staging holder is up and checked. $frees: the staging holder lets go $holdNewMs after the install has moved the old
+# app aside, which the install does just before the second rename; or never, until the install has exited. The old-aside wait is on
+# that event, not on the install's start, so a slow machine cannot let the hold run out before the second rename. Polls have a cap.
+# Returns the scope facts and the install's result; the caller does the checks (a Check line here would join the return value).
+function Invoke-SecondRenameRun([string]$tag, [bool]$frees) {
+  $prof = Make-Profile "second-$tag"; $dir = Join-Path $prof '.tile-windows'
+  $res = [pscustomobject]@{ Profile = $prof; Setup = $null; GateUp = $false; Staged = $false; HolderErr = ''; HolderUp = $false; Waiting = $false; Early = $false; Held = $false; Exited = $false; Code = $null; Err = '' }
+  $res.Setup = New-OldApp $prof
+  if (-not $res.Setup.Ok) { return $res }
+  $gate = New-Holder $run "gate-$tag"
+  $res.GateUp = $gate.Up
+  if (-not $gate.Up) { return $res }
+  [IO.File]::WriteAllText((Join-Path $dir 'tray.pid'), "$($gate.Proc.Id)", [Text.Encoding]::ASCII)
+  $i = Start-Install $prof '-NoStartup -NoLaunch'
+  $staging = Join-Path $dir "app.new-$($i.Proc.Id)"; $aside = Join-Path $dir "app.old-$($i.Proc.Id)"
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while (-not (Test-Path -LiteralPath $staging) -and -not $i.Proc.HasExited -and $sw.ElapsedMilliseconds -lt 30000) { Start-Sleep -Milliseconds 20 }
+  $res.Staged = Test-Path -LiteralPath $staging
+  $h = $null
+  if ($res.Staged) { try { $h = New-Holder $staging "second-$tag" } catch { $res.HolderErr = "$($_.Exception.Message)" } }
+  if ($h) { $res.HolderUp = $h.Up }
+  if ($res.HolderUp) {
+    # In this order: the holder is up, then the old app is not yet aside (so the holder was in place before the first rename), then the hold is real.
+    $res.Early = -not (Test-Path -LiteralPath $aside)
+    $res.Waiting = -not $i.Proc.HasExited
+    $res.Held = (Test-Path -LiteralPath $staging) -and (Test-Held $staging)
+  }
+  [void]$gate.Release.Set()  # always: a gate left up holds the install for its whole 10 s
+  if ($res.HolderUp) {
+    $sw.Restart()
+    while (-not $i.Proc.HasExited -and -not (Test-Path -LiteralPath $aside) -and $sw.ElapsedMilliseconds -lt 60000) { Start-Sleep -Milliseconds 25 }
+    if ($frees -and -not $i.Proc.HasExited -and -not $i.Proc.WaitForExit($holdNewMs)) { [void]$h.Release.Set() }
+  }
+  $res.Exited = Wait-Exit $i.Proc 60000
+  $res.Code = $i.Proc.ExitCode
+  if ($h) { [void]$h.Release.Set() }
+  [void]$i.Err.Wait(30000)
+  $res.Err = if ($i.Err.IsCompleted) { "$($i.Err.Result)".Trim() } else { '' }
+  $res
+}
+
 try {
   Check 'swap: the cases run in their own run folder, not the real profile' ($env:USERPROFILE.StartsWith($run))
 
@@ -386,6 +443,38 @@ try {
           Check "7f with no $m in the shell, the tray sees none (a start like the Start menu's)" ($tr.Probe[$m] -eq '') "the tray saw $m=[$($tr.Probe[$m])]"
         }
       }
+    }
+  }
+
+  # ---- Cases 8 and 9: the second rename meets a lock (debt install-second-rename-no-retry). ----
+  # Case 8: the lock lets go 3 s after the old app is aside, and the install must retry through it. Case 9 (green control): it never lets go.
+  foreach ($spec in @(@('frees', $true, 'second rename frees up'), @('stuck', $false, 'second rename never frees up'))) {
+    $tag = $spec[0]; $frees = $spec[1]; $label = $spec[2]
+    $r = Invoke-SecondRenameRun $tag $frees
+    $err1 = @($r.Err -split "`r?`n")[0]
+    Check "setup ($label): a first install puts the old app in place (nine files)" $r.Setup.Ok "first install exit $($r.Setup.Code): $(@($r.Setup.Err.Result.Trim() -split "`r?`n")[0])"
+    if (-not $r.Setup.Ok) { continue }
+    Check "gate ($label): the process tray.pid names is up and has set its ready event" $r.GateUp 'the gate holder did not start'
+    if (-not $r.GateUp) { continue }
+    Check "holder ($label): the install made its app.new-<pid> staging folder" $r.Staged 'no app.new-<pid> folder appeared within 30 s of the install starting'
+    if (-not $r.Staged) { continue }
+    Check "holder ($label): a process started with the staging folder as its working directory" ($r.HolderErr -eq '') "the holder did not start: $($r.HolderErr)"
+    Check "holder ($label): the holder is up and has set its ready event" $r.HolderUp 'the holder did not start'
+    if (-not $r.HolderUp) { continue }
+    Check "holder ($label): the install is still waiting on the gate when the holder is up" $r.Waiting 'the install had already exited'
+    Check "holder ($label): the holder is up before the install moves the old app aside (before the first rename)" $r.Early 'the old app was already aside, so the second rename may not have met the hold'
+    Check "holder ($label): a rename of the staging folder is refused while the holder holds it" $r.Held 'the holder does not hold the staging folder: the rename went through'
+    if (-not ($r.Waiting -and $r.Early -and $r.Held)) { continue }
+    $st = Get-AppState $r.Profile
+    if ($frees) {
+      Check 'install retries the second rename (app.new to app) and exits 0 once the lock frees up' ($r.Exited -and $r.Code -eq 0) "exit $($r.Code): $err1"
+      Check 'the new app replaces the old one after the second rename: tile.ps1 is a new copy and the app has nine files' ($st.Count -eq 9 -and $null -ne $st.Stamp -and $st.Stamp -ne $marker) "$($st.Count) files, tile.ps1 time $($st.Stamp)"
+      Check 'no staging or old folder is left after the second rename was held' ($st.Staging -eq 0) "$($st.Staging) app.* folder(s) left beside the app"
+    } else {
+      Check 'install gives up in bounded time when the second rename never frees up' $r.Exited 'the install was still running after 60 s, so it was killed'
+      Check 'install exits non-zero when the second rename never frees up' ($r.Exited -and $r.Code -ne 0) "exit $($r.Code)"
+      Check 'install fails because the staging folder is locked, not for another reason' ($r.Err -match 'in use|used by another process') "reported: $err1"
+      Check 'the old app is back in place after the second rename failed' ($st.Count -eq 9 -and $st.Stamp -eq $marker) "$($st.Count) files, tile.ps1 time $($st.Stamp)"
     }
   }
 } catch {
