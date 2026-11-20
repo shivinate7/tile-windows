@@ -47,6 +47,8 @@ Plan: docs/plans/layout-free-build.md#layout-free-build (windows)
 - F4 (the size floor, shown at 400 × 300 px), F6 (keys) and F12 (Close Gap shares the space at the middle): yes to all three. Each is a choice in `free-layout-notes.md`.
 - Notes item 20 (the size floor: a drag stops when a window would be under 400 × 300 px) is ruled: yes, at the same time.
 
+**Ruling (owner, 2026-11-19 16:50 CST):** Drop on a held space. A window dropped onto a Free Layout space that already holds a window offers Swap and Put Behind, as the mockup's F7 shows (choice in `free-layout-notes.md`: Assign by drop).
+
 Asked 2026-11-18 11:15 CST, open: (c) the fast action's trigger, direction and share (plan questions 1 and 3, keys S and K). S stays with the menu, as drawn, until the owner rules on it.
 
 Asked 2026-11-18 11:15 CST, open: how a closed window's space divides when more than one neighbour takes it (plan question 4, key M).

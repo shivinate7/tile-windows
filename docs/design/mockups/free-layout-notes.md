@@ -106,7 +106,7 @@ F7. **Assign by drop, one home.** A drop on an empty space pins the window there
     and says "Notepad goes here" (state `assign-drop`). A drop on a space a window holds uses today's
     targets: the Swap circle and Put Behind (`app.html` `dropZone()`, `swapInto()`, `putBehind()`).
     Move To in the inspector lists spaces ("Choose a Space"). Gain: nothing new to learn. Loss: none.
-    Pick: as drawn.
+    Pick: as drawn (ruled, owner, 2026-11-19 16:50 CST: a drop on a held space offers Swap and Put Behind).
 
 F8. **"Space", the word on the screen.** The engine's area is a "space" on the screen: Empty space,
     Choose a Space, Split Chrome's Space, Close Gap. The act keeps its name: Split Cell on the
@@ -162,7 +162,8 @@ F14. **Errors.** Two, both from real paths:
 
 F15. **The switch on a 1×1 monitor (item 15, owned by L4).** Off, with item 15's words, "One
      window fills this monitor. Split it first." (plan L4's test reads them), and a Split Cell button beside it,
-     which opens the split menu on that window (`ux-no-dead-end`). After a split the switch turns on.
+     which opens the split menu on that window (`ux-no-dead-end`). A split makes the Free Layout switch
+     available. It does not turn it on (item 28, Split in Free Layout, `layout-free-notes.md`).
      Gain: the reason leads straight to the fix. Loss: none. Pick: as drawn.
 
 F16. **Empty state.** A Free Layout monitor whose spaces are all empty keeps its lines; each space
