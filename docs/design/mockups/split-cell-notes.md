@@ -144,19 +144,18 @@ S11. **The split menu on an empty cell has two items** (state `empty-menu`). No 
     is selected. Not drawn: two inline buttons in the inspector instead of a menu (a second home
     for the split choices). Pick: the two-item menu.
 
-S12. **After a split on an empty cell** (state `empty-split`). Both halves are open, with "Open
-    half" and "Fills last" (S6), and under 40px the dashed box alone. The left (or top) half is
-    selected, so Keep This Half Empty and Join Halves act at once. The Open Half section reads
-    "The left half of cell 10. The right half, cell 20, is empty too." Join Halves "makes cell 10
-    one empty cell, and the grid 5×2 again" (item 9). Gap: no pin sits on either half. Under
-    layout-free item 6 as written, the two halves are one free aligned 2×1 block, so the fill
-    takes both at once as a whole cell, and nothing in the layout marks cell 10 as split; the next
-    join anywhere would halve the grid back (`halveGrid()` reads pins, zones and held entries
-    only). Proposed: save the split itself, as `splits: [{mon, slots}]`; the fill treats its
-    halves as halves, and `halveGrid()` counts it. Departs from: layout-free item 6, which would
-    fill the pair as one block. Owner grant: yes (item 6 changes for an empty split). Gain: the
-    split the owner made stays, and "Fills last" is true. Loss: a third kind of entry for
-    `halveGrid()` and the fill to read. Pick: save the split.
+S12. **After a split on an empty cell** (state `empty-split`). Split Cell on an empty cell doubles
+    the grid as any split does (Finer Grid, layout-free item 4). No window holds either half, so
+    the two halves stay one free aligned block, and the next fill may put one window across both
+    (item 6). That is correct: nothing on the board asks for halves. The label is "Open half" with
+    no "Fills last" line, the plainest words still true; "Fills last" shows only on a free half of
+    a part-taken block (S6). Under 40px it is the dashed box alone. The left (or top) half is
+    selected, so Keep This Half Empty and Join Halves act at once; Keep This Half Empty is how to
+    leave a half alone. The Open Half section reads "The left half of cell 10. The right half,
+    cell 20, is empty too, so the next new window may fill both." Join Halves "makes cell 10 one
+    empty cell, and the grid 5×2 again" (item 9). No new saved field. Gain: one model, no record
+    of a split that no window holds. Loss: the split shows only until the next fill or join.
+    Pick: as drawn (coordinator, PR 69).
 
 S13. **Keyboard reach.** Today only tiles and open halves take focus. Tab reaches each empty cell
     after the windows, as an open half (S6); S opens its split menu. The keyboard list says so.
@@ -176,8 +175,6 @@ S13. **Keyboard reach.** Today only tiles and open halves take focus. Tab reache
 - Owner grant: yes. Keep This Half Empty (layout-free item 6, state `fill-keep`).
 - Owner grant: yes. Empty-cell selection, for Split Cell on an open cell (layout-free item 2).
   Drawn in states `empty-select`, `empty-menu` and `empty-split` (S9 to S13).
-- Owner grant: yes. A split of an empty cell saves the split (proposed `splits`), so its halves
-  fill as halves, not as one block as layout-free item 6 reads (S12).
 - Question K: the fast split's trigger (Shift+S, double-click, or both) and its rule (S3).
 - Open: Menu List or Popover (S1). Pick: Menu List.
 - Open: 1024 halves (S5). Pick: Initial Only.
