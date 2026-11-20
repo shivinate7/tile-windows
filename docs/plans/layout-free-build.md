@@ -86,7 +86,7 @@ These are the four items PR 51 (Split Cell board) did not build. They are planne
 - Keep This Half Empty sits in the Open Half section.
 - `keepEmpty` is reslotted wherever the page reslots `fill.held`. Clear Board deletes it. The Fill Empty Cells toggles do not clear it. A kept half blocks halving the grid.
 
-**Departs from:** notes S12 first draft, which proposed a `splits: [{mon, slots}]` entry. PR 69 dropped it. The empty split stays one free block and saves nothing (S12, as drawn).
+**Departs from:** notes S12 first draft, which proposed a `splits: [{mon, slots}]` entry. PR 69 dropped it, because a saved split brings back the Subdivide model, which the owner ruled out for Finer Grid (decision `layout-free`, 2026-11-17 19:09 CST). The empty split stays one free block and saves nothing (S12, as drawn).
 
 **L3. Engine: Free Layout areas and item G** (`tile.ps1`; no designer; after L1, since both edit the `Pass` function)
 
