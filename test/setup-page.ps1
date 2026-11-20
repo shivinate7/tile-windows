@@ -120,7 +120,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 151
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 153
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -3918,6 +3918,56 @@ function () {
     $engine = ((@(Split-Ints $extra[0].slots | % { $_ - 1 })) | Sort-Object) -join ','
     $page = ((@($h | ? { $_.name -match 'Zone fills last' } | % { $_.slot })) | Sort-Object) -join ','
     Check 'split open: the page names Zone fills last on the slot tile.ps1 gives the vertical zone window (labels match the engine)' ($page -ne '' -and $page -eq $engine) "page names Zone fills last on slot(s): '$page'; engine: '$engine'; named halves: $(Half-Text $h)"
+  }
+
+  # A zone half keeps its cell, so J on it joins nothing: the keyboard path must match the inspector, which offers no Join Halves there.
+  # Nothing is sent, no "Joined cell N." status is set, and both halves stay. The control is the next case.
+  Case 'split open: J on a focused zone half joins nothing: no POST /layout, no "Joined cell N." status, and both halves stay' {
+    Put-Split $zoneHalfLayout
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with a zone half and an open half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $named = @(Wait-Halves $ws '(?i)empty|open half' 2)
+    Check 'split open: the zone half is named on cell 2 before the press (scope)' (@($named | ? { $_.slot -eq 1 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 1 }).Count -ne 1) { return }
+    $c = Cell-Click $ws 1
+    Check 'split open: zone half cell 2 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 2 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headOpenCond 10)
+    $focused = Js $ws 'const e = document.activeElement; return !!e && e.classList.contains("cellbox") && Number(e.dataset.slot) === 1;'
+    Check 'split open: the selected zone half holds keyboard focus, so J reaches it (scope)' ($focused -eq $true) 'focus is not on the zone half'
+    if ($focused -ne $true) { return }
+    Press-Key $ws 'j' 74 'j'
+    $sent = Layout-Posts-After $ws $c.before
+    Check 'split open: J on the zone half sends no POST /layout' ($sent.Count -eq 0) "POST /layout count: $($sent.Count), bodies: $(Post-Text $sent)"
+    $said = [string](Js $ws 'return document.getElementById("msg").textContent;')
+    Check 'split open: J on the zone half does not report "Joined cell N." (status: see detail)' ($said -notmatch '^Joined cell \d+\.') "status: '$said'"
+    $held = Js $ws 'const q = prev() && prev().placed.find(x => x.id === 1001 && !x.behind); return q ? q.slots : null'
+    Check 'split open: window 1001 still holds slot 0, its own half (both halves stay)' (((Split-Ints $held) -join ',') -eq '0') "window 1001 holds slot(s): '$((Split-Ints $held) -join ',')'"
+    $halves = @(Ax-Named $ws '(?i)empty|open half')
+    $stays = @($halves | ? { $_.slot -eq 1 -and $_.name -match 'Zone fills last' })
+    Check 'split open: the zone half still reads "Zone fills last" on slot 1 (both halves stay)' ($stays.Count -eq 1) "named halves: $(Half-Text $halves)"
+  }
+
+  # The control for the case above: J on an open half outside the zone (cell 4) still joins, with one POST /layout and the joined status.
+  Case 'split open: J on an open half outside the zone still joins (control): one POST /layout, and the status reads "Joined cell N."' {
+    Put-Split $zoneHalfLayout
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with a zone half and an open half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $named = @(Wait-Halves $ws '(?i)empty|open half' 2)
+    Check 'split open: the open half outside the zone is named on cell 4 before the press (scope)' (@($named | ? { $_.slot -eq 3 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 3 }).Count -ne 1) { return }
+    $c = Cell-Click $ws 3
+    Check 'split open: open half cell 4 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 4 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headOpenCond 10)
+    Press-Key $ws 'j' 74 'j'
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $c.before) 10)
+    $sent = Layout-Posts-After $ws $c.before
+    Check 'split open: J on the open half outside the zone sends one POST /layout (control)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count), bodies: $(Post-Text $sent)"
+    $said = [string](Js $ws 'return document.getElementById("msg").textContent;')
+    Check 'split open: J on the open half outside the zone reports "Joined cell N." (control)' ($said -match '^Joined cell \d+\.') "status: '$said'"
   }
 
   # ---- Split Cell: the selection after a grid change, the stack behind a half, and a split that doubles nothing ----------------------
