@@ -1,0 +1,1 @@
+- kept-half-wait-reason: In fill-keep, a waiting window's reason reads "No room: add a column" (app.html:1205), though the kept half is the reason. Seen: 2026-11-20 x1

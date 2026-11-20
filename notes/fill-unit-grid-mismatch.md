@@ -1,0 +1,1 @@
+- fill-unit-grid-mismatch: tile.ps1 Get-OpenUnits (tile.ps1:695) uses only floor(Cols/ux) x floor(Rows/uy) cells. With a hand-edited grid that is not a multiple of fill.unit, cells outside that band are never used. The page cannot write that state: its grid edits set unit and mult together (app.html:1874, :1904). Seen: 2026-11-20 x1
