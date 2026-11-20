@@ -1,0 +1,1 @@
+- free-back-popover-click: The Back to the Grid summary uses the plans captured at open, while the preview recomputes. The pointerdown that closes the popover re-renders, so clicking a space probably selects nothing. Unmeasured. Decision: layout free (`layout-free`). Seen: 2026-11-19 x1

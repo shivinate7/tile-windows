@@ -1,0 +1,1 @@
+- badlink-no-shortcut: Show-BadLink (tray.ps1:524) swallows a refused toast. With no Start shortcut there is no balloon fallback. Decision: run undo (`run-undo`), which says a toast needs the Start shortcut and otherwise the tray balloon is used. Found in the PR 60 review, finding F5. Seen: 2026-11-19 x1

@@ -1,0 +1,1 @@
+- free-back-counts-pins: The Back to the Grid popover counts pins, not windows behind a pin, in its "N windows change size" and "stays put" lines (app.html:2444-2490). Decision: layout free (`layout-free`). Seen: 2026-11-19 x1
