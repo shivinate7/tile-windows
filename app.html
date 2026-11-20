@@ -951,11 +951,18 @@ function setSnap(d){
 const inflight={};
 async function newestPrev(id){while(inflight[id])await inflight[id];return prevs[id]}
 function preview(id){const p=previewRun(id).finally(()=>{if(inflight[id]===p)delete inflight[id]});inflight[id]=p;return p}
+// A scene whose newest preview failed, by id: its old preview is dropped, so the board never draws windows the scene did not place.
+const pfail={};
 async function previewRun(id){
   const n=pseq[id]=(pseq[id]||0)+1;
-  try{const r=await post("preview",withCats(work[id]));if(!r.ok)throw new Error(await r.text());const j=await r.json();
-    if(pseq[id]!==n)return;prevs[id]=j;if(id===selId){optim=null;flLive=null}render()}
-  catch(e){status("Preview failed: "+e.message)}}
+  try{const r=await post("preview",withCats(work[id]));if(!r.ok)throw new Error((await r.text()).trim()||"The server said "+r.status);
+    // An answer with no body, or no layout in it, is a failure too.
+    const j=await r.json().catch(()=>null);if(!j||!Array.isArray(j.placed)||!Array.isArray(j.left))throw new Error("The server gave no layout");
+    if(pseq[id]!==n)return;delete pfail[id];prevs[id]=j;if(id===selId){optim=null;flLive=null}render()}
+  catch(e){if(pseq[id]!==n)return;
+    const why=e instanceof TypeError?"The app server stopped answering":String(e.message||e).replace(/\.\s*$/,""),sc=cfg.scenes.find(x=>x.id===id)||work[id]||{};
+    pfail[id]=why;delete prevs[id];if(id===selId){optim=null;flLive=null}
+    const msg=`Preview failed for ${sc.name||id}: ${why}`;status(msg);if(id===selId)toast(msg,"bad",{sticky:true});render()}}
 async function previewAll(){await preview(selId);for(const s of cfg.scenes)if(s.id!==selId)await preview(s.id);
   for(const id in work)if(!saved(id)&&id!==selId)await preview(id)}
 
@@ -3003,7 +3010,7 @@ document.addEventListener("click",async ev=>{
   else if(t.id==="revert"){edit(s=>{Object.keys(s).forEach(k=>delete s[k]);Object.assign(s,clone(saved(selId)))},"Reverted to the saved scene.");sceneMsg="Reverted to the saved scene.";render()}
   else if(t.id==="del"){const s=scene();if(s.builtIn)return;const f=await ask(`Delete ${s.name}?`,`<p class="note">The scene and its trigger go away. Your windows do not move.</p>`,"Delete",true);if(!f)return;
     const next=clone(cfg);next.scenes=next.scenes.filter(x=>x.id!==selId);
-    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){clearTimeout(svT[selId]);delete svT[selId];delete svAgain[selId];delete work[selId];delete prevs[selId];delete unsaved[selId];delete failed[selId];delete stale[selId];delete lq[selId];delete lsaved[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
+    if(!saved(selId)||await saveConfig(next,`Deleted ${s.name}.`)){clearTimeout(svT[selId]);delete svT[selId];delete svAgain[selId];delete work[selId];delete prevs[selId];delete pfail[selId];delete unsaved[selId];delete failed[selId];delete stale[selId];delete lq[selId];delete lsaved[selId];hist=hist.filter(h=>h.id!==selId);selId=next.scenes[0].id;render()}}
   else if(t.id==="editcats")editCats();
   else if(t.id==="quit"){if(!await ask("Stop the Tile Windows server?",`<p class="note">This page stops working until you open Tile Windows again. Your scenes are saved. Your windows do not move.</p>`,"Stop Server",true))return;try{await post("quit","quit")}catch(_){}document.body.innerHTML='<p style="padding:24px;font:15px system-ui">Server stopped. You can close this tab.</p>'}
 });
@@ -3114,7 +3121,8 @@ async function selftestTriggers(){
 async function selftestScenes(){
 
   const out={drawn:{},names:[],cell:cellRect({x:0,y:0,w:1365,h:1001},{c:2,r:2},0,0,1,1)};
-  for(const s of cfg.scenes){selId=s.id;await preview(s.id);
+  out.previewFailed=[];
+  for(const s of cfg.scenes){selId=s.id;await preview(s.id);if(pfail[s.id])out.previewFailed.push("preview failed for "+s.id);
     out.drawn[s.id]=Object.entries(drawn).filter(([,d])=>d.kind==="pin"||d.kind==="fill"||d.kind==="zone").map(([id,d])=>({id:+id,x:d.x,y:d.y,w:d.w,h:d.h}))}
   // Into the bay and back: the scene records it, the engine leaves it, the bay shows it; placing it takes it out.
   const zs=cfg.scenes.find(s=>(s.zones||[]).length);
