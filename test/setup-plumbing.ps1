@@ -9,6 +9,10 @@
 #   Tray, a failed read: Read-Monitors (tray.ps1) on a failed tile.ps1 -Monitors returns no monitors or the last good set, never throws, and
 #   never the Windows screen list (no ids, so its key differs). The tick passes Get-MonitorKey of it to Step-Tray: a failed read fires
 #   no display trigger, and neither does the good read after it, for the same monitors.
+#   Tray, a failed read is read again (debt tray-monitors-read-no-retry): when the tick's read gives no monitors, it reads again on a later
+#   tick, so a monitor change that landed during the failed read fires its display scene once a read succeeds. The retries are bounded:
+#   a read that keeps failing is not read every tick forever (the cases cap it at 50 tile.ps1 -Monitors runs in 600 ticks; the builder
+#   names the real count). A good read is read once, and a display change after a long failure is read and fires.
 #   Server (serve.ps1, -From snapshot, config in a case's own TILE_HOME):
 #     GET  /snapshot  {monitors, windows, setup: {key, name, follows}}; the plugged-in setup is registered in config (first setup: Desk).
 #     GET  /config    the config. GET /layouts: {<scene id>: {layout, follows}}. layout is Resolve-TileLayout's layout of that scene for the
@@ -718,6 +722,111 @@ try {
     Check 'tray: the seeding read applies nothing (control)' ($a1 -eq '') "applied: '$a1'"
     Check 'tray: a failed monitor read fires no display trigger' ($a2 -eq '') "applied: '$a2'"
     Check 'tray: the good read after a failed read fires no display trigger (same monitors)' ($a3 -eq '') "applied: '$a3'"
+  }
+
+  # ---- Tray: a failed monitor read is read again (debt tray-monitors-read-no-retry) ----
+  # The tick clears its dirty mark before it reads, so a read that fails (Read-Monitors gives $null) was dropped: a monitor change that landed
+  # during it fired nothing until the next display change. The retry belongs in the tick, which tray.ps1 keeps in $timer.add_Tick below -Lib's
+  # return. So these cases take the tick's own text from tray.ps1 by the parser (as Read-Monitors above) and run it one tick per synthetic
+  # second. The tick runs with the product's Read-Monitors and tile.ps1 -Monitors (the TILE_SCREENS_FILE seam). Only the clock, the config
+  # text, the Teams reads, Apply-Scene and the two Win32 signal classes are the case's own: the classes are the product's text (the case does
+  # not call Start, so no hook runs). How the retry is kept (the dirty mark again, a count) is the builder's: the cases read only what the
+  # tick reads and applies. State the fix adds to the tick must read right from $null, since the case starts the tick as the agent does.
+  # The bound is the builder's number: the cap below is only well under one run per tick, the loop the debt rules out.
+  $tickCalls = @($trayAst.FindAll({ param($n) $n -is [Management.Automation.Language.InvokeMemberExpressionAst] -and "$($n.Member.Value)" -eq 'add_Tick' }, $true))
+  $trayTick = $null
+  if ($tickCalls.Count -eq 1 -and $tickCalls[0].Arguments.Count -eq 1 -and $tickCalls[0].Arguments[0] -is [Management.Automation.Language.ScriptBlockExpressionAst]) {
+    $trayTick = $tickCalls[0].Arguments[0].ScriptBlock.GetScriptBlock()
+  }
+  $libIf = @($trayAst.EndBlock.Statements | ? { $_ -is [Management.Automation.Language.IfStatementAst] -and $_.Clauses[0].Item1.Extent.Text -eq '$Lib' })[0]
+  foreach ($cls in 'TileDisplayWatch', 'TileInput') {
+    if ($cls -as [type]) { continue }
+    $addType = @($trayAst.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Add-Type' -and $n.Extent.Text -match "class $cls\b" }, $true))[0]
+    if ($addType) { . ([scriptblock]::Create($addType.Extent.Text)) }
+  }
+  # Two of the three monitors: the set after one is unplugged. Its setup key is $k2, which $trayCfg's scene 'two' is made on.
+  $screensTwo = Join-Path $runDir 'screens-two.json'
+  [IO.File]::WriteAllText($screensTwo, (ConvertTo-Json -Depth 5 -Compress -InputObject @(@((ConvertFrom-Json ([IO.File]::ReadAllText($screensGood, $utf8))) | % { $_ }) | ? { $_.id -ne 'LEN3' })), $utf8)
+
+  # Runs the tray's tick $Ticks times, one synthetic second apart, and says what it did. $Display: the ticks before which Windows reports a
+  # display change. $Seam: the monitor file for a read, from (tick number, read number); a read is one tile.ps1 -Monitors run.
+  function Invoke-TrayTicks([int]$Ticks, [int[]]$Display, [scriptblock]$Seam) {
+    # The product's functions that sit below -Lib's return, so a helper a fix adds there is defined; the stubs follow and win.
+    foreach ($fn in @($trayAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Extent.StartLineNumber -gt $libIf.Extent.EndLineNumber }, $false))) { . ([scriptblock]::Create($fn.Extent.Text)) }
+    # Each run starts as a new agent does: a script variable a fix adds to the tick (a retry count) is gone when the run ends.
+    $had = @(Get-Variable -Scope Script | % { $_.Name })
+    $script:tk = @{ now = [datetime]'2026-11-20 10:00:00'; tick = 0; reads = 0; applied = New-Object Collections.ArrayList; errors = New-Object Collections.ArrayList }
+    function Get-Date { if ($args.Count) { Microsoft.PowerShell.Utility\Get-Date @args } else { $script:tk.now } }
+    function Get-TileConfigText { ConvertTo-Json -Depth 8 -Compress $trayCfg }
+    function Get-MicUsage { $null }
+    function Get-TeamsWindows { @() }
+    function Apply-Scene($s, [string]$why, [string]$prev = '') { [void]$script:tk.applied.Add([string]$s.id) }
+    function Offer-Scene($s, [string]$why) { [void]$script:tk.applied.Add("offer:$($s.id)") }
+    $realTile = $tile
+    $tile = { param([switch]$Monitors) $script:tk.reads++; $env:TILE_SCREENS_FILE = & $Seam $script:tk.tick $script:tk.reads; & $realTile -Monitors:$Monitors }
+    $quitEv = New-Object Threading.ManualResetEvent $false; $openEv = New-Object Threading.ManualResetEvent $false; $linkEv = New-Object Threading.ManualResetEvent $false
+    # The tick writes these script variables: keep what the file holds ($plugged is the server cases' monitor list) and put it back.
+    $names = 'plugged', 'first', 'dirtyAt', 'tick', 'state', 'agendaRaw', 'offer'
+    $held = @{}; foreach ($v in $names) { $held[$v] = Get-Variable -Scope Script -Name $v -ValueOnly -ErrorAction SilentlyContinue }
+    $heldEnv = $env:TILE_SCREENS_FILE
+    $per = New-Object Collections.ArrayList
+    try {
+      $script:state = New-TrayState; $script:dirtyAt = $null; $script:tick = 0; $script:first = $true; $script:plugged = $null; $script:agendaRaw = $null; $script:offer = $null
+      [TileDisplayWatch]::Dirty = $false
+      for ($i = 1; $i -le $Ticks; $i++) {
+        $script:tk.tick = $i; $script:tk.now = $script:tk.now.AddSeconds(1)
+        if ($Display -contains $i) { [TileDisplayWatch]::Dirty = $true }
+        $before = $script:tk.reads
+        try { $null = & $trayTick } catch { [void]$script:tk.errors.Add("tick ${i}: $($_.Exception.Message)") }
+        [void]$per.Add($script:tk.reads - $before)
+      }
+      $out = [pscustomobject]@{ reads = [int]$script:tk.reads; per = @($per); applied = (@($script:tk.applied) -join ','); errors = (@($script:tk.errors) -join '; ') }
+    } finally {
+      foreach ($v in $names) { Set-Variable -Scope Script -Name $v -Value $held[$v] }
+      foreach ($v in @(Get-Variable -Scope Script | % { $_.Name } | ? { $had -notcontains $_ -and $names -notcontains $_ })) { Remove-Variable -Scope Script -Name $v -ErrorAction SilentlyContinue }
+      $env:TILE_SCREENS_FILE = $heldEnv; [TileDisplayWatch]::Dirty = $false
+      $quitEv.Dispose(); $openEv.Dispose(); $linkEv.Dispose()
+    }
+    $out
+  }
+  # What every run must show before its subject is read: the tick ran clean, and its first tick made the seeding read (one tile.ps1 run).
+  function Test-TickScope($r, [string]$what) {
+    Check "tray tick: $what ran without an error (scope)" ($r.errors -eq '') $r.errors
+    Check "tray tick: $what read the monitors once on its first tick (scope)" ($r.per.Count -and $r.per[0] -eq 1) "reads on tick 1: $(if ($r.per.Count) { $r.per[0] } else { 'no tick ran' })"
+  }
+
+  Case 'tray tick: the tick is one add_Tick block, and tray.ps1 has its -Lib return (scope)' {
+    Check 'tray tick: tray.ps1 has one add_Tick block (scope)' ($null -ne $trayTick) "add_Tick calls found: $($tickCalls.Count)"
+    Check "tray tick: tray.ps1 has the 'if (`$Lib) { return }' statement (scope)" ($null -ne $libIf) 'no such statement at the top level'
+    Check 'tray tick: the two signal classes are loaded (scope)' (('TileDisplayWatch' -as [type]) -and ('TileInput' -as [type])) 'a class is missing'
+  }
+  if ($null -ne $trayTick -and $null -ne $libIf) {
+    # The harm: the display changes, the read of the new monitors fails, and the read after it would have given the new set.
+    Case 'tray tick: a failed monitor read is read again, so the display change it hid fires' {
+      $r = Invoke-TrayTicks 40 @(2) { param($t, $n) if ($n -eq 1) { $screensGood } elseif ($n -eq 2) { $screensGone } else { $screensTwo } }
+      Test-TickScope $r 'the recovery run'
+      Check 'tray tick: the display change was read, and the read failed (scope)' ($r.reads -ge 2) "tile.ps1 -Monitors runs: $($r.reads)"
+      Check 'tray tick: after a failed read, a later good read of other monitors fires the display scene' ($r.applied -ceq 'two') "applied: '$($r.applied)' after $($r.reads) runs of tile.ps1 -Monitors in 40 ticks"
+    }
+    # A read that keeps failing: read again (at least once), and not on every tick for as long as it fails.
+    Case 'tray tick: a monitor read that keeps failing is read again, and not forever' {
+      $r = Invoke-TrayTicks 600 @(2) { param($t, $n) if ($n -eq 1) { $screensGood } else { $screensGone } }
+      Test-TickScope $r 'the failing run'
+      Check 'tray tick: a failed monitor read is read again on a later tick' ($r.reads -ge 3) "tile.ps1 -Monitors runs in 600 ticks: $($r.reads) (the seeding read, the failed one, and at least one more wanted)"
+      Check 'tray tick: a monitor read that keeps failing stops being read (control)' ($r.reads -le 50) "tile.ps1 -Monitors runs in 600 ticks: $($r.reads), cap 50"
+    }
+    # A good read is read once: a fix that queues a retry after every read passes the cases above and fails here.
+    Case 'tray tick: a good monitor read is not read again (control)' {
+      $r = Invoke-TrayTicks 60 @(2) { param($t, $n) $screensGood }
+      Test-TickScope $r 'the good run'
+      Check 'tray tick: a good read after a display change is read once, with the seeding read before it (control)' ($r.reads -eq 2) "tile.ps1 -Monitors runs in 60 ticks: $($r.reads)"
+    }
+    # The bound ends with the failing run: a display change long after it is read and fires, so no count outlives the failure it was for.
+    Case 'tray tick: a display change after a long failure is read and fires (control)' {
+      $r = Invoke-TrayTicks 240 @(2, 200) { param($t, $n) if ($n -eq 1) { $screensGood } elseif ($t -lt 200) { $screensGone } else { $screensTwo } }
+      Test-TickScope $r 'the late-change run'
+      Check 'tray tick: a display change after the retries ended fires its scene (control)' ($r.applied -ceq 'two') "applied: '$($r.applied)' after $($r.reads) runs of tile.ps1 -Monitors in 240 ticks"
+    }
   }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"

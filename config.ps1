@@ -12,7 +12,9 @@ $TileNote = ''  # set in this process when a read recovered from a bad file; the
 function Use-TileLock([scriptblock]$fn) {
   $h = [BitConverter]::ToString([Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($TileHome.ToLowerInvariant()))).Replace('-', '').Substring(0, 12)
   $m = New-Object Threading.Mutex($false, "Local\TileWindows-Write-$h")
-  try { try { [void]$m.WaitOne(10000) } catch [Threading.AbandonedMutexException] {}; & $fn } finally { try { $m.ReleaseMutex() } catch {}; $m.Dispose() }
+  $got = $false
+  # A holder that died leaves the lock abandoned: we own it then, so we go on. A timeout means a live writer still holds it, so the block must not run unlocked.
+  try { try { $got = $m.WaitOne(10000) } catch [Threading.AbandonedMutexException] { $got = $true }; if (-not $got) { throw 'Another writer held the tile-windows config for over 10 seconds, so nothing was changed. Try again in a moment.' }; & $fn } finally { if ($got) { try { $m.ReleaseMutex() } catch {} }; $m.Dispose() }
 }
 # A file op that a reader holding the file can make fail for a moment: try again, up to ~1 s.
 function Retry-TileIO([scriptblock]$fn) { for ($i = 0; ; $i++) { try { return (& $fn) } catch [IO.IOException] { if ($i -ge 20) { throw }; Start-Sleep -Milliseconds 50 } } }

@@ -184,21 +184,28 @@ function Move-Win($win, $x, $y, $ww, $hh) {
 # Free Layout areas (scene grids[mon].free.areas). An area is a rect in fractions of the work area, [fx, fy, fw, fh], plus a pin (an index into the scene's
 # pins), an app and title, or nothing.
 # Pixel lines: each line is rounded once per monitor, so two areas that meet at one fraction share one pixel. A fraction is first rounded to 9 places, so
-# a sum such as f + (1 - f) lands on the same line as 1. [Math]::Round rounds half to even, as the [int] casts in Pass do.
-function Get-AreaPixelRects($rects, [int]$W, [int]$H) {
+# a sum such as f + (1 - f) lands on the same line as 1. [Math]::Round rounds half to even, as the [int] casts in Pass do. Each line is then held inside the
+# work area (0 to EndX, 0 to EndY) in double, before the [int] cast, so a rect past an edge is cut at the edge and one wholly outside comes out 0 px wide or high.
+# The end defaults to the work area's size. A grid's cell width is rounded, so its last edge can pass the work area by a pixel or two (Get-GridEnd): a free area
+# built from the grid's last cell ends there, and a caller that knows the grid passes that end so the area places as the cell did.
+function Get-GridEnd([int]$len, [int]$n) { if ($n -lt 1) { return $len }; [Math]::Max($len, $n * [int]($len / $n)) }
+function Get-AreaLine([double]$f, [int]$len, [int]$end) { [int][Math]::Max(0.0, [Math]::Min([double]$end, [Math]::Round([Math]::Round($f, 9) * $len))) }
+function Get-AreaPixelRects($rects, [int]$W, [int]$H, [int]$EndX = 0, [int]$EndY = 0) {
+  if ($EndX -lt $W) { $EndX = $W }; if ($EndY -lt $H) { $EndY = $H }
   $out = New-Object System.Collections.ArrayList
   foreach ($r in @($rects)) {
-    $x0 = [int][Math]::Round([Math]::Round([double]$r[0], 9) * $W); $x1 = [int][Math]::Round([Math]::Round([double]$r[0] + [double]$r[2], 9) * $W)
-    $y0 = [int][Math]::Round([Math]::Round([double]$r[1], 9) * $H); $y1 = [int][Math]::Round([Math]::Round([double]$r[1] + [double]$r[3], 9) * $H)
+    $x0 = Get-AreaLine ([double]$r[0]) $W $EndX; $x1 = Get-AreaLine ([double]$r[0] + [double]$r[2]) $W $EndX
+    $y0 = Get-AreaLine ([double]$r[1]) $H $EndY; $y1 = Get-AreaLine ([double]$r[1] + [double]$r[3]) $H $EndY
     [void]$out.Add([int[]]@($x0, $y0, ($x1 - $x0), ($y1 - $y0)))
   }
   , $out.ToArray()
 }
 
-# One monitor's free areas, ready for Pass. Returns $null when no area has a usable rect. Else: Rects (pixel rects relative to the work area, in reading
+# One monitor's free areas, ready for Pass. An area is dropped when its rect is not four finite numbers, or has no width or height, or is under 1 px wide or high
+# once rounded and cut to the work area. Returns $null when no area has a usable rect. Else: Rects (pixel rects relative to the work area, in reading
 # order: top line, then left line), Pins (pin entries whose Slots are one area's position in Rects; a named area is a pin entry with Named set), and Missing
 # (pins on this monitor that no area holds, and areas whose pin is not in the scene). The fill takes the areas no pin or name holds, in Rects order.
-function Resolve-FreeAreas($areas, $scenePins, [string]$role, [int]$W, [int]$H) {
+function Resolve-FreeAreas($areas, $scenePins, [string]$role, [int]$W, [int]$H, [int]$Cols = 0, [int]$Rows = 0) {
   $list = @($areas); $okIdx = @(); $fr = @()
   for ($i = 0; $i -lt $list.Count; $i++) {
     $a = $list[$i]; if ($null -eq $a) { continue }
@@ -210,7 +217,10 @@ function Resolve-FreeAreas($areas, $scenePins, [string]$role, [int]$W, [int]$H) 
     $okIdx += $i; $fr += , $d
   }
   if (-not $okIdx.Count) { return $null }
-  $px = Get-AreaPixelRects $fr $W $H
+  $px0 = Get-AreaPixelRects $fr $W $H (Get-GridEnd $W $Cols) (Get-GridEnd $H $Rows)
+  $keep = @(0..($okIdx.Count - 1) | ? { $px0[$_][2] -ge 1 -and $px0[$_][3] -ge 1 })
+  if (-not $keep.Count) { return $null }
+  $okIdx = @($keep | % { $okIdx[$_] }); $px = @($keep | % { , $px0[$_] })
   $order = @(0..($okIdx.Count - 1) | Sort-Object { $px[$_][1] }, { $px[$_][0] }, { $_ })
   $slotOf = @{}; $rects = @()
   for ($s = 0; $s -lt $order.Count; $s++) { $slotOf[$okIdx[$order[$s]]] = $s; $rects += , $px[$order[$s]] }
@@ -351,6 +361,8 @@ function Get-GapMoves($px, $org, $size, $wins, $locked, $absentLast, $last) {
   function Test-SameRect($a, $b) { $a[0] -eq $b[0] -and $a[1] -eq $b[1] -and $a[2] -eq $b[2] -and $a[3] -eq $b[3] }
   # $in lies inside $out, give or take one pixel.
   function Test-Inside($in, $out) { $in[0] -ge $out[0] - 1 -and $in[1] -ge $out[1] - 1 -and $in[0] + $in[2] -le $out[0] + $out[2] + 1 -and $in[1] + $in[3] -le $out[1] + $out[3] + 1 }
+  # The areas' own far edges: a grid's last cell can end a pixel or two past the work area (Get-GridEnd), and its rect must come back whole.
+  $ex = $sw; $ey = $sh; foreach ($t in $abs) { $ex = [Math]::Max($ex, $t[0] - $org[0] + $t[2]); $ey = [Math]::Max($ey, $t[1] - $org[1] + $t[3]) }
   $lockSet = @{}; foreach ($l in @($locked)) { if ($null -ne $l) { $lockSet[[int]$l] = 1 } }
   $has = @{}; $elig = @{}
   foreach ($w in @($wins)) {
@@ -369,7 +381,7 @@ function Get-GapMoves($px, $org, $size, $wins, $locked, $absentLast, $last) {
   foreach ($w in @($wins)) {
     $s = [int]$w.slot
     if ($lockSet.ContainsKey($s) -or -not $elig["$($w.id)"] -or $null -eq $res[$s]) { continue }
-    $q = (Get-AreaPixelRects @(, $res[$s]) $sw $sh)[0]
+    $q = (Get-AreaPixelRects @(, $res[$s]) $sw $sh $ex $ey)[0]
     $to = [int[]]@(($org[0] + $q[0]), ($org[1] + $q[1]), $q[2], $q[3])
     if (-not (Test-SameRect ([int[]]@($w.cur)) $to)) { [pscustomobject]@{ id = $w.id; slot = $s; rect = $to } }
   }
@@ -847,7 +859,7 @@ foreach ($role in $passKeys) {
   # Free Layout areas replace the grid: the slots are the areas in reading order, zones and held cells pause, and a pin takes the area that names it.
   # A monitor that is not plugged in gets a nominal size, since it only claims its windows.
   $fr = $null
-  if ($g -and $g.free -and @($g.free.areas | ? { $_ }).Count) { $fr = Resolve-FreeAreas $g.free.areas $sc.pins $role $(if ($phantom) { 1000 } else { $scr.W }) $(if ($phantom) { 1000 } else { $scr.H }) }
+  if ($g -and $g.free -and @($g.free.areas | ? { $_ }).Count) { $fr = Resolve-FreeAreas $g.free.areas $sc.pins $role $(if ($phantom) { 1000 } else { $scr.W }) $(if ($phantom) { 1000 } else { $scr.H }) ([int]$g.c) ([int]$g.r) }
   if ($fr) { $gc = $fr.Rects.Count; $gr = 1; $missing += $fr.Missing }
   elseif ($g) { $mult = @(Get-CellPair $g.mult); $gc = [int]$g.c * $mult[0]; $gr = [int]$g.r * $mult[1] }
   elseif ($phantom) {

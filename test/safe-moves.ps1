@@ -19,8 +19,13 @@
 #     exempt runs, the opt-in, a neither-var run, and the tray and server apply paths (their dry seams) still run.
 #   8 L5a (red 8a and 8c on 74f87cb): -GapFill joins the guard. A bare -GapFill -Json under the suite, or under CLAUDECODE, is refused. 8b, 8d and
 #     8e are green controls: a -Scene run is refused by the old guard already, and -DryRun and -From are exempt.
-# Every flagless run names a scene or spec that matches no open window (tile-test-no-such-app), and the scope check proves no
-# open window has that app name. So no flagless run can move a window on any code.
+#   9 gap live move (debt gap-fill-live-move-untested): the one live -GapFill run. The test starts its own throwaway window, runs the real
+#     engine with TILE_TEST_ALLOW_LIVE=1 on a scene whose only matching window is that one, and reads the window's real rect afterwards.
+#     Red on a scratch copy of tile.ps1 with the gap branch's Move-Win call removed: only 9i goes red there, and every other case stays green.
+# Every other flagless run names a scene or spec that matches no open window (tile-test-no-such-app), and the scope check proves no
+# open window has that app name. So no flagless run can move a window on any code. Case 9 is the only run that moves a window, and it
+# moves only its own throwaway one: its scene pins the title tile-test-gap-<guid>, and a dry run must place that one window and no other
+# before any live run. If that dry run places anything else, case 9 prints a SKIP with the reason and runs no live call.
 # Each child's env is set or stripped in full. A probe child first shows which seam vars reached it (scope before subject).
 # Run: powershell -NoProfile -ExecutionPolicy Bypass -File test\safe-moves.ps1
 $ErrorActionPreference = 'Stop'
@@ -269,10 +274,138 @@ Apply-Scene ([pscustomobject]@{ id = 'default'; name = 'Default' }) 'from the te
   Check '8d suite: -GapFill with -DryRun is exempt, so it is not refused (control)' (($gfDry.Out + $gfDry.Err) -notmatch 'TILE_TEST_ALLOW_LIVE') "out [$(Short $gfDry.Out)] err [$(Short $gfDry.Err)]"
   $gfFrom = Invoke-PsChild "-File `"$tile`" -GapFill -From `"$fixture`" -Json" (New-ChildEnv $suite)
   Check '8e suite: -GapFill with -From is exempt, so it is not refused (control)' (($gfFrom.Out + $gfFrom.Err) -notmatch 'TILE_TEST_ALLOW_LIVE') "out [$(Short $gfFrom.Out)] err [$(Short $gfFrom.Err)]"
+
+  # ---- 9. The gap run's live move (debt gap-fill-live-move-untested). tile.ps1 -GapFill without -DryRun calls Move-Win for each window it moves,
+  # and no other case reaches that call: -From and -DryRun skip it, and the guard refuses the rest. So this case runs it for real, on a window it owns.
+  # Why only that window moves: a -Scene -GapFill run reaches Move-Win at one place, the gap branch (a -Place run is another path; the passes the
+  # branch calls run as dry runs). Which windows it moves: the scene's pins, found by app and title. The one pin names a title with a fresh guid, and
+  # the engine's own dry run must place exactly the throwaway window before any live call; else the case prints SKIP and runs nothing live.
+  # The screen is a seam monitor (TILE_SCREENS_FILE): 1000 x 700, inside a real work area, so the window never covers a whole monitor.
+  # Scene: two free areas, left half (pinned to the throwaway) and right half (no window). -Absent names a handle no window has, and -Last gives its
+  # rect as the right half, so the right half is gone and the left window grows to the whole 1000 x 700. The window sits at its -Last rect (the rect
+  # the engine reads for it), which holds the left half's centre, so it may move. The assert is the window's real rect, read back by handle from the
+  # engine's bare snapshot: the run's own output names the move even when no window moved.
+  function Get-GapWindows {
+    $s = Invoke-PsChild "-File `"$tile`" -Json" (New-ChildEnv $suite)
+    $o = $null; try { $o = ConvertFrom-Json (NoWarn $s.Out) } catch { }
+    [pscustomobject]@{ Ok = ($s.Code -eq 0 -and $null -ne $o -and $o.PSObject.Properties.Name -contains 'windows'); Windows = @($o.windows | % { $_ }); Out = (Short $s.Out) }
+  }
+  function Get-GapRect($windows, [int64]$id) { $w = @($windows | ? { [int64]$_.id -eq $id })[0]; if ($w) { '{0},{1},{2},{3}' -f [int]$w.x, [int]$w.y, [int]$w.w, [int]$w.h } else { 'no such window' } }
+  # One tile.ps1 gap run on the seam screen, as a child. $extra: its further switches. Returns the child's result and its parsed -Json (or $null).
+  function Invoke-GapRun([string]$extra, $envSet) {
+    $r = Invoke-PsChild "-File `"$tile`" -Scene `"$gapScene`" -GapFill -Absent $gapFake -Json $extra" (New-ChildEnv $envSet)
+    $o = $null; try { $o = ConvertFrom-Json (NoWarn $r.Out) } catch { }
+    [pscustomobject]@{ Code = $r.Code; Out = (Short ($r.Out + $r.Err)); Placed = @($o.placed | % { $_ }); Parsed = ($null -ne $o) }
+  }
+  function Stop-GapForm {
+    if ($script:gapForm -and -not $script:gapForm.HasExited) { $script:gapForm.Kill() }
+    if ($script:gapForm) { [void]$script:gapForm.WaitForExit(10000) }
+  }
+  function Test-GapLiveMove {
+    $title = 'tile-test-gap-' + [guid]::NewGuid().ToString('n')
+    $script:gapFake = 2   # a handle that no window has; scope 9b checks it against the snapshot
+    # Scope: a real monitor (by the engine's own read) with room for the 1000 x 700 seam screen and a margin.
+    $mp = Invoke-PsChild "-File `"$tile`" -Monitors" (New-ChildEnv $suite)
+    $mo = $null; try { $mo = ConvertFrom-Json (NoWarn $mp.Out) } catch { }
+    $gm = @(@($mo) | % { $_ } | ? { [int]$_.w -ge 1040 -and [int]$_.h -ge 740 })[0]
+    if (-not $gm) { "SKIP  9 gap live move: no monitor has a 1040 x 740 work area for the throwaway screen"; return }
+    $gx = [int]$gm.x + 20; $gy = [int]$gm.y + 20
+    $seam = Join-Path $run 'screens-gap-live.json'
+    [IO.File]::WriteAllText($seam, ('[{"name":"GAP-LIVE","x":' + $gx + ',"y":' + $gy + ',"w":1000,"h":700,"bw":1000,"bh":700}]'), $utf8)
+    $script:gapScene = Join-Path $run 'scene-gap-live.json'
+    $sc = @{ id = 'gap-live'; name = 'Gap live'
+      grids = @{ wide = @{ c = 1; r = 1; free = @{ areas = @(@{ rect = @(0, 0, 0.5, 1); pin = 0 }, @{ rect = @(0.5, 0, 0.5, 1) }) } } }
+      pins = @(@{ app = 'powershell'; match = $title; mon = 'wide'; slots = @(0) }); zones = @(); bay = @()
+      fill = @{ mon = 'wide'; apps = @('tile-test-no-such-app'); skip = @(); sort = 'app' } }
+    [IO.File]::WriteAllText($script:gapScene, (ConvertTo-Json -InputObject $sc -Depth 8 -Compress), $utf8)
+    $dryEnv = @{ TILE_TEST_SUITE = '1'; TILE_SCREENS_FILE = $seam }
+    $liveEnv = @{ TILE_TEST_SUITE = '1'; TILE_TEST_ALLOW_LIVE = '1'; TILE_SCREENS_FILE = $seam }
+    $whole = "$gx,$gy,1000,700"
+
+    # The throwaway window: a plain form with the guid title, started by this test, at a rect that holds the left half's centre. It reports its handle.
+    $fs = Join-Path $run 'gap-form.ps1'
+    $fsrc = @'
+$WarningPreference = 'SilentlyContinue'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -ReferencedAssemblies System.Windows.Forms -TypeDefinition 'public class QuietForm : System.Windows.Forms.Form { protected override bool ShowWithoutActivation { get { return true; } } }'
+$f = New-Object QuietForm
+$f.Text = $env:TILE_TEST_TITLE
+$f.StartPosition = 'Manual'
+$f.Location = New-Object Drawing.Point([int]$env:TILE_TEST_X, [int]$env:TILE_TEST_Y)
+$f.Size = New-Object Drawing.Size(400, 500)
+$f.Add_Shown({ [Console]::Out.WriteLine($f.Handle.ToInt64()) })
+[Windows.Forms.Application]::Run($f)
+'@
+    [IO.File]::WriteAllText($fs, $fsrc, $utf8)
+    $script:gapForm = Invoke-PsChild "-File `"$fs`"" (New-ChildEnv @{ TILE_TEST_TITLE = $title; TILE_TEST_X = ($gx + 100); TILE_TEST_Y = ($gy + 100) }) -NoWait
+    # The form's first lines may be warnings (Add-Type warns of a type with no public members): read up to five lines for the handle. Each wait is a
+    # hang guard, far above the second or two the form takes to show.
+    $hw = [int64]0
+    for ($n = 0; $n -lt 5 -and $hw -le 0; $n++) {
+      $line = $script:gapForm.StandardOutput.ReadLineAsync()
+      if (-not $line.Wait(30000) -or $null -eq $line.Result) { break }
+      [void][int64]::TryParse($line.Result, [ref]$hw)
+    }
+    Check '9a scope: the throwaway window opened and reported its handle' ($hw -gt 0) 'no handle line from the form within 30 s'
+    if ($hw -le 0) { return }
+
+    # 9b scope: the engine's snapshot lists exactly one window with the guid title, it is the form (its own handle), and no window has the fake handle.
+    $s0 = Get-GapWindows
+    $mine = @($s0.Windows | ? { "$($_.title)" -like "*$title*" })
+    $start = if ($mine.Count -eq 1) { Get-GapRect $s0.Windows ([int64]$mine[0].id) } else { 'none' }
+    $sp = @($start -split ',' | ? { $_ -match '^-?\d+$' } | % { [int]$_ })
+    $holds = $sp.Count -eq 4 -and $sp[0] -le ($gx + 250) -and ($gx + 250) -le ($sp[0] + $sp[2]) -and $sp[1] -le ($gy + 350) -and ($gy + 350) -le ($sp[1] + $sp[3])
+    $scope = $s0.Ok -and $mine.Count -eq 1 -and [int64]$mine[0].id -eq $hw -and $mine[0].app -eq 'powershell' -and @($s0.Windows | ? { [int64]$_.id -eq $script:gapFake }).Count -eq 0 -and $holds -and $start -ne $whole
+    Check '9b scope: the snapshot shows one window with the guid title (the form, app powershell), no window with the fake handle, and the form at a rect that holds the left half''s centre and is not the whole seam screen' $scope "snapshot ok $($s0.Ok); windows with the title $($mine.Count); form handle $hw; first match id $(if ($mine.Count) { $mine[0].id } else { 'none' }); form rect $start; seam screen $whole; $($s0.Out)"
+    if (-not $scope) { return }
+    $last = Join-Path $run 'last-gap-live.json'
+    $lastRight = @{ id = $script:gapFake; x = ($gx + 500); y = $gy; w = 500; h = 700 }
+    $lastForm = @{ id = $hw; x = $sp[0]; y = $sp[1]; w = $sp[2]; h = $sp[3] }
+    $lastBoth = Join-Path $run 'last-gap-live-both.json'
+    [IO.File]::WriteAllText($last, (ConvertTo-Json -InputObject @($lastRight) -Depth 4 -Compress), $utf8)
+    [IO.File]::WriteAllText($lastBoth, (ConvertTo-Json -InputObject @($lastRight, $lastForm) -Depth 4 -Compress), $utf8)
+
+    # 9c the refuse gate: the engine's own dry scene run places the form and nothing else. Any other window it would place stops the case before a live call.
+    $dryScene = Invoke-PsChild "-File `"$tile`" -Scene `"$script:gapScene`" -DryRun -Json" (New-ChildEnv $dryEnv)
+    $dso = $null; try { $dso = ConvertFrom-Json (NoWarn $dryScene.Out) } catch { }
+    $dsPlaced = @($dso.placed | % { $_ })
+    $others = @($dsPlaced | ? { [int64]$_.id -ne $hw })
+    if ($dryScene.Code -eq 0 -and $null -ne $dso -and $others.Count -gt 0) {
+      "SKIP  9 gap live move: refused, the scene would place $($others.Count) window(s) besides the throwaway ($(@($others | % { "$($_.app): $($_.title)" }) -join '; ')); no live call ran"
+      return
+    }
+    Check '9c scope: the engine''s dry scene run places the throwaway window and no other (the only window the scene matches)' ($dryScene.Code -eq 0 -and $null -ne $dso -and $dsPlaced.Count -eq 1 -and [int64]$dsPlaced[0].id -eq $hw) "exit $($dryScene.Code); placed $($dsPlaced.Count); out [$(Short ($dryScene.Out + $dryScene.Err))]"
+    if (-not ($dryScene.Code -eq 0 -and $dsPlaced.Count -eq 1)) { return }
+
+    # 9d control: the dry gap run names the move to the whole seam screen, and it moves nothing (9e reads the window back, same rect as before).
+    $dry = Invoke-GapRun "-Last `"$lastBoth`" -DryRun" $dryEnv
+    $dp = @($dry.Placed)
+    Check '9d control: a dry gap run lists the form alone, moving to the whole seam screen, noted as a dry run' ($dry.Code -eq 0 -and $dp.Count -eq 1 -and [int64]$dp[0].id -eq $hw -and ('{0},{1},{2},{3}' -f [int]$dp[0].x, [int]$dp[0].y, [int]$dp[0].w, [int]$dp[0].h) -eq $whole -and "$($dp[0].note)" -eq 'dry run') "exit $($dry.Code); placed $($dp.Count); out [$($dry.Out)]"
+    $s1 = Get-GapWindows
+    Check '9e control: after the dry runs the form still sits at its start rect' ($s1.Ok -and (Get-GapRect $s1.Windows $hw) -eq $start) "rect $(Get-GapRect $s1.Windows $hw), start $start; $($s1.Out)"
+
+    # 9f control (live): the form is not at its area's rect and has no -Last rect, so it counts as a hand move, its area is locked, and the run moves nothing.
+    $held = Invoke-GapRun "-Last `"$last`"" $liveEnv
+    Check '9f control: a live gap run with no -Last rect for the form moves no window (placed empty)' ($held.Code -eq 0 -and $held.Parsed -and @($held.Placed).Count -eq 0) "exit $($held.Code); placed $(@($held.Placed).Count); out [$($held.Out)]"
+    $s2 = Get-GapWindows
+    Check '9g control: after that live run the form still sits at its start rect' ($s2.Ok -and (Get-GapRect $s2.Windows $hw) -eq $start) "rect $(Get-GapRect $s2.Windows $hw), start $start; $($s2.Out)"
+
+    # The subject. The run names the move (the run's own output, which a missing Move-Win call leaves unchanged), then the real rect is read back.
+    $live = Invoke-GapRun "-Last `"$lastBoth`"" $liveEnv
+    $lp = @($live.Placed)
+    Check '9h run: the live gap run lists the form alone, moving to the whole seam screen, not noted as a dry run' ($live.Code -eq 0 -and $lp.Count -eq 1 -and [int64]$lp[0].id -eq $hw -and ('{0},{1},{2},{3}' -f [int]$lp[0].x, [int]$lp[0].y, [int]$lp[0].w, [int]$lp[0].h) -eq $whole -and "$($lp[0].note)" -ne 'dry run') "exit $($live.Code); placed $($lp.Count); out [$($live.Out)]"
+    $s3 = Get-GapWindows
+    Check '9i live move: Move-Win moved the form to the gap rect, the whole seam screen (its real rect, read back by handle)' ($s3.Ok -and (Get-GapRect $s3.Windows $hw) -eq $whole) "real rect $(Get-GapRect $s3.Windows $hw), wanted $whole (the form was at $start before the run); $($s3.Out)"
+  }
+  $gapForm = $null; $gapFake = 0; $gapScene = ''
+  try { Test-GapLiveMove } finally { Stop-GapForm }
+  Check '9j the throwaway window is closed (its process has exited)' ($null -eq $gapForm -or $gapForm.HasExited) 'the form process is still running'
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
   if ($sv -and -not $sv.HasExited) { $sv.Kill() }
+  # Backstop for case 9's throwaway window: its own finally closes it already, so this runs only when the run stopped before that.
+  if ($gapForm -and -not $gapForm.HasExited) { $gapForm.Kill() }
   Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue
 }
 if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { 'All checks passed.' }

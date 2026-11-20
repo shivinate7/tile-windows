@@ -111,6 +111,8 @@
 #     a working row (a conflict note does not make one inert) keeps a bare On, the Extra Triggers line reads N on, N inactive, N warning, and
 #     the callout of a scene with only inert switches reads No working trigger is on. The control checks hold on the page as it stands.
 #     On the strip (under 1180 px) an inert chip's reason line is shown, as it is at 1440.
+#   Free Layout stacked space (debt free-drop-behind-stack): a window put on a space whose pin has a behind stack, by a drop from the list
+#     or by Move To, takes the stack: the new pin's behind list is the holder's, as the grid's swapInto hands it on.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 #
@@ -128,7 +130,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 159
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 162
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -2256,12 +2258,15 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
   # Cell i of the 5 by 2 board, as a free area's rect in fractions.
   function Fl-Cell([int]$i) { @([double](($i % 5) / 5), [double]([Math]::Floor($i / 5) / 2), 0.2, 0.5) }
   # The board's pins and areas. Window i is pin i unless cell i is in $noPin (an empty space). $lock: the windows whose pin is locked.
-  function Fl-Board([int[]]$noPin = @(), [int[]]$lock = @()) {
+  # $behind: window i -> the windows stacked behind its pin, as {app, match}. A stacked window has no pin of its own, so its cell is empty.
+  function Fl-Board([int[]]$noPin = @(), [int[]]$lock = @(), [hashtable]$behind = @{}) {
     $pins = @(); $map = @{}
+    $stacked = @($behind.Values | % { $_ })
     for ($i = 0; $i -lt 10; $i++) {
-      if ($noPin -contains $i) { continue }
+      if ($noPin -contains $i -or $stacked -contains $i) { continue }
       $p = [pscustomobject]@{ app = $flWins[$i].app; match = $flWins[$i].match; mon = 'U1'; slots = @($i) }
       if ($lock -contains $i) { $p | Add-Member -NotePropertyName lock -NotePropertyValue $true }
+      if ($behind.ContainsKey($i)) { $p | Add-Member -NotePropertyName behind -NotePropertyValue @($behind[$i] | % { [pscustomobject]@{ app = $flWins[$_].app; match = $flWins[$_].match } }) }
       $map[$i] = $pins.Count; $pins += $p
     }
     $areas = @()
@@ -2951,6 +2956,10 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
     if (-not ($from -and $to)) { return $null }
     Fl-Drag $sock $from.x $from.y $to.x $to.y $false ($freeJs + $dropJs + 'return dropInfo();')
   }
+  # Chooses Space $n in the Move To list of the selected window. Answers whether the list and the option were there.
+  function Fl-PickMoveTo($sock, [int]$n) {
+    Js $sock ($freeJs + 'const s = document.getElementById("moveto"); if (!s) return false; const o = [...s.options].find(x => /Space ' + $n + '$/.test(x.textContent.trim())); if (!o) return false; s.value = o.value; s.dispatchEvent(new Event("change", { bubbles: true })); return true;')
+  }
   # Switches Free Layout off and presses Back to Grid in the mode given (snap or restore). Answers whether the popover opened.
   function Fl-BackGo($sock, [string]$mode) {
     [void](Js $sock ($freeJs + 'const s = freeSw(); if (s) s.click(); return !!s;'))
@@ -3272,7 +3281,7 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
         $c = Fl-Centre (Fl-Rects $ws @(1002)) 1002
         Fl-Click $ws $c[0] $c[1]
       }
-      $picked = Js $ws ($freeJs + 'const s = document.getElementById("moveto"); if (!s) return false; const o = [...s.options].find(x => /Space 1$/.test(x.textContent.trim())); if (!o) return false; s.value = o.value; s.dispatchEvent(new Event("change", { bubbles: true })); return true;')
+      $picked = Fl-PickMoveTo $ws 1
       Check "move-lock ($($v.tag), F8): Move To offers Space 1, the space the locked pin holds (scope)" ($picked -eq $true) 'no Move To list for the selected window, or no Space 1 option'
       if ($picked -ne $true) { return }
       $s = Fl-Saves $ws
@@ -3283,6 +3292,83 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
       $p0 = $(if ($a0 -and $null -ne $a0.pin) { @($L1.pins)[[int]$a0.pin] } else { $null })
       Check "move-lock ($($v.tag), F8): the locked pin keeps space 0" ($p0 -and $p0.match -ceq 'Refactor the grid solver') "space 0 names: $(if ($p0) { $p0.match } else { 'no pin' })"
     }
+  }
+
+  # ---- Free Layout, debt free-drop-behind-stack: a window put on a stacked space takes the stack -----------------------------------
+  # Space 1 is held by Pin parser edge cases (1002), with Quarterly roadmap (1006) and Projects (1010) stacked behind it in the grid's
+  # behind form. The grid's swapInto hands the holder's behind list to the window that takes its cell. freeAssign must do the same, so the
+  # windows behind the holder stay in the layout. The seed's stack is $flStack (Fl-Board -behind); $flStackWant is its list, sorted.
+  $flStack = @{ 1 = @(3, 4) }
+  $flStackWant = 'Projects|Quarterly roadmap'
+  # The windows the page draws as stacked behind a front window, sorted: '1006,1010' for the seed above.
+  $stackedJs = 'return prev().placed.filter(x => x.behind).map(x => x.id).sort((a, b) => a - b).join(",")'
+  # The behind list of the pin that space $i names in a saved layout, as match texts sorted and joined by |. $null when the space names no pin.
+  function Fl-BehindOf($layout, [int]$i) {
+    $a = @($layout.grids.U1.free.areas)[$i]
+    if (-not ($a -and $null -ne $a.pin)) { return $null }
+    $p = @($layout.pins)[[int]$a.pin]
+    (@(@($p.behind) | ? { $_ } | % { [string]$_.match } | Sort-Object) -join '|')
+  }
+  foreach ($v in @(@{ tag = 'drop from the list'; pick = 'drop' }, @{ tag = 'Move To from the list'; pick = 'moveto' })) {
+    Case "stack-take ($($v.tag)): a window put on a space whose pin has a stack takes the stack with it" {
+      # Mutant: freeAssign removes the holder's pin and its behind list with it and gives the new pin none, so the two windows stacked behind
+      # the holder are in neither the pins nor the list (each leaves the layout).
+      $opened = Fl-Open $ws (Fl-Json (Fl-Board @(9) -behind $flStack) -fillOver @{ off = $true })
+      Check "stack-take ($($v.tag)): the page opens on Focus (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $held = Js $ws ($freeJs + 'const s = spaceOf(1); return !!s && !s.classList.contains("empty");')
+      Check "stack-take ($($v.tag)): space 1 is held (scope)" ($held -eq $true) 'space 1 is not held'
+      if ($held -ne $true) { return }
+      $stk = Js $ws $stackedJs
+      Check "stack-take ($($v.tag)): the page draws Quarterly roadmap and Projects stacked behind the holder (scope)" ($stk -eq '1006,1010') "windows drawn as stacked: '$stk'"
+      if ($stk -ne '1006,1010') { return }
+      if ($v.pick -eq 'drop') {
+        $mid = Fl-BayDrop $ws 1014 1 'centre'
+        Check "stack-take ($($v.tag)): over the middle of the stacked space the drop offers a Swap (scope)" ([bool]($mid -and $mid.swap)) "label: $(if ($mid) { $mid.txt } else { 'none' })"
+      } else {
+        $c = Js $ws ($freeJs + $dropJs + 'return bayCentre(1014);')
+        if (-not $c) { Check "stack-take ($($v.tag)): window 1014 is in Windows That Stay Put (scope)" $false 'no entry for 1014 in Windows That Stay Put'; return }
+        Fl-Click $ws $c.x $c.y
+        $picked = Fl-PickMoveTo $ws 2
+        Check "stack-take ($($v.tag)): Move To offers Space 2, the space the stacked pin holds (scope)" ($picked -eq $true) 'no Move To list for the selected window, or no Space 2 option'
+        if ($picked -ne $true) { return }
+      }
+      $s = Fl-Saves $ws
+      Check "stack-take ($($v.tag)): one POST /layout after the move (control)" ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+      if ($s.layout.Count -ne 1) { return }
+      $L1 = $s.layout[0].layout
+      $got = Fl-BehindOf $L1 1
+      $a1 = @($L1.grids.U1.free.areas)[1]
+      $p1 = $(if ($a1 -and $null -ne $a1.pin) { @($L1.pins)[[int]$a1.pin] } else { $null })
+      Check "stack-take ($($v.tag)): Notepad takes space 1 (control)" ($p1 -and $p1.app -eq 'notepad') "space 1 names: $(if ($p1) { $p1.app } else { 'no pin' })"
+      $bayHas = @(@($L1.bay) | ? { $_ -and $_.title -eq 'Pin parser edge cases' }).Count
+      Check "stack-take ($($v.tag)): Pin parser edge cases, the front window, goes to Windows That Stay Put (control)" ($bayHas -eq 1) "Windows That Stay Put: $(@($L1.bay) | ConvertTo-Json -Compress -Depth 4)"
+      if (-not $p1) { return }
+      Check "stack-take ($($v.tag)): the Notepad pin carries the holder's stack, Projects and Quarterly roadmap" ($got -ceq $flStackWant) "behind list of the pin on space 1: '$got', the holder's was '$flStackWant'"
+    }
+  }
+
+  Case 'stack-swap (control): a window dragged from a space onto a stacked space leaves the stack with the pin that moves' {
+    # Mutant: the swap relinks the holder's pin to the space the dragged window left without its behind list, or the list goes with the old pin.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(9) -behind $flStack) -fillOver @{ off = $true })
+    Check 'stack-swap: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $stk = Js $ws $stackedJs
+    Check 'stack-swap: the page draws Quarterly roadmap and Projects stacked behind the holder (scope)' ($stk -eq '1006,1010') "windows drawn as stacked: '$stk'"
+    if ($stk -ne '1006,1010') { return }
+    $r0 = Fl-Rects $ws @(1001, 1002)
+    $from = Fl-Centre $r0 1001; $to = Fl-Centre $r0 1002
+    [void](Fl-Drag $ws $from[0] $from[1] $to[0] $to[1])
+    $s = Fl-Saves $ws
+    Check 'stack-swap: one POST /layout after the drag (control)' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $L1 = $s.layout[0].layout
+    $a0 = @($L1.grids.U1.free.areas)[0]
+    $p0 = $(if ($a0 -and $null -ne $a0.pin) { @($L1.pins)[[int]$a0.pin] } else { $null })
+    Check 'stack-swap: Pin parser edge cases takes space 0 (control)' ($p0 -and $p0.match -ceq 'Pin parser edge cases') "space 0 names: $(if ($p0) { $p0.match } else { 'no pin' })"
+    if (-not $p0) { return }
+    $got = Fl-BehindOf $L1 0
+    Check 'stack-swap: the stack, Projects and Quarterly roadmap, moves with Pin parser edge cases (control)' ($got -ceq $flStackWant) "behind list of the pin on space 0: '$got', the holder's was '$flStackWant'"
   }
 
   # ---- Split Cell: empty cells and open halves (layout-free items 2 and 6; split-cell-notes S9 to S13; plan lane L2b, PR B) ---------

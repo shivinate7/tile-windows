@@ -627,6 +627,98 @@ try {
     }
   }
 
+  # ---- Config lock: a wait that times out does not run the block unlocked (debt config-lock-wait-ignored) ----
+  # Use-TileLock waits 10 s for the lock. When another writer holds it that long, the block must not run, and the caller gets an error
+  # to show. An abandoned lock (its holder died) is still taken and the block runs. The holder is a second powershell: the lock is a
+  # mutex, and a mutex re-enters on the thread that owns it, so a hold from this thread would never time out. The holder takes the lock
+  # through the product's own Use-TileLock. The two events are its signals: ready (it holds the lock) and release (let go).
+  # The error's wording is the builder's choice: the case asserts a throw with a message, nothing more.
+  # Get-LockName repeats the name Use-TileLock builds inline (as setup-plumbing.ps1 does for its lock case): a case that probes or keeps
+  # a handle to the lock needs the name, and the product has no function that gives it. The scope checks below go red if the two drift.
+  function Get-LockName([string]$dir) {
+    $h12 = [BitConverter]::ToString([Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($dir.ToLowerInvariant()))).Replace('-', '').Substring(0, 12)
+    "Local\TileWindows-Write-$h12"
+  }
+  $holderScript = Join-Path $runDir 'lock-holder.ps1'
+  [IO.File]::WriteAllText($holderScript, @'
+param([string]$Config, [string]$ReadyName, [string]$ReleaseName)
+$ErrorActionPreference = 'Stop'
+. $Config
+$ready = [Threading.EventWaitHandle]::OpenExisting($ReadyName)
+$release = [Threading.EventWaitHandle]::OpenExisting($ReleaseName)
+Use-TileLock { [void]$ready.Set(); [void]$release.WaitOne(120000) }
+'@, $utf8)
+  # Starts the holder with this process's environment (TILE_HOME is set), so it names the same lock. Its output is read only on failure.
+  function Start-LockHolder([string]$readyName, [string]$releaseName) {
+    $psi = New-Object Diagnostics.ProcessStartInfo 'powershell', "-NoProfile -ExecutionPolicy Bypass -File `"$holderScript`" -Config `"$(Join-Path $root 'config.ps1')`" -ReadyName `"$readyName`" -ReleaseName `"$releaseName`""
+    $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+    [Diagnostics.Process]::Start($psi)
+  }
+  # Lets the holder go and ends it if it overruns, so no later case starts with a held lock. The caps sit well above the 10 s wait.
+  function Stop-LockHolder($proc, $releaseEvt) {
+    if ($proc -and -not $proc.HasExited) { [void]$releaseEvt.Set(); if (-not $proc.WaitForExit(30000)) { $proc.Kill() } }
+  }
+
+  Case 'config lock held past the wait: the block does not run, and the caller gets an error' {
+    $lockName = Get-LockName $TileHome; $tag = Split-Path $runDir -Leaf
+    $readyEvt = New-Object Threading.EventWaitHandle($false, [Threading.EventResetMode]::ManualReset, "Local\tile-test-ready-$tag")
+    $relEvt = New-Object Threading.EventWaitHandle($false, [Threading.EventResetMode]::ManualReset, "Local\tile-test-release-$tag")
+    $holderProc = $null; $watch = $null
+    try {
+      $gotFree = Use-TileLock { 'ran' }
+      Check 'config lock free: the block runs and its value comes back (control)' ($gotFree -ceq 'ran') "got: $gotFree"
+      $holderProc = Start-LockHolder "Local\tile-test-ready-$tag" "Local\tile-test-release-$tag"
+      $isHeld = $readyEvt.WaitOne(30000)
+      Check 'config lock held: the holder has taken the lock (scope)' $isHeld "the holder never signalled ready; stderr: $(if ($holderProc.HasExited) { $holderProc.StandardError.ReadToEnd() } else { 'still running' })"
+      if (-not $isHeld) { return }
+      $watch = New-Object Threading.Mutex($false, $lockName)
+      $took = $watch.WaitOne(0)
+      if ($took) { $watch.ReleaseMutex() }
+      Check 'config lock held: the lock reads as held from another process (scope)' (-not $took) 'the lock was free: the holder holds a different lock than Get-LockName'
+      if ($took) { return }
+      $probe = @{ ran = $false; held = $false }; $err = $null
+      try { Use-TileLock { $probe.ran = $true; $probe.held = (-not $holderProc.HasExited) -and (-not $relEvt.WaitOne(0)) } } catch { $err = $_.Exception.Message }
+      [void]$relEvt.Set(); [void]$holderProc.WaitForExit(30000)
+      Check 'config lock held: the block does not run while the other writer still holds the lock' (-not $probe.held) 'the block ran unlocked while the other writer held the lock'
+      Check 'config lock held: Use-TileLock throws instead of returning' ($null -ne $err) 'it returned with no error'
+      if ($null -ne $err) { Check 'config lock held: the error has a message to show' (-not [string]::IsNullOrWhiteSpace($err)) 'the error message is blank' }
+      $err2 = $null; $again = $null
+      try { $again = Use-TileLock { 'again' } } catch { $err2 = $_.Exception.Message }
+      Check 'config lock held: once the other writer lets go, the lock is taken and the block runs (control)' ($again -ceq 'again') "got: $again; error: $err2"
+    } finally {
+      Stop-LockHolder $holderProc $relEvt
+      if ($holderProc) { $holderProc.Dispose() }
+      if ($watch) { $watch.Dispose() }
+      $readyEvt.Dispose(); $relEvt.Dispose()
+    }
+  }
+  # The test opens a handle to the lock first and keeps it, so the lock still exists when the holder dies. With no other handle open,
+  # the system would delete the lock with its last handle, and Use-TileLock would make a fresh one that is not abandoned.
+  Case 'config lock abandoned by a writer that died: the lock is taken and the block runs' {
+    $lockName = Get-LockName $TileHome; $tag = Split-Path $runDir -Leaf
+    $readyEvt = New-Object Threading.EventWaitHandle($false, [Threading.EventResetMode]::ManualReset, "Local\tile-test-ready2-$tag")
+    $relEvt = New-Object Threading.EventWaitHandle($false, [Threading.EventResetMode]::ManualReset, "Local\tile-test-release2-$tag")
+    $keep = New-Object Threading.Mutex($false, $lockName)
+    $holderProc = $null
+    try {
+      $holderProc = Start-LockHolder "Local\tile-test-ready2-$tag" "Local\tile-test-release2-$tag"
+      $isHeld = $readyEvt.WaitOne(30000)
+      Check 'config lock abandoned: the holder has taken the lock (scope)' $isHeld "the holder never signalled ready; stderr: $(if ($holderProc.HasExited) { $holderProc.StandardError.ReadToEnd() } else { 'still running' })"
+      if (-not $isHeld) { return }
+      $holderProc.Kill()
+      $died = $holderProc.WaitForExit(30000)
+      Check 'config lock abandoned: the holder died while it held the lock (scope)' $died 'the holder is still running after Kill'
+      if (-not $died) { return }
+      $probe = @{ ran = $false }; $err = $null; $got = $null
+      try { $got = Use-TileLock { $probe.ran = $true; 'took' } } catch { $err = $_.Exception.Message }
+      Check 'config lock abandoned: the block runs and its value comes back with no error (control)' ($probe.ran -and $got -ceq 'took' -and $null -eq $err) $(if ($null -ne $err) { "error: $err" } else { 'the block did not run' })
+    } finally {
+      Stop-LockHolder $holderProc $relEvt
+      if ($holderProc) { $holderProc.Dispose() }
+      $keep.Dispose(); $readyEvt.Dispose(); $relEvt.Dispose()
+    }
+  }
+
   # ---- Run folder sweep (a harness check, not a product claim) ----
   Case 'run folder: the sweep removes an old sibling run folder and keeps a new one' {
     $now = Get-Date
