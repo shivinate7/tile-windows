@@ -15,7 +15,8 @@
 #     first and then by its title, so a closed window is the one change that leaves a snapshot window unmatched. Old code: the dry run reads
 #     the desktop again and says "Placed N-1 of N (1 unmatched)". Now it reads the snapshot file (-From), so the closed window is still there.
 # A title change between the reads is not probed: tile.ps1 matches by id before the title, so a retitled window should still match, but that
-# is read from the code and unmeasured here.
+# is read from the code and unmeasured here. An empty desktop is not reached either: window A is always in the snapshot, so it holds one
+# window at the least, and the real desktop holds more.
 # Copied on purpose: the throwaway window below repeats the one run.ps1 starts for its title check. run.ps1 runs its checks at the top level,
 # so it cannot be dot-sourced. The sweep of old run folders is stack-lock.ps1's.
 param()
