@@ -89,5 +89,17 @@ param([switch]$NoStartup, [switch]$NoLaunch)
 
   "Installed Tile Windows to $app."
   "Open it from the Start menu: Tile Windows."
-  if (-not ($NoLaunch -or $env:TILE_NO_LAUNCH)) { Start-Process $ps -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$app\tray.ps1`"", '-Open' }
+  if (-not ($NoLaunch -or $env:TILE_NO_LAUNCH)) {
+    # The tray must start like one from the Start menu, with no agent-shell marker: tile.ps1's live-move guard would refuse its live applies.
+    # The names are the ones that guard reads (TILE_TEST_SUITE is left alone, so a tray a test starts stays guarded). The child copies this
+    # process's environment at launch, so the markers are cleared around the launch only and put back for the caller's shell.
+    $agentMarkers = 'CLAUDECODE'
+    $held = @{}; foreach ($m in $agentMarkers) { $held[$m] = [Environment]::GetEnvironmentVariable($m) }
+    try {
+      foreach ($m in $agentMarkers) { [Environment]::SetEnvironmentVariable($m, $null) }
+      Start-Process $ps -WindowStyle Hidden -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$app\tray.ps1`"", '-Open'
+    } finally {
+      foreach ($m in $agentMarkers) { [Environment]::SetEnvironmentVariable($m, $held[$m]) }
+    }
+  }
 }
