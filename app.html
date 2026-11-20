@@ -265,9 +265,8 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
   #drop{transition:left .08s,top .08s,width .08s,height .08s}}
 .hint,.over{font-size:12px;color:var(--muted);margin:0}
 .boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
-.boardbar .hint{margin:0;flex:1 1 300px;min-height:2lh}
-/* The bar's height must not change when Free Layout switches on (layout() reads it, and a taller bar rescales the board), so the reason and the hint stay within the two lines the grid's hint takes. */
-.boardbar .zwhy{flex:0 1 230px;display:block;font-size:11.5px;line-height:1.3}
+/* layout() reads the bar's height, so the Free Layout hint is kept as long as the grid's: a bar that changes height when Free Layout switches on rescales the board. */
+.boardbar .hint{margin:0;flex:1 1 300px}
 .keys{font-size:12px;color:var(--muted)}
 .keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
 .keys ul{margin:4px 0 0;padding-left:18px}
@@ -677,7 +676,7 @@ dialog form{display:grid;gap:10px}
   <main class="canvas">
     <div id="setbar" class="setbar" hidden></div>
     <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"></div><div id="dest"><span></span></div><div id="zdraw"><span></span></div><div id="rzdraw"><span></span></div><div id="rzdest" aria-hidden="true"></div></div><div id="ghost" aria-hidden="true"></div>
-    <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" hidden>Draw Zone</button><span class="why zwhy" id="zwhy" hidden></span><button type="button" class="btn" id="fillon" hidden>Turn On Fill Empty Cells</button><button type="button" class="btn" id="clearbd" aria-describedby="whyclear" hidden>Clear Board</button><span class="vh" id="whyclear"></span>
+    <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" hidden>Draw Zone</button><button type="button" class="btn" id="fillon" hidden>Turn On Fill Empty Cells</button><button type="button" class="btn" id="clearbd" aria-describedby="whyclear" hidden>Clear Board</button><span class="vh" id="whyclear"></span>
     <details id="keys" class="keys"><summary>Keyboard</summary><ul>
       <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
       <li>Ctrl+Shift+arrows resize it from its top or left edge.</li>
@@ -1247,15 +1246,17 @@ function render(){
   $("undo").title=isBusy?"Wait for the current action to finish.":hist.length?"Undo the last change or "+(LIVE?verb():"Apply")+".":"Nothing to undo yet.";
   $("pend").textContent=moves?`${plural(moves,"window")} will move on ${LIVE?verb():"Apply"}`:"The board matches your screen";
   $("zadd").hidden=!(LIVE&&s);
-  {const zf=!!(LIVE&&s&&curMon&&isFree(gridOf(curMon)));const ZWHY="Zones pause in Free Layout. Turn it off to draw a zone.";$("zadd").disabled=zf;$("zadd").title=zf?ZWHY:"";const zw=$("zwhy");zw.textContent=zf?ZWHY:"";zw.hidden=!(zf&&!$("zadd").hidden);if(zf)$("zadd").setAttribute("aria-describedby","zwhy");else $("zadd").removeAttribute("aria-describedby")}
+  {const zf=!!(LIVE&&s&&curMon&&isFree(gridOf(curMon)));$("zadd").disabled=zf;$("zadd").title=zf?"Zones pause in Free Layout. Turn it off to draw a zone.":""}
   // Clear Board turns Fill Empty Cells off. With only pinned windows on the board there is nothing to clear.
   const cb=$("clearbd"),unpinned=prevs[selId]?prevs[selId].placed.filter(p=>p.pin<0&&!p.behind).length:0;
   cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
   const anyFree=!!(LIVE&&s&&snap.monitors.some(q=>mk(q)&&s.grids[mk(q)]&&isFree(s.grids[mk(q)])));
-  $("hint").textContent=anyFree?"Drag to a space to pin, or to the list to keep put. Hold Shift to drag the whole line.":LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
+  $("hint").textContent=anyFree?"Drag to a space to pin, or to the list to keep put. Hold Shift to drag the whole line. Zones pause while Free Layout is on: turn it off to draw a zone.":LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
-  {const fe=LIVE&&s?freeEmpty():"";if(fe)$("hint").textContent=fe;$("fillon").hidden=!fe}
+  {const fe=LIVE&&s?freeEmpty():"";if(fe)$("hint").textContent=fe;$("fillon").hidden=!fe;
+    // A disabled Draw Zone is described by the hint, which gives the reason in a free monitor (the all-empty sentence replaces it).
+    const zb=$("zadd");if(zb.disabled&&!fe)zb.setAttribute("aria-describedby","hint");else zb.removeAttribute("aria-describedby")}
   overText(V);renderSetbar();renderZones();renderBay(V);renderRail();renderInsp(V);placeHandles(V);renderPicks();renderFree();
 }
 // The eight handles go around the selected tile's whole cell block: a stacked tile's strip is inside the frame, so the handles never sit on the name of the window behind. A locked tile has none: it never resizes.
