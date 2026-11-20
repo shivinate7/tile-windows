@@ -7,6 +7,7 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $tmp = Join-Path $env:TEMP "tile-test-$PID"; New-Item -ItemType Directory $tmp | Out-Null
 $utf8 = New-Object Text.UTF8Encoding $false
+. (Join-Path $PSScriptRoot 'place-step.ps1')
 $script:fail = 0
 function Check($name, $ok, $detail = '') { Start-Ready; if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 function Child { & powershell -NoProfile -ExecutionPolicy Bypass -File @args }
@@ -192,16 +193,14 @@ try {
   . (Join-Path $root 'config.ps1')
   Check 'the run and its children use a temp profile' ($env:USERPROFILE.StartsWith($tmp) -and $env:APPDATA.StartsWith($tmp) -and $TileHome.StartsWith($tmp)) "$env:USERPROFILE | $TileHome"
   # 1. Snapshot JSON parses (in-process, as serve.ps1 calls it).
-  $snapText = (& $tile -Json 2>$null) -join ''
+  $snapText = Read-Desktop $tile
   $snap = $snapText | ConvertFrom-Json
   Check 'snapshot JSON parses' ($snap.monitors.Count -ge 1 -and $null -ne $snap.windows)
   Check 'snapshot gives the widest monitor the wide role' (@($snap.monitors | ? { $_.role -eq 'wide' })[0].w -eq ($snap.monitors.w | Measure-Object -Maximum).Maximum)
 
   # 2. Feeding the snapshot back to -PlaceFile -DryRun matches every window.
-  $f = Join-Path $tmp 'snap.json'; [IO.File]::WriteAllText($f, $snapText, $utf8)
-  $n = @($snap.windows).Count
-  $last = @(& $tile -PlaceFile $f -DryRun 3>$null)[-1]
-  Check '-Place -DryRun matches all windows' ($last -eq "Placed $n of $n (0 unmatched).") $last
+  $pd = Test-PlaceDryRun $tile $snapText (Join-Path $tmp 'snap.json')
+  Check '-Place -DryRun matches all windows' $pd.Ok $pd.Last
 
   # 3. A title with quotes and apostrophes survives page -> file -> PowerShell, and page -> /apply.
   $title = "It's a ""quoted"" test `$x & <ok> $PID"
@@ -224,7 +223,8 @@ try {
     @('setup-page-1', 'setup-page.ps1', '-Shard 1 -Of 3'), @('setup-page-2', 'setup-page.ps1', '-Shard 2 -Of 3'), @('setup-page-3', 'setup-page.ps1', '-Shard 3 -Of 3'),
     @('install-swap', 'install-swap.ps1'), @('safe-moves', 'safe-moves.ps1'), @('fresh-screens', 'fresh-screens.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'),
     @('suite-kill', 'suite-kill.ps1'), @('bay', 'bay.ps1'), @('golden-layouts', 'golden-layouts.ps1'),
-    @('engine-layouts', 'engine-layouts.ps1'), @('run-undo', 'run-undo.ps1'), @('setup-config', 'setup-config.ps1'), @('serve-empty', 'serve-empty.ps1')
+    @('engine-layouts', 'engine-layouts.ps1'), @('run-undo', 'run-undo.ps1'), @('setup-config', 'setup-config.ps1'), @('serve-empty', 'serve-empty.ps1'),
+    @('place-dryrun', 'place-dryrun.ps1')
   )
   foreach ($q in $queueList) { $queue.Enqueue($q) }
   Start-Ready
