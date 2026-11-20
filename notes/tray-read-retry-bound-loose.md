@@ -1,0 +1,1 @@
+- tray-read-retry-bound-loose: The stop-after-count case (test/setup-plumbing.ps1:816, lines 12-15) asserts at most 50 reads in 600 ticks, so a retry every 13 ticks forever would pass. Assert no reads in the last 300 ticks. Its header still says 'the builder names the real count'.

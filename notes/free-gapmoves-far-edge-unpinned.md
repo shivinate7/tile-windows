@@ -1,0 +1,1 @@
+- free-gapmoves-far-edge-unpinned: No test pins the far-edge re-round in Get-GapMoves (tile.ps1, the $ex and $ey extent). A change there would not fail any case.

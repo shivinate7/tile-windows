@@ -19,4 +19,4 @@ Plan: docs/plans/live-move-guard.md#live-move-guard (windows)
 
 **Cost.** One environment read per run. No process. No file.
 
-**Check.** `test/safe-moves.ps1`. The suite cases fail on commit 656a8cf (before the guard). The CLAUDECODE cases fail on commit 62acbd4 (suite guard only). The exempt-run controls stay green.
+**Check.** `test/safe-moves.ps1`, case 9 for the gap run's live move (red on a scratch copy with the gap branch's Move-Win call removed). The suite cases fail on commit 656a8cf (before the guard). The CLAUDECODE cases fail on commit 62acbd4 (suite guard only). The exempt-run controls stay green.

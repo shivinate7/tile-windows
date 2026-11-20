@@ -1,0 +1,1 @@
+- preview-retry-after-supersede: A superseded preview run still re-POSTs after its 400 ms wait (app.html:978-980). This is harmless, since /preview moves nothing and the pseq check drops the stale result. With a dead server, previewAll now takes about 0.4 s longer per scene.

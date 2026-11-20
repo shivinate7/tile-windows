@@ -1,0 +1,1 @@
+- gap-live-skip-branch-untested: The SKIP branch of case 9c (test/safe-moves.ps1:370-375, a second window matching the pin) never fires in a test. A second form titled with the guid and '-2' would exercise it.

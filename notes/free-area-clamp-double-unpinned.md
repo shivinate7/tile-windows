@@ -1,0 +1,1 @@
+- free-area-clamp-double-unpinned: No test pins the clamp done in double before the [int] cast (Get-AreaLine, tile.ps1). A change to that clamp would not fail any case.

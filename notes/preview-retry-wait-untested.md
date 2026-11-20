@@ -1,0 +1,1 @@
+- preview-retry-wait-untested: No case reads the short wait before the preview retry (test/stack-lock.ps1 header lines 6-7, app.html:977). A mutant with no wait passes all 12 checks. One fix: log setTimeout delays in the fetch wrapper.

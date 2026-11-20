@@ -140,7 +140,7 @@ Your scenes stay. Add `-Purge` to delete them too.
 | [tray.ps1](tray.ps1) | The tray agent and its triggers. Each trigger is a pure function inside one tick. |
 | [config.ps1](config.ps1) | Reads and writes the config. |
 
-Run the checks. They move no window and use a temp profile:
+Run the checks. They move no window of yours (`test/safe-moves.ps1` case 9 starts one throwaway window, moves only that one, and closes it) and use a temp profile:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File test\run.ps1

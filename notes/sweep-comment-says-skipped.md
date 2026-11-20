@@ -1,0 +1,1 @@
+- sweep-comment-says-skipped: test/run-folders.ps1:8-9 says a locked folder 'is skipped', but the delete can be partial: its unlocked files go. The comment and the code disagree.

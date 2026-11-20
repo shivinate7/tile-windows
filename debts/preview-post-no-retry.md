@@ -12,4 +12,4 @@ Likelihood: unmeasured. How often a preview hits a dropped connection is not mea
 
 Recovery: Refresh, which runs previewAll again (app.html:911-912).
 
-Fix: retry a TypeError in previewRun on the loadAll schedule (LOADWAIT), and do not retry an error-status reply, as loadAll does.
+Fix: retry a TypeError in previewRun on the loadAll schedule (LOADWAIT: 0.4, 0.8 and 1.6 s), and do not retry an error-status reply, as loadAll does. PR 81 retries once, after 0.4 s, and does not retry an error-status reply. The 0.8 s and 1.6 s retries are still open.

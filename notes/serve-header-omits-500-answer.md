@@ -1,0 +1,1 @@
+- serve-header-omits-500-answer: The serve.ps1 header (route list, about lines 18-20) does not name the 500 answer, and test/serve-empty.ps1:6-7 pins 'red on c921613'. Both will go stale.

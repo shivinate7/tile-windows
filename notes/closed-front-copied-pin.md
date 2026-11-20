@@ -1,0 +1,1 @@
+- closed-front-copied-pin: A pin copied before its closed front settles loses the front. Only a synthetic probe reaches this; normal use does not (PR 87 review).
