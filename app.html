@@ -2185,7 +2185,7 @@ function setGrid(k,d){const m=curMon;
   if(scene().pins.some(p=>p.lock&&p.mon===mk(m)&&p.slots.some(v=>v<ofc*ofr&&(v%ofc>=nfc||Math.floor(v/ofc)>=nfr)))){status("A locked tile is in the way. Nothing changed.");render();return}
   edit(s=>{const g=s.grids[mk(m)];g[k]=nxt[k];
     // A selected empty cell follows its column and row, or goes with its cell.
-    if(selCell&&selCell.role===mk(m)){const[v]=reslot([selCell.slot],ofc,nfc,nfr);selCell=v===undefined?null:{...selCell,slot:v}}
+    if(selCell&&selCell.sid===selId&&selCell.role===mk(m)){const[v]=reslot([selCell.slot],ofc,nfc,nfr);selCell=v===undefined?null:{...selCell,slot:v}}
     // Keep each pin on the same column and row; drop cells past the new edge.
     for(const p of s.pins)if(p.mon===mk(m))p.slots=reslot(p.slots,ofc,nfc,nfr);
     s.pins=s.pins.filter(p=>p.slots.length);
@@ -3114,7 +3114,7 @@ $("undo").onclick=async()=>{if(isBusy)return;const e=hist.pop();if(!e)return;rem
   // A page-only step (a split of an empty cell that doubles nothing): the split marks and the selection go back, and nothing is saved.
   if(e.k==="split"){selId=e.id;halfMemo=e.memo;selCell=e.sel;render();focusCell();status("Undid the split.");toast("Undid the split.");return}
   // A cell number names another place once its monitor's grid differs, so a selected empty cell is cleared when the grid changes under it.
-  const gridKey=(w,role)=>{const g=w&&w.grids&&w.grids[role];return g?[g.c,g.r,...MXY(g)].join("x"):""},stale=selCell&&e.s&&gridKey(work[e.id],selCell.role)!==gridKey(e.s,selCell.role);
+  const gridKey=(w,role)=>{const g=w&&w.grids&&w.grids[role];return g?[g.c,g.r,...MXY(g)].join("x"):""},stale=selCell&&selCell.sid===e.id&&e.s&&gridKey(work[e.id],selCell.role)!==gridKey(e.s,selCell.role);
   if(e.k==="edit"){selId=e.id;work[e.id]=e.s;if(stale)selCell=null;optim=null;layoutEdited(e.id,true);render();preview(selId);toast("Undid the last change.");return}
   if(e.k==="follow"){status("");selId=e.id;work[e.id]=e.s;if(stale)selCell=null;optim=null;lq[e.id]=null;layoutEdited(e.id,true);render();preview(selId);toast("Undid the last change.");return}
   if(e.k==="apply"){if(e.back.length)await placeBack(e.back);else toast("That Apply moved nothing.")}};
