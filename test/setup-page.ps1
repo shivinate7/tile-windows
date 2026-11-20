@@ -92,7 +92,8 @@
 #
 # Shards: -Shard n -Of 3 runs only shard n's cases, so test\run.ps1 can run the file in three processes. The cases are numbered in the
 # order they are invoked, and the shards take contiguous ranges of that order (cuts below), so each shard keeps the order of its cases.
-# A run with no arguments runs every case. Each shard prints `cases shard n of Of ran R of T`, which run.ps1 checks: every case ran once.
+# A run with no arguments runs every case. Each shard prints `cases shard n of Of ran R of T, skipped S`, which run.ps1 checks: every case
+# ran or was skipped once, T being the gate total the file pins (Shard-Init). A run with no Microsoft Edge skips its cases, and counts them.
 param([int]$Shard = 1, [int]$Of = 1)
 if (($Of -ne 1 -and $Of -ne 3) -or $Shard -lt 1 -or $Shard -gt $Of) { throw "setup-page shards: -Of is 1 or 3, and -Shard is 1 to -Of (got $Shard of $Of)" }
 $shardCuts = @(39, 79)   # shard 1 runs cases 1 to 39, shard 2 runs 40 to 79, shard 3 runs 80 to the last (about a third of the time each)
@@ -103,7 +104,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1))
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 121
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -113,7 +114,7 @@ function Case([string]$name, [scriptblock]$body) {
 }
 
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $edge) { 'SKIP  page cases: Microsoft Edge not found in either Program Files folder.'; "cases shard $Shard of $Of ran 0 of 0"; exit 0 }
+if (-not $edge) { 'SKIP  page cases: Microsoft Edge not found in either Program Files folder.'; Shard-Skip 'no Microsoft Edge'; Shard-Report 'setup-page'; if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { exit 0 } }
 
 # Run folder (test-temp-standard): <TEMP>\tile-windows-test-runs\<pid>-<UUID>, removed at the end. The sweep of old run folders is stack-lock.ps1's.
 $runRoot = Join-Path $env:TEMP 'tile-windows-test-runs'

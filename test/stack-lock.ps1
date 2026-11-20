@@ -121,11 +121,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order. Shard 1 runs the cases before the Board feedback
-# section, shard 2 the cases before the Ruling section, shard 3 the rest. Each shard starts its own page session.
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (249). Shard 1 runs
+# gates 1 to 67 (the cases before the Board feedback section), shard 2 gates 68 to 171 (before the stack tweaks ruling section), shard 3
+# the rest. Each shard starts its own page session.
 $shardCuts = @(67, 171)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1))
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 249
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -191,7 +192,7 @@ Check 'control: a span pin places its whole 2x2 block (as today)' ([bool]($eSpan
 
 # ---------- Page: headless Edge over DevTools, on a dry-run server ----------
 $edgeExe = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $edgeExe) { 'SKIP  page cases: Microsoft Edge not found in either Program Files folder.'; "cases shard $Shard of $Of ran 0 of 0"; if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { exit 0 } }
+if (-not $edgeExe) { 'SKIP  page cases: Microsoft Edge not found in either Program Files folder.'; Shard-Skip 'no Microsoft Edge'; Shard-Report 'stack-lock'; if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { exit 0 } }
 
 # One run folder, and a temp profile for every child: the real profile is never named.
 [void](New-Item -ItemType Directory -Force $SlTempRoot)
@@ -2626,11 +2627,15 @@ try {
   # board empty. The fault goes into the page before its scripts run, so it reaches loadAll's first call. Each fault counts its
   # failures in sessionStorage under a key of its own, so a reload of the page is not failed again. The control and the always-
   # failing case pass on the old code: they hold the page to a drawn scene with no fault, and to a plain error in the footer.
+  # Each group is one gate: its page drive and its Checks run in one shard, and a fault is set only inside its own gate.
+  if (Shard-Take) {
   SlViewport 1440 900
   $plCtl = SlCase (SlSceneJson '[]' '["*"]') -Soft
   $plCtlTiles = SlGet "document.querySelectorAll('.tile').length"
   Check 'page load, control, no fault: the page draws the scene' ([bool]($plCtl.ready -and $plCtlTiles -gt 0)) "tiles: $plCtlTiles; $($plCtl.diag)"
+  }
 
+  if (Shard-Take) {
   $plKey = 'tilePageLoad-' + [guid]::NewGuid().ToString('N')
   $plId = PlFaultOn 'once' $plKey
   try {
@@ -2645,7 +2650,9 @@ try {
     PlFaultOff $plId
     [void](SlJs "(() => { try { sessionStorage.removeItem('$plKey'); } catch (e) {} return true; })()")
   }
+  }
 
+  if (Shard-Take) {
   $plKeyAll = 'tilePageLoad-' + [guid]::NewGuid().ToString('N')
   $plAll = PlFaultOn 'always' $plKeyAll
   try {
@@ -2657,6 +2664,7 @@ try {
   } finally {
     PlFaultOff $plAll
     [void](SlJs "(() => { try { sessionStorage.removeItem('$plKeyAll'); } catch (e) {} return true; })()")
+  }
   }
 
   # ---------- Ruling 2026-11-16 (label fallback): the Put Behind label with Sora loaded ----------

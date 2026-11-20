@@ -605,15 +605,22 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
       $script:fail++; "FAIL  $($s.Name)  could not be collected: $_"
     }
   }
-  # Every case of a sharded file runs in exactly one shard (test\shard.ps1): each shard counts the same cases, the shards' runs add up
-  # to that count, and no shard that has cases ran none. One check per family of shard children.
+  # Every case of a sharded file runs in exactly one shard (test\shard.ps1): each shard counts the same cases, and the shards' ran and
+  # skipped cases add up to that count. A run with no Microsoft Edge skips its page cases and counts each one, so the SKIP line names
+  # the count and a skipped page never passes silently. One check per family of shard children.
   foreach ($fam in @(@('setup-page-*', 'every page case runs in exactly one shard'), @('stack-lock-*', 'every stack-lock case runs in exactly one shard'))) {
-    $shardRuns = @($suites | ? { $_.Name -like $fam[0] } | % { [regex]::Match((Read-SuiteFile $_.Out), 'cases shard (\d+) of (\d+) ran (\d+) of (\d+)') } | ? { $_.Success })
+    $shardRuns = @($suites | ? { $_.Name -like $fam[0] } | % { [regex]::Match((Read-SuiteFile $_.Out), 'cases shard (\d+) of (\d+) ran (\d+) of (\d+), skipped (\d+)(?:: ([^\r\n]*))?') } | ? { $_.Success })
     $shardTotals = @($shardRuns | % { [int]$_.Groups[4].Value } | Sort-Object -Unique)
+    $total = if ($shardTotals.Count -eq 1) { $shardTotals[0] } else { 0 }
     $ranSum = (@($shardRuns | % { [int]$_.Groups[3].Value }) | Measure-Object -Sum).Sum
+    $skipSum = (@($shardRuns | % { [int]$_.Groups[5].Value }) | Measure-Object -Sum).Sum
     $wantShards = @($queueList | ? { $_[0] -like $fam[0] }).Count
-    $idle = @($shardRuns | ? { [int]$_.Groups[4].Value -gt 0 -and [int]$_.Groups[3].Value -eq 0 }).Count
-    Check $fam[1] ($shardRuns.Count -eq $wantShards -and $shardTotals.Count -eq 1 -and $ranSum -eq $shardTotals[0] -and $idle -eq 0) "shards reporting: $($shardRuns.Count) of $wantShards; ran $ranSum of totals $($shardTotals -join '/'); shards that ran none: $idle"
+    $idle = @($shardRuns | ? { ([int]$_.Groups[3].Value + [int]$_.Groups[5].Value) -eq 0 }).Count
+    if ($skipSum -gt 0) {
+      $why = @($shardRuns | ? { $_.Groups[6].Success } | % { $_.Groups[6].Value }) | Select-Object -First 1
+      "SKIP  $($fam[0] -replace '-\*$', ''): $skipSum of $total gates skipped ($why)"
+    }
+    Check $fam[1] ($shardRuns.Count -eq $wantShards -and $shardTotals.Count -eq 1 -and $total -gt 0 -and ($ranSum + $skipSum) -eq $total -and $idle -eq 0) "shards reporting: $($shardRuns.Count) of $wantShards; ran $ranSum + skipped $skipSum of total $($shardTotals -join '/'); shards that ran or skipped none: $idle"
   }
 } catch {
   $script:fail++; "FAIL  run stopped: $_"
