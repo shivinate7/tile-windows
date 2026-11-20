@@ -2586,7 +2586,8 @@ function freeAssign(id,o,info,from){
     if(!mine){mine={app:w.app,match:w.min?w.title:matchFor(w),mon:key,slots:[]};x.pins.push(mine);x.bay=bayOf(x).filter(b=>!sameWin(b,w));if(!x.bay.length)delete x.bay;heldOff(x,w)}
     else if(mine.mon!==key){mine.mon=key;mine.slots=[]}
     const theirs=a.pin!=null&&a.pin!==""?x.pins[+a.pin]:null,swap=!!(theirs&&theirs!==mine&&src);
-    if(theirs&&theirs!==mine&&!src){x.pins=x.pins.filter(q=>q!==theirs);if(oc){x.bay=bayOf(x).filter(b=>!sameWin(b,oc));x.bay.push({id:oc.id,app:oc.app,title:oc.title});heldOff(x,oc)}}
+    // The holder's pin goes, and the windows stacked behind it stay in the layout behind the new pin, as swapInto does for the grid.
+    if(theirs&&theirs!==mine&&!src){if(theirs.behind&&theirs.behind.length)mine.behind=[...(mine.behind||[]),...theirs.behind];x.pins=x.pins.filter(q=>q!==theirs);if(oc){x.bay=bayOf(x).filter(b=>!sameWin(b,oc));x.bay.push({id:oc.id,app:oc.app,title:oc.title});heldOff(x,oc)}}
     if(src){const sa=x.grids[skey].free.areas[src.i];freeSetPin(sa,swap?x.pins.indexOf(theirs):null);delete sa.app;delete sa.title;
       // A holder with no pin of its own takes the space the dragged window left, by app and title, as freeStep does.
       if(!theirs&&oc&&oc.id!==id){sa.app=oc.app;sa.title=oc.title}}
