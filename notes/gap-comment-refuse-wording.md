@@ -1,1 +1,0 @@
-- gap-comment-refuse-wording: test/safe-moves.ps1:368 says 'refuse gate'. The glossary lists 'gate' as a name not to use for guard and check. The comment should say 'refuse check'.

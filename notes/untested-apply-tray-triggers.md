@@ -1,0 +1,1 @@
+- untested-apply-tray-triggers: Untested: Apply, the tray icon and its menu, triggers end to end, and `irm | iex` from GitHub (the piped path is tested from a local source). A real gap-fill move is tested (test/safe-moves.ps1 case 9). Seen: 2026-11-20 x1

@@ -1,6 +1,6 @@
 ## layout-free-build
 
-**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L2 (PR 51, Split Cell board), L3 (PR 50, free areas), L4 (PR 58, Free Layout board), L5a (PR 54, gap-fill run) and L5b (PR 43, gap watch) are merged. The next work is the L2 deferred items (note `split-cell-deferred-items`). The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
+**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L2 (PR 51, Split Cell board), L3 (PR 50, free areas), L4 (PR 58, Free Layout board), L5a (PR 54, gap-fill run) and L5b (PR 43, gap watch) are merged. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
 
 **Source.** The Plan agent's build plan (opus), revised after a refuter, 2026-11-18 11:20 CST. It was first checked against origin/main 9e6ae0a. The symbols that replace its line numbers were checked against origin/main b6bc537 by 2026-11-18 11:23 CST. Its other claims, such as the columns cap of 8 and the span stepper following `g.c`, were not re-checked. Main has no docs/map/.
 
@@ -31,7 +31,7 @@ Status: built in PR 46 (finer grid), merged at commit fce4790. Its engine and re
 
 **L2. Page: Split Cell** (`app.html`; designer yes; needs L1)
 
-Status: built in PR 51 (Split Cell board), merged at commit b1735e7. Records: notes `split-cell-deferred-items`, `split-cell-dblclick-edges`, `split-cell-stripe-initial`, `split-cell-logic-inline`, `split-cell-fast-k1`.
+Status: built in PR 51 (Split Cell board), merged at commit b1735e7. Records: notes `split-cell-dblclick-edges`, `split-cell-stripe-initial`, `split-cell-logic-inline`, `split-cell-fast-k1`.
 
 - `cellRect` learns `mult` and reuses `bround`, which rounds half to even as `[int]` does in `Pass` (136.5 becomes 136). It takes each edge from `EdgeX` and `EdgeY` in `Pass`, not from span times sub-width. Base step: `bround(m.w/g.c)`. Sub-step: `bround(base/mx)`. Edge: `floor(i/mx)*base + (i%mx)*sub`. A window's width is its end edge minus its start edge. Span times sub-width puts base column 1 at 272 px on 1365 px; the engine puts it at 273. Rows work the same with `my`, `r` and `h`. The L0 `mult` case turns green.
 - A pure `splitLayout()` keeps the base `c` and `r` and sets `mult`. A 5×2 board split side by side posts `c` 5 and `mult` [2,1], not `c` 10. A stacked split posts `mult` [1,2] (5×2 becomes 5×4). The engine doubles the slots from `mult`, as `test/golden-layouts.ps1` on branch `finer-grid` posts it. It remaps every pin, zone and held entry, and sets `fill.unit`.
@@ -60,7 +60,7 @@ Status: built in PR 51 (Split Cell board), merged at commit b1735e7. Records: no
 
 **L2b. Split Cell deferred items** (`tile.ps1`, `app.html`; mockup in PR 69 (empty-cell mockup); needs L2)
 
-Status: built in PR 70 (engine), merged at commit 6abe62a, PR 72 (board), merged at commit 8392b9f, and PR 74 (zone label), merged at commit e248489. Records: notes `split-memo-not-snapshotted`, `wait-halves-first-poll`, `fill-unit-grid-mismatch`, `even-split-page-only`, `kept-half-wait-reason`.
+Status: built in PR 70 (engine), merged at commit 6abe62a, PR 72 (board), merged at commit 8392b9f, and PR 74 (zone label), merged at commit e248489. Records: notes `split-memo-not-snapshotted`, `fill-unit-grid-mismatch`, `even-split-page-only`; debts `wait-halves-first-poll`, `kept-half-wait-reason`.
 
 Open owner questions (non-blocking; the build default holds until the owner rules):
 - **Zone capacity under a split.** Should a zone hold one window per whole block, then its open halves (built, per item 6 "the same way"), or one window per fine cell as on main? Build default: one window per whole block, then its open halves. Asked 2026-11-20 03:00 CST. Status: open.
@@ -180,7 +180,6 @@ Status: built in PR 43 (the gap-watch pull request), merged at commit ee47541. L
 
 **Risks**
 - The notes' save shape (`grids.wide.free`, scenes version 4) is stale. Layouts now live per setup, and config is already version 4. The new fields add to the layout without a version bump. An older engine ignores them and moves windows by the grid.
-- A tray started from an agent shell is refused live moves (`debts/tray-inherits-claudecode.md`).
 - Apps with their own minimum size can break a shared line.
 - Apps that hide to the tray rely on event 0x8003.
 

@@ -1,0 +1,1 @@
+- undo-one-place-per-window: Undo still makes one -Place call per window (tray.ps1:416-417), so each answer is read alone. The test fake now takes a batch, so one batched call is possible. Seen: 2026-11-20 x1

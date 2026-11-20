@@ -29,10 +29,9 @@ From a clone, run `install.ps1` directly. It takes `-NoStartup` and `-NoLaunch`.
 
 ### Reinstall from a commit (Claude sessions)
 
-Do not run `install.ps1` from the agent shell. Two reasons:
+Do not run `install.ps1` from the agent shell. One reason:
 
 - On a machine where Claude desktop is a packaged (MSIX) app, files the agent writes under AppData go to the app's private copy. HKCU writes go there too. So the real install and the `tilewindows://` link would not change.
-- A tray started from the agent shell inherits `CLAUDECODE`. The live-move guard then refuses its applies. This is debt `tray-inherits-claudecode`: the tray inherits the agent's environment.
 
 To reinstall a commit:
 

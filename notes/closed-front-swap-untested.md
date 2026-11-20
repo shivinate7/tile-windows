@@ -1,1 +1,1 @@
-- closed-front-swap-untested: No committed case drags a closed-front window through the swapInto settle loop (app.html:1687) or reads the unpin message (app.html:3000-3001). A mutant that deletes the loop would stay green.
+- closed-front-swap-untested: A swap case (test/stack-lock.ps1:2940) passes without the settle loop in swapInto (app.html:1720), so a mutant that deletes the loop would stay green. No committed case reads the unpin message (app.html:3037).
