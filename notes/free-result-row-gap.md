@@ -1,0 +1,1 @@
+- free-result-row-gap: Result rows sit 2 px apart in the result list (#reslist, app.html:277). The mockup's .reslist uses 6 px (docs/design/mockups/free-layout.html:225). The rows now run three lines tall. Decision: layout free (`layout-free`). Seen: 2026-11-19 x1

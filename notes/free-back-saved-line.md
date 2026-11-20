@@ -1,0 +1,1 @@
+- free-back-saved-line: Commit 5de6de2 (the Free Layout hint and Back to the Grid change) dropped the line "Nothing is saved until you press Back to Grid." The line is still true. No ruling covers dropping it. Decision: layout free (`layout-free`). Seen: 2026-11-19 x1
