@@ -84,6 +84,9 @@
 #     neighbour gives its cell up; Restore keeps a locked window's pin and lock; a drop on a held space says that the window it displaces
 #     goes to the list, and the status says the same. A drop on a held space offers Swap and Put Behind (the grid's two targets: the middle
 #     swaps, the lower band puts behind); Put Behind adds the window to the pin's behind list, in the grid's form {app, match}.
+#   Free Layout review fixes (PR 58, round 2; F6 to F8): a drag from a space onto a space held by an unpinned window swaps, and that window
+#     takes the space the dragged one left; Put Behind from a space leaves the space it left naming nothing; Move To onto a space held by a
+#     locked pin keeps that pin, its lock and its space.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 $ErrorActionPreference = 'Stop'
@@ -2271,6 +2274,12 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
   }
   # The rects of the given tiles now: id -> {l, t, r, b, w, h}, or null for a tile not on the board.
   function Fl-Rects($sock, [int[]]$ids) { Js $sock ($freeJs + 'return rectsOf([' + (($ids | % { "$_" }) -join ',') + ']);') }
+  # Waits until the board is still before its rects are read: the page's POSTs have settled, no transition runs, and two polls read the same
+  # tile rects. A tile moves for 0.22 s after a monitor switch or a save (the tile transition in app.html), so a read taken at once reads a move.
+  function Fl-Still($sock) {
+    [void](Js $sock 'await window.__h.settle(); window.__still = null; return true')
+    [void](WaitFor $sock '(() => { const c = [...document.querySelectorAll(".tile")].map(t => { const r = t.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].join(","); }).join("|") + (document.getAnimations().some(a => a.playState === "running") ? "~" : ""); const same = window.__still === c; window.__still = c; return same && c.indexOf("~") < 0; })()' 10)
+  }
   # The ids (of $ids) whose tile rect moved by more than half a pixel between two reads. A tile missing from either read counts as moved.
   function Fl-Moved($before, $after, [int[]]$ids) {
     @($ids | ? {
@@ -2366,6 +2375,7 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
       $opened = Fl-Open $ws (Fl-Json (Fl-Board) -grid)
       Check "free-on ($tag): the page opens on Focus with the 5 by 2 grid (control)" $opened 'the page did not open on Focus in time'
       if (-not $opened) { return }
+      Fl-Still $ws
       $before = Fl-Rects $ws $flIds
       $onBoard = @($flIds | ? { $before."$_" }).Count
       Check "free-on ($tag): all ten windows are on the board before the press (scope)" ($onBoard -eq 10) "on the board before: $onBoard of 10"
@@ -2375,6 +2385,7 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
       if ($route -eq 'click') { [void](Js $ws ($freeJs + 'const s = freeSw(); if (s) s.click(); return !!s;')) }
       else { [void](Js $ws 'if (document.activeElement) document.activeElement.blur(); return true;'); Press-Key $ws 'f' 70 'f' }
       $s = Fl-Saves $ws
+      Fl-Still $ws
       $after = Fl-Rects $ws $flIds
       $on = Js $ws ($freeJs + 'const s = freeSw(); return !!s && (s.checked === true || s.getAttribute("aria-checked") === "true");')
       Check "free-on ($tag): $how turns Free Layout on" ($on -eq $true) "Free Layout is not on after $how"
@@ -3114,6 +3125,98 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
     Check 'back-words: Restore the Grid Layout says pinned windows go to Windows That Stay Put' ($restore -match 'Windows That Stay Put') "restore: $restore"
     $btns = Js $ws ($freeJs + 'return [...document.querySelectorAll("#backpop button")].map(b => b.textContent.replace(/\s+/g, " ").trim());')
     Check 'back-words: the cancel button reads Keep Free Layout' (@($btns) -contains 'Keep Free Layout') "buttons: $((@($btns) | % { [string]$_ }) -join ' | ')"
+  }
+
+  # ---- Free Layout, PR 58 round 2 (F6 to F8): a drag from a space onto an unpinned holder, Put Behind from a space, Move To onto a locked space.
+  # Each case is red on d56c3b0 by its named cause. A green control sits in the same case where the old code already does the act.
+  Case 'swap-held (F6): a window dragged from a space onto a space held by an unpinned window takes that space, and the window it held takes the space it left' {
+    # Mutant: freeAssign swaps only with a pinned holder, so an unpinned holder's name is deleted and it takes no space. The label still says Swap with it.
+    $board = Fl-Board @(1)
+    $board.areas[1]['app'] = 'claude'; $board.areas[1]['title'] = 'Pin parser edge cases'
+    $opened = Fl-Open $ws (Fl-Json $board -fillOver @{ off = $true })
+    Check 'swap-held (F6): the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $held = Js $ws ($freeJs + 'const s = spaceOf(1); return !!s && !s.classList.contains("empty");')
+    Check 'swap-held (F6): space 1 is held by the unpinned window (scope)' ($held -eq $true) 'space 1 is not held'
+    if ($held -ne $true) { return }
+    Fl-Still $ws
+    $from = Fl-Centre (Fl-Rects $ws @(1001)) 1001
+    $to = Js $ws ($freeJs + $dropJs + "return spaceAt(1, 'centre');")
+    $mid = Fl-Drag $ws $from[0] $from[1] $to.x $to.y $false ($freeJs + $dropJs + 'return dropInfo();')
+    Check 'swap-held (F6): over the held space the drop offers Swap with the window it holds (control)' ([bool]($mid -and $mid.swapWith)) "label: $(if ($mid) { $mid.txt } else { 'none' })"
+    $s = Fl-Saves $ws
+    Check 'swap-held (F6): one POST /layout after the drop' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $L1 = $s.layout[0].layout
+    $areas = @($L1.grids.U1.free.areas); $pins = @($L1.pins)
+    $a0 = $areas[0]; $a1 = $areas[1]
+    $p0 = $(if ($a0 -and $null -ne $a0.pin) { $pins[[int]$a0.pin] } else { $null })
+    $p1 = $(if ($a1 -and $null -ne $a1.pin) { $pins[[int]$a1.pin] } else { $null })
+    Check 'swap-held (F6): Refactor the grid solver takes space 1 (control)' ($p1 -and $p1.match -ceq 'Refactor the grid solver') "space 1 names: $(if ($p1) { $p1.match } else { 'no pin' })"
+    $bNamed = [bool]($a0 -and (($a0.title -ceq 'Pin parser edge cases') -or ($p0 -and $p0.match -ceq 'Pin parser edge cases')))
+    Check 'swap-held (F6): the window space 1 held takes the space the dragged window left (space 0 names it)' $bNamed "space 0 names: app $($a0.app), title $($a0.title), pin $(if ($p0) { $p0.match } else { 'none' })"
+  }
+
+  Case 'behind-from (F7): Put Behind from a space leaves the space the window held naming nothing' {
+    # Mutant: freePutBehind gets no from, so the space the window left keeps its app and title, and still names the window that went behind.
+    $board = Fl-Board @(0)
+    $board.areas[0]['app'] = 'claude'; $board.areas[0]['title'] = 'Refactor the grid solver'
+    $opened = Fl-Open $ws (Fl-Json $board -fillOver @{ off = $true })
+    Check 'behind-from (F7): the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $held = Js $ws ($freeJs + 'const s = spaceOf(0); return !!s && !s.classList.contains("empty");')
+    Check 'behind-from (F7): space 0 is held by the unpinned window (scope)' ($held -eq $true) 'space 0 is not held'
+    if ($held -ne $true) { return }
+    Fl-Still $ws
+    $from = Fl-Centre (Fl-Rects $ws @(1001)) 1001
+    $to = Js $ws ($freeJs + $dropJs + "return spaceAt(1, 'bottom');")
+    $mid = Fl-Drag $ws $from[0] $from[1] $to.x $to.y $false ($freeJs + $dropJs + 'return dropInfo();')
+    Check 'behind-from (F7): over the lower band of the held space the drop offers Put Behind (control)' ([bool]($mid -and $mid.put)) "label: $(if ($mid) { $mid.txt } else { 'none' })"
+    $s = Fl-Saves $ws
+    Check 'behind-from (F7): one POST /layout after the drop' ($s.layout.Count -eq 1) "POST /layout count: $($s.layout.Count)"
+    if ($s.layout.Count -ne 1) { return }
+    $L1 = $s.layout[0].layout
+    $areas = @($L1.grids.U1.free.areas); $pins = @($L1.pins)
+    $a0 = $areas[0]; $a1 = $areas[1]
+    $p1 = $(if ($a1 -and $null -ne $a1.pin) { $pins[[int]$a1.pin] } else { $null })
+    $beh = @($(if ($p1) { $p1.behind } else { $null }) | ? { $_ -and $_.match -ceq 'Refactor the grid solver' })
+    Check 'behind-from (F7): Refactor the grid solver is stacked behind the window space 1 holds (control)' ($beh.Count -eq 1) "behind entries for it: $($beh.Count)"
+    $p0 = $(if ($a0 -and $null -ne $a0.pin) { $pins[[int]$a0.pin] } else { $null })
+    $namesA = [bool]($a0 -and (($a0.title -ceq 'Refactor the grid solver') -or ($p0 -and $p0.match -ceq 'Refactor the grid solver')))
+    Check 'behind-from (F7): the space the window left no longer names it' (-not $namesA) "space 0 still names it: title $($a0.title), pin $(if ($p0) { $p0.match } else { 'none' })"
+  }
+
+  foreach ($v in @(@{ tag = 'from the list'; pick = 'list' }, @{ tag = 'from a space'; pick = 'space' })) {
+    Case "move-lock ($($v.tag), F8): Move To onto a space held by a locked pin keeps that pin, its lock and its space" {
+      # Mutant: Move To calls freeAssign with no lock check (the drop and the grid's Move To both check the lock), so the locked pin is removed
+      # (from the list) or swapped off its space (from a space). A Move To that saves nothing leaves the board as the seed layout has it.
+      $seed = Fl-Json (Fl-Board @(9) @(0)) -fillOver @{ off = $true }
+      $opened = Fl-Open $ws $seed
+      Check "move-lock ($($v.tag), F8): the page opens on Focus with space 0 held by a locked pin (control)" $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $held = Js $ws ($freeJs + 'const s = spaceOf(0); return !!s && !s.classList.contains("empty");')
+      Check "move-lock ($($v.tag), F8): space 0 is held (scope)" ($held -eq $true) 'space 0 is not held'
+      if ($held -ne $true) { return }
+      Fl-Still $ws
+      if ($v.pick -eq 'list') {
+        $c = Js $ws ($freeJs + $dropJs + 'return bayCentre(1014);')
+        if (-not $c) { Check "move-lock ($($v.tag), F8): window 1014 is in Windows That Stay Put (scope)" $false 'no entry for 1014 in Windows That Stay Put'; return }
+        Fl-Click $ws $c.x $c.y
+      } else {
+        $c = Fl-Centre (Fl-Rects $ws @(1002)) 1002
+        Fl-Click $ws $c[0] $c[1]
+      }
+      $picked = Js $ws ($freeJs + 'const s = document.getElementById("moveto"); if (!s) return false; const o = [...s.options].find(x => /Space 1$/.test(x.textContent.trim())); if (!o) return false; s.value = o.value; s.dispatchEvent(new Event("change", { bubbles: true })); return true;')
+      Check "move-lock ($($v.tag), F8): Move To offers Space 1, the space the locked pin holds (scope)" ($picked -eq $true) 'no Move To list for the selected window, or no Space 1 option'
+      if ($picked -ne $true) { return }
+      $s = Fl-Saves $ws
+      $L1 = $(if ($s.layout.Count -gt 0) { $s.layout[$s.layout.Count - 1].layout } else { ConvertFrom-Json $seed })
+      $lp = @(@($L1.pins) | ? { $_ -and $_.match -ceq 'Refactor the grid solver' })[0]
+      Check "move-lock ($($v.tag), F8): the locked pin is still there, and keeps its lock" ($lp -and $lp.lock -eq $true) "pin: $(if ($lp) { "lock $($lp.lock)" } else { 'gone' })"
+      $a0 = @($L1.grids.U1.free.areas)[0]
+      $p0 = $(if ($a0 -and $null -ne $a0.pin) { @($L1.pins)[[int]$a0.pin] } else { $null })
+      Check "move-lock ($($v.tag), F8): the locked pin keeps space 0" ($p0 -and $p0.match -ceq 'Refactor the grid solver') "space 0 names: $(if ($p0) { $p0.match } else { 'no pin' })"
+    }
   }
 
 } catch {
