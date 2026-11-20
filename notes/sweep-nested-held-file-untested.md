@@ -1,0 +1,1 @@
+- sweep-nested-held-file-untested: No case holds a file in a subfolder. The held-file cases (test/stack-lock.ps1, test/setup-config.ps1) hold one directly in the run folder, so the recursion in Find-RunFolderHeld is untested.

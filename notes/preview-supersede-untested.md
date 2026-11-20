@@ -1,0 +1,1 @@
+- preview-supersede-untested: No case in test/stack-lock.ps1 covers a newer preview stopping an older one's retries. A mutant that removes the catch guard (app.html ~1011) shows "Preview failed" and wipes the newer preview, and survives.
