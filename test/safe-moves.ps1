@@ -19,7 +19,7 @@
 #     exempt runs, the opt-in, a neither-var run, and the tray and server apply paths (their dry seams) still run.
 #   8 L5a (red 8a and 8c on 74f87cb): -GapFill joins the guard. A bare -GapFill -Json under the suite, or under CLAUDECODE, is refused. 8b, 8d and
 #     8e are green controls: a -Scene run is refused by the old guard already, and -DryRun and -From are exempt.
-#   9 gap live move (debt gap-fill-live-move-untested): the one live -GapFill run. The test starts its own throwaway window, runs the real
+#   9 gap live move: the one live -GapFill run. The test starts its own throwaway window, runs the real
 #     engine with TILE_TEST_ALLOW_LIVE=1 on a scene whose only matching window is that one, and reads the window's real rect afterwards.
 #     Red on a scratch copy of tile.ps1 with the gap branch's Move-Win call removed: only 9i goes red there, and every other case stays green.
 # Every other flagless run names a scene or spec that matches no open window (tile-test-no-such-app), and the scope check proves no
@@ -275,7 +275,7 @@ Apply-Scene ([pscustomobject]@{ id = 'default'; name = 'Default' }) 'from the te
   $gfFrom = Invoke-PsChild "-File `"$tile`" -GapFill -From `"$fixture`" -Json" (New-ChildEnv $suite)
   Check '8e suite: -GapFill with -From is exempt, so it is not refused (control)' (($gfFrom.Out + $gfFrom.Err) -notmatch 'TILE_TEST_ALLOW_LIVE') "out [$(Short $gfFrom.Out)] err [$(Short $gfFrom.Err)]"
 
-  # ---- 9. The gap run's live move (debt gap-fill-live-move-untested). tile.ps1 -GapFill without -DryRun calls Move-Win for each window it moves,
+  # ---- 9. The gap run's live move. tile.ps1 -GapFill without -DryRun calls Move-Win for each window it moves,
   # and no other case reaches that call: -From and -DryRun skip it, and the guard refuses the rest. So this case runs it for real, on a window it owns.
   # Why only that window moves: a -Scene -GapFill run reaches Move-Win at one place, the gap branch (a -Place run is another path; the passes the
   # branch calls run as dry runs). Which windows it moves: the scene's pins, found by app and title. The one pin names a title with a fresh guid, and
@@ -365,7 +365,7 @@ $f.Add_Shown({ [Console]::Out.WriteLine($f.Handle.ToInt64()) })
     [IO.File]::WriteAllText($last, (ConvertTo-Json -InputObject @($lastRight) -Depth 4 -Compress), $utf8)
     [IO.File]::WriteAllText($lastBoth, (ConvertTo-Json -InputObject @($lastRight, $lastForm) -Depth 4 -Compress), $utf8)
 
-    # 9c the refuse gate: the engine's own dry scene run places the form and nothing else. Any other window it would place stops the case before a live call.
+    # 9c the refuse check: the engine's own dry scene run places the form and nothing else. Any other window it would place stops the case before a live call.
     $dryScene = Invoke-PsChild "-File `"$tile`" -Scene `"$script:gapScene`" -DryRun -Json" (New-ChildEnv $dryEnv)
     $dso = $null; try { $dso = ConvertFrom-Json (NoWarn $dryScene.Out) } catch { }
     $dsPlaced = @($dso.placed | % { $_ })

@@ -450,7 +450,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $tsrv = Start-Child $tprof "-File `"$serve`" -NoBrowser -From `"$fixture`"" @{ TILE_HOME = $thome }
     $turl = $tsrv.StandardOutput.ReadLine(); $tst = SelfTest $turl 'triggers'
     [void](Invoke-WebRequest -UseBasicParsing "${turl}quit" -Method Post -Body 'quit')
-    # The inert trigger switch's design (docs/design/mockups/inert-trigger-switch.html, its notes, choices 1, 2 and 7): a chip of a switch that
+    # The inert trigger switch's design (its mockup in docs/design/mockups/, its notes, choices 1, 2 and 7): a chip of a switch that
     # does nothing carries its hidden "Warning: " lead and its reason; the rail line counts the scenes with a working trigger, then says how many
     # hold a switch that does nothing.
     Check 'page: with triggers on, the rail shows each scene''s extra triggers as chips, an inert one with its reason' ($tst.chips.default -eq 'Return,Warning: Call SizeNot a call scene,Gap' -and $tst.chips.focus -eq 'Gap' -and $tst.railsum -like '2 of 7 scenes have triggers on*1 scene has a switch that does nothing.') ($tst | ConvertTo-Json -Compress)

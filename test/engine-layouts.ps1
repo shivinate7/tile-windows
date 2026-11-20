@@ -23,7 +23,7 @@
 # role-keyed scene. Item G's Get-CollapsedAreas is read through tile.ps1 -Lib in a child powershell; its contract is in that section.
 # Gap fill (L5a, plan layout-free-build): the cases after item G. -GapFill runs on a Free Layout board; its contract is in that section.
 # Open halves fill last (layout-free item 6): the cases after the L1 section, on a 1360x1000 monitor. The keepEmpty cases key by monitor id.
-# Free-area rect bounds (debt free-area-rect-bounds): the cases after the L3 zones case. No window is placed under 1 px or outside the work area.
+# Free-area rect bounds: the cases after the L3 zones case. No window is placed under 1 px or outside the work area.
 # Red on 31ea7c1: the id cases (desk, rearranged, item 9, seam, setup B, full size) fail by an assert. The controls (empty layout,
 # -Monitor wide, role-keyed scene, a layout for another setup) pass there and must stay green.
 $ErrorActionPreference = 'Stop'
@@ -878,7 +878,7 @@ try {
     Check 'L3 zones: with areas on, the zone is paused, so Zone A is not placed' (-not (PlacedOf $r 6501)) (Desc $r 6501)
   }
 
-  # ---- Free-area rect bounds (debt free-area-rect-bounds). Resolve-FreeAreas keeps an area whose rect is four finite numbers with a width and height above 0,
+  # ---- Free-area rect bounds. Resolve-FreeAreas keeps an area whose rect is four finite numbers with a width and height above 0,
   # and Get-AreaPixelRects rounds each line to a whole pixel, so an area can reach its window 0 px wide or high, or past the work area's edge.
   # Contract: no window is placed under 1 px wide or high, and none is placed outside the work area (0,0 to W,H). An area that rounds to under 1 px is dropped,
   # as an area with a bad rect already is: its pin is listed missing, 'not in a free area'. For an area past an edge, a drop and a clamp both meet the
