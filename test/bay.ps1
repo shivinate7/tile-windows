@@ -117,7 +117,7 @@ Check 'bay: the engine lists each non-minimized window as fill is off (scope for
 $edgeExe = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
 if (-not $edgeExe) { 'SKIP  page cases: Microsoft Edge not found in either Program Files folder.'; if ($script:fail) { "$($script:fail) check(s) failed."; exit 1 } else { exit 0 } }
 
-$script:udd = Join-Path $run 'edge'; $script:ws = $null; $script:cdpId = 0; $script:url = ''
+$script:udd = Join-Path $run 'edge'; $script:ws = $null; $script:cdpId = 0; $script:url = ''; $script:conErr = @()
 function BaySend($method, $params) {
   $script:cdpId++; $id = $script:cdpId
   $bytes = $utf8.GetBytes((@{ id = $id; method = $method; params = $params } | ConvertTo-Json -Depth 12 -Compress))
@@ -133,6 +133,11 @@ function BaySend($method, $params) {
     } while (-not $eom)
     $o = [Text.Encoding]::UTF8.GetString($ms.ToArray()) | ConvertFrom-Json
     if ($o.id -eq $id) { if ($o.error) { throw "DevTools $method`: $($o.error.message)" }; return $o }
+    # Page errors that arrive between replies. A BayLoad timeout names them.
+    if ($script:conErr.Count -lt 20) {
+      if ($o.method -eq 'Runtime.consoleAPICalled' -and $o.params.type -eq 'error') { $script:conErr += (@($o.params.args | % { [string]$_.value + [string]$_.description }) -join ' ') }
+      if ($o.method -eq 'Runtime.exceptionThrown') { $script:conErr += [string]$o.params.exceptionDetails.exception.description }
+    }
   }
 }
 # Runs JS in the page. A promise is awaited in the page, so waits inside the page are bounded there.
@@ -165,6 +170,7 @@ function BayStartBrowser {
   $script:ws = New-Object Net.WebSockets.ClientWebSocket
   $ct = $script:ws.ConnectAsync([Uri]([string]$page.webSocketDebuggerUrl), [Threading.CancellationToken]::None)
   try { if (-not $ct.Wait(30000)) { throw 'DevTools connect timed out' } } catch { throw "DevTools connect failed: $($_.Exception.GetBaseException().Message)" }
+  [void](BaySend 'Runtime.enable' @{ })
   $proc
 }
 # A dry-run server on one snapshot, with its own scenes folder in the run folder. Returns the process and its tokened URL.
@@ -188,16 +194,22 @@ function BayConfigScene($url, $sceneJson) {
   $body = ConvertTo-Json -Depth 12 -Compress $cfg
   if ((Invoke-WebRequest -UseBasicParsing "${url}config" -Method Post -ContentType 'application/json; charset=utf-8' -Body ($utf8.GetBytes($body))).Content -ne 'Saved') { throw 'the config was not saved' }
 }
-# Loads (or reloads) the page, and waits in the page until the scene is drawn.
+# Loads (or reloads) the page, and waits in the page until the scene is drawn. A timeout throws with the page state and the
+# console errors seen since the load (SlLoad's diagnostic), so a failed load says why.
 function BayLoad($url) {
   $before = BayJs 'String(performance.timeOrigin)'
+  $script:conErr = @(); $script:jsErr = ''
   [void](BaySend 'Page.navigate' @{ url = $url })
   $ready = $null; $tries = 0
   while (-not $ready -and $tries -lt 3) {
     $tries++
     $ready = BayJs "new Promise((res, rej) => { const t0 = Date.now(); (function poll() { if (String(performance.timeOrigin) !== '$before' && typeof snap === 'object' && snap && selId && prevs[selId] && document.querySelectorAll('.tile').length) return res(true); if (Date.now() - t0 > 30000) return rej(new Error('no scene after 30 s')); setTimeout(poll, 100); })(); })"
   }
-  if (-not $ready) { throw "the page did not draw the scene: $script:jsErr" }
+  if (-not $ready) {
+    $why = $script:jsErr
+    $diag = BayJs "(() => { const t = f => { try { return f() } catch (e) { return 'error: ' + e.message } }; return JSON.stringify({ snap: t(() => typeof snap === 'object' && !!snap), selId: t(() => selId), drawn: t(() => !!selId && !!prevs[selId]), tiles: t(() => document.querySelectorAll('.tile').length), inflight: t(() => Object.keys(inflight)), msg: t(() => document.getElementById('msg').textContent) }); })()"
+    throw "the page did not draw the scene: $why $diag; console errors: $(@($script:conErr) -join ' | ')"
+  }
   BaySettle
 }
 # Presses Show N More, when it is shown, so every window is in the list. Show Fewer is left alone.

@@ -3740,7 +3740,7 @@ function () {
     Check 'split open: the page names Fills last on the open half the engine fills last (labels match tile.ps1)' ($page -ne '' -and $page -eq $engine) "page names Fills last on slot(s): '$page'; engine: '$engine'; named halves: $(Half-Text $h)"
   }
 
-  # ---- Split Cell: a free half inside a zone (layout-free item 6; split-cell-notes S6; debt zone-fills-last-label) ---------------
+  # ---- Split Cell: a free half inside a zone reads Open half and Zone fills last, with fill on; an open half outside every zone reads Fills last ----
   # Cell 0 holds window 0 and the zone holds cells 0 and 1, so cell 1 is the zone's free half. The zone's app is POWERPNT, which no pin
   # holds, so the dry run's extra window 1016 (POWERPNT) is the one the zone takes. Cell 3 is an open half outside every zone (cell 2 is
   # window 1's), so it still reads Fills last.
