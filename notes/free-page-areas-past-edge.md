@@ -1,0 +1,1 @@
+- free-page-areas-past-edge: goodRect and areaPx (app.html:2217-2225) still accept what the engine now drops or cuts. The page lists an area the engine drops as a Space, and it draws a past-edge area uncut. Only a hand-edited or sub-pixel area reaches this.

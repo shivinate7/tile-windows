@@ -1,0 +1,1 @@
+- tray-readfails-reset-untested: No test covers the readFails reset on a display change (tray.ps1:805). A mutant that drops the reset passes all 17 tray checks. The missing case: a persistent read fault, then a display change whose first read fails and a later read succeeds.

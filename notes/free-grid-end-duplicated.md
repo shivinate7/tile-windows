@@ -1,0 +1,1 @@
+- free-grid-end-duplicated: The grid last-edge formula is written twice, in Pass and in Get-GridEnd (tile.ps1). The two copies can drift apart.

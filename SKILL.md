@@ -121,4 +121,4 @@ In PowerShell, set `$env:TILE_TEST_ALLOW_LIVE='1'` in the same command that star
 
 **The place format.** Entries are `{app,title,x,y,w,h}` in screen pixels, plus `id` (the window handle from `-Json`) when known. Each entry matches an open window by `id`, else app plus exact title, else title contains. `-Place '<json>'` takes the array inline, but prefer `-PlaceFile`: titles carry quotes and apostrophes. `-DryRun` prints each move and moves nothing. `-Json` prints one result per entry instead of text. Claude runs `-DryRun` first.
 
-**Check.** `powershell -NoProfile -ExecutionPolicy Bypass -File testun.ps1` moves no window and uses a temp profile.
+**Check.** `powershell -NoProfile -ExecutionPolicy Bypass -File testun.ps1` moves no window of yours (`test/safe-moves.ps1` case 9 starts one throwaway window and moves only that one) and uses a temp profile.

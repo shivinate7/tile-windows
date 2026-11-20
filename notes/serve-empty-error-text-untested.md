@@ -1,0 +1,1 @@
+- serve-empty-error-text-untested: The 500 body that carries the engine's own error text (serve.ps1:67-69) is untested on all three routes. A mutant that always sends the fixed text survives.

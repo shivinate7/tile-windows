@@ -1,0 +1,1 @@
+- config-lock-timeout-log-skipped: Add-TileLog (config.ps1:160) says 'so nothing was changed' after the move has already happened, which misleads. On a lock timeout the log line and state.json's active id are skipped, where main wrote them unlocked. The reviewer judged the dropped write to match the debt's intent.

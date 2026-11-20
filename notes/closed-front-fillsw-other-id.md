@@ -1,0 +1,1 @@
+- closed-front-fillsw-other-id: noteClosedFronts reads the selected scene's preview when fillSw passes another scene's id. The reviewer judged it harmless today.

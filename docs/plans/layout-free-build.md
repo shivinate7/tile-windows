@@ -6,7 +6,7 @@
 
 **Terms.** A lane is one build unit, L0 to L5b. Each lane merges alone. "Item N" means item N of `docs/design/mockups/layout-free-notes.md`. Item G is the gap rule below. Questions 1 to 4 are at the end.
 
-**Tests.** Tests use only `-DryRun`, `-From`, or `-GapFill` with `-DryRun`, so no test moves a real window.
+**Tests.** Tests use only `-DryRun`, `-From`, or `-GapFill` with `-DryRun`, so no test moves a real window, except `test/safe-moves.ps1` case 9, which starts one throwaway window and moves only that one.
 
 One fact drives L1. On the 1365px test area, five columns are 273px wide (`[int](1365/5)`), but ten columns are 2×136=272px. A plain 10×2 grid would shift column 4 by 4px, so "nothing else moves" would fail.
 
@@ -140,7 +140,7 @@ Status: built in PR 50 (free areas), merged at commit 74f87cb.
 
 **L5a. Engine: gap-fill run** (`tile.ps1`; no designer; needs L3)
 
-Status: built in PR 54 (gap-fill run), merged at commit e0e3be2. Records: debt `gap-fill-live-move-untested`; notes `gap-destroy-quiet-not-recorded`, `gap-pid-control-tests-destroyed`, `gap-fill-builder-choices`.
+Status: built in PR 54 (gap-fill run), merged at commit e0e3be2. The live move is tested by `test/safe-moves.ps1` case 9 (PR 86). Records: notes `gap-destroy-quiet-not-recorded`, `gap-pid-control-tests-destroyed`, `gap-fill-builder-choices`.
 
 - Red test first: `-GapFill` is added to the live-move guard `if` in `tile.ps1`, under its `# Live-move guard` comment. Under TILE_TEST_SUITE or CLAUDECODE it is refused unless `-DryRun` or TILE_TEST_ALLOW_LIVE=1 is set.
 - `-GapFill -Absent <ids> -Last <json>` applies item G to the active scene.

@@ -1,0 +1,1 @@
+- stack-swap-control-one-pin: The 'stack-swap' control in test/setup-page.ps1 reads only space 0's pin. It does not check that the dragged window's pin on space 1 got no stack, so a change that hands the stack twice on the swap branch would stay green.

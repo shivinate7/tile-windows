@@ -1,0 +1,1 @@
+- gap-monitors-parse-silent-skip: An empty catch on the -Monitors parse (test/safe-moves.ps1:309-311) turns a failed read into a SKIP that blames monitor size. A SKIP leaves the fail count at 0, so the file still ends 'All checks passed'.

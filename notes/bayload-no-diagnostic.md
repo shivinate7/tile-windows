@@ -1,1 +1,0 @@
-- bayload-no-diagnostic: BayLoad (test/bay.ps1:191-202) has no diagnostic on timeout, unlike SlLoad (test/stack-lock.ps1:525-530). Copying that diagnostic, with no retry, would name the cause next time. Seen: 2026-11-20 x1

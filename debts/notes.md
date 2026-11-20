@@ -11,7 +11,6 @@ Low findings. Each becomes a debt only after a real incident.
 - `serve.ps1` Port probe then rebind can race another process; `Start()` then throws a clear error.
 - Untested: Apply moving a real window; the tray icon and its menu; a schedule or monitor change firing end to end; `irm | iex` from GitHub (the piped path is tested from a local source).
 - `tray.ps1` Teams call detection reads the microphone privacy store (`LastUsedTimeStop` = 0 for a Teams exe or the MSTeams package). Misses: microphone access off for desktop apps, a call joined muted from the start in some builds, Teams in a browser. The window-title fallback runs only when the store cannot be read, and matches only `Meeting with … | Microsoft Teams` or `Call | Microsoft Teams`: it misses other call window titles and any non-English Teams. A start or end needs two readings 3 s apart, so a scene lags a call by up to 6 s.
-- `config.ps1` Writers share one named mutex per home with a 10 s wait. A writer that waits longer goes ahead without it.
 - `tray.ps1` The installer asks a running tray to quit and waits 5 s. A tray stuck longer is not stopped, and its old files are replaced under it.
 - `config.ps1` The unique temp name cannot go red alone: the write lock already keeps two writers apart. It guards a writer that skips the lock.
 - `config.ps1` The re-check under the lock before a file moves to `.bad` guards a race between two readers. No test can time that race, so it has no red proof.
@@ -95,7 +94,6 @@ Low findings. Each becomes a debt only after a real incident.
 
 - `app.html` `newestPrev`: a failed board preview can leave stale previews, and the next fill-off may read them. (hold review, PR 14)
 - `app.html` At 1024, an old resize grip can cover a tile title's second line. (hold review, PR 14)
-- Test sweep: a stale test run folder in `%TEMP%` stops the sweep. Pointing TEMP at a fresh folder works around it. (hold review, PR 14)
 - Open owner question: a held window of an app with several open windows whose title changed finds no match, as a pin would not. (hold review, PR 14)
 - sameWin compares by id alone when a Windows That Stay Put entry has one; if that window closes and a same-app, same-title window opens, pinning the new one no longer clears the stale entry (app.html sameWin).
 - Held entries with no id (a reloaded saved scene) that share a title all resolve to the first window with that title; pinning it drops every such hold (app.html heldWin, heldOff).

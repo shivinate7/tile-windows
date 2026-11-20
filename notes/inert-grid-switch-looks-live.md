@@ -1,0 +1,1 @@
+- inert-grid-switch-looks-live: A grid switch On on a scene with no claudeGrid does nothing (tray.ps1:189 and :680 return early), yet it reads as working and the rail counts it. A switch that loses a tie (gaps, noext, setup) has the same problem. The grid case needs a hand-edited config.

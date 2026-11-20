@@ -1,0 +1,1 @@
+- serve-empty-log-line-untested: No case checks the 'applied from the app' log line on success. The cases assert only that it is absent after a failed run, so a change that drops the log would stay green (test/serve-empty.ps1:147-149, serve.ps1:288).
