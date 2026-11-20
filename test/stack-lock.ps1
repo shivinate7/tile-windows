@@ -494,14 +494,12 @@ function SlCase($sceneJson) {
   SlLoad
 }
 # Loads (or reloads) the page from the server's config, and waits (in the page) until the scene is drawn and settled.
-# Each try loads the page again: the app fetches its snapshot, config and layouts once and never retries them (app.html loadAll), so a try
-# that only waited would wait on a page that lost one of those answers.
 function SlLoad {
+  $before = SlJs 'String(performance.timeOrigin)'
+  [void](SlSend 'Page.navigate' @{ url = $script:url })
   $ready = $null; $tries = 0
   while (-not $ready -and $tries -lt 3) {
     $tries++
-    $before = SlJs 'String(performance.timeOrigin)'
-    [void](SlSend 'Page.navigate' @{ url = $script:url })
     $ready = SlJs "new Promise((res, rej) => { const t0 = Date.now(); (function poll() { if (String(performance.timeOrigin) !== '$before' && typeof snap === 'object' && snap && selId && prevs[selId] && document.querySelectorAll('.tile').length) return res(true); if (Date.now() - t0 > 30000) return rej(new Error('no scene after 30 s')); setTimeout(poll, 100); })(); })"
   }
   if (-not $ready) {
