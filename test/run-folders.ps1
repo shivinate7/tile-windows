@@ -5,8 +5,12 @@ function Remove-RunFolder([string]$path) {
   if (-not [IO.Directory]::Exists('\\?\' + $path)) { return }
   [IO.Directory]::Delete('\\?\' + $path, $true)
 }
-# Removes the folders under $dir whose names match $nameRx and whose last write is older than $olderThan, as of $now.
+# Removes the folders under $dir whose names match $nameRx and whose last write is older than $olderThan, as of $now. A folder that
+# cannot be deleted (a file in it is open in another process) is skipped: one warning line names it, and the sweep goes on.
 function Invoke-RunFolderSweep([string]$dir, [string]$nameRx, [TimeSpan]$olderThan, [datetime]$now = (Get-Date)) {
   if (-not (Test-Path -LiteralPath $dir)) { return }
-  @(Get-ChildItem -LiteralPath $dir -Directory | ? { $_.Name -match $nameRx -and $_.LastWriteTime -lt $now.Subtract($olderThan) }) | % { Remove-RunFolder $_.FullName }
+  @(Get-ChildItem -LiteralPath $dir -Directory | ? { $_.Name -match $nameRx -and $_.LastWriteTime -lt $now.Subtract($olderThan) }) | % {
+    $p = $_.FullName
+    try { Remove-RunFolder $p } catch { $why = $_.Exception.Message -replace '\s+', ' '; Write-Warning "run folder sweep skipped ${p}: $why" }
+  }
 }
