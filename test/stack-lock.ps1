@@ -117,9 +117,9 @@
 #     Ruling 2026-11-16 13:29 CST: a block with no room clear of the Swap circle, even for the icon at 8 px or more, shows no Put
 #     Behind label. Its solid border and the circle carry the cue. Forced colours drops box-shadow, so the icon-alone chip has a border.
 #   Closed front (decision stack-and-lock): when a pin's front window is not open, the first open back window is
-#     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Keep Where It Is act on that
+#     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Stay Put act on that
 #     window. Bring to Front lists the promoted window behind the new front once, never twice. A move or resize keeps the window the front of
-#     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Keep Where It Is leaves no pin naming it.
+#     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Stay Put leaves no pin naming it.
 #     With a covered pin at a lower index than the closed front's pin, a resize or a Merge keeps the promoted window the front too.
 #     A promoted window put behind another window is listed once across the pins, and no entry is left with no open window.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
@@ -2799,7 +2799,7 @@ try {
   # front while the scene still names the closed one. Here the closed front is closedapp (match empty), and Draft release (claude, 1003) is
   # promoted over Quarterly (chrome, 1006). The pin has to be this shape: if the closed front were claude with a match, a move would copy that
   # match and the engine would promote the same window again. Refactor (claude, 1001) is the window that wrongly takes the front instead.
-  # A move, a resize, Delete and Keep Where It Is act on the window on screen; Bring to Front swaps it with the one behind. The scene's
+  # A move, a resize, Delete and Stay Put act on the window on screen; Bring to Front swaps it with the one behind. The scene's
   # closed entry is not asserted: the debt's fix drops it. The same actions on an open front (Refactor over the same two windows) are the
   # controls, and each action's own control shows it ran, so a red is never a key or a button that did nothing.
   $pinsCF = SlPins '{"app":"closedapp","match":"","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}'
@@ -2856,15 +2856,15 @@ try {
   Check 'closed front, Delete, red: Quarterly, the window behind, is the front on cell 4' (SlFrontOn 1006 '4') "placed: $(SlPlacedBrief)"
   }
 
-  # (b) Keep Where It Is (Windows That Stay Put): the window leaves the pin, so no pin still names it.
+  # (b) Stay Put (the inspector button; the window goes to Windows That Stay Put): the window leaves the pin, so no pin still names it.
   SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
   SlClick (SlAt (SlBox 1003) 0.5 0.5)
-  $kpPress = SlBtnPress '#win' 'Keep Where It Is'
+  $kpPress = SlBtnPress '#win' 'Stay Put'
   $kpS = SlGet 'work[selId]'
   $kpNamed = @($kpS.pins | ? { "$($_.match)" -like '*Draft release*' -or (SlHasBehind $_ 'Draft release') })
   if (Shard-Take) {
-  Check 'closed front, Keep Where It Is, control: Draft release is in Windows That Stay Put' ([bool]($kpPress -and (SlHasBay $kpS 'Draft release'))) "pressed: $kpPress; bay: $(SlShort $kpS.bay)"
-  Check 'closed front, Keep Where It Is, red: no pin still names Draft release' ($kpNamed.Count -eq 0) "pins: $(SlShort $kpS.pins)"
+  Check 'closed front, Stay Put, control: Draft release is in Windows That Stay Put' ([bool]($kpPress -and (SlHasBay $kpS 'Draft release'))) "pressed: $kpPress; bay: $(SlShort $kpS.bay)"
+  Check 'closed front, Stay Put, red: no pin still names Draft release' ($kpNamed.Count -eq 0) "pressed: $kpPress; pins: $(SlShort $kpS.pins)"
   }
 
   # Controls on an open front (Refactor over the same two windows): the same three actions already work.
