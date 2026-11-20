@@ -3506,9 +3506,13 @@ function () {
     $out
   }
   # The named nodes drawn on the board of monitor role $board (the ultrawide, wide, unless given), polled until $want of them are named or
-  # $seconds pass (a page update lands after its POST). Emitted flat, one object per half: a caller takes the list with @(...).
+  # $seconds pass (a page update lands after its POST). The first read waits for no preview in flight: until it lands, the board still
+  # names the old preview's places, and a half the new one draws would be missed. Emitted flat, one object per half: a caller takes the
+  # list with @(...).
   function Wait-Halves($sock, [string]$rx = 'Open half|Stays empty|Kept empty', [int]$want = 1, [int]$seconds = 10, [string]$board = 'wide') {
     $t0 = Get-Date
+    # The same wait as Empty-Select, out of the same $seconds as the poll below, so the cap does not double. The poll reads at least once.
+    [void](WaitFor $sock 'Object.keys(inflight).length === 0' $seconds)
     do {
       $found = @(Ax-Named $sock $rx $board | ? { $_.slot -ge 0 })
       if ($found.Count -ge $want) { break }
