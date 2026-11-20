@@ -1,0 +1,1 @@
+- active-read-outside-lock: Get-ActiveId (tray.ps1:518) reads state.json outside the lock, and Add-TileLog writes that id back as the active scene. A scene applied in between is reverted. Decision: run undo (`run-undo`). Found in the PR 60 review, finding F6. Seen: 2026-11-19 x1
