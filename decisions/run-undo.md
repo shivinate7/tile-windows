@@ -21,4 +21,6 @@ Plan: docs/design/mockups/run-undo-notes.md#notification (windows)
 
 **Check.** `test/run-undo.ps1` (the run toast, Undo's places and guards, the protocol keys); `test/run.ps1` runs it.
 
+**Confirmed live (2026-11-20 10:31 CST).** The tray, installed at 10:08 CST from commit 62a2c63 through WMI with PR 60 (popup Undo link fix), applied a one-off Thursday Prep schedule. The coordinator set that schedule on the owner's ask. It moved 7 windows. The owner pressed the toast's Undo, and the log reads "Put back 6 of 7 windows" (Calendar, moved since, stayed). config.json was restored byte for byte after the test.
+
 Open owner review: the Tile Windows Choices page
