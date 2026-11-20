@@ -885,6 +885,8 @@ try {
   # contract, so its window is either not placed or placed inside the work area; no clamped rect is pinned. Each case has a control area, a valid one whose
   # window must land on its exact rect, so the scene is live before a bad area is judged. Every run is a dry run (-From). Window ids start at 7001.
   # Red on c921613: every subject check fails by an assert (the bad window is placed at its bad rect). The controls pass there and must stay green.
+  # When no area keeps a pixel, Resolve-FreeAreas returns $null and the run takes the grid. The empty-state case checks that fallback: without the
+  # statement that returns $null for an empty keep list, its run throws and its grid check fails by an assert.
   # The pixel rect an area of fractions [fx, fy, fw, fh] gets on a $w by $h work area: each line rounded once, as Get-AreaPixelRects rounds it.
   function FbPx([double]$f, [int]$n) { [int][Math]::Round([Math]::Round($f, 9) * $n) }
   function FbWant([int]$w, [int]$h, $f) { $x = FbPx $f[0] $w; $y = FbPx $f[1] $h; '{0},{1},{2},{3}' -f $x, $y, ((FbPx ($f[0] + $f[2]) $w) - $x), ((FbPx ($f[1] + $f[3]) $h) - $y) }
@@ -946,15 +948,17 @@ try {
       Check "free-area bounds control ${tag}: the corner area (x1 = 1, y1 = 1), a 1 px wide area and a 1 px high area each keep their window at their rect" ($bad.Count -eq 0) ($bad -join ' | ')
     }
   }
-  Case 'free-area bounds, empty state: when every area is bad, no window is placed under 1 px or outside the work area (1365x1001)' {
-    $w = 1365; $h = 1001
-    $r = FbRun 'none' $w $h @(@{ rect = @(0, 0, (0.3 / $w), 1); app = 'claude'; title = 'Sliver W' }, @{ rect = @(0.9, 0, 0.5, 1); app = 'chrome'; title = 'Right edge' })
-    $scope = [bool]$r.PSObject.Properties['placed']
-    Check 'free-area bounds empty: scope, the run gives a result' $scope 'no placed list in the result'
-    if (-not $scope) { return }
-    $small = @($r.placed | ? { [int]$_.w -lt 1 -or [int]$_.h -lt 1 } | % { "id $($_.id) rect $(RectOf $_)" })
+  Case 'free-area bounds, empty state: when every area is bad, the run falls back to the grid, and no window is placed under 1 px or outside the work area (1365x1001)' {
+    $w = 1365; $h = 1001; $m = FgMon $w $h; $r = $null; $thrown = ''
+    try { $r = FbRun 'none' $w $h @(@{ rect = @(0, 0, (0.3 / $w), 1); app = 'claude'; title = 'Sliver W' }, @{ rect = @(0.2, 0, 0.2, (0.3 / $h)); app = 'ms-teams'; title = 'Sliver H' }, @{ rect = @(1.05, 0, 0.5, 1); app = 'chrome'; title = 'Past right edge' }) } catch { $thrown = $_.Exception.Message }
+    Check 'free-area bounds empty: the run does not throw' ($thrown -eq '') "threw: $thrown"
+    # Each area clamps to under 1 px, so Resolve-FreeAreas returns $null and the grid of three columns places window i+1 in cell i+1.
+    $grid = @(0..2 | ? { -not (OnCell $r (7001 + $_) ($_ + 1) (CellRect $m 3 1 $_)) } | % { "$(Desc $r (7001 + $_)), want slot $($_ + 1) at $(CellRect $m 3 1 $_)" })
+    Check 'free-area bounds empty: every area is bad, so the run falls back to the grid: each window takes its own cell' ($grid.Count -eq 0) ($grid -join ' | ')
+    $placed = @(@($r.placed) | ? { $null -ne $_ })
+    $small = @($placed | ? { [int]$_.w -lt 1 -or [int]$_.h -lt 1 } | % { "id $($_.id) rect $(RectOf $_)" })
     Check 'free-area bounds empty: no window is placed under 1 px' ($small.Count -eq 0) ($small -join ' | ')
-    $out = @($r.placed | ? { -not (FbInside $_ $w $h) } | % { "id $($_.id) rect $(RectOf $_)" })
+    $out = @($placed | ? { -not (FbInside $_ $w $h) } | % { "id $($_.id) rect $(RectOf $_)" })
     Check 'free-area bounds empty: no window is placed outside the work area' ($out.Count -eq 0) ($out -join ' | ')
   }
   Case 'free-area bounds, full size: ten cell areas and an eleventh past the corner, eleven fill windows: the ten cells keep their rects, and window 11 is inside the work area or not placed (1365x1001)' {
