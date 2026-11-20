@@ -44,7 +44,8 @@ not inert and is not drawn.
    Departs from: `app.html` `renderRail` draws every chip as the same `<i>`. Not blocking.
 2. **The three reasons** (`#s=chips`). Short words, one per case of `needNote`: "Not a call scene"
    (size and offer), "No setup picked" (setup), "No app maps here" (activity). The long sentence
-   stays in the inspector, unchanged. Gain: a chip stays short in a 176 px card. Lose: "call scene"
+   stays in the inspector, unchanged. Chip names keep Title Case and the reasons are status lines in sentence
+   case (decision `button-case`). Gain: a chip stays short in a 176 px card. Lose: "call scene"
    is a new word for Listen and Meetings. Pick: yes. A builder may reword it.
 3. **Mark only** (option `plain`, focus `chip-plain`). The pill shape stays; a triangle and the dashed
    edge mark it. The reason is the hover title and hidden text. Gain: no taller card. Lose: a touch
@@ -77,9 +78,11 @@ not inert and is not drawn.
    line less. Lose: a scene with only an inert switch is just missing from the count and only its
    chip says why. Pick: no.
 9. **The inspector's Extra Triggers line counts On switches and adds the inactive ones** (picked;
-   focus `xsum-on`). "2 on · triangle 1 inactive" in place of "2 on · triangle 1 warning". Gain: the
-   person is looking at switches, and two switches show On. Lose: this line and the rail count
-   differ on purpose (switches here, working triggers there). Pick: yes.
+   focus `xsum-on`). "2 on · triangle 1 inactive" in place of "2 on · triangle 1 warning". A conflict note
+   (`conflictNote`, "Also used by ..., first in the rail wins") still counts as a warning, so the line can read
+   "2 on · triangle 1 inactive · triangle 1 warning", each part shown only when it is not zero. The mockup
+   draws only the inactive part. Gain: the person is looking at switches, and two switches show On. Lose:
+   this line and the rail count differ on purpose (switches here, working triggers there). Pick: yes.
    Departs from: `app.html` `xSummary` counts every switch and calls every note a "warning". Not
    blocking.
 10. **The line counts only working switches** (option `working`, focus `xsum-working`). "1 on ·
