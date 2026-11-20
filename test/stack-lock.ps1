@@ -130,12 +130,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (272). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (273). Shard 1 runs
 # gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 272
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 273
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -2943,6 +2943,50 @@ try {
   if (Shard-Take) {
   Check 'closed front, swap, scope: the swap puts Pull request on cell 4 as its front' (SlFrontOn 1005 '4') "placed: $(SlPlacedBrief)"
   Check 'closed front, swap, control: Draft release, the window dragged, is the front of cell 2 after the swap' (SlFrontOn 1003 '2') "placed: $(SlPlacedBrief)"
+  }
+
+  # ---------- Drag pin: a pin made by a drag matches the app and the stable part of the title ----------
+  # app.html matchFor gives a pin made by a drag the window's whole title when its app has more than one open window, so a browser tab
+  # whose title changes stops matching and the pin stops placing it (debts/drag-pin-matches-full-title.md). Each drag is of a window
+  # the fill placed, with no pin: a window a pin already holds keeps that pin's match (pinEdit's grab), and never meets matchFor.
+  # The engine then runs on the page's own scene (as the 'send to bay' cases do), on the fixture and on a copy with two titles
+  # changed. Each new title keeps the old title's lead words and no longer contains the old whole title, so a match of the whole
+  # old title fails and a match on the lead holds. Chrome has three windows, so its pin needs a title match; Outlook has one.
+  # One gate: its drive and its Checks run in one shard.
+  if (Shard-Take) {
+  SlViewport 1440 900
+  SlCase (SlSceneJson '[]' '["chrome","outlook"]')
+  $dpFillPre = SlList "prevs[selId].placed.filter(p => p.id === 1006 || p.id === 1013).map(p => ({ id: p.id, pin: p.pin }))"
+  SlDrag (SlAt (SlBox 1006) 0.5 0.5) (SlSlotAt 9)
+  SlDrag (SlAt (SlBox 1013) 0.5 0.5) (SlSlotAt 8)
+  $dpScene = SlGet 'work[selId]'
+  $dpChIdx = -1; $dpOlIdx = -1; $dpPins = @($dpScene.pins)
+  for ($i = 0; $i -lt $dpPins.Count; $i++) {
+    if ($dpPins[$i].app -eq 'chrome' -and (SlCells $dpPins[$i]) -eq '9') { $dpChIdx = $i }
+    if ($dpPins[$i].app -eq 'outlook' -and (SlCells $dpPins[$i]) -eq '8') { $dpOlIdx = $i }
+  }
+  $dpCh = if ($dpChIdx -ge 0) { $dpPins[$dpChIdx] } else { $null }
+  # The new titles come from the fixture's own, so the scope check below reads the old title from the file, not from this case.
+  $dpFx = Join-Path $run 'fixture-drag-pin.json'
+  $dpDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+  $dpOldCh = ''; $dpOldOl = ''; $dpNewCh = 'Quarterly roadmap v2 - Example'; $dpNewOl = 'Inbox (3) - sample@example.com - Outlook'
+  foreach ($w in @($dpDoc.windows)) {
+    if ($w.id -eq 1006) { $dpOldCh = "$($w.title)"; $w.title = $dpNewCh }
+    if ($w.id -eq 1013) { $dpOldOl = "$($w.title)"; $w.title = $dpNewOl }
+  }
+  [IO.File]::WriteAllText($dpFx, (ConvertTo-Json -Depth 10 -Compress $dpDoc), $utf8)
+  $dpJson = if ($dpScene) { ConvertTo-Json -Depth 12 -Compress $dpScene } else { '' }
+  $dpErr = ''; $dpBefore = $null; $dpAfter = $null
+  try { if ($dpJson) { $dpBefore = SlDry $dpJson; $dpAfter = SlDry $dpJson $dpFx } } catch { $dpErr = "the engine failed: $($_.Exception.Message)" }
+  function DpOn($r, $id, $pinIdx, $slot) { $p = @($r.placed | ? { $_.id -eq $id })[0]; [bool]($p -and $pinIdx -ge 0 -and $p.pin -eq $pinIdx -and ($p.slots -join ',') -eq "$slot") }
+  function DpWhy($r, $id) { if (-not $r) { return "no engine answer. $dpErr" }; "placed: $(SlShort (@($r.placed | ? { $_.id -eq $id }))); missing: $(SlShort @($r.missing))" }
+  Check 'drag pin, scope: the fill placed Quarterly roadmap and Inbox before the drags, with no pin, so each drag makes its own pin' ([bool](@($dpFillPre).Count -eq 2 -and @($dpFillPre | ? { $_.pin -lt 0 }).Count -eq 2)) "placed before the drags: $(SlShort $dpFillPre)"
+  Check 'drag pin, scope: the drags made one chrome pin on cell 9 with a title match (chrome has three windows) and one outlook pin on cell 8' ([bool]($dpCh -and "$($dpCh.match)" -ne '' -and $dpOlIdx -ge 0 -and $dpPins.Count -eq 2)) "pins: $(SlShort $dpPins)"
+  Check 'drag pin, scope: each new title is not a title that contains the old whole title (the engine matches by contains, ignoring case)' ([bool]($dpOldCh -and $dpOldOl -and $dpNewCh.IndexOf($dpOldCh, [StringComparison]::OrdinalIgnoreCase) -lt 0 -and $dpNewOl.IndexOf($dpOldOl, [StringComparison]::OrdinalIgnoreCase) -lt 0)) "old: '$dpOldCh' and '$dpOldOl'; new: '$dpNewCh' and '$dpNewOl'"
+  Check 'drag pin, control: with its title as it was, each window is placed by the pin its drag made, on that pin''s cell' ([bool]((DpOn $dpBefore 1006 $dpChIdx 10) -and (DpOn $dpBefore 1013 $dpOlIdx 9))) "$(DpWhy $dpBefore 1006); $(DpWhy $dpBefore 1013)"
+  Check 'drag pin, red: after its title changes, Quarterly roadmap is still placed by the pin its drag made (the pin matches the app and the stable part of the title, not the whole title)' (DpOn $dpAfter 1006 $dpChIdx 10) "the pin's match: '$($dpCh.match)'; the window's title is now '$dpNewCh'; $(DpWhy $dpAfter 1006)"
+  Check 'drag pin, control: after the title change, no other chrome window is placed by that pin (the pin is not the whole app)' ([bool]($dpAfter -and $dpChIdx -ge 0 -and -not @($dpAfter.placed | ? { $_.pin -eq $dpChIdx -and $_.id -ne 1006 }).Count)) "placed by the chrome pin: $(SlShort @($dpAfter.placed | ? { $_.pin -eq $dpChIdx }))"
+  Check 'drag pin, control: Inbox, the only Outlook window, is still placed by its pin after its title changes' (DpOn $dpAfter 1013 $dpOlIdx 9) "the window's title is now '$dpNewOl'; $(DpWhy $dpAfter 1013)"
   }
 
   # ---------- Page load: the first data fetch fails once ----------
