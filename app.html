@@ -960,9 +960,10 @@ async function previewRun(id){
     const j=await r.json().catch(()=>null);if(!j||!Array.isArray(j.placed)||!Array.isArray(j.left))throw new Error("The server gave no layout");
     if(pseq[id]!==n)return;delete pfail[id];prevs[id]=j;if(id===selId){optim=null;flLive=null}render()}
   catch(e){if(pseq[id]!==n)return;
-    const why=e instanceof TypeError?"The app server stopped answering":String(e.message||e).replace(/\.\s*$/,""),sc=cfg.scenes.find(x=>x.id===id)||work[id]||{};
+    const why=mgFail(e),sc=cfg.scenes.find(x=>x.id===id)||work[id]||{};
+    // Status line only: a toast here would replace the Undo toast that follows a live apply.
     pfail[id]=why;delete prevs[id];if(id===selId){optim=null;flLive=null}
-    const msg=`Preview failed for ${sc.name||id}: ${why}`;status(msg);if(id===selId)toast(msg,"bad",{sticky:true});render()}}
+    const msg=`Preview failed for ${sc.name||id}: ${why}`;status(msg);render()}}
 async function previewAll(){await preview(selId);for(const s of cfg.scenes)if(s.id!==selId)await preview(s.id);
   for(const id in work)if(!saved(id)&&id!==selId)await preview(id)}
 
