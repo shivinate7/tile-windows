@@ -223,7 +223,7 @@ try {
     @('setup-page-1', 'setup-page.ps1', '-Shard 1 -Of 3'), @('setup-page-2', 'setup-page.ps1', '-Shard 2 -Of 3'), @('setup-page-3', 'setup-page.ps1', '-Shard 3 -Of 3'),
     @('install-swap', 'install-swap.ps1'), @('safe-moves', 'safe-moves.ps1'), @('fresh-screens', 'fresh-screens.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'),
     @('suite-kill', 'suite-kill.ps1'), @('bay', 'bay.ps1'), @('golden-layouts', 'golden-layouts.ps1'),
-    @('engine-layouts', 'engine-layouts.ps1'), @('run-undo', 'run-undo.ps1'), @('setup-config', 'setup-config.ps1')
+    @('engine-layouts', 'engine-layouts.ps1'), @('run-undo', 'run-undo.ps1'), @('setup-config', 'setup-config.ps1'), @('serve-empty', 'serve-empty.ps1')
   )
   foreach ($q in $queueList) { $queue.Enqueue($q) }
   Start-Ready
