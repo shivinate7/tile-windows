@@ -194,7 +194,7 @@ function Get-ClaudeGrid($sc, [int]$n, [string]$prev = '') { $m = Get-ClaudeMode 
 
 function New-TrayState { [pscustomobject]@{ fired = @{}; lastKey = $null; inCall = $null; streak = 0; before = ''; callSet = $null
   pend = @(); lastAuto = [datetime]::MinValue; deskDay = ''; idled = $false; known = $null; newSeen = @{}; act = $null; gapKey = $null; offered = @{}; soloSince = $null; soloDone = $false; screensSeen = $false
-  lastManual = [datetime]::MinValue; lastActive = $null; manualApplyAt = [datetime]::MinValue; autoApplied = ''; displayAt = [datetime]::MinValue; callEndAt = [datetime]::MinValue } }
+  lastManual = [datetime]::MinValue; rects = $null; seenMove = [datetime]::MinValue; skipRead = $false; lastActive = $null; manualApplyAt = [datetime]::MinValue; autoApplied = ''; displayAt = [datetime]::MinValue; callEndAt = [datetime]::MinValue } }
 $TileKindRank = @{ call = 0; display = 1; schedule = 2; desk = 3; window = 4; activity = 5; gaps = 6; noext = 7 }
 # One tick of the agent, with no side effects but on $s. Returns the scenes to apply: [{id, why, kind, offer}].
 # $key: the monitor key once the display has settled, else $null. $call: a call reading, or $null (not polled).
@@ -234,8 +234,22 @@ function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active, $sig 
   # A scene on screen that this agent did not apply was applied by hand: activity snap keeps off it for a while.
   if ($null -eq $s.lastActive) { $s.lastActive = $active }
   elseif ($active -ne $s.lastActive) { if ($active -ne $s.autoApplied) { $s.manualApplyAt = $now }; $s.lastActive = $active }
+  # A move the hook misses (keyboard, Win+Arrow, snap assist) shows as a changed rect on a window in two reads: it counts as a manual move at the read
+  # that shows it. A window that opens or closes, a minimize or restore, or a list in another order is no move. The first read after an apply is only
+  # compared against, never counted: the apply moved the windows (skipRead is set below, and by the tick after a gap-fill run).
+  if ($null -ne $sig.wins) {
+    $rects = @{}; foreach ($w in $sig.wins) { $rects["$($w.id)"] = $w }
+    if ($s.skipRead) { $s.skipRead = $false }
+    elseif ($s.rects) {
+      foreach ($k in @($rects.Keys)) {
+        $o = $s.rects[$k]; $w = $rects[$k]
+        if ($o -and -not $o.min -and -not $w.min -and ($o.x -ne $w.x -or $o.y -ne $w.y -or $o.w -ne $w.w -or $o.h -ne $w.h)) { $s.seenMove = $now; break }
+      }
+    }
+    $s.rects = $rects
+  }
   # A manual move cancels everything that was waiting before it.
-  $ma = [datetime]$sig.manualAt
+  $ma = [datetime]$sig.manualAt; if ($s.seenMove -gt $ma) { $ma = $s.seenMove }
   if ($ma -gt $s.lastManual) { $s.lastManual = $ma; $s.pend = @($s.pend | ? { $_.kind -eq 'call' -or $_.gen -ge $ma }); $s.newSeen = @{}; $s.act = $null }
 
   # Return to the desk: an unlock after a 5 minute lock (or the scene's own) re-applies the active scene; the day's first unlock applies Default;
@@ -273,7 +287,7 @@ function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active, $sig 
     $pick = @($cand | ? { -not $capped -or $_.kind -eq 'call' } | Sort-Object { $TileKindRank[$_.kind] })[0]
     if ($pick) {
       if ($pick.commit) { & $pick.commit }
-      $s.pend = @($s.pend | ? { $_ -ne $pick }); $s.lastAuto = $now; $s.autoApplied = $pick.id; if ($pick.kind -eq 'display') { $s.displayAt = $now }; $out += $pick
+      $s.pend = @($s.pend | ? { $_ -ne $pick }); $s.lastAuto = $now; $s.autoApplied = $pick.id; $s.skipRead = $true; if ($pick.kind -eq 'display') { $s.displayAt = $now }; $out += $pick
     }
   }
   @($out | % { $_.commit = $null; $_ })
@@ -828,12 +842,15 @@ $timer.add_Tick({
   if ($TileNote) { Note $TileNote; $script:TileNote = '' }
   # The gap watch reads what its hook recorded since the last tick; events of a scene that is no longer the active one are dropped.
   $gw = try { [TileWinWatch1]::Drain() } catch { @() }
+  $gapRan = $false
   if ($gap -and $gw.Count -and $active -eq $gap.scene) {
     $ge = for ($i = 0; $i -lt $gw.Count; $i += 3) { [pscustomobject]@{ event = [int]$gw[$i + 1]; idObject = 0; idChild = 0; hwnd = $gw[$i]; time = (New-Object DateTime $gw[$i + 2], 'Utc').ToLocalTime() } }
     $run = Step-GapFill $gap $ge (Get-Date) { param($h) Get-WinPid $h }
-    if ($run) { $gap.absent = @($run.absent); Invoke-GapFill $run }
+    if ($run) { $gap.absent = @($run.absent); Invoke-GapFill $run; $gapRan = $true }
   }
   foreach ($a in (Step-Tray $state (Get-Date) $cfg $key $call $active $sig)) { $sc = @($cfg.scenes | ? { $_.id -eq $a.id })[0]; if ($sc) { if ($a.offer) { Offer-Scene $sc $a.why } else { Apply-Scene $sc $a.why (Get-ActiveId) } } }
+  # A gap-fill run moves windows too: the next window read is no manual move.
+  if ($gapRan) { $state.skipRead = $true }
 })
 $timer.Start()
 # The undo record lives in memory only, so toasts from an earlier agent (with an Undo button that could not work) are cleared at start and at Quit.
