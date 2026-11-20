@@ -1238,7 +1238,7 @@ try {
   Check 'promoted, no title match: Behind This Window does not read "Not open" for the promoted window' ("$pnt" -notlike '*Not open*') "Behind This Window: $pnt"
   }
 
-  # Put Behind of a promoted window (debt putbehind-promoted-listed-twice, decision stack-and-lock). The closed front's window
+  # Put Behind of a promoted window (decision stack-and-lock). The closed front's window
   # (Draft release notes) is promoted to the front, then dropped behind Quarterly. Its closed pin goes with the drop, so its stale
   # entry for the window must go too: the window is listed once across the pins, and no entry is left with no open window.
   SlCase (SlSceneJson $pinsPromotedPut)
