@@ -116,7 +116,7 @@
 #     disabled (forced-color-adjust: none, or the computed colour is GrayText).
 #     Ruling 2026-11-16 13:29 CST: a block with no room clear of the Swap circle, even for the icon at 8 px or more, shows no Put
 #     Behind label. Its solid border and the circle carry the cue. Forced colours drops box-shadow, so the icon-alone chip has a border.
-#   Closed front (decision stack-and-lock, debt closed-front-stack): when a pin's front window is not open, the first open back window is
+#   Closed front (decision stack-and-lock): when a pin's front window is not open, the first open back window is
 #     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Keep Where It Is act on that
 #     window. Bring to Front lists the promoted window behind the new front once, never twice. A move or resize keeps the window the front of
 #     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Keep Where It Is leaves no pin naming it.
@@ -2727,7 +2727,7 @@ try {
   }
   SlSend 'Emulation.setEmulatedMedia' @{ features = @() }
 
-  # ---------- Closed front in a stack (decision stack-and-lock, debt closed-front-stack) ----------
+  # ---------- Closed front in a stack (decision stack-and-lock) ----------
   # A pin whose front is not open: Apply makes its first open back window the front (tile.ps1, Pass), so the board shows that window as the
   # front while the scene still names the closed one. Here the closed front is closedapp (match empty), and Draft release (claude, 1003) is
   # promoted over Quarterly (chrome, 1006). The pin has to be this shape: if the closed front were claude with a match, a move would copy that
@@ -2822,7 +2822,7 @@ try {
   Check 'open front, Delete, control: one press lets Draft release, the window behind, take cell 4 as the front' (SlFrontOn 1003 '4') "placed: $(SlPlacedBrief)"
   }
 
-  # ---------- Edit on a scene with no pins key (debt closed-front-stack: each edit settles the closed fronts, and reads pins first) ----------
+  # ---------- Edit on a scene with no pins key (each edit settles the closed fronts, and reads pins first) ----------
   # A scene file may leave the pins key out. tile.ps1 reads it as an empty list, and the page keeps the scene as it is. An edit on it must
   # raise no page error, apply, and add one undo entry. The edit is the Fill order select: it changes only the scene's fill sort.
   SlViewport 1440 900; SlCase (SlSceneJson $null '["*"]'); SlPark
@@ -2843,7 +2843,7 @@ try {
   Check 'no pins key, control: the edit adds exactly one undo entry' ([bool]($npN1 -eq ($npN0 + 1))) "undo entries: $npN0 before, $npN1 after"
   }
 
-  # ---------- Closed front, covered pin at a lower index (debt closed-front-stack) ----------
+  # ---------- Closed front, covered pin at a lower index ----------
   # The closed front's pin is index 1 here, after the covered pin (Pull request, chrome, cell 5) at index 0; the controls swap the two.
   # A resize or a Merge removes the covered pin before it settles the closed front, so the closed front's index shifts. The promoted
   # window (Draft release, on screen) is then not written into the pin, and the pin the edit makes names claude with no title, which
