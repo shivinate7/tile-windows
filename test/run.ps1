@@ -137,7 +137,7 @@ function SelfTest($url, $hook) {
 $starters = [IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8) | ConvertFrom-Json
 function StarterJson($id) { $s = @($starters.scenes | ? { $_.id -eq $id })[0]; $s | Add-Member -Force cats $starters.cats; $s | Add-Member -Force categories $starters.categories; ConvertTo-Json -Depth 10 -Compress $s }
 
-$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $tray = $null; $suites = @()
+$form = $null; $srv = $null; $fsrv = $null; $ssrv = $null; $tsrv = $null; $psrv = $null; $pfwd = $null; $tray = $null; $suites = @()
 
 # The whole run, and every child it starts, uses a temp profile: the real one is never named.
 # The run marks its children as the suite (TILE_TEST_SUITE): tile.ps1 refuses a live move under it unless TILE_TEST_ALLOW_LIVE is set.
@@ -362,6 +362,30 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $bb = $ss.bay
     Check 'page: a window sent to the bay leaves the board, shows in the bay, and comes back when placed' ($bb -and $bb.why -eq 'in the bay' -and $bb.chip -and $bb.kept -eq 2 -and $bb.back) ($bb | ConvertTo-Json -Compress)
     Check 'page cell size rounds like tile.ps1 ([int], to even)' ($ss.cell.w -eq [int](1365 / 2) -and $ss.cell.h -eq [int](1001 / 2)) ($ss.cell | ConvertTo-Json -Compress)
+    # A /preview that fails for one scene: test\preview-proxy.ps1 stands in front of a real dry-run server and answers 500 for
+    # thursday-prep only. The self-test must say that preview failed, and must not draw solo's windows as thursday-prep's.
+    $pprof = Profile 'pfail'; $phome = Join-Path $pprof '.tile-windows'; New-Item -ItemType Directory $phome | Out-Null
+    $psrv = Start-Child $pprof "-File `"$serve`" -NoBrowser -From `"$fixture`"" @{ TILE_HOME = $phome }
+    $ptarget = $psrv.StandardOutput.ReadLine(); $pcount = Join-Path $tmp 'preview-forced.txt'
+    $pfwd = Start-Child $pprof "-File `"$(Join-Path $PSScriptRoot 'preview-proxy.ps1')`" -Target `"$ptarget`" -Fail thursday-prep -CountFile `"$pcount`""
+    $purl = $pfwd.StandardOutput.ReadLine(); $pst = SelfTest $purl 'scenes'
+    [void](Invoke-WebRequest -UseBasicParsing "${ptarget}quit" -Method Post -Body 'quit')
+    if (-not $pfwd.HasExited) { $pfwd.Kill() }
+    $forced = @(Get-Content -LiteralPath $pcount -ErrorAction SilentlyContinue | ? { $_ })
+    Check 'preview failure case: the proxy started with a tokened URL' ($purl -match '^http://127\.0\.0\.1:\d+/[0-9a-f]{32}/$') $purl
+    Check 'preview failure case: the self-test ran' ($null -ne $pst)
+    # Scope first: the failed previews are thursday-prep's, and no other scene's.
+    Check 'preview failure case: the proxy failed thursday-prep, and no other scene' ($forced.Count -ge 1 -and @($forced | ? { $_ -ne 'thursday-prep' }).Count -eq 0) "failed: $($forced -join ',')"
+    if ($null -ne $pst) {
+      $dt = { param($d, $id) (@($d.drawn.$id) | Sort-Object id | % { "$($_.id):$($_.x),$($_.y),$($_.w)x$($_.h)" }) -join ' ' }
+      Check 'page: a failed preview is reported as preview failed for thursday-prep' ((ConvertTo-Json -Depth 10 -Compress $pst) -match 'preview failed for thursday-prep') 'the self-test has no such line'
+      $tp = & $dt $pst 'thursday-prep'; $sp = & $dt $pst 'solo'
+      Check 'page: a failed preview does not draw solo''s windows as thursday-prep''s' ($sp -ne '' -and $tp -cne $sp) "thursday-prep: $tp | solo: $sp"
+      # Green control: the six other scenes draw what the unfailed run drew.
+      $others = @($starters.scenes.id | ? { $_ -ne 'thursday-prep' })
+      $differ = @($others | ? { (& $dt $pst $_) -cne (& $dt $ss $_) -or -not (& $dt $ss $_) })
+      Check 'preview failure case: the other six scenes draw what the unfailed run drew' ($others.Count -eq 6 -and $differ.Count -eq 0) "differ: $($differ -join ',')"
+    }
     $sb = SelfTest $furl 'builtin'
     Check 'page: a built-in scene saves a change to its trigger switches, and nothing else' ($sb.builtIn -and $sb.idleDisabled -and $sb.autoEnabled -and $sb.saved -and $sb.otherDisabled) ($sb | ConvertTo-Json -Compress)
     Check 'page Save as new writes the scene to config.json' (@($ss.names) -contains 'Selftest copy' -and ([IO.File]::ReadAllText($fcfg, $utf8)).Contains('"Selftest copy"')) (@($ss.names) -join ',')
@@ -528,7 +552,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   $script:fail++; "FAIL  run stopped: $_"
 } finally {
   if ($form -and -not $form.HasExited) { Stop-Process -Id $form.Id -Force }
-  foreach ($p in $srv, $fsrv, $ssrv, $tsrv, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
+  foreach ($p in $srv, $fsrv, $ssrv, $tsrv, $psrv, $pfwd, $tray) { if ($p -and -not $p.HasExited) { $p.Kill() } }
   # A child the loop did not collect (the run stopped first) is stopped, and its output printed, so none of it is dropped.
   foreach ($s in $suites) { if (-not $s.Shown) { Stop-Suite $s; Show-Suite $s $false } }
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
