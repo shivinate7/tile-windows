@@ -1,0 +1,1 @@
+- wait-halves-first-poll: The test helper Wait-Halves (test/setup-page.ps1:3374) returns on the first poll that shows one half, so a half drawn in a later pass is missed. Cheap fix: wait for no in-flight requests first, as Empty-Select does. Seen: 2026-11-20 x1

@@ -60,9 +60,13 @@ Status: built in PR 51 (Split Cell board), merged at commit b1735e7. Records: no
 
 **L2b. Split Cell deferred items** (`tile.ps1`, `app.html`; mockup in PR 69 (empty-cell mockup); needs L2)
 
-Status: planned; PR A in progress on branch `split-fill-last`.
+Status: built in PR 70 (engine), merged at commit 6abe62a, and PR 72 (board), merged at commit 8392b9f. Records: debt `zone-fills-last-label`; notes `split-memo-not-snapshotted`, `wait-halves-first-poll`, `fill-unit-grid-mismatch`, `even-split-page-only`, `kept-half-wait-reason`.
 
-These are the four items PR 51 (Split Cell board) did not build. They are planned, not dropped.
+Open owner questions (non-blocking; the build default holds until the owner rules):
+- **Zone capacity under a split.** Should a zone hold one window per whole block, then its open halves (built, per item 6 "the same way"), or one window per fine cell as on main? Build default: one window per whole block, then its open halves. Asked 2026-11-20 03:00 CST. Status: open.
+- **Label for a pinned app's other windows.** Today's label is "Not in this scene", which is wrong for an in-scene window: tile.ps1:660 places only the pinned window (SKILL.md:38). Options: keep; engine gives its own reason (recommended); fill them. Build default: keep. Asked 2026-11-20 05:33 CST. Status: open.
+
+These are the four items PR 51 (Split Cell board) did not build. They were planned, not dropped.
 
 **Governing grants** (owner)
 - Layout-free item 2 (select an empty cell) and item 6 (open half fills last; Keep This Half Empty), in `docs/design/mockups/layout-free-notes.md`.

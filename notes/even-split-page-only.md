@@ -1,0 +1,1 @@
+- even-split-page-only: Split Cell on a block already two cells wide changes nothing saved. It marks both halves "Open half" in the page only, and the marks are lost on reload (PR 72, the board; mockup item S12). Seen: 2026-11-20 x1

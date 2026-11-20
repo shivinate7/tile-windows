@@ -1,0 +1,1 @@
+- split-memo-not-snapshotted: A saved split that doubles the grid does not snapshot halfMemo (app.html:2081), so after a page-only split and then a saved split, Undo of the saved one drops the page-only marks. The next Undo says "Undid the split." (app.html:3115) with nothing visible changing. Visual only. Seen: 2026-11-20 x1
