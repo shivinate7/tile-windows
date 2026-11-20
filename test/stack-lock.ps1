@@ -3,6 +3,8 @@
 # over the DevTools protocol, on a dry-run server (nothing moves), then read the scene and the tile boxes back. A red
 # case fails on its outcome: the scene or the boxes end up wrong. A missing control only makes the drag do nothing.
 # Page load (before the Sora cases): one dropped snapshot fetch must not leave the board empty.
+# Preview POST (after the page load cases): previewRun sends its POST again once, after a short wait, when the first is a dropped
+# connection (a TypeError). A 500 reply and an unreadable 200 reply are not sent again. The cases call preview(id) and read prevs, selId and #msg.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\stack-lock.ps1
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
 #
@@ -127,12 +129,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (264). Shard 1 runs
-# gates 1 to 67 (the cases before the Board feedback section), shard 2 gates 68 to 171 (before the stack tweaks ruling section), shard 3
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (269). Shard 1 runs
+# gates 1 to 68 (the cases before the Board feedback section), shard 2 gates 69 to 172 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
-$shardCuts = @(67, 171)
+$shardCuts = @(68, 172)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 264
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 269
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -140,7 +142,7 @@ function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $sc
 $SlTempRoot = Join-Path $env:TEMP 'tile-windows-test-runs'
 $SlRunName = '^\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 . (Join-Path $PSScriptRoot 'run-folders.ps1')
-function SlSweep($dir, $olderThan) { Invoke-RunFolderSweep $dir $SlRunName $olderThan }
+function SlSweep($dir, $olderThan, $now = (Get-Date)) { Invoke-RunFolderSweep $dir $SlRunName $olderThan $now }
 # The sweep, proven on its own folder: an old run folder goes, a new one stays.
 $proof = Join-Path $env:TEMP ('tile-windows-sweep-proof-' + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory $proof | Out-Null
@@ -162,6 +164,40 @@ SlSweep $proof ([TimeSpan]::FromDays(1))
 Check 'run folders: the sweep removes an old run folder whose path is past 260 characters' (-not [IO.Directory]::Exists('\\?\' + $longRun)) "path length $($longDeep.Length)"
   }
 Remove-RunFolder $proof
+# A run folder that another process holds open (a stray Edge's CrashpadMetrics-active.pma). The sweep must not throw, must leave that
+# folder in place, must still remove the other old folder and keep the new one, and must write one warning line that names the locked
+# folder. Its own run folder under the temp root (test-temp-standard), so the sweep sees only this case's folders. The clock is
+# synthetic: every time comes from $lockNow, and no real date is read (P5).
+$lockNow = [datetime]::new(2001, 1, 1, 12, 0, 0)
+$lockRun = Join-Path $SlTempRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item -ItemType Directory -Force $lockRun | Out-Null
+$lockDir = Join-Path $lockRun 'sweep'; New-Item -ItemType Directory $lockDir | Out-Null
+# Named so the locked folder sorts first: a sweep that throws there would also miss the other old folder.
+$lockedRun = Join-Path $lockDir ('4-' + [guid]::NewGuid().ToString()); $otherRun = Join-Path $lockDir ('5-' + [guid]::NewGuid().ToString())
+$freshRun = Join-Path $lockDir ('6-' + [guid]::NewGuid().ToString())
+foreach ($d in $lockedRun, $otherRun, $freshRun) { New-Item -ItemType Directory $d | Out-Null }
+$lockHeld = $null; $lockFile = Join-Path $lockedRun 'CrashpadMetrics-active.pma'
+try {
+  $lockHeld = [IO.File]::Open($lockFile, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+  [IO.File]::WriteAllText((Join-Path $otherRun 'a.txt'), 'x'); [IO.File]::WriteAllText((Join-Path $freshRun 'a.txt'), 'x')
+  # Each folder's time is set after its files exist: creating a file moves its folder's last write time.
+  [IO.Directory]::SetLastWriteTime($lockedRun, $lockNow.AddDays(-3)); [IO.Directory]::SetLastWriteTime($otherRun, $lockNow.AddDays(-3))
+  [IO.Directory]::SetLastWriteTime($freshRun, $lockNow.AddHours(-1))
+  # Scope first (P7): the held file refuses a delete, so the sweep below meets a real lock.
+  $refused = $false; try { [IO.File]::Delete($lockFile) } catch { $refused = $true }
+  $threw = $null; $warn = @()
+  try { $warn = @(SlSweep $lockDir ([TimeSpan]::FromDays(1)) $lockNow 3>&1 | ? { $_ -is [Management.Automation.WarningRecord] }) } catch { $threw = $_.Exception.Message }
+  if (Shard-Take) {
+Check 'run folders: a file held open refuses a delete (the fixture holds it)' $refused
+Check 'run folders: the sweep does not throw on a locked old run folder' ($null -eq $threw) "threw: $threw"
+Check 'run folders: the locked old run folder stays' (Test-Path -LiteralPath $lockedRun)
+Check 'run folders: the other old run folder goes' (-not (Test-Path -LiteralPath $otherRun))
+Check 'run folders: the new run folder stays' (Test-Path -LiteralPath $freshRun)
+Check 'run folders: one warning line names the skipped folder' ($warn.Count -eq 1 -and $warn[0].Message.Contains((Split-Path $lockedRun -Leaf))) "warnings: $($warn.Count)"
+  }
+} finally {
+  if ($lockHeld) { $lockHeld.Dispose() }
+  Remove-RunFolder $lockRun
+}
 
 # ---------- Engine: tile.ps1 -Scene on the fixture (dry run) ----------
 # Fixture: claude 1001 'Refactor the grid solver', 1002 'Pin parser edge cases', 1003 'Draft release notes',
@@ -575,6 +611,58 @@ function PlFaultOn([string]$mode, [string]$key) {
   "$($r.result.identifier)"
 }
 function PlFaultOff($id) { if ($id) { [void](SlSend 'Page.removeScriptToEvaluateOnNewDocument' @{ identifier = $id }); [void](SlSend 'Page.disable' @{}) } }
+# Preview POST fault (app.html previewRun): loads the one-scene page, then wraps fetch in the page so the scene's POSTs to /preview
+# meet -mode, and runs one preview(id) of it. The wrapper is armed after the load, so the page's own previews are neither failed nor
+# counted (PlFaultOn is a new-document script for the snapshot request, set before the load, and counts failures, not every POST; it
+# cannot arm late, answer with a status or a body, or count the POSTs the cases here compare). Modes: 'drop-once' (the first POST is a
+# TypeError, as a dropped connection gives; later ones go on to the server), 'drop-always', 'status500' (a 500 reply with a text) and
+# 'badbody' (a 200 reply that is not JSON). The call is capped at 20 s in the page. Returns the page's read; ok is the scope: the page
+# held the scene's preview with none in flight, the wrapper saw a POST, and the call finished.
+function PvDrive([string]$mode) {
+  $ld = SlCase (SlSceneJson '[]' '["*"]') -Soft
+  if (-not $ld.ready) { return [pscustomobject]@{ ready = $false; ok = $false; diag = "the page did not draw the scene: $($ld.diag)" } }
+  $arm = @'
+(() => {
+  const MODE = '__MODE__', ID = selId, orig = window.fetch;
+  window.__pvOrig = orig;
+  window.__pv = { id: ID, posts: 0, before: !!prevs[ID], idle: !inflight[ID], old: prevs[ID] };
+  window.fetch = function (input, init) {
+    const u = String(typeof input === 'string' ? input : (input && input.url) || input);
+    let bid = null;
+    try { bid = JSON.parse(init.body).id; } catch (e) {}
+    if (/(^|\/)preview(\?|$)/.test(u) && init && init.method === 'POST' && bid === ID) {
+      const n = ++window.__pv.posts;
+      if (MODE === 'drop-always' || (MODE === 'drop-once' && n === 1)) return Promise.reject(new TypeError('Failed to fetch'));
+      if (MODE === 'status500') return Promise.resolve(new Response('Server out of order.', { status: 500 }));
+      if (MODE === 'badbody') return Promise.resolve(new Response('not json', { status: 200 }));
+    }
+    return orig.apply(this, arguments);
+  };
+  return true;
+})()
+'@
+  $drive = @'
+(async () => {
+  const p = window.__pv;
+  const done = await Promise.race([preview(p.id).then(() => 'done'), new Promise(r => setTimeout(() => r('hung'), 20000))]);
+  const now = prevs[p.id];
+  return JSON.stringify({ done: done, posts: p.posts, before: p.before, idle: p.idle, drawn: !!now, fresh: !!now && now !== p.old && Array.isArray(now.placed), msg: document.getElementById('msg').textContent.trim() });
+})()
+'@
+  try {
+    $script:jsErr = ''
+    $armed = SlJs ($arm.Replace('__MODE__', $mode))
+    if (-not $armed) { return [pscustomobject]@{ ready = $false; ok = $false; diag = "the fault did not arm: $script:jsErr" } }
+    $text = SlJs $drive
+    if (-not $text) { return [pscustomobject]@{ ready = $false; ok = $false; diag = "the page read failed: $script:jsErr" } }
+    $r = $text | ConvertFrom-Json
+    [pscustomobject]@{ ready = $true; ok = [bool]($r.before -and $r.idle -and $r.posts -ge 1 -and $r.done -eq 'done'); diag = ''; done = $r.done; posts = $r.posts; before = $r.before; idle = $r.idle; drawn = $r.drawn; fresh = $r.fresh; msg = $r.msg }
+  } finally {
+    [void](SlJs "(() => { if (window.__pvOrig) { window.fetch = window.__pvOrig; delete window.__pvOrig; } return true; })()")
+  }
+}
+# The detail line of a PvDrive scope check: each part of the scope on its own, so a failure names which one broke.
+function PvWhy($pv) { "page drew the scene: $($pv.ready) $($pv.diag); had a preview: $($pv.before); none in flight: $($pv.idle); POSTs seen: $($pv.posts); call: $($pv.done)" }
 function SlStartServer($from = $fixture, $tileHome = $env:TILE_HOME) {
   $psi = New-Object Diagnostics.ProcessStartInfo 'powershell', "-NoProfile -ExecutionPolicy Bypass -File `"$serve`" -NoBrowser -From `"$from`""
   $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.CreateNoWindow = $true
@@ -2856,6 +2944,40 @@ try {
     PlFaultOff $plAll
     [void](SlJs "(() => { try { sessionStorage.removeItem('$plKeyAll'); } catch (e) {} return true; })()")
   }
+  }
+
+  # ---------- Preview POST: the first POST of a preview is dropped ----------
+  # app.html previewRun posts once. A dropped connection (fetch throws a TypeError) fails the scene's preview at once, though the
+  # server is fine. loadAll already tries a dropped fetch again (PR 65); previewRun does not. The target: previewRun sends the POST
+  # again once, after a short wait, and only on a TypeError; then it fails as today. A 500 reply and an unreadable 200 reply are not sent again. PvDrive
+  # arms the fault after the load and runs one preview of the scene, so each group counts the POSTs of that one call. Each group is one
+  # gate. Its scope Check goes first: the page held the scene's preview, the fault met a POST, and the call finished.
+  if (Shard-Take) {
+  $pvOnce = PvDrive 'drop-once'
+  Check 'preview POST, dropped once, scope: the fault dropped a POST of the scene''s preview and the call finished' ([bool]$pvOnce.ok) (PvWhy $pvOnce)
+  Check 'preview POST, dropped once, red: the POST is sent again after the drop (two POSTs)' ([bool]($pvOnce.ok -and $pvOnce.posts -eq 2)) "POSTs seen: $($pvOnce.posts); the page gave up at the first drop"
+  Check 'preview POST, dropped once, red: the scene''s preview is drawn from the second answer, with no Preview failed line' ([bool]($pvOnce.ok -and $pvOnce.fresh -and $pvOnce.msg -notlike 'Preview failed*')) "fresh preview: $($pvOnce.fresh); status: '$($pvOnce.msg)'"
+  }
+
+  if (Shard-Take) {
+  $pvDown = PvDrive 'drop-always'
+  Check 'preview POST, every POST dropped, scope: the fault dropped a POST of the scene''s preview and the call finished' ([bool]$pvDown.ok) (PvWhy $pvDown)
+  Check 'preview POST, every POST dropped, red: the POST is sent once more, then the page gives up (two POSTs)' ([bool]($pvDown.ok -and $pvDown.posts -eq 2)) "POSTs seen: $($pvDown.posts)"
+  Check 'preview POST, every POST dropped, control: it fails as today (the status line names the scene and the stopped server, and no preview is kept)' ([bool]($pvDown.ok -and $pvDown.msg -ceq 'Preview failed for Stack and lock: The app server stopped answering' -and -not $pvDown.drawn)) "status: '$($pvDown.msg)'; preview kept: $($pvDown.drawn)"
+  }
+
+  if (Shard-Take) {
+  $pv500 = PvDrive 'status500'
+  Check 'preview POST, 500 reply, scope: the fault answered a POST of the scene''s preview with a 500 and the call finished' ([bool]$pv500.ok) (PvWhy $pv500)
+  Check 'preview POST, 500 reply, control: the POST is not sent again (one POST)' ([bool]($pv500.ok -and $pv500.posts -eq 1)) "POSTs seen: $($pv500.posts)"
+  Check 'preview POST, 500 reply, control: it fails as today (the status line names the scene and the server''s words, and no preview is kept)' ([bool]($pv500.ok -and $pv500.msg -ceq 'Preview failed for Stack and lock: Server out of order' -and -not $pv500.drawn)) "status: '$($pv500.msg)'; preview kept: $($pv500.drawn)"
+  }
+
+  if (Shard-Take) {
+  $pvBad = PvDrive 'badbody'
+  Check 'preview POST, unreadable 200 reply, scope: the fault answered a POST of the scene''s preview with a body that is not JSON and the call finished' ([bool]$pvBad.ok) (PvWhy $pvBad)
+  Check 'preview POST, unreadable 200 reply, control: the POST is not sent again (one POST)' ([bool]($pvBad.ok -and $pvBad.posts -eq 1)) "POSTs seen: $($pvBad.posts)"
+  Check 'preview POST, unreadable 200 reply, control: it fails as today (the status line names the scene and says the server gave no layout, and no preview is kept)' ([bool]($pvBad.ok -and $pvBad.msg -ceq 'Preview failed for Stack and lock: The server gave no layout' -and -not $pvBad.drawn)) "status: '$($pvBad.msg)'; preview kept: $($pvBad.drawn)"
   }
 
   # ---------- Ruling 2026-11-16 (label fallback): the Put Behind label with Sora loaded ----------

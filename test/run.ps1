@@ -1,5 +1,6 @@
-# Checks for tile.ps1, serve.ps1, app.html, tray.ps1 (its automatic triggers: triggers.ps1) and install.ps1. Plain asserts; moves no window
-# (every place call is a dry run) and touches no real profile (servers, tray and installer get a temp one).
+# Checks for tile.ps1, serve.ps1, app.html, tray.ps1 (its automatic triggers: triggers.ps1) and install.ps1. Plain asserts; moves none of your
+# windows (every place call is a dry run, except safe-moves.ps1 case 9, which starts one throwaway window, moves only that one, and closes it)
+# and touches no real profile (servers, tray and installer get a temp one).
 # Run: powershell -NoProfile -ExecutionPolicy Bypass -File test\run.ps1
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
@@ -223,7 +224,7 @@ try {
     @('setup-page-1', 'setup-page.ps1', '-Shard 1 -Of 3'), @('setup-page-2', 'setup-page.ps1', '-Shard 2 -Of 3'), @('setup-page-3', 'setup-page.ps1', '-Shard 3 -Of 3'),
     @('install-swap', 'install-swap.ps1'), @('safe-moves', 'safe-moves.ps1'), @('fresh-screens', 'fresh-screens.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'),
     @('suite-kill', 'suite-kill.ps1'), @('bay', 'bay.ps1'), @('golden-layouts', 'golden-layouts.ps1'),
-    @('engine-layouts', 'engine-layouts.ps1'), @('run-undo', 'run-undo.ps1'), @('setup-config', 'setup-config.ps1')
+    @('engine-layouts', 'engine-layouts.ps1'), @('run-undo', 'run-undo.ps1'), @('setup-config', 'setup-config.ps1'), @('serve-empty', 'serve-empty.ps1')
   )
   foreach ($q in $queueList) { $queue.Enqueue($q) }
   Start-Ready
@@ -449,9 +450,13 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $tsrv = Start-Child $tprof "-File `"$serve`" -NoBrowser -From `"$fixture`"" @{ TILE_HOME = $thome }
     $turl = $tsrv.StandardOutput.ReadLine(); $tst = SelfTest $turl 'triggers'
     [void](Invoke-WebRequest -UseBasicParsing "${turl}quit" -Method Post -Body 'quit')
-    Check 'page: with triggers on, the rail shows each scene''s extra triggers as chips' ($tst.chips.default -eq 'Return,Call Size,Gap' -and $tst.chips.focus -eq 'Gap' -and $tst.railsum -like '2 of 7 scenes have triggers on*') ($tst | ConvertTo-Json -Compress)
+    # The inert trigger switch's design (docs/design/mockups/inert-trigger-switch.html, its notes, choices 1, 2 and 7): a chip of a switch that
+    # does nothing carries its hidden "Warning: " lead and its reason; the rail line counts the scenes with a working trigger, then says how many
+    # hold a switch that does nothing.
+    Check 'page: with triggers on, the rail shows each scene''s extra triggers as chips, an inert one with its reason' ($tst.chips.default -eq 'Return,Warning: Call SizeNot a call scene,Gap' -and $tst.chips.focus -eq 'Gap' -and $tst.railsum -like '2 of 7 scenes have triggers on*1 scene has a switch that does nothing.') ($tst | ConvertTo-Json -Compress)
     Check 'page: two scenes with the same extra trigger each say so beside the switch, and the first in the rail wins' ($tst.gaps.default -like 'Also used by Focus. This scene is first*' -and $tst.gaps.focus -like 'Also used by Default. Default is first*') ($tst | ConvertTo-Json -Compress)
-    Check 'page: a switch that does nothing here says so beside it, and the closed extras count the warnings' ($tst.size -like '*does nothing here.' -and $tst.summary -like '3 on*2 warnings') ($tst | ConvertTo-Json -Compress)
+    # Choice 9 of the same mockup: the closed extras count the switches that are On, and the inactive ones and the warnings apart (middle dots).
+    Check 'page: a switch that does nothing here says so beside it, and the closed extras count the inactive switch apart from the warning' ($tst.size -like '*does nothing here.' -and $tst.summary -ceq "3 on $([char]0x00B7) 1 inactive $([char]0x00B7) 1 warning") ($tst | ConvertTo-Json -Compress)
     Check 'page: the trigger section has no disabled control' ($tst.disabled -eq 0) ($tst | ConvertTo-Json -Compress)
     Check 'page: the callout keeps its height when the last trigger goes off' ($tst.callout.on -gt 0 -and $tst.callout.on -eq $tst.callout.off) ($tst | ConvertTo-Json -Compress)
   }

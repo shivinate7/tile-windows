@@ -802,9 +802,13 @@ $timer.add_Tick({
   if ($linkEv.WaitOne(0)) { Invoke-Link }
   try { $cfg = ConvertFrom-Json (Get-TileConfigText) } catch { return }
   # The monitor key: on the first tick (seeds), then 2 s after the display last changed.
-  if ([TileDisplayWatch]::Dirty) { [TileDisplayWatch]::Dirty = $false; $script:dirtyAt = Get-Date }
+  if ([TileDisplayWatch]::Dirty) { [TileDisplayWatch]::Dirty = $false; $script:dirtyAt = Get-Date; $script:readFails = 0 }
   $key = $null
-  if ($first -or ($dirtyAt -and ((Get-Date) - $dirtyAt).TotalSeconds -ge 2)) { $script:first = $false; $script:dirtyAt = $null; $mons = Read-Monitors; if ($mons) { $script:plugged = $mons }; $key = Get-MonitorKey $mons }
+  if ($first -or ($dirtyAt -and ((Get-Date) - $dirtyAt).TotalSeconds -ge 2)) { $script:first = $false; $script:dirtyAt = $null; $mons = Read-Monitors
+    # A read that gave no monitors reads again on a later tick (the 2 s wait above), at most 5 more times: each is a tile.ps1 run, so a broken read must
+    # not loop every 2 s. A good read or a new display change starts the count again.
+    if ($mons) { $script:plugged = $mons; $script:readFails = 0 } elseif ([int]$script:readFails -lt 5) { $script:readFails = [int]$script:readFails + 1; $script:dirtyAt = Get-Date }
+    $key = Get-MonitorKey $mons }
   # Teams calls: poll every 3 s while any scene applies itself (the in-call guard needs the reading too).
   $call = $null; $any = Test-AnyAuto $cfg; $n = ++$script:tick
   if (($n % 3) -eq 0 -and $any) { $call = Test-TeamsCall (Get-MicUsage) (Get-TeamsWindows) }
