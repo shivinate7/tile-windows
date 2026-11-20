@@ -1,6 +1,6 @@
 ## layout-free-build
 
-**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L2 (PR 51, Split Cell board), L3 (PR 50, free areas), L5a (PR 54, gap-fill run) and L5b (PR 43, gap watch) are merged. L4 is not built. The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
+**Status.** L0 (PR 45, golden layouts), L1 (PR 46, finer grid), L2 (PR 51, Split Cell board), L3 (PR 50, free areas), L4 (PR 58, Free Layout board), L5a (PR 54, gap-fill run) and L5b (PR 43, gap watch) are merged. The next work is the L2 deferred items (note `split-cell-deferred-items`). The four owner questions are open, asked 2026-11-18 11:15 CST (keys S, G, K, M, at the end).
 
 **Source.** The Plan agent's build plan (opus), revised after a refuter, 2026-11-18 11:20 CST. It was first checked against origin/main 9e6ae0a. The symbols that replace its line numbers were checked against origin/main b6bc537 by 2026-11-18 11:23 CST. Its other claims, such as the columns cap of 8 and the span stepper following `g.c`, were not re-checked. Main has no docs/map/.
 
