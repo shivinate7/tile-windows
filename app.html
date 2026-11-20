@@ -1651,6 +1651,7 @@ function pinWin(id,mon,slot,cs=1,rs=1,force=false){
 function pinNow(x,id){const P=prev(),cur=P&&P.placed.find(p=>p.id===id);return cur&&cur.pin>=0&&!cur.behind?x.pins[cur.pin]:null}
 function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id),opt={}){
   const w=winById(id),g=x.grids[mk(mon)];cs=Math.min(cs,GC(g));rs=Math.min(rs,GR(g));
+  if(grab)settleFront(x,grab);
   const c0=Math.min(slot%GC(g),GC(g)-cs),r0=Math.min(Math.floor(slot/GC(g)),GR(g)-rs),slots=[];
   for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*GC(g)+c);
   const match=grab?grab.match||"":w.min?w.title:matchFor(w),cells=new Set(slots);
@@ -1664,8 +1665,15 @@ function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id),opt={}){
   heldOff(x,w,mk(mon),cells);
   return slots}
 // A front window leaves its pin: the window right behind it, if any, takes the cell. The lock goes with the window that left (ruling stack-and-lock), so the one behind is not locked.
-function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return;const b=pin.behind||[];
-  if(b.length){const n={...pin,app:b[0].app,match:b[0].match||""};delete n.lock;if(b.length>1)n.behind=b.slice(1);else delete n.behind;x.pins[i]=n}else x.pins.splice(i,1)}
+function leavePin(x,pin){const i=x.pins.indexOf(pin);if(i<0)return false;settleFront(x,pin);const b=pin.behind||[];
+  if(b.length){const n={...pin,app:b[0].app,match:b[0].match||""};delete n.lock;if(b.length>1)n.behind=b.slice(1);else delete n.behind;x.pins[i]=n}else x.pins.splice(i,1);
+  return b.length>0}
+// A pin whose front window is not open shows its first open back window as the front (tile.ps1, Pass). Before an edit moves, resizes or removes that pin,
+// the pin names the window on screen: its front entry becomes that window's, and the back entry that named it is dropped, so no window is listed twice.
+// The closed front's own entry goes (debt closed-front-stack). Call it before an edit adds or removes pins: the pin's index must still match the preview.
+function settleFront(x,pin){const i=x.pins.indexOf(pin),P=prev(),F=i>=0&&P&&frontOfPin(i),b=pin.behind||[];
+  if(!F||!frontShut(P,i,pin))return;const j=b.findIndex(e=>hitsWin(e,F));if(j<0)return;
+  pin.app=b[j].app;pin.match=b[j].match||"";pin.behind=b.filter((_,k)=>k!==j);if(!pin.behind.length)delete pin.behind}
 // Into the bay: its pin goes, and the scene keeps it where it is. why: the entry's reason, when it is not "you kept it here".
 function bayEdit(x,id,grab=pinNow(x,id),promote=true,why){const w=winById(id);
   if(grab){if(promote)leavePin(x,grab);else x.pins=x.pins.filter(q=>q!==grab)}
@@ -1676,7 +1684,7 @@ function swapInto(aId,bId,mon,slot,fromBay){
   const P=prev(),pa=P.placed.find(p=>p.id===aId),pb=P.placed.find(p=>p.id===bId),A=winById(aId),B=winById(bId),s=scene(),gA=pinNow(s,aId),gB=pinNow(s,bId),
     g=s.grids[mk(mon)],bb=pbox(pb,g),ga=pa&&s.grids[pa.mon],ba=pa&&pbox(pa,ga);
   curMon=mon;selWin=aId;optim={id:aId,r:cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)};
-  return edit(x=>{if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>mk(q)===pa.mon),ba.r*GC(ga)+ba.c,ba.cs,ba.rs,gB);
+  return edit(x=>{for(const g of[gA,gB])if(g)settleFront(x,g);if(fromBay)bayEdit(x,bId,gB,false);else pinEdit(x,bId,snap.monitors.find(q=>mk(q)===pa.mon),ba.r*GC(ga)+ba.c,ba.cs,ba.rs,gB);
     pinEdit(x,aId,mon,bb.r*GC(g)+bb.c,bb.cs,bb.rs,gA,fromBay&&gB?{behind:gB.behind}:{})},fromBay?`${appName(A.app)} takes ${monName(mon)} cell ${slot+1}. ${appName(B.app)} stays where it is.`:`Swapped ${pairNames(A,B).join(" and ")}.`)}
 // The cells of a placed window's block (a span is its whole block), on its monitor's grid g.
 const pbox=(p,g)=>bbox(p.slots.map(v=>v-1).filter(v=>v>=0&&v<GC(g)*GR(g)),g);
@@ -1705,12 +1713,15 @@ function unplace(id,force=false){const w=winById(id);if(selWin===id)optim=null;
 /* ---------- Stack and lock ---------- */
 // How a stacked window is named in its front pin: the window's title when its app has several windows, as a pin does.
 const winSpec=w=>({app:w.app,match:w.min?w.title:matchFor(w)});
+// Whether the stack entry b (an app and a title match) names window w, as the engine matches it.
+const hitsWin=(b,w)=>w.app===b.app&&(!b.match||w.title.toLowerCase().includes(String(b.match).toLowerCase()));
+// Whether pin pi's own front window is not open: the engine reports it missing.
+const frontShut=(P,pi,pin)=>P.missing.some(m=>m.pin===pi&&m.app===pin.app&&(m.match||"")===(pin.match||""));
 // The windows stacked behind pin pi, each with the open window it resolves to (null when it is not open).
 // When the pin's own front is not open, Apply makes its first open back window the front (tile.ps1, Pass), so that entry is not listed.
 function stackOf(pi){const P=prev(),pin=scene().pins[pi];if(!P||!pin||!pin.behind)return[];const taken=new Set();
-  const f=frontOfPin(pi);let up=!(f&&P.missing.some(m=>m.pin===pi&&m.app===pin.app&&(m.match||"")===(pin.match||"")));
-  const hits=(b,w)=>w.app===b.app&&(!b.match||w.title.toLowerCase().includes(String(b.match).toLowerCase()));
-  return pin.behind.map((b,k)=>{if(!up&&hits(b,f)){up=true;return null}const p=P.placed.find(q=>q.behind&&q.pin===pi&&!taken.has(q.id)&&hits(b,q));if(p)taken.add(p.id);return{k,b,id:p?p.id:null}}).filter(Boolean)}
+  const f=frontOfPin(pi);let up=!(f&&frontShut(P,pi,pin));
+  return pin.behind.map((b,k)=>{if(!up&&hitsWin(b,f)){up=true;return null}const p=P.placed.find(q=>q.behind&&q.pin===pi&&!taken.has(q.id)&&hitsWin(b,q));if(p)taken.add(p.id);return{k,b,id:p?p.id:null}}).filter(Boolean)}
 const frontOfPin=pi=>{const P=prev();return P&&P.placed.find(p=>p.pin===pi&&!p.behind)};
 // A is dropped on B's lower band: A goes behind B, with any windows behind A.
 function putBehind(aId,bId){
@@ -1745,7 +1756,7 @@ const stackEntry=(pi,k)=>{const st=stackOf(pi);return k===undefined?st[0]:st.fin
 function bringFront(pi,k){const e=stackEntry(pi,k);if(!e){status("Nothing is behind that window.");return}
   if(!e.id){status("That window is not open, so it cannot come to the front.");return}
   const f=frontOfPin(pi),F=f&&winById(f.id),B=winById(e.id);selWin=e.id;
-  edit(x=>{const q=x.pins[pi],old=F?winSpec(F):{app:q.app,match:q.match||""};q.app=B.app;q.match=e.b.match||"";q.behind=q.behind.map((b,j)=>j===e.k?old:b)},
+  edit(x=>{const q=x.pins[pi],was=q.behind[e.k];settleFront(x,q);const old=F?winSpec(F):{app:q.app,match:q.match||""};q.app=B.app;q.match=e.b.match||"";q.behind=q.behind.map(b=>b===was?old:b)},
     `${appName(B.app)}: ${B.title} is in front.`)}
 // Take Out: the window leaves the stack for Windows That Stay Put.
 function takeOut(pi,k){const e=stackEntry(pi,k);if(!e)return;const W=e.id&&winById(e.id);
@@ -2986,7 +2997,8 @@ stage.addEventListener("dblclick",ev=>{const e=ev.target.closest(".tile");if(!e|
 
 function unpin(id){const pp=pinOf(id);if(!pp){status("That window is not pinned.");return}
   if(pp.pin.lock){status(`${winById(id).title} is locked. Unlock it first.`);return}
-  edit(s=>{leavePin(s,s.pins[pp.p.pin])},`Unpinned ${winById(id).title}. ${(pp.pin.behind||[]).length?"The window behind it takes the cell.":"It fills if its app is in the fill list."}`)}
+  let took=false;
+  edit(s=>{took=leavePin(s,s.pins[pp.p.pin])},()=>`Unpinned ${winById(id).title}. ${took?"The window behind it takes the cell.":"It fills if its app is in the fill list."}`)}
 
 /* ---------- A locked tile moves after a warning ---------- */
 // The warning opens at the drop, in the page. Until Move It nothing is saved: the tile waits dashed in its target, and its old cell stays dimmed.
