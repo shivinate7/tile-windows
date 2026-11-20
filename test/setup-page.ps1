@@ -73,6 +73,17 @@
 #   Split Cell, double-click (split-cell notes): a double-click on the selected window splits it side by side, one POST /layout with the grid
 #     doubled. On an unselected window it selects only, and sends no POST. On a selected locked window it sends no POST. Real pointer and mouse
 #     events (Click-Double), not a synthetic dblclick.
+#   Split Cell, empty cells and open halves (layout-free items 2 and 6; split-cell-notes S9 to S13; plan lane L2b, PR B): a still click on a
+#     whole empty cell selects it, and the inspector reads Empty Space with Split Cell. A drag across cells, or 8px inside one cell, still draws
+#     a zone (controls). Split Cell on an empty cell sends one POST /layout and leaves both halves empty, each named Open half, with no Fills
+#     last. A still click on an open half selects it: the Open Half section has Join Halves and Keep This Half Empty. An open half's accessible
+#     name reads Open half and Fills last (fill on), Stays empty and Fill is off (fill off), or Kept empty; under 40px it draws no words. Keep
+#     This Half Empty sends fill.keepEmpty [{mon, slots}]. A second split remaps keepEmpty like fill.held; Join Halves on a kept half drops its
+#     entry; a kept half blocks halving; Clear Board deletes keepEmpty; the Fill Empty Cells switch keeps it (guard). Tab reaches each empty
+#     cell. The labels match tile.ps1's fill-last slot in a dry run. Names come from the accessibility tree (Accessibility.getFullAXTree).
+#   Split Cell, selection and stacks: a selected empty cell is still the cell the user picked after Undo or a Columns change, or it is
+#     cleared. Join Halves on an empty half takes the front window of the other half, never a window stacked behind it. A split that doubles
+#     nothing is one page-only undo step: Undo sends no POST, names the split in the status, and keeps the saved pins.
 #   Free Layout (layout-free items 14-29; free-layout-notes F1-F16; plan lane L4). The page's contract, as the checks at the end of this
 #     file read it: the switch is input[role=switch] labelled Free Layout in the Monitor section (the section that holds #monh), and the
 #     key F toggles it. A monitor label reads Free Layout. Each tile is .tile[data-id]. Each space carries data-space (its index in reading
@@ -104,7 +115,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 121
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 143
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -3258,6 +3269,694 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
       $p0 = $(if ($a0 -and $null -ne $a0.pin) { @($L1.pins)[[int]$a0.pin] } else { $null })
       Check "move-lock ($($v.tag), F8): the locked pin keeps space 0" ($p0 -and $p0.match -ceq 'Refactor the grid solver') "space 0 names: $(if ($p0) { $p0.match } else { 'no pin' })"
     }
+  }
+
+  # ---- Split Cell: empty cells and open halves (layout-free items 2 and 6; split-cell-notes S9 to S13; plan lane L2b, PR B) ---------
+  # A still click on a whole empty cell selects it: the inspector reads Empty Space, with Split Cell. A split of an empty cell leaves both
+  # halves empty, each named Open half. An open half of a part-taken cell is named Open half and Fills last with fill on, Stays empty and
+  # Fill is off with fill off, and Kept empty under Keep This Half Empty (fill.keepEmpty). Names are read from the accessibility tree
+  # (Accessibility.getFullAXTree), the name a screen reader gets. $oneWinSnap holds window 1001 only; $tenWinSnap holds the ten windows of
+  # halfSeed, all pinned, so a board with one open half has no window left that the fill could take.
+  $oneWinSnap = ConvertTo-Json -Depth 10 -Compress -InputObject ([pscustomobject]@{ monitors = @($snapObj.monitors); windows = @($snapObj.windows | ? { [int]$_.id -eq 1001 }) })
+  # The ids of the ten splitWins windows, in the fixture: Refactor, Pin parser, Pull request, Quarterly roadmap, pwsh tiler, pwsh docs watch,
+  # Projects, Design sync, Downloads, todo.txt.
+  $splitWinIds = @(1001, 1002, 1005, 1006, 1008, 1009, 1010, 1011, 1012, 1014)
+  $tenWinSnap = ConvertTo-Json -Depth 10 -Compress -InputObject ([pscustomobject]@{ monitors = @($snapObj.monitors); windows = @($snapObj.windows | ? { $splitWinIds -contains [int]$_.id }) })
+  # A number as the page reads it in its script: a decimal point, whatever the culture.
+  function Num($v) { ([double]$v).ToString('R', [Globalization.CultureInfo]::InvariantCulture) }
+  # The centre of fine cell $slot of the ultrawide, from the page's own cell boxes (one per fine cell, in reading order). Null when not drawn.
+  function Cell-Point($sock, [int]$slot) {
+    Js $sock ('const m = snap.monitors.find(q => q.role === "wide"); const c = m && m.el ? m.el.querySelectorAll(".cell")[__S__] : null; if (!c) return null; const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };'.Replace('__S__', "$slot"))
+  }
+  # A still press and release at a point, as a mouse makes them.
+  function Click-At($sock, [double]$x, [double]$y) {
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x; y = $y })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x; y = $y; button = 'left'; buttons = 1; clickCount = 1 })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x; y = $y; button = 'left'; buttons = 0; clickCount = 1 })
+  }
+  # A drag from one point to another, as a mouse makes it: pressed, moved in four steps with the button held, released at the end.
+  function Drag-At($sock, [double]$x1, [double]$y1, [double]$x2, [double]$y2) {
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x1; y = $y1 })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x1; y = $y1; button = 'left'; buttons = 1; clickCount = 1 })
+    foreach ($f in 0.25, 0.5, 0.75, 1.0) { [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x1 + ($x2 - $x1) * $f; y = $y1 + ($y2 - $y1) * $f; button = 'left'; buttons = 1 }) }
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x2; y = $y2; button = 'left'; buttons = 0; clickCount = 1 })
+  }
+  # A still click on fine cell $slot, as a user makes it. Answers the cell's point, whether the press lands on the cell and not on a window or
+  # a button, and the layout POST count before the press.
+  function Cell-Click($sock, [int]$slot) {
+    $pt = Cell-Point $sock $slot
+    if ($null -eq $pt) { return $null }
+    $hit = Js $sock ('const e = document.elementFromPoint(' + (Num $pt.x) + ', ' + (Num $pt.y) + '); return { tag: e ? e.tagName : "none", cls: e ? String(typeof e.className === "string" ? e.className : (e.getAttribute("class") || "")) : "", tile: !!e && !!e.closest(".tile"), btn: !!e && !!e.closest("button") };')
+    $on = ($hit.tag -ne 'none') -and (-not $hit.tile) -and (-not $hit.btn)
+    # Settled first: a POST the page sends after it loads is counted before the press, not as the press's own.
+    $before = [int](Js $sock 'await window.__h.settle(); return window.__h.posts("layout").length')
+    if ($on) { Click-At $sock $pt.x $pt.y }
+    [pscustomobject]@{ on = $on; before = $before; pt = $pt; hit = "$($hit.tag) class '$($hit.cls)', on a tile $($hit.tile), on a button $($hit.btn)" }
+  }
+  $headEmptyCond = '(() => { const h = document.getElementById("winh"); return !!h && h.textContent.trim() === "Empty Space"; })()'
+  $headOpenCond = '(() => { const h = document.getElementById("winh"); return !!h && /open half/i.test(h.textContent); })()'
+  $winhJs = 'const h = document.getElementById("winh"); return h ? h.textContent.replace(/\s+/g, " ").trim() : null;'
+  # A control of the Window section (a switch or a button) found by the words its label, aria-label or text holds. $act is run on it:
+  # '' to only find it, 'el.click()' to press it. Answers whether it was found.
+  function Win-Control-Js([string]$words, [string]$act) {
+    'const w = document.getElementById("win"); if (!w) return false; const el = [...w.querySelectorAll("input, button")].find(x => ((x.labels ? [...x.labels].map(l => l.textContent).join(" ") : "") + " " + (x.getAttribute("aria-label") || "") + " " + (x.textContent || "")).includes("__W__")); if (!el) return false; __A__; return true;'.Replace('__W__', $words).Replace('__A__', $act)
+  }
+  # The Empty Space split menu's item for one direction ("Side by Side" or "Stacked"), clicked. Answers whether an enabled item was there.
+  $emptyItemJs = @'
+const menu = [...document.querySelectorAll("[role=menu]")].find(m => m.getClientRects().length > 0 && /Split Cell/.test(m.textContent));
+if (!menu) return false;
+const it = [...menu.querySelectorAll("[role=menuitem]")].find(x => x.textContent.replace(/\s+/g, " ").trim().startsWith("__DIR__"));
+if (!it || it.getAttribute("aria-disabled") === "true") return false;
+it.click(); return true;
+'@
+  function Empty-Item-Js([string]$dir) { $emptyItemJs.Replace('__DIR__', $dir) }
+  # Run in the page on each named node: its visible words (text a user can see, not hidden or 1 px clipped), its centre, its width, and the
+  # fine cell its centre falls in (-1 when none). Read through Runtime.callFunctionOn, so it sees the node the accessibility tree named.
+  $axInfoFn = @'
+function () {
+  const r = this.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const mon = snap.monitors.find(q => q.role === "wide");
+  const cells = mon && mon.el ? [...mon.el.querySelectorAll(".cell")] : [];
+  let slot = -1;
+  cells.forEach((c, i) => { const q = c.getBoundingClientRect(); if (cx >= q.left && cx <= q.right && cy >= q.top && cy <= q.bottom) slot = i; });
+  const words = [], walk = document.createTreeWalker(this, NodeFilter.SHOW_TEXT);
+  while (walk.nextNode()) {
+    const t = walk.currentNode.textContent.trim(), p = walk.currentNode.parentElement;
+    if (!t || !p) continue;
+    const s = getComputedStyle(p), b = p.getBoundingClientRect();
+    if (s.display === "none" || s.visibility === "hidden" || parseFloat(s.opacity) === 0 || b.width < 2 || b.height < 2) continue;
+    words.push(t);
+  }
+  return { words: words.join(" "), cx: cx, cy: cy, w: r.width, slot: slot };
+}
+'@
+  # The named nodes of the accessibility tree whose accessible name matches $rx (case-sensitive). Text and ignored nodes are not named boxes.
+  # One object per named node, emitted flat: a caller takes the list with @(...), and an empty list is zero objects.
+  function Ax-Named($sock, [string]$rx) {
+    [void](Cdp $sock 'DOM.enable' @{})
+    $ax = Cdp $sock 'Accessibility.getFullAXTree' @{}
+    $named = @(@($ax.result.nodes) | ? { -not $_.ignored -and $_.backendDOMNodeId -and ([string]$_.role.value) -notmatch '^(StaticText|InlineTextBox|LineBreak)$' -and ([string]$_.name.value) -cmatch $rx })
+    $out = @()
+    foreach ($n in $named) {
+      try {
+        $ro = Cdp $sock 'DOM.resolveNode' @{ backendNodeId = [int]$n.backendDOMNodeId }
+        $oid = [string]$ro.result.object.objectId
+        if (-not $oid) { continue }
+        $cr = Cdp $sock 'Runtime.callFunctionOn' @{ objectId = $oid; functionDeclaration = $axInfoFn; returnByValue = $true }
+        $info = $cr.result.result.value
+        $out += [pscustomobject]@{ name = [string]$n.name.value; role = [string]$n.role.value; words = [string]$info.words; w = [double]$info.w; slot = [int]$info.slot }
+      } catch { }
+    }
+    $out
+  }
+  # The named nodes drawn on the ultrawide board, polled until $want of them are named or $seconds pass (a page update lands after its POST).
+  # Emitted flat, one object per half: a caller takes the list with @(...).
+  function Wait-Halves($sock, [string]$rx = 'Open half|Stays empty|Kept empty', [int]$want = 1, [int]$seconds = 10) {
+    $t0 = Get-Date
+    do {
+      $found = @(Ax-Named $sock $rx | ? { $_.slot -ge 0 })
+      if ($found.Count -ge $want) { break }
+      Start-Sleep -Milliseconds 250
+    } while (((Get-Date) - $t0).TotalSeconds -lt $seconds)
+    $found
+  }
+  # The named halves as one line for a failure detail: name and slot of each, or none.
+  function Half-Text($halves) { if (@($halves).Count -eq 0) { return 'none' }; (@($halves | % { "'$($_.name)' on slot $($_.slot)" })) -join '; ' }
+  # The POST /layout bodies a case saw, as text for a failure detail: the setup key and the start of each body, or none.
+  function Post-Text($posts) { $p = @($posts | ? { $_ }); if ($p.Count -eq 0) { return 'none' }; (@($p | % { $b = [string]$_.body; "key $(try { (ConvertFrom-Json $b).key } catch { '?' }): " + $b.Substring(0, [Math]::Min(200, $b.Length)) })) -join ' | ' }
+  # The fill.keepEmpty entries of a layout as one line for a failure detail, or none.
+  function Kept-Text($ke) { if (@($ke).Count -eq 0) { return 'none' }; (@($ke | % { "$($_.mon) " + ((Split-Ints $_.slots) -join ',') })) -join '; ' }
+  # The slots of the zones in the one POST /layout a case sent, sorted, as one line; none when there is no POST or no zone.
+  function Posted-Zones($posts) {
+    $p = @($posts | ? { $_ })
+    if ($p.Count -ne 1) { return 'none' }
+    $z = @(@((ConvertFrom-Json $p[0].body).layout.zones) | ? { $_ })
+    if ($z.Count -eq 0) { return 'none' }
+    ((@($z | % { Split-Ints $_.slots })) | Sort-Object) -join ','
+  }
+
+  Case 'split open: a still click on a whole empty cell selects it: the inspector reads Empty Space, with Split Cell, and sends no POST /layout' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with window 1001 pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $c = Cell-Click $ws 9
+    Check 'split open: empty cell 9 is drawn, and the press lands on it, not on a window or a button (scope)' ($null -ne $c -and $c.on) "cell 9 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headEmptyCond 10)
+    $head = Js $ws $winhJs
+    Check 'split open: a still click on empty cell 9 selects it: the inspector heading reads Empty Space' ($head -ceq 'Empty Space') "the inspector heading reads: '$head'"
+    Check 'split open: the Empty Space section has a Split Cell button' ((Js $ws ('return ' + $splitInspHasJs)) -eq $true) 'no Split Cell button in the inspector'
+    $sent = Layout-Posts-After $ws $c.before
+    Check 'split open: the still click sends no POST /layout' ($sent.Count -eq 0) "POST /layout count: $($sent.Count), bodies: $(Post-Text $sent)"
+  }
+
+  Case 'split open: a drag across three empty cells still draws a zone: the New Zone dialog, then one POST /layout with its cells (control)' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $a = Cell-Point $ws 2; $b = Cell-Point $ws 4
+    Check 'split open: cells 2 and 4 are drawn (scope)' ($null -ne $a -and $null -ne $b) 'a cell is not drawn on the ultrawide'
+    if ($null -eq $a -or $null -eq $b) { return }
+    Drag-At $ws $a.x $a.y $b.x $b.y
+    $dlg = WaitFor $ws '/New Zone: 3 Columns/.test((document.getElementById("dlgform") || {}).textContent || "")' 10
+    Check 'split open: a drag across cells 2 to 4 opens the New Zone dialog for 3 columns (control)' $dlg 'no New Zone dialog after the drag'
+    if (-not $dlg) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    Confirm-Ask $ws
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    $zs = Posted-Zones $sent
+    Check 'split open: Add Zone sends one POST /layout with the zone on cells 2, 3 and 4 (control)' ($sent.Count -eq 1 -and $zs -eq '2,3,4') "POST /layout count: $($sent.Count), zone slots: $zs"
+  }
+
+  Case 'split open: an 8px drag inside empty cell 9 still draws a one-cell zone (control)' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $a = Cell-Point $ws 9
+    Check 'split open: empty cell 9 is drawn (scope)' ($null -ne $a) 'no empty cell 9 on the ultrawide'
+    if ($null -eq $a) { return }
+    Drag-At $ws $a.x $a.y ($a.x + 8) $a.y
+    $dlg = WaitFor $ws '/New Zone: 1 Column/.test((document.getElementById("dlgform") || {}).textContent || "")' 10
+    Check 'split open: an 8px drag inside cell 9 opens the New Zone dialog for one cell (control)' $dlg 'no New Zone dialog after the drag'
+    if (-not $dlg) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    Confirm-Ask $ws
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    $zs = Posted-Zones $sent
+    Check 'split open: Add Zone sends one POST /layout with the zone on cell 9 alone (control)' ($sent.Count -eq 1 -and $zs -eq '9') "POST /layout count: $($sent.Count), zone slots: $zs"
+  }
+
+  Case 'split open: Split Cell from empty cell 9, in its inspector: both halves stay empty and read Open half, with no Fills last, and one POST /layout' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)) $null $null @() @{ apps = @('*') })
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with fill on (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $c = Cell-Click $ws 9
+    Check 'split open: empty cell 9 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) 'no empty cell 9 on the ultrawide'
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headEmptyCond 10)
+    $selected = (Js $ws $winhJs) -ceq 'Empty Space'
+    Check 'split open: empty cell 9 is selected, the inspector reads Empty Space (scope)' $selected 'the inspector does not read Empty Space, so there is no empty cell to split'
+    if (-not $selected) { return }
+    $hasBtn = WaitFor $ws $splitInspHasJs 10
+    Check 'split open: the Empty Space section has a Split Cell button (scope)' $hasBtn 'no Split Cell button in the inspector'
+    if (-not $hasBtn) { return }
+    [void](Js $ws $splitInspJs)
+    $open = WaitFor $ws $splitMenuJs 10
+    Check 'split open: Split Cell opens the split menu of the empty cell (scope)' $open 'no split menu after Split Cell'
+    if (-not $open) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    $item = Js $ws (Empty-Item-Js 'Side by Side')
+    Check 'split open: the empty cell menu has an enabled Side by Side item (scope)' ($item -eq $true) 'no enabled Side by Side item in the split menu'
+    if ($item -ne $true) { return }
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    Check 'split open: the split of the empty cell sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    if (-not $lay) { return }
+    Check 'split open: the split doubles the grid to 10 by 2 (mult 2,1)' ((Split-Axis $lay.grids.U1.mult) -eq '2,1') "mult: '$(Split-Axis $lay.grids.U1.mult)'"
+    Check 'split open: the pin in cell 0 keeps its cell and takes both halves, slots 0 and 1 (every other pin doubles)' ((Split-SlotsOf $lay 'Refactor the grid solver') -eq '0,1') "its pin holds: $(Split-SlotsOf $lay 'Refactor the grid solver')"
+    Check 'split open: no pin, zone or held entry holds the new half at slot 18' (-not (Split-HasSlot $lay 18)) 'a pin, zone or hold names slot 18'
+    Check 'split open: no pin, zone or held entry holds the new half at slot 19' (-not (Split-HasSlot $lay 19)) 'a pin, zone or hold names slot 19'
+    $halves = @(Wait-Halves $ws 'Open half' 2)
+    $slots = ((@($halves | % { $_.slot }) | Sort-Object) -join ',')
+    Check 'split open: both new halves, slots 18 and 19, are named Open half (scope)' ($slots -eq '18,19') "named halves: $(Half-Text $halves)"
+    if ($slots -ne '18,19') { return }
+    Check 'split open: neither half reads Fills last, since no window holds either (S12)' (@($halves | ? { $_.name -match 'Fills last' }).Count -eq 0) "names: $(Half-Text $halves)"
+  }
+
+  Case 'split open: a still click on an open half of a part-taken cell selects it: the Open Half section has Join Halves and Keep This Half Empty' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1')
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with one open half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    # Wait for the half's name before the press: until the preview lands, a tile can still sit on cell 1.
+    $named = @(Wait-Halves $ws)
+    Check 'split open: the open half is named on cell 1 before the press (scope)' (@($named | ? { $_.slot -eq 1 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 1 }).Count -ne 1) { return }
+    $c = Cell-Click $ws 1
+    Check 'split open: open half cell 1 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 1 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headOpenCond 10)
+    $head = Js $ws $winhJs
+    Check 'split open: a still click on the open half selects it: the inspector heading reads Open Half' ([string]$head -match '(?i)open half') "the inspector heading reads: '$head'"
+    Check 'split open: the Open Half section has a Join Halves button' ((Js $ws (Win-Control-Js 'Join Halves' '')) -eq $true) 'no Join Halves button in the Window section'
+    Check 'split open: the Open Half section has a Keep This Half Empty control' ((Js $ws (Win-Control-Js 'Keep This Half Empty' '')) -eq $true) 'no Keep This Half Empty control in the Window section'
+    $sent = Layout-Posts-After $ws $c.before
+    Check 'split open: the still click sends no POST /layout (control)' ($sent.Count -eq 0) "POST /layout count: $($sent.Count), bodies: $(Post-Text $sent)"
+  }
+
+  Case 'split open: an open half of a part-taken cell is named Open half and Fills last with fill on' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ apps = @('*') })
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with fill on (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $probe = @(Ax-Named $ws 'Refactor the grid solver')
+    Check 'split open: the accessibility tree names the window 1001 tile (reader control)' ($probe.Count -ge 1) 'the accessibility tree names no tile for window 1001: the reader does not see the board'
+    $h = @(Wait-Halves $ws)
+    Check 'split open: the board names one open half, on cell 1 (scope)' ($h.Count -eq 1 -and $h[0].slot -eq 1) "named halves: $(Half-Text $h)"
+    if ($h.Count -ne 1 -or $h[0].slot -ne 1) { return }
+    Check 'split open: the open half is named "Open half" and "Fills last" (fill on)' ($h[0].name -cmatch 'Open half' -and $h[0].name -match 'Fills last') "name: '$($h[0].name)'"
+  }
+
+  Case 'split open: an open half of a part-taken cell is named Stays empty and Fill is off with fill off' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ apps = @('*'); off = $true })
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with fill off (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $h = @(Wait-Halves $ws)
+    Check 'split open: the board names one open half, on cell 1 (scope)' ($h.Count -eq 1 -and $h[0].slot -eq 1) "named halves: $(Half-Text $h)"
+    if ($h.Count -ne 1 -or $h[0].slot -ne 1) { return }
+    Check 'split open: the open half is named "Stays empty" and "Fill is off" (fill off)' ($h[0].name -cmatch 'Stays empty' -and $h[0].name -match 'Fill is off') "name: '$($h[0].name)'"
+  }
+
+  Case 'split open: at 1024 an open half under 40px draws no words, and its name still reads Open half and Fills last' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ apps = @('*') })
+    Set-View $ws 1024 768
+    try {
+      $opened = Open-Page $ws $url 'focus' $tenWinSnap
+      Check 'split open: the page opens on Focus with fill on, at 1024 (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $h = @(Wait-Halves $ws)
+      Check 'split open: at 1024 the board names one open half, on cell 1 (scope)' ($h.Count -eq 1 -and $h[0].slot -eq 1) "named halves: $(Half-Text $h)"
+      if ($h.Count -ne 1 -or $h[0].slot -ne 1) { return }
+      Check 'split open: at 1024 the open half is under 40px wide (scope)' ($h[0].w -gt 0 -and $h[0].w -lt 40) "width: $($h[0].w)"
+      # The no-words checks below are only about a half under 40px: on a wider half they do not run.
+      if (-not ($h[0].w -gt 0 -and $h[0].w -lt 40)) { return }
+      Check 'split open: under 40px the open half draws no words, the dashed box alone' ($h[0].words -eq '') "words drawn: '$($h[0].words)'"
+      Check 'split open: under 40px the open half keeps its name, Open half and Fills last' ($h[0].name -cmatch 'Open half' -and $h[0].name -match 'Fills last') "name: '$($h[0].name)'"
+    } finally { Reset-Look $ws }
+  }
+
+  Case 'split open: Keep This Half Empty sends one POST /layout with fill.keepEmpty on that half, and the half reads Kept empty' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1')
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with one open half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    # Wait for the half's name before the press (see the still-click case above).
+    $named = @(Wait-Halves $ws)
+    Check 'split open: the open half is named on cell 1 before the press (scope)' (@($named | ? { $_.slot -eq 1 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 1 }).Count -ne 1) { return }
+    $c = Cell-Click $ws 1
+    Check 'split open: open half cell 1 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 1 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headOpenCond 10)
+    $hasKeep = Js $ws (Win-Control-Js 'Keep This Half Empty' '')
+    Check 'split open: the open half is selected, and its section has Keep This Half Empty (scope)' ($hasKeep -eq $true) 'no Keep This Half Empty control: the open half is not selected'
+    if ($hasKeep -ne $true) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws (Win-Control-Js 'Keep This Half Empty' 'el.click()'))
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    Check 'split open: Keep This Half Empty sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $lay = if ($sent.Count -eq 1) { (ConvertFrom-Json $sent[0].body).layout } else { $null }
+    $ke = @(if ($lay) { @($lay.fill.keepEmpty) | ? { $_ } })
+    Check 'split open: the POST carries fill.keepEmpty [{mon U1, slots [1]}] and no other entry' ($ke.Count -eq 1 -and [string]$ke[0].mon -ceq 'U1' -and ((Split-Ints $ke[0].slots) -join ',') -eq '1') "fill.keepEmpty: $(Kept-Text $ke)"
+    $kept = @(Wait-Halves $ws 'Kept empty')
+    Check 'split open: the half reads Kept empty, on slot 1' ($kept.Count -eq 1 -and $kept[0].slot -eq 1) "named halves: $(Half-Text $kept)"
+  }
+
+  Case 'split open: a second split remaps fill.keepEmpty like fill.held: the kept half at slot 1 goes to slots 1 and 11 after a stacked split' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ keepEmpty = @([pscustomobject]@{ mon = 'U1'; slots = @(1) }) })
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with one kept half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Split-Route $ws 1001 'key' 'Stacked' 'Top' 'second split of the kept layout'; $r = $script:splitLast
+    $sent = @($r.sent | ? { $_ })
+    Check 'split open: the stacked split sends one POST /layout (scope)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    if ($sent.Count -ne 1) { return }
+    $lay = (ConvertFrom-Json $sent[0].body).layout
+    Check 'split open: the stacked split makes the grid 10 by 4, mult 2,2 (scope)' ((Split-Axis $lay.grids.U1.mult) -eq '2,2') "mult: '$(Split-Axis $lay.grids.U1.mult)'"
+    $ke = @(@($lay.fill.keepEmpty) | ? { $_ })
+    Check 'split open: fill.keepEmpty holds the kept half at slots 1 and 11, its row doubled as fill.held is' ($ke.Count -eq 1 -and ((Split-Ints $ke[0].slots | Sort-Object) -join ',') -eq '1,11') "fill.keepEmpty: $(Kept-Text $ke)"
+  }
+
+  Case 'split open: Join Halves on a kept open half sends one POST /layout that drops its keepEmpty entry, and the grid halves back to 5 by 2' {
+    Put-Split (Split-Json 5 2 @() '2,1' '2,1' @() @{ keepEmpty = @([pscustomobject]@{ mon = 'U1'; slots = @(1) }) })
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with an empty split and one kept half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    # Wait for the kept half's name before the press (see the still-click case above).
+    $named = @(Wait-Halves $ws)
+    Check 'split open: the kept half is named on cell 1 before the press (scope)' (@($named | ? { $_.slot -eq 1 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 1 }).Count -ne 1) { return }
+    $c = Cell-Click $ws 1
+    Check 'split open: the kept half at cell 1 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 1 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headOpenCond 10)
+    $hasJoin = Js $ws (Win-Control-Js 'Join Halves' '')
+    Check 'split open: the kept half is selected, and its section has Join Halves (scope)' ($hasJoin -eq $true) 'no Join Halves button: the kept half is not selected'
+    if ($hasJoin -ne $true) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws (Win-Control-Js 'Join Halves' 'el.click()'))
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    Check 'split open: Join Halves on the kept half sends one POST /layout' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    if ($sent.Count -ne 1) { return }
+    $lay = (ConvertFrom-Json $sent[0].body).layout
+    $ke = @(@($lay.fill.keepEmpty) | ? { $_ })
+    Check 'split open: the join drops the keepEmpty entry on slot 1' ($ke.Count -eq 0) "fill.keepEmpty: $(Kept-Text $ke)"
+    Check 'split open: the grid halves back, 5 by 2 (mult absent or 1,1)' ((Split-Axis $lay.grids.U1.mult) -eq '1,1') "mult: '$(Split-Axis $lay.grids.U1.mult)'"
+  }
+
+  Case 'split open: a kept half blocks halving: Join Halves on the window in the left half sends one POST /layout, and the grid stays 10 by 2' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ keepEmpty = @([pscustomobject]@{ mon = 'U1'; slots = @(1) }) })
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with one kept half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $sel = Split-Select $ws 1001
+    Check 'split open: window 1001, in the left half, is selected (scope)' $sel 'no tile 1001, or Enter did not select it'
+    if (-not $sel) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    Press-Key $ws 'j' 74 'j'
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    Check 'split open: J on the left half sends one POST /layout (scope)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    if ($sent.Count -ne 1) { return }
+    $lay = (ConvertFrom-Json $sent[0].body).layout
+    Check 'split open: the kept right half blocks halving, so the grid stays 10 by 2 (mult 2,1)' ((Split-Axis $lay.grids.U1.mult) -eq '2,1') "mult after J: '$(Split-Axis $lay.grids.U1.mult)'"
+  }
+
+  Case 'split open: Clear Board deletes fill.keepEmpty, and turns Fill Empty Cells off' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)) $null $null @() @{ apps = @('*'); keepEmpty = @([pscustomobject]@{ mon = 'U1'; slots = @(9) }) })
+    $opened = Open-Page $ws $url 'focus'
+    Check 'split open: the page opens on Focus with a kept cell (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $cb = Js $ws 'const b = document.getElementById("clearbd"); return !!b && !b.hidden && !b.disabled;'
+    Check 'split open: Clear Board is shown and enabled, with unpinned windows to send (scope)' ($cb -eq $true) 'Clear Board is hidden or disabled'
+    if ($cb -ne $true) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws 'document.getElementById("clearbd").click(); return true;')
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    Check 'split open: Clear Board sends one POST /layout (scope)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    if ($sent.Count -ne 1) { return }
+    $lay = (ConvertFrom-Json $sent[0].body).layout
+    Check 'split open: Clear Board turns Fill Empty Cells off (control)' ($lay.fill.off -eq $true) 'fill.off is not true after Clear Board'
+    $ke = @(@($lay.fill.keepEmpty) | ? { $_ })
+    Check 'split open: Clear Board deletes fill.keepEmpty' ($ke.Count -eq 0) "fill.keepEmpty: $(Kept-Text $ke)"
+  }
+
+  Case 'split open: Fill Empty Cells off, then on again, keeps fill.keepEmpty (guard: green on main)' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)) $null $null @() @{ keepEmpty = @([pscustomobject]@{ mon = 'U1'; slots = @(9) }) })
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with a kept cell (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    [void](Js $ws 'const i = snap.monitors.findIndex(q => q.role === "wide"); const b = document.querySelector("[role=group][aria-label=Monitor] button[data-mon=\"" + i + "\"]"); if (b) b.click(); return true;')
+    $sw = Js $ws 'return !!document.getElementById("fillSw");'
+    Check 'split open: the ultrawide shows its Fill Empty Cells switch (scope)' ($sw -eq $true) 'no Fill Empty Cells switch on the ultrawide'
+    if ($sw -ne $true) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws 'document.getElementById("fillSw").click(); return true;')
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $off = Layout-Posts-After $ws $before
+    Check 'split open: Fill Empty Cells off sends one POST /layout (scope)' ($off.Count -eq 1) "POST /layout count: $($off.Count)"
+    if ($off.Count -ne 1) { return }
+    $lo = (ConvertFrom-Json $off[0].body).layout
+    $keOff = @(@($lo.fill.keepEmpty) | ? { $_ })
+    Check 'split open: Fill Empty Cells off keeps fill.keepEmpty on slot 9' ($lo.fill.off -eq $true -and $keOff.Count -eq 1 -and ((Split-Ints $keOff[0].slots) -join ',') -eq '9') "fill.off: $($lo.fill.off), fill.keepEmpty: $(Kept-Text $keOff)"
+    $before2 = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws 'document.getElementById("fillSw").click(); return true;')
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before2) 10)
+    $on = Layout-Posts-After $ws $before2
+    Check 'split open: Fill Empty Cells on again sends one POST /layout (scope)' ($on.Count -eq 1) "POST /layout count: $($on.Count)"
+    if ($on.Count -ne 1) { return }
+    $lon = (ConvertFrom-Json $on[0].body).layout
+    $keOn = @(@($lon.fill.keepEmpty) | ? { $_ })
+    Check 'split open: Fill Empty Cells on again keeps fill.keepEmpty on slot 9' ($lon.fill.off -ne $true -and $keOn.Count -eq 1 -and ((Split-Ints $keOn[0].slots) -join ',') -eq '9') "fill.off: $($lon.fill.off), fill.keepEmpty: $(Kept-Text $keOn)"
+  }
+
+  Case 'split open: Tab reaches each empty cell after the windows, one stop per empty cell (S13)' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with window 1001 pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $focused = Js $ws (Split-FocusJs 1001)
+    Check 'split open: window 1001 takes keyboard focus, so Tab starts from the board (scope)' ($focused -eq $true) 'window 1001 does not take focus'
+    if ($focused -ne $true) { return }
+    # One lap of Tab stops: from window 1001 until focus comes back to it. Each stop is read as the element that holds focus.
+    $descJs = 'const e = document.activeElement; if (!e) return null; return { inStage: !!e.closest("#stage"), tile: e.classList.contains("tile"), did: e.getAttribute("data-id") || "", name: ((e.getAttribute("aria-label") || e.textContent || "").replace(/\s+/g, " ").trim()).slice(0, 80), tag: e.tagName };'
+    $start = Js $ws $descJs
+    $startKey = "$($start.inStage)|$($start.did)|$($start.name)|$($start.tag)"
+    $stops = @()
+    for ($i = 0; $i -lt 200; $i++) {
+      Press-Key $ws 'Tab' 9
+      $f = Js $ws $descJs
+      if ($null -eq $f) { break }
+      if ("$($f.inStage)|$($f.did)|$($f.name)|$($f.tag)" -eq $startKey) { break }
+      $stops += $f
+    }
+    $empty = @($stops | ? { $_.inStage -and -not $_.tile -and [string]$_.name -match 'Open half|Empty' })
+    Check 'split open: Tab reaches each of the 9 empty cells, one stop each (S13)' ($empty.Count -eq 9) "stops on empty cells: $($empty.Count); stops in one lap: $($stops.Count); names: $((@($stops | % { $_.name }) | Select-Object -First 12) -join ' | ')"
+  }
+
+  Case 'split open: the open half the page names Fills last is the slot tile.ps1 fills last in a dry run (labels match the engine)' {
+    $fillScene = ConvertTo-Json -Depth 12 -Compress -InputObject ([pscustomobject]@{ id = 'half'; name = 'Half'; grids = [pscustomobject]@{ U1 = [pscustomobject]@{ c = 5; r = 2; mult = @(2, 1) } }; pins = @($halfSeed); zones = @(); fill = [pscustomobject]@{ mon = 'U1'; apps = @('*'); skip = @(); sort = 'app'; unit = @(2, 1) } })
+    # The same board with one more window, 1016, that no pin holds: the dry run places it, and it is the window that fills last.
+    $engSnap = ConvertTo-Json -Depth 10 -Compress -InputObject ([pscustomobject]@{ monitors = @($snapObj.monitors); windows = @($snapObj.windows | ? { $splitWinIds -contains [int]$_.id -or [int]$_.id -eq 1016 }) })
+    $se = Split-Engine $fillScene $engSnap
+    $extra = @(@($se.placed) | ? { $_ -and [int64]$_.id -eq 1016 })
+    Check 'split open: tile.ps1 places the extra window 1016 in a dry run (scope)' ($extra.Count -eq 1) "placed: $(@($se.placed).Count), 1016 placed: $($extra.Count)"
+    if ($extra.Count -ne 1) { return }
+    $engine = ((@(Split-Ints $extra[0].slots | % { $_ - 1 })) | Sort-Object) -join ','
+    Check 'split open: tile.ps1 fills 1016 last, in the open half at slot 1 (control)' ($engine -eq '1') "engine fills slot(s) (0-based): '$engine'"
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ apps = @('*') })
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with the same layout (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $h = @(Wait-Halves $ws)
+    $page = ((@($h | ? { $_.name -match 'Fills last' } | % { $_.slot })) | Sort-Object) -join ','
+    Check 'split open: the page names Fills last on the open half the engine fills last (labels match tile.ps1)' ($page -ne '' -and $page -eq $engine) "page names Fills last on slot(s): '$page'; engine: '$engine'; named halves: $(Half-Text $h)"
+  }
+
+  # ---- Split Cell: the selection after a grid change, the stack behind a half, and a split that doubles nothing ----------------------
+  # A still click on an empty cell selects it. $script:emptySel is $true when the inspector then reads Empty Space.
+  function Empty-Select($sock, [int]$slot, [string]$label) {
+    $script:emptySel = $false
+    $c = Cell-Click $sock $slot
+    $drawn = ($null -ne $c -and $c.on)
+    Check "split open: $label is drawn and free of windows (scope)" $drawn ('not drawn, or the press hits: ' + $(if ($c) { $c.hit } else { 'no cell' }))
+    if (-not $drawn) { return }
+    [void](WaitFor $sock $headEmptyCond 10)
+    $head = Js $sock $winhJs
+    $selected = ($head -ceq 'Empty Space')
+    Check "split open: $label is selected, the inspector reads Empty Space (scope)" $selected "the inspector heading reads: '$head'"
+    # A preview still in flight redraws the board and scrolls the stage; a scroll closes a split menu opened before it. Wait for rest first.
+    [void](WaitFor $sock 'Object.keys(inflight).length === 0' 10)
+    [void](Js $sock $splitFrameJs)
+    $script:emptySel = $selected
+  }
+  # Selects empty cell $slot, then opens its split menu from the inspector's Split Cell button. $script:emptyMenu is $true when the menu is open.
+  function Empty-Menu-Open($sock, [int]$slot, [string]$label) {
+    $script:emptyMenu = $false
+    Empty-Select $sock $slot $label
+    if (-not $script:emptySel) { return }
+    $hasBtn = WaitFor $sock $splitInspHasJs 10
+    Check "split open: $label has a Split Cell button in its inspector (scope)" $hasBtn 'no Split Cell button in the inspector'
+    if (-not $hasBtn) { return }
+    [void](Js $sock $splitFrameJs)
+    [void](Js $sock $splitInspJs)
+    $open = WaitFor $sock $splitMenuJs 10
+    Check "split open: Split Cell opens the split menu of $label (scope)" $open 'no split menu after Split Cell'
+    $script:emptyMenu = [bool]$open
+  }
+  # The fine slots of the cells the page shows as selected (aria-pressed on a free place), sorted. Settled first, so a redraw is read.
+  function Selected-Cells($sock) {
+    $v = Js $sock 'await window.__h.settle(); return [...document.querySelectorAll(".cellbox[aria-pressed=\"true\"]")].map(e => Number(e.dataset.slot)).sort((a, b) => a - b);'
+    @(@($v) | ? { $null -ne $_ } | % { [int]$_ })
+  }
+  # The slots of the one pin of this app on the ultrawide, sorted and joined. A pin Board-Edit makes carries no title match, so the app is the key.
+  function App-Slots($layout, [string]$app) {
+    $p = @(@($layout.pins) | ? { $_ -and ([string]$_.app -ceq $app) -and ([string]$_.mon -ceq 'U1') })
+    if ($p.Count -ne 1) { return "no single $app pin" }
+    ((Split-Ints $p[0].slots | Sort-Object) -join ',')
+  }
+  # The Undo button of the header, pressed.
+  $undoJs = 'document.getElementById("undo").click(); return true;'
+  # Window 1008 (pwsh - tiler, Windows Terminal) with window 1001 (Refactor the grid solver): the pair a half stacks.
+  $claudeTermSnap = ConvertTo-Json -Depth 10 -Compress -InputObject ([pscustomobject]@{ monitors = @($snapObj.monitors); windows = @($snapObj.windows | ? { [int]$_.id -eq 1001 -or [int]$_.id -eq 1008 }) })
+  $termBehind = [pscustomobject]@{ app = 'WindowsTerminal'; match = 'pwsh - tiler' }
+
+  Case 'split open: Undo after a side split of cell 5 selects no other cell: the selection is cleared, or it stays on cell 5' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with window 1001 pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Empty-Menu-Open $ws 4 'cell 5 (slot 4)'
+    if (-not $script:emptyMenu) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    $item = Js $ws (Empty-Item-Js 'Side by Side')
+    Check 'split open: the Side by Side item of cell 5 is enabled (scope)' ($item -eq $true) 'no enabled Side by Side item in the split menu'
+    if ($item -ne $true) { return }
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    Check 'split open: the split of cell 5 sends one POST /layout (scope)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    if ($sent.Count -ne 1) { return }
+    $lay = (ConvertFrom-Json $sent[0].body).layout
+    Check 'split open: the split of cell 5 doubles the grid to 10 by 2 (scope)' ((Split-Axis $lay.grids.U1.mult) -eq '2,1') "mult: '$(Split-Axis $lay.grids.U1.mult)'"
+    $selSplit = Selected-Cells $ws
+    Check 'split open: after the split the left half, slot 8, is selected (scope)' ($selSplit.Count -eq 1 -and $selSplit[0] -eq 8) "selected slot(s): $(@($selSplit) -join ',')"
+    $beforeUndo = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws $undoJs)
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $beforeUndo) 10)
+    $undone = Layout-Posts-After $ws $beforeUndo
+    Check 'split open: Undo sends one POST /layout that restores the 5 by 2 grid (scope)' ($undone.Count -eq 1 -and -not ((ConvertFrom-Json $undone[0].body).layout.grids.U1.mult)) "POST /layout count: $($undone.Count), bodies: $(Post-Text $undone)"
+    $sel = Selected-Cells $ws
+    Check 'split open: after Undo no cell is selected, or cell 5 (slot 4) is; cell 9 (slot 8) is not, the cell the stale selection named' ($sel.Count -eq 0 -or ($sel.Count -eq 1 -and $sel[0] -eq 4)) "selected slot(s) after Undo: $(@($sel) -join ',')"
+  }
+
+  Case 'split open: More Columns with cell 6 selected selects no other cell: the selection is cleared, or it stays on cell 6 (row 2, column 1)' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with window 1001 pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Empty-Select $ws 5 'cell 6 (slot 5, row 2 column 1)'
+    if (-not $script:emptySel) { return }
+    $picked = Selected-Cells $ws
+    Check 'split open: cell 6 is the one selected before the Columns change (scope)' ($picked.Count -eq 1 -and $picked[0] -eq 5) "selected slot(s): $(@($picked) -join ',')"
+    if ($picked.Count -ne 1) { return }
+    $more = Js $ws 'const b = document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]"); return !!b && !b.disabled;'
+    Check 'split open: the Columns More button is enabled in the Monitor section (scope)' ($more -eq $true) 'no enabled More Columns button in the Monitor section'
+    if ($more -ne $true) { return }
+    [void](Js $ws 'document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]").click(); return true;')
+    $grown = WaitFor $ws 'snap.monitors.find(q => q.role === "wide").el.querySelectorAll(".cell").length === 12' 10
+    Check 'split open: More Columns makes the ultrawide grid 6 by 2 (scope)' $grown 'the ultrawide does not show 12 fine cells after More Columns'
+    if (-not $grown) { return }
+    $sel = Selected-Cells $ws
+    Check 'split open: after More Columns no cell is selected, or the cell the user picked is (slot 6, row 2 column 1); slot 5 is a different place' ($sel.Count -eq 0 -or ($sel.Count -eq 1 -and $sel[0] -eq 6)) "selected slot(s) after More Columns: $(@($sel) -join ',') (slot 5 is row 1, column 6)"
+  }
+
+  Case 'split open: scene switch then More Columns keeps scene A''s selection' {
+    # Focus (5 by 2) has window 1001 pinned, and cell 6 (slot 5) is picked on it. Meetings is a second scene on the same monitor, 5 by 2 too.
+    # More Columns is pressed while Meetings is shown, so Focus's grid does not change: its selection must stay on slot 5, not move to slot 6.
+    $cfg = New-Config; Add-Layout $cfg 'focus' $plugKey (Split-Json 5 2 @(Split-Pin 0 @(0))); Add-Layout $cfg 'meetings' $plugKey (Split-Json 5 2 @()); Put-Config $cfg
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with window 1001 pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Empty-Select $ws 5 'cell 6 (slot 5, row 2 column 1)'
+    if (-not $script:emptySel) { return }
+    $picked = Selected-Cells $ws
+    Check 'split open: cell 6 is the one selected on Focus before the scene switch (scope)' ($picked.Count -eq 1 -and $picked[0] -eq 5) "selected slot(s): $(@($picked) -join ',')"
+    if ($picked.Count -ne 1) { return }
+    [void](Select-Scene $ws 'meetings' 'Meetings')
+    $more = Js $ws 'const b = document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]"); return !!b && !b.disabled;'
+    Check 'split open: the Columns More button is enabled for Meetings on the same monitor (scope)' ($more -eq $true) 'no enabled More Columns button in the Monitor section'
+    if ($more -ne $true) { return }
+    [void](Js $ws 'document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]").click(); return true;')
+    $grown = WaitFor $ws 'snap.monitors.find(q => q.role === "wide").el.querySelectorAll(".cell").length === 12' 10
+    Check 'split open: More Columns in Meetings makes its ultrawide grid 6 by 2 (scope)' $grown 'the ultrawide does not show 12 fine cells after More Columns in Meetings'
+    if (-not $grown) { return }
+    [void](Select-Scene $ws 'focus' 'Focus')
+    $fine = WaitFor $ws 'snap.monitors.find(q => q.role === "wide").el.querySelectorAll(".cell").length === 10' 10
+    Check 'split open: back on Focus the ultrawide shows its 5 by 2 grid, 10 cells (scope)' $fine 'Focus does not show 10 fine cells'
+    if (-not $fine) { return }
+    $sel = Selected-Cells $ws
+    Check 'split open: Focus keeps cell 6 (slot 5) selected after More Columns in Meetings, and the selection does not move to cell 7 (slot 6)' ($sel.Count -eq 1 -and $sel[0] -eq 5) "selected slot(s) on Focus: $(@($sel) -join ',') (slot 5 is cell 6, slot 6 is cell 7)"
+  }
+
+  Case 'split open: scene switch, More Columns in Meetings, then Undo there keeps scene A''s selection' {
+    # The same setup, then Undo of the More Columns in Meetings. Undo changes Meetings' grid back and must not clear Focus's selection.
+    $cfg = New-Config; Add-Layout $cfg 'focus' $plugKey (Split-Json 5 2 @(Split-Pin 0 @(0))); Add-Layout $cfg 'meetings' $plugKey (Split-Json 5 2 @()); Put-Config $cfg
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with window 1001 pinned, for the Undo variant (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    Empty-Select $ws 5 'cell 6 (slot 5, row 2 column 1), for the Undo variant'
+    if (-not $script:emptySel) { return }
+    $picked = Selected-Cells $ws
+    Check 'split open: cell 6 is the one selected on Focus before the scene switch, for the Undo variant (scope)' ($picked.Count -eq 1 -and $picked[0] -eq 5) "selected slot(s): $(@($picked) -join ',')"
+    if ($picked.Count -ne 1) { return }
+    [void](Select-Scene $ws 'meetings' 'Meetings')
+    $more = Js $ws 'const b = document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]"); return !!b && !b.disabled;'
+    Check 'split open: the Columns More button is enabled for Meetings, for the Undo variant (scope)' ($more -eq $true) 'no enabled More Columns button in the Monitor section'
+    if ($more -ne $true) { return }
+    [void](Js $ws 'document.querySelector("#mon button[data-g=\"c\"][data-d=\"1\"]").click(); return true;')
+    $grown = WaitFor $ws 'snap.monitors.find(q => q.role === "wide").el.querySelectorAll(".cell").length === 12' 10
+    Check 'split open: More Columns in Meetings makes its ultrawide grid 6 by 2, for the Undo variant (scope)' $grown 'the ultrawide does not show 12 fine cells after More Columns in Meetings'
+    if (-not $grown) { return }
+    [void](Js $ws 'await window.__h.settle(); return true')
+    $beforeUndo = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws $undoJs)
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $beforeUndo) 10)
+    $undone = Layout-Posts-After $ws $beforeUndo
+    Check 'split open: Undo sends one POST /layout that restores Meetings to its 5 by 2 grid (scope)' ($undone.Count -eq 1 -and -not ((ConvertFrom-Json $undone[0].body).layout.grids.U1.mult)) "POST /layout count: $($undone.Count), bodies: $(Post-Text $undone)"
+    if ($undone.Count -ne 1) { return }
+    [void](Select-Scene $ws 'focus' 'Focus')
+    $fine = WaitFor $ws 'snap.monitors.find(q => q.role === "wide").el.querySelectorAll(".cell").length === 10' 10
+    Check 'split open: back on Focus after the Undo the ultrawide shows its 5 by 2 grid, 10 cells (scope)' $fine 'Focus does not show 10 fine cells'
+    if (-not $fine) { return }
+    $sel = Selected-Cells $ws
+    Check 'split open: after Undo in Meetings, Focus keeps cell 6 (slot 5) selected: it is not cleared, and it does not move to cell 7 (slot 6)' ($sel.Count -eq 1 -and $sel[0] -eq 5) "selected slot(s) on Focus after Undo: $(@($sel) -join ',') (slot 5 is cell 6, slot 6 is cell 7)"
+  }
+
+  Case 'split open: Join Halves on an empty half whose other half holds Claude with Terminal stacked behind takes Claude, not the back window' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(1) $false @($termBehind)) '2,1' '2,1' @() @{ apps = @('*') })
+    $opened = Open-Page $ws $url 'focus' $claudeTermSnap
+    Check 'split open: the page opens on Focus with Claude in half 2 and Terminal behind it (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    # The name is read once the page draws it.
+    [void](WaitFor $ws ('[...document.querySelectorAll(".cellbox")].some(e => e.dataset.slot === "0" && /Open half/.test(e.getAttribute("aria-label") || ""))') 10)
+    $named = @(Ax-Named $ws 'Open half|Stays empty|Kept empty')
+    $onZero = @(@($named) | ? { $_.slot -eq 0 })
+    Check 'split open: the empty half, cell 1 (slot 0), is named Open half before the press (scope)' ($onZero.Count -eq 1 -and $onZero[0].name -cmatch 'Open half') "named halves: $(Half-Text $named)"
+    if ($onZero.Count -ne 1) { return }
+    $c = Cell-Click $ws 0
+    Check 'split open: the empty half, slot 0, is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "not drawn, or the press hits: $(if ($c) { $c.hit } else { 'no cell' })"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headOpenCond 10)
+    $claude = [string](Js $ws 'return appName("claude");')
+    $term = [string](Js $ws 'return appName("WindowsTerminal");')
+    $winText = [string](Js $ws 'const w = document.getElementById("win"); return w ? w.textContent.replace(/\s+/g, " ").trim() : "";')
+    Check "split open: the inspector names $claude, the front window of the other half, and not $term" ($claude -ne '' -and $winText.Contains($claude) -and -not $winText.Contains($term)) "the Window section reads: '$winText'"
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws 'document.getElementById("joinbtn").click(); return true;')
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    $joinStatus = [string](Js $ws 'return document.getElementById("msg").textContent;')
+    Check 'split open: Join Halves on the empty half sends one POST /layout (status reads: see detail)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count); status: '$joinStatus'"
+    if ($sent.Count -ne 1) { return }
+    $lay = (ConvertFrom-Json $sent[0].body).layout
+    Check 'split open: Claude takes the whole cell: its pin holds slot 0 alone, and the grid is 5 by 2 again' ((App-Slots $lay 'claude') -eq '0' -and (Split-Axis $lay.grids.U1.mult) -eq '1,1') "its pin holds: $(App-Slots $lay 'claude'); mult: '$(Split-Axis $lay.grids.U1.mult)'"
+  }
+
+  Case 'split open: Split Cell on an even empty block, which doubles nothing, is one page-only undo step: Undo sends no POST, names the split, and keeps the pin saved before it' {
+    Put-Split (Split-Json 5 2 @() '2,1' '2,1')
+    $opened = Open-Page $ws $url 'focus' $oneWinSnap
+    Check 'split open: the page opens on Focus with no pin (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $pinned = Board-Edit $ws 1001 0
+    $pin = @($pinned.layout)
+    $pinLay = if ($pin.Count -eq 1) { (ConvertFrom-Json $pin[0].body).layout } else { $null }
+    Check 'split open: pinning window 1001 to cell 1 (slot 0) sends one POST /layout (control: the change saved before the split)' ($pin.Count -eq 1 -and (App-Slots $pinLay 'claude') -eq '0') "POST /layout count: $($pin.Count), its pin holds: $(if ($pinLay) { App-Slots $pinLay 'claude' } else { 'no layout' }), bodies: $(Post-Text $pin)"
+    if ($pin.Count -ne 1) { return }
+    Empty-Menu-Open $ws 2 'the empty block of cells 2 and 3 (slots 2 and 3)'
+    if (-not $script:emptyMenu) { return }
+    $before = [int](Js $ws 'return window.__h.posts("layout").length')
+    $item = Js $ws (Empty-Item-Js 'Side by Side')
+    Check 'split open: the block of cells 2 and 3 has an enabled Side by Side item (scope)' ($item -eq $true) 'no enabled Side by Side item in the split menu'
+    if ($item -ne $true) { return }
+    $afterSplit = Layout-Posts-After $ws $before
+    Check 'split open: a split that doubles nothing sends no POST /layout (control)' ($afterSplit.Count -eq 0) "POST /layout count: $($afterSplit.Count), bodies: $(Post-Text $afterSplit)"
+    [void](WaitFor $ws '["2", "3"].every(s => [...document.querySelectorAll(".cellbox")].some(e => e.dataset.slot === s && /Open half/.test(e.getAttribute("aria-label") || "")))' 10)
+    $marks = @(Ax-Named $ws 'Open half|Stays empty|Kept empty')
+    $markOn23 = @(@($marks) | ? { $_.slot -eq 2 -or $_.slot -eq 3 })
+    Check 'split open: the split marks cells 2 and 3 as Open half before Undo (scope)' ($markOn23.Count -eq 2) "named halves: $(Half-Text $marks)"
+    if ($markOn23.Count -ne 2) { return }
+    $beforeUndo = [int](Js $ws 'return window.__h.posts("layout").length')
+    [void](Js $ws $undoJs)
+    $undone = Layout-Posts-After $ws $beforeUndo
+    Check 'split open: Undo of the split sends no POST /layout, since the step is page-only' ($undone.Count -eq 0) "POST /layout count: $($undone.Count), bodies: $(Post-Text $undone)"
+    $said = [string](Js $ws 'return [document.getElementById("msg").textContent, document.getElementById("toastText").textContent].join(" | ");')
+    Check 'split open: Undo names the split in the status, "Undid the split." (not an earlier change)' ($said -match '(?i)undid the split') "status and toast read: '$said'"
+    $pinsNow = Js $ws 'return { pins: (typeof work !== "undefined" && work[selId]) ? work[selId].pins : [] };'
+    Check 'split open: Undo keeps the pin saved before the split: window 1001 stays on slot 0 (control)' ((App-Slots $pinsNow 'claude') -eq '0') "its pin holds: $(App-Slots $pinsNow 'claude')"
+    $left = @(Ax-Named $ws 'Open half|Stays empty|Kept empty')
+    $leftOn23 = @(@($left) | ? { $_.slot -eq 2 -or $_.slot -eq 3 })
+    Check 'split open: after Undo cells 2 and 3 are no longer named Open half (the split marks are reverted)' ($leftOn23.Count -eq 0) "named halves: $(Half-Text $leftOn23)"
   }
 
 } catch {
