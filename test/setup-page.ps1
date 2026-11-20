@@ -120,7 +120,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 153
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 155
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -3968,6 +3968,62 @@ function () {
     Check 'split open: J on the open half outside the zone sends one POST /layout (control)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count), bodies: $(Post-Text $sent)"
     $said = [string](Js $ws 'return document.getElementById("msg").textContent;')
     Check 'split open: J on the open half outside the zone reports "Joined cell N." (control)' ($said -match '^Joined cell \d+\.') "status: '$said'"
+  }
+
+  # A kept zone half stays a zone half in the inspector: after Keep This Half Empty it offers no Join Halves, and its Keep line still reads
+  # "No window goes here." (the zone keeps the half either way).
+  Case 'split open: after Keep This Half Empty on a zone half, the inspector offers no Join Halves and its Keep line still reads "No window goes here."' {
+    Put-Split $zoneHalfLayout
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with a zone half and an open half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $named = @(Wait-Halves $ws '(?i)empty|open half' 2)
+    Check 'split open: the zone half is named on cell 2 before the press (scope)' (@($named | ? { $_.slot -eq 1 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 1 }).Count -ne 1) { return }
+    $c = Cell-Click $ws 1
+    Check 'split open: zone half cell 2 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 2 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headOpenCond 10)
+    $hasKeep = Js $ws (Win-Control-Js 'Keep This Half Empty' '')
+    Check 'split open: the selected zone half has a Keep This Half Empty control (scope)' ($hasKeep -eq $true) 'no Keep This Half Empty control on the selected zone half'
+    if ($hasKeep -ne $true) { return }
+    [void](Js $ws (Win-Control-Js 'Keep This Half Empty' 'el.click()'))
+    $sent = Layout-Posts-After $ws $c.before
+    Check 'split open: Keep This Half Empty on the zone half sends one POST /layout (scope)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count), bodies: $(Post-Text $sent)"
+    if ($sent.Count -ne 1) { return }
+    [void](Js $ws $splitFrameJs)
+    $keepStill = Js $ws (Win-Control-Js 'Keep This Half Empty' '')
+    Check 'split open: the Keep This Half Empty control is still in the inspector after the keep (scope)' ($keepStill -eq $true) 'no Keep This Half Empty control after the keep'
+    Check 'split open: after the keep, the inspector offers no Join Halves on the zone half' ((Js $ws (Win-Control-Js 'Join Halves' '')) -eq $false) 'a Join Halves button after Keep This Half Empty on the zone half'
+    $keepLine = Js $ws $keepLineJs
+    Check 'split open: after the keep, the Keep line on the zone half still reads "No window goes here."' ([string]$keepLine -ceq 'No window goes here.') "Keep line: '$keepLine'"
+  }
+
+  # The control for the case above: after Keep This Half Empty on an open half outside the zone, the inspector offers Join Halves and keeps
+  # its fill line, so the zone case's state is the one a zone half alone takes.
+  Case 'split open: after Keep This Half Empty on an open half outside the zone, the inspector offers Join Halves and its fill line (control)' {
+    Put-Split $zoneHalfLayout
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'split open: the page opens on Focus with a zone half and an open half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $named = @(Wait-Halves $ws '(?i)empty|open half' 2)
+    Check 'split open: the open half outside the zone is named on cell 4 before the press (scope)' (@($named | ? { $_.slot -eq 3 }).Count -eq 1) "named halves: $(Half-Text $named)"
+    if (@($named | ? { $_.slot -eq 3 }).Count -ne 1) { return }
+    $c = Cell-Click $ws 3
+    Check 'split open: open half cell 4 is drawn and free of windows (scope)' ($null -ne $c -and $c.on) "cell 4 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headOpenCond 10)
+    $hasKeep = Js $ws (Win-Control-Js 'Keep This Half Empty' '')
+    Check 'split open: the open half outside the zone has a Keep This Half Empty control (scope)' ($hasKeep -eq $true) 'no Keep This Half Empty control on the open half'
+    if ($hasKeep -ne $true) { return }
+    [void](Js $ws (Win-Control-Js 'Keep This Half Empty' 'el.click()'))
+    $sent = Layout-Posts-After $ws $c.before
+    Check 'split open: Keep This Half Empty on the open half sends one POST /layout (scope)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count), bodies: $(Post-Text $sent)"
+    if ($sent.Count -ne 1) { return }
+    [void](Js $ws $splitFrameJs)
+    Check 'split open: after the keep, the inspector offers Join Halves on the kept open half (control)' ((Js $ws (Win-Control-Js 'Join Halves' '')) -eq $true) 'no Join Halves button after Keep This Half Empty on the open half'
+    $keepLine = Js $ws $keepLineJs
+    Check 'split open: after the keep, the Keep line on the open half reads "The fill never puts a window here." (control)' ([string]$keepLine -ceq 'The fill never puts a window here.') "Keep line: '$keepLine'"
   }
 
   # ---- Split Cell: the selection after a grid change, the stack behind a half, and a split that doubles nothing ----------------------
