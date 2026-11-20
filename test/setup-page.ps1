@@ -2248,6 +2248,9 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
     if ($sw1) { $p = Fl-AreaPx (Fl-Cell $i); $sw1.x = $p[0]; $sw1.y = $p[1]; $sw1.w = $p[2]; $sw1.h = $p[3] }
   }
   $flSnap = ConvertTo-Json -Depth 10 -Compress -InputObject $flSnapObj
+  # The windows the board does not hold, closed: with them shut, the only open windows are the board's, so a fill with an app has no other
+  # unpinned window to take the empty spaces.
+  $flOffBoard = @(1012, 1014, 1003, 1004, 1007, 1013, 1015, 1016)
   # The aligned snapshot without some windows (closed), or with some minimized.
   function Fl-Snap([int[]]$closed = @(), [int[]]$minimized = @()) {
     $o = ConvertFrom-Json $flSnap
@@ -2299,6 +2302,13 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
     [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x; y = $y; button = 'left'; buttons = 1; clickCount = 1 })
     [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x; y = $y; button = 'left'; buttons = 0; clickCount = 1 })
     [void](Js $sock 'await window.__h.settle(); return true')
+  }
+  # The panel text of space $n after a click on it: the words the page shows for that space. $null when space $n is not on screen.
+  function Fl-PanelOf($sock, [int]$n) {
+    $c = Js $sock ($freeJs + 'const r = RR(spaceOf(' + $n + ')); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;')
+    if (-not $c) { return $null }
+    Fl-Click $sock $c.x $c.y
+    [string](Js $sock ($freeJs + 'return pageText();'))
   }
   # A pointer drag as a mouse makes it: a press at (x0, y0), ten moves to (x1, y1), a release. Shift is held when $shift. $probe, a page
   # expression, is read while the button is still down, and its value is returned.
@@ -2638,7 +2648,7 @@ const nearRect = (el, s, tol) => { if (!el || !s) return false; const b = el.get
   Case "assign-fill (F9): a new window takes the first empty space in reading order, and the next empty space reads Fills next" {
     # Mutant: the fill takes the last empty space, or the page draws the new window where tile.ps1 does not place it.
     # Only the board's windows are open, so the fill has no other unpinned window to take the spaces: 1012 is closed, and 1014 is the new one.
-    $none = Fl-Snap @(1012, 1014, 1003, 1004, 1007, 1013, 1015, 1016)
+    $none = Fl-Snap $flOffBoard
     $fillAll = @{ apps = @('*') }
     $opened = Fl-Open $ws (Fl-Json (Fl-Board @(8, 9)) -fillOver $fillAll) $none
     Check 'assign-fill: the page opens with spaces 8 and 9 empty (control)' $opened 'the page did not open on Focus in time'
@@ -3081,19 +3091,27 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
   # ---- Free Layout, design-review findings (PR 58, round 1, the second review): wording, the panel of a space, focus, a split's status.
   Case 'fill-next (review): with Fill Empty Cells on, the panel of a space that is not next does not say the next new window fills it' {
     # Mutant: the panel says the next new window fills every empty space, not only the one first in reading order.
-    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(8, 9))) (Fl-Snap @(1012, 1014))
+    # The fill has an app, so Fill Empty Cells fills: the first open space is next, and the others say so.
+    $fillAll = @{ apps = @('*') }
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(8, 9)) -fillOver $fillAll) (Fl-Snap $flOffBoard)
     Check 'fill-next: the page opens with spaces 8 and 9 empty and Fill Empty Cells on (control)' $opened 'the page did not open on Focus in time'
     if (-not $opened) { return }
-    $c9 = Js $ws ($freeJs + 'const r = RR(spaceOf(9)); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;')
-    if (-not $c9) { Check 'fill-next: space 9 is on screen (scope)' $false 'space 9 is not on screen'; return }
-    Fl-Click $ws $c9.x $c9.y
-    $t9 = [string](Js $ws ($freeJs + 'return pageText();'))
+    $t9 = Fl-PanelOf $ws 9
+    if ($null -eq $t9) { Check 'fill-next: space 9 is on screen (scope)' $false 'space 9 is not on screen'; return }
     Check 'fill-next: space 9, which is not next, does not say the next new window fills it' ($t9 -notmatch 'the next new window fills it') 'the panel says the next new window fills it'
-    $c8 = Js $ws ($freeJs + 'const r = RR(spaceOf(8)); return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;')
-    if (-not $c8) { Check 'fill-next: space 8 is on screen (scope)' $false 'space 8 is not on screen'; return }
-    Fl-Click $ws $c8.x $c8.y
-    $t8 = [string](Js $ws ($freeJs + 'return pageText();'))
+    $t8 = Fl-PanelOf $ws 8
+    if ($null -eq $t8) { Check 'fill-next: space 8 is on screen (scope)' $false 'space 8 is not on screen'; return }
     Check 'fill-next: space 8, which is next, says the next new window fills it (control)' ($t8 -match 'the next new window fills it') 'the panel does not say the next new window fills it'
+  }
+
+  Case 'fill-next (review), no fill app: with Fill Empty Cells on and no app to fill with, the panel of the next space says nothing fills it' {
+    # Mutant: the panel says the next new window fills it whatever the fill apps are, as it did before the panel read the apps.
+    $opened = Fl-Open $ws (Fl-Json (Fl-Board @(8, 9))) (Fl-Snap $flOffBoard)
+    Check 'fill-next, no fill app: the page opens with spaces 8 and 9 empty and Fill Empty Cells on, with no app (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $t8 = Fl-PanelOf $ws 8
+    if ($null -eq $t8) { Check 'fill-next, no fill app: space 8 is on screen (scope)' $false 'space 8 is not on screen'; return }
+    Check 'fill-next, no fill app: space 8, which is next, says nothing fills it' ($t8 -match 'Nothing fills it') 'the panel does not say nothing fills it'
   }
 
   Case 'free-words (review): in Free Layout the board hint says space, names the Shift move of the whole line, and Move To reads Choose a Space' {
