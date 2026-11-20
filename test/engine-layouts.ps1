@@ -23,6 +23,7 @@
 # role-keyed scene. Item G's Get-CollapsedAreas is read through tile.ps1 -Lib in a child powershell; its contract is in that section.
 # Gap fill (L5a, plan layout-free-build): the cases after item G. -GapFill runs on a Free Layout board; its contract is in that section.
 # Open halves fill last (layout-free item 6): the cases after the L1 section, on a 1360x1000 monitor. The keepEmpty cases key by monitor id.
+# Free-area rect bounds (debt free-area-rect-bounds): the cases after the L3 zones case. No window is placed under 1 px or outside the work area.
 # Red on 31ea7c1: the id cases (desk, rearranged, item 9, seam, setup B, full size) fail by an assert. The controls (empty layout,
 # -Monitor wide, role-keyed scene, a layout for another setup) pass there and must stay green.
 $ErrorActionPreference = 'Stop'
@@ -875,6 +876,98 @@ try {
     $sc = FgScene 'L3-zone-free-scene.json' (FreeGrid 2 1 $areas) @() $null @($zone)
     $r = Invoke-SceneFrom $sc $snap
     Check 'L3 zones: with areas on, the zone is paused, so Zone A is not placed' (-not (PlacedOf $r 6501)) (Desc $r 6501)
+  }
+
+  # ---- Free-area rect bounds (debt free-area-rect-bounds). Resolve-FreeAreas keeps an area whose rect is four finite numbers with a width and height above 0,
+  # and Get-AreaPixelRects rounds each line to a whole pixel, so an area can reach its window 0 px wide or high, or past the work area's edge.
+  # Contract: no window is placed under 1 px wide or high, and none is placed outside the work area (0,0 to W,H). An area that rounds to under 1 px is dropped,
+  # as an area with a bad rect already is: its pin is listed missing, 'not in a free area'. For an area past an edge, a drop and a clamp both meet the
+  # contract, so its window is either not placed or placed inside the work area; no clamped rect is pinned. Each case has a control area, a valid one whose
+  # window must land on its exact rect, so the scene is live before a bad area is judged. Every run is a dry run (-From). Window ids start at 7001.
+  # Red on c921613: every subject check fails by an assert (the bad window is placed at its bad rect). The controls pass there and must stay green.
+  # The pixel rect an area of fractions [fx, fy, fw, fh] gets on a $w by $h work area: each line rounded once, as Get-AreaPixelRects rounds it.
+  function FbPx([double]$f, [int]$n) { [int][Math]::Round([Math]::Round($f, 9) * $n) }
+  function FbWant([int]$w, [int]$h, $f) { $x = FbPx $f[0] $w; $y = FbPx $f[1] $h; '{0},{1},{2},{3}' -f $x, $y, ((FbPx ($f[0] + $f[2]) $w) - $x), ((FbPx ($f[1] + $f[3]) $h) - $y) }
+  # One pinned area per item (@{ rect; app; title }); item i's window is 7001 + i. The grid is one column per item, which only a run with every area dropped uses.
+  function FbRun([string]$tag, [int]$w, [int]$h, $items) {
+    $n = @($items).Count; $areas = @(); $pins = @(); $wins = @()
+    for ($i = 0; $i -lt $n; $i++) {
+      $it = $items[$i]
+      $areas += FreeArea $it.rect $i
+      $pins += FgPin $it.app $it.title @($i)
+      $wins += FgWin (7001 + $i) $it.app $it.title (100 * $i)
+    }
+    $sc = FgScene "FB-$tag-scene.json" (FreeGrid $n 1 $areas) $pins
+    Invoke-SceneFrom $sc (Write-Snap "FB-$tag.json" @(FgMon $w $h) $wins)
+  }
+  function FbInside($p, [int]$w, [int]$h) { [int]$p.x -ge 0 -and [int]$p.y -ge 0 -and ([int]$p.x + [int]$p.w) -le $w -and ([int]$p.y + [int]$p.h) -le $h }
+  function FbInsideOrAbsent($r, [int64]$id, [int]$w, [int]$h) { $p = PlacedOf $r $id; (-not $p) -or (FbInside $p $w $h) }
+  function FbSizedOrAbsent($r, [int64]$id) { $p = PlacedOf $r $id; (-not $p) -or ([int]$p.w -ge 1 -and [int]$p.h -ge 1) }
+  function FbMissingText($r) { "missing: $(@($r.missing | % { "$($_.app) ($($_.why))" }) -join ', ')" }
+  function FbIsMissing($r, [string]$app) { @($r.missing | ? { $_.app -ceq $app -and $_.why -ceq 'not in a free area' }).Count -eq 1 }
+
+  Case 'free-area bounds: an area that rounds to 0 px wide or high is dropped, so no window is placed 0 px wide or high (four work areas)' {
+    foreach ($dim in $l3Sizes) {
+      $w = [int]$dim[0]; $h = [int]$dim[1]; $tag = "${w}x$h"; $ctl = @(0.4, 0, 0.6, 1)
+      $r = FbRun "zero-$tag" $w $h @(@{ rect = $ctl; app = 'chrome'; title = 'Control' }, @{ rect = @(0, 0, (0.3 / $w), 1); app = 'claude'; title = 'Sliver W' }, @{ rect = @(0.2, 0, 0.2, (0.3 / $h)); app = 'ms-teams'; title = 'Sliver H' })
+      $scope = (RectOf (PlacedOf $r 7001)) -ceq (FbWant $w $h $ctl)
+      Check "free-area bounds zero ${tag}: scope, the control area takes its window at $(FbWant $w $h $ctl)" $scope "$(Desc $r 7001)"
+      if (-not $scope) { continue }
+      Check "free-area bounds zero ${tag}: an area 0 px wide places no window under 1 px" (FbSizedOrAbsent $r 7002) (Desc $r 7002)
+      Check "free-area bounds zero ${tag}: an area 0 px high places no window under 1 px" (FbSizedOrAbsent $r 7003) (Desc $r 7003)
+      Check "free-area bounds zero ${tag}: the pin of the 0 px wide area is listed missing, not in a free area" (FbIsMissing $r 'claude') (FbMissingText $r)
+      Check "free-area bounds zero ${tag}: the pin of the 0 px high area is listed missing, not in a free area" (FbIsMissing $r 'ms-teams') (FbMissingText $r)
+    }
+  }
+  Case 'free-area bounds: an area past an edge of the work area places its window inside the work area or not at all (four work areas, four edges)' {
+    foreach ($dim in $l3Sizes) {
+      $w = [int]$dim[0]; $h = [int]$dim[1]; $tag = "${w}x$h"; $ctl = @(0, 0, 0.4, 0.4)
+      $r = FbRun "edge-$tag" $w $h @(
+        @{ rect = $ctl; app = 'chrome'; title = 'Control' },
+        @{ rect = @(0.9, 0, 0.5, 0.4); app = 'claude'; title = 'Right edge' },
+        @{ rect = @(0, 0.9, 0.4, 0.5); app = 'ms-teams'; title = 'Bottom edge' },
+        @{ rect = @(-0.3, 0.45, 0.4, 0.4); app = 'outlook'; title = 'Left edge' },
+        @{ rect = @(0.5, -0.2, 0.3, 0.4); app = 'chrome'; title = 'Top edge' })
+      $scope = (RectOf (PlacedOf $r 7001)) -ceq (FbWant $w $h $ctl)
+      Check "free-area bounds edge ${tag}: scope, the control area takes its window at $(FbWant $w $h $ctl)" $scope "$(Desc $r 7001)"
+      if (-not $scope) { continue }
+      Check "free-area bounds edge ${tag}: an area past the right edge (x 0.9, w 0.5) places its window inside the work area or not at all" (FbInsideOrAbsent $r 7002 $w $h) (Desc $r 7002)
+      Check "free-area bounds edge ${tag}: an area past the bottom edge (y 0.9, h 0.5) places its window inside the work area or not at all" (FbInsideOrAbsent $r 7003 $w $h) (Desc $r 7003)
+      Check "free-area bounds edge ${tag}: an area past the left edge (x -0.3) places its window inside the work area or not at all" (FbInsideOrAbsent $r 7004 $w $h) (Desc $r 7004)
+      Check "free-area bounds edge ${tag}: an area past the top edge (y -0.2) places its window inside the work area or not at all" (FbInsideOrAbsent $r 7005 $w $h) (Desc $r 7005)
+    }
+  }
+  Case 'free-area bounds control: an area that ends exactly on an edge, and one that rounds to exactly 1 px, keep their rects (four work areas)' {
+    foreach ($dim in $l3Sizes) {
+      $w = [int]$dim[0]; $h = [int]$dim[1]; $tag = "${w}x$h"
+      $items = @(@{ rect = @(0.5, 0.5, 0.5, 0.5); app = 'chrome'; title = 'Corner' }, @{ rect = @(0, 0, (0.6 / $w), 0.4); app = 'claude'; title = 'One wide' }, @{ rect = @(0.2, 0, 0.2, (0.6 / $h)); app = 'ms-teams'; title = 'One high' })
+      $r = FbRun "keep-$tag" $w $h $items
+      $bad = @(0..2 | ? { -not ((RectOf (PlacedOf $r (7001 + $_))) -ceq (FbWant $w $h $items[$_].rect)) } | % { "$($items[$_].title): want $(FbWant $w $h $items[$_].rect); $(Desc $r (7001 + $_))" })
+      Check "free-area bounds control ${tag}: the corner area (x1 = 1, y1 = 1), a 1 px wide area and a 1 px high area each keep their window at their rect" ($bad.Count -eq 0) ($bad -join ' | ')
+    }
+  }
+  Case 'free-area bounds, empty state: when every area is bad, no window is placed under 1 px or outside the work area (1365x1001)' {
+    $w = 1365; $h = 1001
+    $r = FbRun 'none' $w $h @(@{ rect = @(0, 0, (0.3 / $w), 1); app = 'claude'; title = 'Sliver W' }, @{ rect = @(0.9, 0, 0.5, 1); app = 'chrome'; title = 'Right edge' })
+    $scope = [bool]$r.PSObject.Properties['placed']
+    Check 'free-area bounds empty: scope, the run gives a result' $scope 'no placed list in the result'
+    if (-not $scope) { return }
+    $small = @($r.placed | ? { [int]$_.w -lt 1 -or [int]$_.h -lt 1 } | % { "id $($_.id) rect $(RectOf $_)" })
+    Check 'free-area bounds empty: no window is placed under 1 px' ($small.Count -eq 0) ($small -join ' | ')
+    $out = @($r.placed | ? { -not (FbInside $_ $w $h) } | % { "id $($_.id) rect $(RectOf $_)" })
+    Check 'free-area bounds empty: no window is placed outside the work area' ($out.Count -eq 0) ($out -join ' | ')
+  }
+  Case 'free-area bounds, full size: ten cell areas and an eleventh past the corner, eleven fill windows: the ten cells keep their rects, and window 11 is inside the work area or not placed (1365x1001)' {
+    $w = 1365; $h = 1001; $m = FgMon $w $h; $cw = [int]($w / 5); $ch = [int]($h / 2)
+    $areas = @(0..9 | % { FreeArea @((($_ % 5) * $cw / $w), ([Math]::Floor($_ / 5) * $ch / $h), ($cw / $w), ($ch / $h)) }) + @(FreeArea @(0.9, 0.9, 0.5, 0.5))
+    $fill = [pscustomobject]@{ mon = 'wide'; apps = @('claude'); skip = @(); sort = 'app' }
+    $sc = FgScene 'FB-full-scene.json' (FreeGrid 5 2 $areas) @() $fill
+    $r = Invoke-SceneFrom $sc (Write-Snap 'FB-full.json' @($m) @(0..10 | % { FgWin (7101 + $_) 'claude' "Fill $($_ + 1)" (100 * $_) }))
+    $bad = @(0..9 | ? { -not ((RectOf (PlacedOf $r (7101 + $_))) -ceq (CellRect $m 5 2 $_)) } | % { "Fill $($_ + 1): $(Desc $r (7101 + $_))" })
+    $scope = $bad.Count -eq 0
+    Check 'free-area bounds full: scope, windows 1 to 10 take the ten cells, each at its cell rect' $scope ($bad -join ' | ')
+    if (-not $scope) { return }
+    Check 'free-area bounds full: window 11, the fill window for the area past the corner, is inside the work area or not placed' (FbInsideOrAbsent $r 7111 $w $h) (Desc $r 7111)
   }
 
   # ---- Item G (L3, plan layout-free-build, item G): Get-CollapsedAreas($areas, $absent, $locked, $size), defined in tile.ps1 before its -Lib
