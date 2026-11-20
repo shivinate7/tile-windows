@@ -110,6 +110,7 @@
 #     many hold a switch that does nothing; with none working it reads No scene has a trigger on yet. Inspector: an inert On row reads inactive,
 #     a working row (a conflict note does not make one inert) keeps a bare On, the Extra Triggers line reads N on, N inactive, N warning, and
 #     the callout of a scene with only inert switches reads No working trigger is on. The control checks hold on the page as it stands.
+#     On the strip (under 1180 px) an inert chip's reason line is shown, as it is at 1440.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 #
@@ -127,7 +128,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 158
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 159
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -4382,6 +4383,41 @@ return { size: stat("size"), gaps: stat("gaps"), activity: stat("activity"), sum
     if (-not $sel) { return }
     $live = Js $ws $inertCalloutJs
     Check 'inert switch: a scene with a working trigger still reads that triggers move windows without asking (control)' ([string]$live -match 'Triggers that are on move your windows without asking') "callout reads: '$live'"
+  }
+
+  # The strip under 1180 px (app.html's max-width rule): the card's pick hides every small line in it, and an inert chip's reason is one. The
+  # reason is read as drawn (its display and a height), not as text, since a hidden line keeps its words. At 1440 the same line is the control.
+  Case 'inert switch, 1024: the reason line of each chip that does nothing is shown on the strip, as it is at 1440' {
+    Put-Config (Inert-Config $inertMixed @{ meetings = $plugKey })
+    Set-View $ws 1024 900
+    try {
+      $opened = Open-Page $ws $url 'focus'
+      Check 'inert switch, 1024: the page opens on Focus at 1024 (control)' $opened 'the page did not open on Focus in time'
+      if (-not $opened) { return }
+      $reasonJs = @'
+const want = __WANT__;
+const bare = e => e.textContent.replace(/\s+/g, " ").trim().replace(/^Warning:\s*/i, "");
+return { chips: want.map(([scene, label]) => {
+  const b = [...document.querySelectorAll("[data-pick]")].find(x => x.dataset.pick === scene);
+  const card = b ? b.closest("article.card") : null;
+  const c = card ? [...card.querySelectorAll(".chips > *")].find(x => bare(x).startsWith(label)) : null;
+  if (!c) return { scene: scene, label: label, found: false };
+  const s = c.querySelector("small");
+  const h = s ? s.getBoundingClientRect().height : 0;
+  return { scene: scene, label: label, found: true, display: s ? getComputedStyle(s).display : "no reason line", height: Math.round(h), shown: !!s && getComputedStyle(s).display !== "none" && h > 0 };
+}) };
+'@
+      $want = '[' + (($inertChips | ? { $_.inert } | % { '["' + $_.scene + '","' + $_.label + '"]' }) -join ',') + ']'
+      $at1024 = @((Js $ws ($reasonJs.Replace('__WANT__', $want))).chips)
+      $lost = @($at1024 | ? { -not $_.found } | % { "$($_.label) on $($_.scene)" })
+      Check 'inert switch, 1024: each of the 3 chips that do nothing is on its card (scope)' ($at1024.Count -eq 3 -and $lost.Count -eq 0) "no chip for: $($lost -join ', ')"
+      foreach ($c in @($at1024 | ? { $_.found })) {
+        Check "inert switch, 1024: the reason line of the $($c.label) chip of $($c.scene), a switch that does nothing, is shown" ([bool]$c.shown) "display $($c.display), height $($c.height) px"
+      }
+      Set-View $ws 1440 900
+      $at1440 = @((Js $ws ($reasonJs.Replace('__WANT__', $want))).chips)
+      Check 'inert switch, 1024: at 1440 the reason line of each of those 3 chips is shown (control)' (@($at1440 | ? { $_.shown }).Count -eq 3) "shown at 1440: $(@($at1440 | ? { $_.shown } | % { $_.label }) -join ', ')"
+    } finally { Fix-View $ws }
   }
 
 } catch {
