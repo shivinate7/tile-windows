@@ -548,7 +548,7 @@ try {
     Check 'L1 stacked held: Held B takes slot 6' ([bool]($p -and (SlotKey $p) -ceq '6')) (Desc $r 5901)
     Check "L1 stacked held: Held B is the bottom half of the old cell (y above 0, ends at y $ch, x 0, w $cw)" ([bool]($p -and [int]$p.y -gt 0 -and [int]$p.y + [int]$p.h -eq $ch -and [int]$p.x -eq 0 -and [int]$p.w -eq $cw)) (Desc $r 5901)
   }
-  # ---- Open halves fill last (layout-free item 6, owner grant: yes). With fill.unit larger than 1x1 the fill takes the free aligned blocks first, then
+  # ---- Open halves fill last (layout-free item 6, owner grant: yes, first recorded in commit 686934e, 2026-11-13 09:41 CST). With fill.unit larger than 1x1 the fill takes the free aligned blocks first, then
   # the open halves (free fine cells of a part-taken block) in reading order. Two open halves one above the other make one window. A kept slot
   # (fill.keepEmpty, keyed by monitor id only) is never filled by the fill or a zone, and its block is not free. The monitor is 1360x1000: a base cell is
   # 272x500 and a half 136 wide (stacked: 250 high), so every expected rect is whole pixels. A check named 'control:' is green on the old code too.
@@ -660,6 +660,39 @@ try {
     Check 'open half: zone window A takes the whole free block, slots 3+4 (272,0,272,500)' (OhIs $r 7802 (OhPairH 1) (CellRect $ohM 5 2 1)) (Desc $r 7802)
     Check 'open half: zone window B takes the zone''s own open half, slot 2 (136,0,136,500)' (OnCell $r 7803 2 (OhHalfH 1)) (Desc $r 7803)
   }
+  Case 'band limit (layout-free item 6), horizontal: an open half stays in its own unit, so open slots 2 and 3 take two 136-wide windows, not one 272-wide' {
+    $fill = [pscustomobject]@{ mon = 'wide'; apps = @('claude'); skip = @(); sort = 'app'; unit = @(2, 1) }
+    $sc = FgScene 'oh-band-h-scene.json' (FgGrid 2 1) @((FgPin 'chrome' 'Pin A' @(0)), (FgPin 'chrome' 'Pin B' @(3))) $fill
+    $wins = @((FgWin 9001 'chrome' 'Pin A' 0), (FgWin 9002 'chrome' 'Pin B' 408)) + @(1..10 | % { FgWin (9010 + $_) 'claude' "Fill $_" (100 * $_) })
+    $r = Invoke-SceneFrom $sc (Write-Snap 'oh-band-h-snap.json' @($ohM) $wins)
+    Check 'scope: pin B takes slot 4, the right half of cell 2 (408,0,136,500)' (OnCell $r 9002 4 '408,0,136,500') (Desc $r 9002)
+    $free = @(2, 3, 4, 5, 6, 7, 8, 9)
+    $bad = @(foreach ($i in 0..7) { $b = $free[$i]; if (-not (OhIs $r (9011 + $i) (OhPairH $b) (CellRect $ohM 5 2 $b))) { Desc $r (9011 + $i) } })
+    Check 'control: windows 1 to 8 take the eight whole blocks 2 to 9 in order, each at its cell rect' ($bad.Count -eq 0) ($bad -join ' | ')
+    Check 'band: window 9 takes open slot 2, a 136-wide half (136,0,136,500), not a 272-wide unit with slot 3' (OnCell $r 9019 2 (OhHalfH 1)) (Desc $r 9019)
+    Check 'band: window 10 takes open slot 3, the other 136-wide half (272,0,136,500)' (OnCell $r 9020 3 (OhHalfH 2)) (Desc $r 9020)
+  }
+  Case 'band limit (layout-free item 6), stacked: an open half stays in its own unit, so open slots 6 and 11 take two 272 by 250 windows, not one 272 by 500' {
+    $fill = [pscustomobject]@{ mon = 'wide'; apps = @('claude'); skip = @(); sort = 'app'; unit = @(1, 2) }
+    $sc = FgScene 'oh-band-v-scene.json' (FgGrid 1 2) @((FgPin 'chrome' 'Pin A' @(0)), (FgPin 'chrome' 'Pin B' @(15))) $fill
+    $wins = @((FgWin 9201 'chrome' 'Pin A' 0), (FgWin 9202 'chrome' 'Pin B' 0 750)) + @(1..10 | % { FgWin (9210 + $_) 'claude' "Stack $_" (100 * $_) })
+    $r = Invoke-SceneFrom $sc (Write-Snap 'oh-band-v-snap.json' @($ohM) $wins)
+    Check 'scope: pin A takes slot 1 (0,0,272,250) and pin B takes slot 16 (0,750,272,250)' ((OnCell $r 9201 1 '0,0,272,250') -and (OnCell $r 9202 16 '0,750,272,250')) "$(Desc $r 9201) | $(Desc $r 9202)"
+    $free = @(1, 2, 3, 4, 6, 7, 8, 9)
+    $bad = @(foreach ($i in 0..7) { $b = $free[$i]; if (-not (OhIs $r (9211 + $i) (OhPairV $b) (CellRect $ohM 5 2 $b))) { Desc $r (9211 + $i) } })
+    Check 'control: windows 1 to 8 take the eight whole blocks in order, each at its cell rect' ($bad.Count -eq 0) ($bad -join ' | ')
+    Check 'band: window 9 takes open slot 6, the 272 by 250 half (0,250,272,250), not a unit with slot 11' (OnCell $r 9219 6 (OhHalfV 5)) (Desc $r 9219)
+    Check 'band: window 10 takes open slot 11, the other half (0,500,272,250)' (OnCell $r 9220 11 (OhHalfV 10)) (Desc $r 9220)
+  }
+  Case 'zone capacity (layout-free item 6, the same way): with unit 2x1, a zone of one base cell holds one window, the block at 272 wide, and no more' {
+    $fill = [pscustomobject]@{ mon = $ohId; apps = @(); skip = @(); sort = 'app'; unit = @(2, 1) }
+    $zone = [pscustomobject]@{ mon = $ohId; slots = @(0, 1); app = 'chrome' }
+    $sc = FgScene 'oh-zcap-scene.json' (FgGrid 2 1) @() $fill @($zone) $ohId
+    $wins = @((FgWin 9301 'chrome' 'Zone A' 0), (FgWin 9302 'chrome' 'Zone B' 500))
+    $r = Invoke-SceneFrom $sc (Write-Snap 'oh-zcap-snap.json' @($ohM) $wins)
+    Check 'capacity: zone window A takes the zone''s one block, slots 1+2 at 272 wide (0,0,272,500)' (OhIs $r 9301 (OhPairH 0) (CellRect $ohM 5 2 0)) (Desc $r 9301)
+    Check 'capacity: zone window B is not placed in the zone, so it is left as zone full' ((-not (PlacedOf $r 9302)) -and (LeftWhy $r 9302) -ceq 'zone full') (Desc $r 9302)
+  }
   Case 'keep (fill.keepEmpty, monitor id), zone: a zone never fills a kept slot, so its third window goes past the kept half' {
     $fill = [pscustomobject]@{ mon = $ohId; apps = @(); skip = @(); sort = 'app'; keepEmpty = @([pscustomobject]@{ mon = $ohId; slots = @(1) }) }
     $zone = [pscustomobject]@{ mon = $ohId; slots = @(0, 1, 2, 3); app = 'chrome' }
@@ -669,8 +702,9 @@ try {
     Check 'scope: the three zone windows are placed' (@($r.placed).Count -eq 3) "placed $(@($r.placed).Count), left $(@($r.left).Count)"
     $onKept = @($r.placed | ? { @($_.slots) -contains 2 })
     Check 'keep: no zone window covers slot 2, the kept half' ($onKept.Count -eq 0) "on slot 2: $(@($onKept | % { $_.title }) -join ', ')"
+    Check 'keep: the third zone window takes slot 4, past the kept slot 2 (408,0,136,500)' (OnCell $r 7903 4 '408,0,136,500') (Desc $r 7903)
   }
-  Case 'keep (fill.keepEmpty, monitor id), horizontal: a kept half inside a free block is never filled, so its block goes to the next window' {
+  Case 'keep (fill.keepEmpty, monitor id), horizontal: a kept half breaks its block, so the fill starts at the next whole block and never covers the kept half' {
     $fill = [pscustomobject]@{ mon = $ohId; apps = @('claude'); skip = @(); sort = 'app'; unit = @(2, 1); keepEmpty = @([pscustomobject]@{ mon = $ohId; slots = @(1) }) }
     $sc = FgScene 'oh-k1-scene.json' (FgGrid 2 1) @() $fill @() $ohId
     $wins = @(1..9 | % { FgWin (8000 + $_) 'claude' "Fill $_" (100 * $_) })
@@ -709,6 +743,14 @@ try {
     $r = Invoke-SceneFrom $sc (Write-Snap 'oh-k5-snap.json' @($ohM) $wins)
     Check 'scope: the nine claude windows are placed' (@($r.placed).Count -eq 9) "placed $(@($r.placed).Count), left $(@($r.left).Count)"
     Check 'control: window 2 takes block 1, slots 3+4 (272,0,272,500), as the role-named entry holds nothing' (OhIs $r 8402 (OhPairH 1) (CellRect $ohM 5 2 1)) (Desc $r 8402)
+  }
+  Case 'control: keep, role-keyed scene: fill.keepEmpty is ignored, so the kept slot 2 takes window 2 at its half rect, as on main' {
+    $fill = [pscustomobject]@{ mon = 'wide'; apps = @('claude'); skip = @(); sort = 'app'; keepEmpty = @([pscustomobject]@{ mon = 'wide'; slots = @(1) }) }
+    $sc = FgScene 'oh-rolekeep-scene.json' (FgGrid 2 1) @() $fill
+    $wins = @(1..3 | % { FgWin (8500 + $_) 'claude' "Fill $_" (100 * $_) })
+    $r = Invoke-SceneFrom $sc (Write-Snap 'oh-rolekeep-snap.json' @($ohM) $wins)
+    Check 'scope: the three claude windows are placed' (@($r.placed).Count -eq 3) "placed $(@($r.placed).Count), left $(@($r.left).Count)"
+    Check 'control: window 2 takes slot 2, the kept slot, at its half rect (136,0,136,500), as on main' (OnCell $r 8502 2 (OhHalfH 1)) (Desc $r 8502)
   }
 
   # ---- Free Layout areas (L3, plan layout-free-build, items 24 to 26). grids.wide = {c, r, free: {areas}}. An area is a rect of fractions of the

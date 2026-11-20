@@ -143,7 +143,7 @@ try {
     $gold = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $goldenDir "$set.json"), $utf8))
     @($gold.scenes.PSObject.Properties['default'].Value.left | ? { [string]$_.why -ceq 'no free cell' } | % { "$([int64]$_.id)" })
   }
-  # layout-free item 6 (owner grant: yes): the split's open half takes one window that the frozen run left 'no free cell', when there is one. $k is
+  # layout-free item 6 (owner grant: yes, first recorded in commit 686934e, 2026-11-13 09:41 CST): the split's open half takes one window that the frozen run left 'no free cell', when there is one. $k is
   # 1001 in the split run, $f its frozen rect. The open half is the other half of $f's cell, at 1-based slot $slot.
   function SplitOpenHalf([string]$label, $set, $got, $fz, $k, $f, [string]$slot, [bool]$stacked) {
     $noCell = @(SplitNoCell $set)
