@@ -113,6 +113,10 @@
 #     disabled (forced-color-adjust: none, or the computed colour is GrayText).
 #     Ruling 2026-11-16 13:29 CST: a block with no room clear of the Swap circle, even for the icon at 8 px or more, shows no Put
 #     Behind label. Its solid border and the circle carry the cue. Forced colours drops box-shadow, so the icon-alone chip has a border.
+#   Closed front (decision stack-and-lock, debt closed-front-stack): when a pin's front window is not open, the first open back window is
+#     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Keep Where It Is act on that
+#     window. Bring to Front lists the promoted window behind the new front once, never twice. A move or resize keeps the window the front of
+#     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Keep Where It Is leaves no pin naming it.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 param([int]$Shard = 1, [int]$Of = 1)
@@ -121,12 +125,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (249). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (258). Shard 1 runs
 # gates 1 to 67 (the cases before the Board feedback section), shard 2 gates 68 to 171 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(67, 171)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 249
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 258
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -436,6 +440,14 @@ function SlFewer($k) { [void](SlStep 'g' $k '-1') }
 # The text of the inspector's Behind This Window list ('' when it is not drawn), and a placed window by id (null when none).
 function SlBehindText { SlJs "(() => { const b = document.querySelector('#win .bstack'); return b ? b.textContent : ''; })()" }
 function SlPlacedOf($id) { SlGet "prevs[selId].placed.find(p => p.id === $id) || null" }
+# The closed-front cases read: how many entries of a pin's behind list name $text; the rows of the inspector's Behind This Window list;
+# how many stack entries the engine found no open window for; whether window $id is the front (not behind, in a pin) on exactly the
+# cells $cells (1-based, as placed[] gives them, "4" or "4,5"); and every placed window as "<id> f|b p<pin> [cells]" for a failure's detail.
+function SlBehindCount($pin, $text) { @($pin.behind | ? { "$($_.match)" -like "*$text*" }).Count }
+function SlBehindRows { [int](SlJs "document.querySelectorAll('#win .bstack li').length") }
+function SlMissingCount { [int](SlJs "(prevs[selId].missing || []).length") }
+function SlFrontOn($id, $cells) { $p = SlPlacedOf $id; [bool]($p -and $p.pin -ge 0 -and -not $p.behind -and (SlCells $p) -eq $cells) }
+function SlPlacedBrief { $all = SlGet "prevs[selId].placed.map(p => ({ id: p.id, pin: p.pin, behind: !!p.behind, slots: p.slots }))"; (@($all) | % { "$($_.id) $(if ($_.behind) { 'b' } else { 'f' }) p$($_.pin) [$(@($_.slots) -join ',')]" }) -join '; ' }
 # Hit boxes for the badge cases: the badge (its box, widened by its ::after inset), the grip, the lock and Stay Put, on the
 # board. An element that is not drawn, or has pointer-events none, has no hit box (null). The text point is the centre of the
 # badge's visible text; hitAt names what the page would hit there.
@@ -2621,6 +2633,101 @@ try {
   Check 'forced colours, guard: a disabled Merge reads as disabled (its text is GrayText, or it opts out of forced colours)' ([bool]($fcMergeState -eq 'disabled' -and $fcMerge -and ($fcMerge.color -eq $fcMerge.gray -or $fcMerge.fca -eq 'none'))) "Merge: $(SlShort $fcMerge)"
   }
   SlSend 'Emulation.setEmulatedMedia' @{ features = @() }
+
+  # ---------- Closed front in a stack (decision stack-and-lock, debt closed-front-stack) ----------
+  # A pin whose front is not open: Apply makes its first open back window the front (tile.ps1, Pass), so the board shows that window as the
+  # front while the scene still names the closed one. Here the closed front is closedapp (match empty), and Draft release (claude, 1003) is
+  # promoted over Quarterly (chrome, 1006). The pin has to be this shape: if the closed front were claude with a match, a move would copy that
+  # match and the engine would promote the same window again. Refactor (claude, 1001) is the window that wrongly takes the front instead.
+  # A move, a resize, Delete and Keep Where It Is act on the window on screen; Bring to Front swaps it with the one behind. The scene's
+  # closed entry is not asserted: the debt's fix drops it. The same actions on an open front (Refactor over the same two windows) are the
+  # controls, and each action's own control shows it ran, so a red is never a key or a button that did nothing.
+  $pinsCF = SlPins '{"app":"closedapp","match":"","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}'
+  $pinsOF = SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}'
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF); SlPark
+  $cfMiss = SlGet "(prevs[selId].missing || []).filter(m => m.app === 'closedapp').length"
+  $cfQ = SlPlacedOf 1006
+  if (Shard-Take) {
+  Check 'closed front, scope: Draft release is the front on cell 4, and the closed app''s pin is missing its window' ([bool]((SlFrontOn 1003 '4') -and $cfMiss -eq 1)) "missing closedapp: $cfMiss; placed: $(SlPlacedBrief)"
+  Check 'closed front, scope: Quarterly is behind Draft release on cell 4' ([bool]($cfQ -and $cfQ.behind -eq $true -and $cfQ.pin -eq 0 -and (SlCells $cfQ) -eq '4')) "placed: $(SlPlacedBrief)"
+  }
+
+  # (a) Bring to Front: the promoted window goes behind, once, and the one behind it comes to the front.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  SlClick (SlAt (SlBox 1003) 0.5 0.5)
+  $cbPress = SlBtnPress '#win' 'Bring to Front'
+  $cbPin = @((SlGet 'work[selId]').pins)[0]
+  $cbRows = SlBehindRows; $cbMissing = SlMissingCount
+  if (Shard-Take) {
+  Check 'closed front, Bring to Front, control: Quarterly is the front of the pin, with Draft release behind it' ([bool]($cbPress -and $cbPin -and "$($cbPin.match)" -like '*Quarterly*' -and (SlBehindCount $cbPin 'Draft release') -ge 1)) "pressed: $cbPress; pin: $(SlShort $cbPin)"
+  Check 'closed front, Bring to Front, red: Draft release is in the pin''s behind list once, not twice' ((SlBehindCount $cbPin 'Draft release') -eq 1) "pin: $(SlShort $cbPin)"
+  Check 'closed front, Bring to Front, red: the inspector lists one window behind the front' ($cbRows -eq 1) "Behind This Window rows: $cbRows"
+  Check 'closed front, Bring to Front, red: Apply finds an open window for every entry in the stack' ($cbMissing -eq 0) "windows with no open match: $cbMissing; pin: $(SlShort $cbPin)"
+  }
+
+  # (b) An arrow move: the window that is moved stays the front of its pin on the new cell.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  SlKey 1003 'ArrowRight' 39
+  $mvQ = SlPlacedOf 1006
+  if (Shard-Take) {
+  Check 'closed front, arrow move, control: the pin moved one cell right, with Quarterly behind it on cell 5' ([bool]($mvQ -and $mvQ.behind -eq $true -and (SlCells $mvQ) -eq '5')) "placed: $(SlPlacedBrief)"
+  Check 'closed front, arrow move, red: Draft release, the window that was moved, is the front on cell 5' (SlFrontOn 1003 '5') "placed: $(SlPlacedBrief)"
+  }
+
+  # (b) Shift+arrow resize (the grip's path): the window that is resized stays the front of its two-cell span.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  SlKey 1003 'ArrowRight' 39 8
+  $rzQ = SlPlacedOf 1006
+  if (Shard-Take) {
+  Check 'closed front, Shift+arrow resize, control: the pin spans cells 4 and 5, with Quarterly behind it' ([bool]($rzQ -and $rzQ.behind -eq $true -and (SlCells $rzQ) -eq '4,5')) "placed: $(SlPlacedBrief)"
+  Check 'closed front, Shift+arrow resize, red: Draft release, the window that was resized, is the front of cells 4 and 5' (SlFrontOn 1003 '4,5') "placed: $(SlPlacedBrief)"
+  }
+
+  # (b) Delete: one press takes the window on screen off the cell, and the window behind it takes the cell.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  $dlBefore = ConvertTo-Json -Depth 8 -Compress (SlGet 'work[selId]')
+  SlKey 1003 'Delete' 46
+  $dlAfter = ConvertTo-Json -Depth 8 -Compress (SlGet 'work[selId]')
+  $dlD = SlPlacedOf 1003
+  if (Shard-Take) {
+  Check 'closed front, Delete, control: one press changes the scene' ($dlBefore -ne $dlAfter) "scene: $dlAfter"
+  Check 'closed front, Delete, red: one press takes Draft release off cell 4' ([bool]((-not $dlD) -or (SlCells $dlD) -ne '4')) "placed: $(SlPlacedBrief)"
+  Check 'closed front, Delete, red: Quarterly, the window behind, is the front on cell 4' (SlFrontOn 1006 '4') "placed: $(SlPlacedBrief)"
+  }
+
+  # (b) Keep Where It Is (Windows That Stay Put): the window leaves the pin, so no pin still names it.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
+  SlClick (SlAt (SlBox 1003) 0.5 0.5)
+  $kpPress = SlBtnPress '#win' 'Keep Where It Is'
+  $kpS = SlGet 'work[selId]'
+  $kpNamed = @($kpS.pins | ? { "$($_.match)" -like '*Draft release*' -or (SlHasBehind $_ 'Draft release') })
+  if (Shard-Take) {
+  Check 'closed front, Keep Where It Is, control: Draft release is in Windows That Stay Put' ([bool]($kpPress -and (SlHasBay $kpS 'Draft release'))) "pressed: $kpPress; bay: $(SlShort $kpS.bay)"
+  Check 'closed front, Keep Where It Is, red: no pin still names Draft release' ($kpNamed.Count -eq 0) "pins: $(SlShort $kpS.pins)"
+  }
+
+  # Controls on an open front (Refactor over the same two windows): the same three actions already work.
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsOF)
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $ofPress = SlBtnPress '#win' 'Bring to Front'
+  $ofPin = @((SlGet 'work[selId]').pins)[0]
+  $ofMissing = SlMissingCount
+  if (Shard-Take) {
+  Check 'open front, Bring to Front, control: Draft release is the front, with Refactor once behind it and no window missing' ([bool]($ofPress -and $ofPin -and "$($ofPin.match)" -like '*Draft release*' -and (SlBehindCount $ofPin 'Refactor') -eq 1 -and $ofMissing -eq 0)) "pressed: $ofPress; missing: $ofMissing; pin: $(SlShort $ofPin)"
+  }
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsOF)
+  SlKey 1001 'ArrowRight' 39
+  if (Shard-Take) {
+  Check 'open front, arrow move, control: Refactor, the window that was moved, is the front on cell 5' (SlFrontOn 1001 '5') "placed: $(SlPlacedBrief)"
+  }
+
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsOF)
+  SlKey 1001 'Delete' 46
+  if (Shard-Take) {
+  Check 'open front, Delete, control: one press lets Draft release, the window behind, take cell 4 as the front' (SlFrontOn 1003 '4') "placed: $(SlPlacedBrief)"
+  }
 
   # ---------- Page load: the first data fetch fails once ----------
   # app.html loadAll fetches the snapshot once, so one dropped fetch (a TypeError, as a dropped connection gives) must not leave the
