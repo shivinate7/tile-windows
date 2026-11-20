@@ -10,5 +10,4 @@ They failed as one-offs on full runs of PR 58 and PR 60. Two other cases failed 
 
 Fix: wait for the board to settle inside `Fl-Open`, once, so each case that calls it gets the wait.
 
-stack-lock SlLoad: app.html loadAll fetches once, so one failed fetch leaves no scene; fix page-side, never by retrying in the test.
-Correction: the page does show a footer error on that failure ("Could not reach the server. Start Tile Windows again."). The defect is that it never retries, not that it shows no message.
+stack-lock SlLoad: a dropped fetch (a TypeError) left no scene, because loadAll fetched once. PR 65 makes loadAll try again after 0.4, 0.8 and 1.6 s (app.html:885-893), so that case is covered page-side. The footer still shows "Could not reach the server. Start Tile Windows again." when the last try fails too. A reply with an error status is not tried again, and no test covers a 500 or a slow answer (note `loadall-typeerror-only`).

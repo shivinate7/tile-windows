@@ -1,0 +1,1 @@
+- loadall-typeerror-only: PR 65's fault cases cover only a TypeError in loadAll. No case covers a 500 reply, which loadAll does not retry by design (app.html:885-893), or a slow answer. Seen: 2026-11-20 x1
