@@ -2,6 +2,7 @@
 # Engine cases run tile.ps1 -Scene on the fixture. Page cases drive the real board with pointer events, in headless Edge
 # over the DevTools protocol, on a dry-run server (nothing moves), then read the scene and the tile boxes back. A red
 # case fails on its outcome: the scene or the boxes end up wrong. A missing control only makes the drag do nothing.
+# Page load (before the Sora cases): one dropped snapshot fetch must not leave the board empty.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\stack-lock.ps1
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
 #
@@ -485,29 +486,59 @@ function SlPin($s, $text) { @($s.pins | ? { "$($_.match)" -like "*$text*" })[0] 
 function SlHasBehind($pin, $text) { [bool]@($pin.behind | ? { ("$($_.match)$($_.title)") -like "*$text*" }).Count }
 function SlHasBay($s, $text) { [bool]@($s.bay | ? { "$($_.title)" -like "*$text*" }).Count }
 function SlCells($pin) { ($pin.slots | Sort-Object) -join ',' }
-# Sets the config to one scene (id sl), then loads the page on it.
-function SlCase($sceneJson) {
+# Sets the config to one scene (id sl), then loads the page on it. -Soft and -Polls pass through to SlLoad.
+function SlCase($sceneJson, [switch]$Soft, [int]$Polls = 3) {
   $cfg = (Invoke-WebRequest -UseBasicParsing "$($script:url)config").Content | ConvertFrom-Json
   $cfg.scenes = @((ConvertFrom-Json $sceneJson))
   $body = ConvertTo-Json -Depth 12 -Compress $cfg
   if ((Invoke-WebRequest -UseBasicParsing "$($script:url)config" -Method Post -ContentType 'application/json; charset=utf-8' -Body ($utf8.GetBytes($body))).Content -ne 'Saved') { throw 'the config was not saved' }
-  SlLoad
+  SlLoad -Soft:$Soft -Polls $Polls
 }
 # Loads (or reloads) the page from the server's config, and waits (in the page) until the scene is drawn and settled.
-function SlLoad {
+# -Soft returns { ready, diag } instead of throwing when no scene comes, so a case checks it as a result. -Polls is the number of 30 s waits.
+function SlLoad([switch]$Soft, [int]$Polls = 3) {
   $before = SlJs 'String(performance.timeOrigin)'
   [void](SlSend 'Page.navigate' @{ url = $script:url })
-  $ready = $null; $tries = 0
-  while (-not $ready -and $tries -lt 3) {
+  $ready = $null; $tries = 0; $script:jsErr = ''
+  while (-not $ready -and $tries -lt $Polls) {
     $tries++
     $ready = SlJs "new Promise((res, rej) => { const t0 = Date.now(); (function poll() { if (String(performance.timeOrigin) !== '$before' && typeof snap === 'object' && snap && selId && prevs[selId] && document.querySelectorAll('.tile').length) return res(true); if (Date.now() - t0 > 30000) return rej(new Error('no scene after 30 s')); setTimeout(poll, 100); })(); })"
   }
   if (-not $ready) {
-    $diag = SlJs "JSON.stringify({ snap: typeof snap === 'object' && !!snap, selId: typeof selId === 'string' ? selId : null, drawn: typeof prevs === 'object' && !!selId && !!prevs[selId], tiles: document.querySelectorAll('.tile').length, url: location.href, status: (document.getElementById('status') || {}).textContent })"
+    $diag = SlJs "JSON.stringify({ snap: typeof snap === 'object' && !!snap, selId: typeof selId === 'string' ? selId : null, drawn: typeof prevs === 'object' && !!selId && !!prevs[selId], tiles: document.querySelectorAll('.tile').length, url: location.href, msg: (document.getElementById('msg') || {}).textContent })"
+    if ($Soft) { return [pscustomobject]@{ ready = $false; diag = "$script:jsErr $diag" } }
     throw "the page did not draw the scene: $script:jsErr $diag"
   }
   SlSettle
+  if ($Soft) { [pscustomobject]@{ ready = $true; diag = '' } }
 }
+# Page load fault (app.html loadAll): a fetch wrapper, registered before the page's own scripts run, that fails the snapshot request.
+# -mode 'once' fails the first one only, counted in sessionStorage under $key; 'always' fails every one. Returns the id to remove it with.
+function PlFaultOn([string]$mode, [string]$key) {
+  $src = @'
+(() => {
+  const KEY = '__KEY__', MODE = '__MODE__', orig = window.fetch;
+  window.fetch = function (input, init) {
+    const u = String(typeof input === 'string' ? input : (input && input.url) || input);
+    if (/(^|\/)snapshot(\?|$)/.test(u)) {
+      let n = 0;
+      try { n = Number(sessionStorage.getItem(KEY) || 0); } catch (e) {}
+      if (MODE === 'always' || n === 0) {
+        try { sessionStorage.setItem(KEY, String(n + 1)); } catch (e) {}
+        return Promise.reject(new TypeError('Failed to fetch'));
+      }
+    }
+    return orig.apply(this, arguments);
+  };
+})();
+'@
+  $src = $src.Replace('__KEY__', $key).Replace('__MODE__', $mode)
+  # The Page domain must be on for the session to run new-document scripts; without it the wrapper never reaches the page.
+  [void](SlSend 'Page.enable' @{})
+  $r = SlSend 'Page.addScriptToEvaluateOnNewDocument' @{ source = $src }
+  "$($r.result.identifier)"
+}
+function PlFaultOff($id) { if ($id) { [void](SlSend 'Page.removeScriptToEvaluateOnNewDocument' @{ identifier = $id }); [void](SlSend 'Page.disable' @{}) } }
 function SlStartServer($from = $fixture, $tileHome = $env:TILE_HOME) {
   $psi = New-Object Diagnostics.ProcessStartInfo 'powershell', "-NoProfile -ExecutionPolicy Bypass -File `"$serve`" -NoBrowser -From `"$from`""
   $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.CreateNoWindow = $true
@@ -2090,6 +2121,44 @@ try {
   $fcMerge = SlGet "(() => { const b = [...document.querySelectorAll('.mbar button')].find(x => x.textContent.trim() === 'Merge'); if (!b) return null; const p = document.createElement('span'); p.style.cssText = 'forced-color-adjust:none;color:GrayText;position:absolute'; document.body.appendChild(p); const gray = getComputedStyle(p).color; p.remove(); const cs = getComputedStyle(b); return { disabled: b.disabled, color: cs.color, gray: gray, fca: cs.forcedColorAdjust, bs: cs.borderTopStyle }; })()"
   Check 'forced colours, guard: a disabled Merge reads as disabled (its text is GrayText, or it opts out of forced colours)' ([bool]($fcMergeState -eq 'disabled' -and $fcMerge -and ($fcMerge.color -eq $fcMerge.gray -or $fcMerge.fca -eq 'none'))) "Merge: $(SlShort $fcMerge)"
   SlSend 'Emulation.setEmulatedMedia' @{ features = @() }
+
+  # ---------- Page load: the first data fetch fails once ----------
+  # app.html loadAll fetches the snapshot once, so one dropped fetch (a TypeError, as a dropped connection gives) must not leave the
+  # board empty. The fault goes into the page before its scripts run, so it reaches loadAll's first call. Each fault counts its
+  # failures in sessionStorage under a key of its own, so a reload of the page is not failed again. The control and the always-
+  # failing case pass on the old code: they hold the page to a drawn scene with no fault, and to a plain error in the footer.
+  SlViewport 1440 900
+  $plCtl = SlCase (SlSceneJson '[]' '["*"]') -Soft
+  $plCtlTiles = SlGet "document.querySelectorAll('.tile').length"
+  Check 'page load, control, no fault: the page draws the scene' ([bool]($plCtl.ready -and $plCtlTiles -gt 0)) "tiles: $plCtlTiles; $($plCtl.diag)"
+
+  $plKey = 'tilePageLoad-' + [guid]::NewGuid().ToString('N')
+  $plId = PlFaultOn 'once' $plKey
+  try {
+    $plRed = SlCase (SlSceneJson '[]' '["*"]') -Soft
+    $plFired = SlJs "sessionStorage.getItem('$plKey')"
+    $plFooter = SlJs "document.getElementById('msg').textContent.trim()"
+    $plScope = ($plFired -eq '1')
+    Check 'page load, scope: the first snapshot fetch was failed once' $plScope "failed fetches counted: $plFired"
+    # Scope first: without the fault the page draws the scene anyway, so the red needs the fault to have fired.
+    Check 'page load, red: after one dropped snapshot fetch, the page still draws the scene' ([bool]($plScope -and $plRed.ready)) "the page stopped at its one fetch and drew no scene; footer: '$plFooter'"
+  } finally {
+    PlFaultOff $plId
+    [void](SlJs "(() => { try { sessionStorage.removeItem('$plKey'); } catch (e) {} return true; })()")
+  }
+
+  $plKeyAll = 'tilePageLoad-' + [guid]::NewGuid().ToString('N')
+  $plAll = PlFaultOn 'always' $plKeyAll
+  try {
+    $plDown = SlCase (SlSceneJson '[]' '["*"]') -Soft -Polls 1
+    $plDownFired = SlJs "sessionStorage.getItem('$plKeyAll')"
+    $plDownMsg = SlJs "document.getElementById('msg').textContent.trim()"
+    Check 'page load, scope: every snapshot fetch is failed, and the page made one' ([bool]$plDownFired) "failed fetches counted: $plDownFired"
+    Check 'page load, control, every fetch fails: the footer names the failure in plain words, not a blank board' ([bool]($plDownMsg -match 'could not' -and $plDownMsg -notmatch 'TypeError|undefined|null')) "footer: '$plDownMsg'; ready: $($plDown.ready)"
+  } finally {
+    PlFaultOff $plAll
+    [void](SlJs "(() => { try { sessionStorage.removeItem('$plKeyAll'); } catch (e) {} return true; })()")
+  }
 
   # ---------- Ruling 2026-11-16 (label fallback): the Put Behind label with Sora loaded ----------
   # The fonts-blocked cases above prove only the fallback font, so these run in a browser that allows Google Fonts. The label takes
