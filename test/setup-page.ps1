@@ -3351,6 +3351,7 @@ function () {
 }
 '@
   # The named nodes of the accessibility tree whose accessible name matches $rx (case-sensitive). Text and ignored nodes are not named boxes.
+  # One object per named node, emitted flat: a caller takes the list with @(...), and an empty list is zero objects.
   function Ax-Named($sock, [string]$rx) {
     [void](Cdp $sock 'DOM.enable' @{})
     $ax = Cdp $sock 'Accessibility.getFullAXTree' @{}
@@ -3366,9 +3367,10 @@ function () {
         $out += [pscustomobject]@{ name = [string]$n.name.value; role = [string]$n.role.value; words = [string]$info.words; w = [double]$info.w; slot = [int]$info.slot }
       } catch { }
     }
-    , @($out)
+    $out
   }
   # The named nodes drawn on the ultrawide board, polled until $want of them are named or $seconds pass (a page update lands after its POST).
+  # Emitted flat, one object per half: a caller takes the list with @(...).
   function Wait-Halves($sock, [string]$rx = 'Open half|Stays empty|Kept empty', [int]$want = 1, [int]$seconds = 10) {
     $t0 = Get-Date
     do {
@@ -3376,7 +3378,7 @@ function () {
       if ($found.Count -ge $want) { break }
       Start-Sleep -Milliseconds 250
     } while (((Get-Date) - $t0).TotalSeconds -lt $seconds)
-    , $found
+    $found
   }
   # The named halves as one line for a failure detail: name and slot of each, or none.
   function Half-Text($halves) { if (@($halves).Count -eq 0) { return 'none' }; (@($halves | % { "'$($_.name)' on slot $($_.slot)" })) -join '; ' }
@@ -3535,7 +3537,7 @@ function () {
 
   Case 'split open: at 1024 an open half under 40px draws no words, and its name still reads Open half and Fills last' {
     Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ apps = @('*') })
-    Set-View $ws 1024 900
+    Set-View $ws 1024 768
     try {
       $opened = Open-Page $ws $url 'focus' $tenWinSnap
       Check 'split open: the page opens on Focus with fill on, at 1024 (control)' $opened 'the page did not open on Focus in time'
@@ -3544,6 +3546,8 @@ function () {
       Check 'split open: at 1024 the board names one open half, on cell 1 (scope)' ($h.Count -eq 1 -and $h[0].slot -eq 1) "named halves: $(Half-Text $h)"
       if ($h.Count -ne 1 -or $h[0].slot -ne 1) { return }
       Check 'split open: at 1024 the open half is under 40px wide (scope)' ($h[0].w -gt 0 -and $h[0].w -lt 40) "width: $($h[0].w)"
+      # The no-words checks below are only about a half under 40px: on a wider half they do not run.
+      if (-not ($h[0].w -gt 0 -and $h[0].w -lt 40)) { return }
       Check 'split open: under 40px the open half draws no words, the dashed box alone' ($h[0].words -eq '') "words drawn: '$($h[0].words)'"
       Check 'split open: under 40px the open half keeps its name, Open half and Fills last' ($h[0].name -cmatch 'Open half' -and $h[0].name -match 'Fills last') "name: '$($h[0].name)'"
     } finally { Reset-Look $ws }
@@ -3832,9 +3836,9 @@ function () {
     $opened = Open-Page $ws $url 'focus' $claudeTermSnap
     Check 'split open: the page opens on Focus with Claude in half 2 and Terminal behind it (control)' $opened 'the page did not open on Focus in time'
     if (-not $opened) { return }
-    # The name is read once the page draws it. Ax-Named's list is assigned, never piped or wrapped, so each entry stays one object.
+    # The name is read once the page draws it.
     [void](WaitFor $ws ('[...document.querySelectorAll(".cellbox")].some(e => e.dataset.slot === "0" && /Open half/.test(e.getAttribute("aria-label") || ""))') 10)
-    $named = Ax-Named $ws 'Open half|Stays empty|Kept empty'
+    $named = @(Ax-Named $ws 'Open half|Stays empty|Kept empty')
     $onZero = @(@($named) | ? { $_.slot -eq 0 })
     Check 'split open: the empty half, cell 1 (slot 0), is named Open half before the press (scope)' ($onZero.Count -eq 1 -and $onZero[0].name -cmatch 'Open half') "named halves: $(Half-Text $named)"
     if ($onZero.Count -ne 1) { return }
@@ -3876,7 +3880,7 @@ function () {
     $afterSplit = Layout-Posts-After $ws $before
     Check 'split open: a split that doubles nothing sends no POST /layout (control)' ($afterSplit.Count -eq 0) "POST /layout count: $($afterSplit.Count), bodies: $(Post-Text $afterSplit)"
     [void](WaitFor $ws '["2", "3"].every(s => [...document.querySelectorAll(".cellbox")].some(e => e.dataset.slot === s && /Open half/.test(e.getAttribute("aria-label") || "")))' 10)
-    $marks = Ax-Named $ws 'Open half|Stays empty|Kept empty'
+    $marks = @(Ax-Named $ws 'Open half|Stays empty|Kept empty')
     $markOn23 = @(@($marks) | ? { $_.slot -eq 2 -or $_.slot -eq 3 })
     Check 'split open: the split marks cells 2 and 3 as Open half before Undo (scope)' ($markOn23.Count -eq 2) "named halves: $(Half-Text $marks)"
     if ($markOn23.Count -ne 2) { return }
@@ -3888,7 +3892,7 @@ function () {
     Check 'split open: Undo names the split in the status, "Undid the split." (not an earlier change)' ($said -match '(?i)undid the split') "status and toast read: '$said'"
     $pinsNow = Js $ws 'return { pins: (typeof work !== "undefined" && work[selId]) ? work[selId].pins : [] };'
     Check 'split open: Undo keeps the pin saved before the split: window 1001 stays on slot 0 (control)' ((App-Slots $pinsNow 'claude') -eq '0') "its pin holds: $(App-Slots $pinsNow 'claude')"
-    $left = Ax-Named $ws 'Open half|Stays empty|Kept empty'
+    $left = @(Ax-Named $ws 'Open half|Stays empty|Kept empty')
     $leftOn23 = @(@($left) | ? { $_.slot -eq 2 -or $_.slot -eq 3 })
     Check 'split open: after Undo cells 2 and 3 are no longer named Open half (the split marks are reverted)' ($leftOn23.Count -eq 0) "named halves: $(Half-Text $leftOn23)"
   }
