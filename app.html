@@ -2333,10 +2333,10 @@ function freeDrop(d,fz){
   const oc=freeHolder(d,o),lk=d.locked?winById(d.id):o.lock&&!oc?{app:scene().pins[o.pin].app}:null;
   if(lk){render();status(`${appName(lk.app)} is locked. Unlock it first.`);return}
   // The middle of a held space swaps; the rest puts the window behind the holder. A locked holder only takes Put Behind.
-  if(oc&&(o.lock||circZone(d,px(o.r))==="behind")){freePutBehind(d.id,o,fz.info,oc);return}
+  if(oc&&(o.lock||circZone(d,px(o.r))==="behind")){freePutBehind(d.id,o,fz.info,oc,from);return}
   freeAssign(d.id,o,fz.info,from)}
 // A is dropped on the lower band of a held space: A goes behind the window that holds it, with any windows behind A, in the grid's stack form (pin.behind of {app, match}).
-function freePutBehind(id,o,info,oc){
+function freePutBehind(id,o,info,oc,from){
   const w=winById(id),key=info.key,spec=winSpec(w);
   selWin=oc.id;selSp=null;curMon=info.m;
   edit(x=>{const a=x.grids[key].free.areas[o.i],own=pinNow(x,id);
@@ -2345,6 +2345,8 @@ function freePutBehind(id,o,info,oc){
     if(!fb){fb={app:oc.app,match:winSpec(oc).match,mon:key,slots:[]};x.pins.push(fb)}
     freeSetPin(a,x.pins.indexOf(fb));delete a.app;delete a.title;
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
+    // The space the window left names nothing now, as freeAssign leaves it.
+    if(from){const sa=x.grids[from.info.key].free.areas[from.o.i];if(sa&&sa!==a){freeSetPin(sa,null);delete sa.app;delete sa.title}}
     x.bay=bayOf(x).filter(b=>!sameWin(b,w));if(!x.bay.length)delete x.bay;heldOff(x,w)},
     `${pairNames(w,oc)[0]} is behind ${pairNames(w,oc)[1]}.`)}
 function freeAssign(id,o,info,from){
@@ -2355,9 +2357,17 @@ function freeAssign(id,o,info,from){
     else if(mine.mon!==key){mine.mon=key;mine.slots=[]}
     const theirs=a.pin!=null&&a.pin!==""?x.pins[+a.pin]:null,swap=!!(theirs&&theirs!==mine&&src);
     if(theirs&&theirs!==mine&&!src){x.pins=x.pins.filter(q=>q!==theirs);if(oc){x.bay=bayOf(x).filter(b=>!sameWin(b,oc));x.bay.push({id:oc.id,app:oc.app,title:oc.title});heldOff(x,oc)}}
-    if(src){const sa=x.grids[skey].free.areas[src.i];freeSetPin(sa,swap?x.pins.indexOf(theirs):null);delete sa.app;delete sa.title}
+    if(src){const sa=x.grids[skey].free.areas[src.i];freeSetPin(sa,swap?x.pins.indexOf(theirs):null);delete sa.app;delete sa.title;
+      // A holder with no pin of its own takes the space the dragged window left, by app and title, as freeStep does.
+      if(!theirs&&oc&&oc.id!==id){sa.app=oc.app;sa.title=oc.title}}
     freeSetPin(a,x.pins.indexOf(mine));delete a.app;delete a.title},
-    o.pin>=0&&src&&oc&&oc.id!==id?`Swapped ${pairNames(w,oc).join(" and ")}.`:`${appName(w.app)} goes to space ${o.no+1}.${oc&&oc.id!==id&&!from?` ${appName(oc.app)} ${o.pin>=0?"goes to the list":"stays where it is"}.`:""}`)}
+    src&&oc&&oc.id!==id?`Swapped ${pairNames(w,oc).join(" and ")}.`:`${appName(w.app)} goes to space ${o.no+1}.${oc&&oc.id!==id&&!from?` ${appName(oc.app)} ${o.pin>=0?"goes to the list":"stays where it is"}.`:""}`)}
+// Move To a space: the drop's lock rule, not a swap. A locked pin keeps its space, and a locked window stays where it is. Nothing changes and the reason is said.
+function freeMoveTo(id,o,info){
+  const own=pinNow(scene(),id),held=o.pin>=0?scene().pins[o.pin]:null;
+  if(own&&own.lock&&own!==held){status(`${appName(own.app)} is locked. Unlock it first.`);render();return}
+  if(held&&held.lock&&held!==own){status(`${appName(held.app)} is locked and holds that space. Unlock it first.`);render();return}
+  freeAssign(id,o,info,freeOfWin(id))}
 // Fill Empty Cells off with every space empty (F16): one sentence in the hint's place, and one control.
 function freeEmpty(){
   const m=curMon,s=LIVE&&scene(),g=m&&s&&gridOf(m);if(!isFree(g)||!s.fill||s.fill.mon!==mk(m)||!s.fill.off||!prev())return"";
@@ -2970,7 +2980,7 @@ document.addEventListener("change",ev=>{const t=ev.target;
       requestAnimationFrame(()=>{const e=$("fillSw");if(e)e.focus()})})}
   else if(t.id==="freeSw"){freeToggle()}
   else if(t.id==="lockSw"){toggleLock(selWin);requestAnimationFrame(()=>{const e=$("lockSw");if(e)e.focus()})}
-  else if(t.id==="moveto"&&/:s\d+$/.test(t.value)){const[mi,si]=t.value.split(":"),m=snap.monitors[+mi],info=freeFill(freeInfo(m)),o=info&&info.list.find(q=>q.i===+si.slice(1));curMon=m;if(o)freeAssign(selWin,o,info,freeOfWin(selWin))}
+  else if(t.id==="moveto"&&/:s\d+$/.test(t.value)){const[mi,si]=t.value.split(":"),m=snap.monitors[+mi],info=freeFill(freeInfo(m)),o=info&&info.list.find(q=>q.i===+si.slice(1));curMon=m;if(o)freeMoveTo(selWin,o,info)}
   else if(t.id==="moveto"&&t.value){const[mi,sl]=t.value.split(":").map(Number);curMon=snap.monitors[mi];pinWin(selWin,curMon,sl)}
   else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});
   else if(t.id==="time"&&t.value)edit(s=>{s.trigger.time=t.value});
