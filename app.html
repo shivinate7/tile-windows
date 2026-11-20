@@ -619,7 +619,12 @@ dialog form{display:grid;gap:10px}
 .menu.back label{display:flex;gap:8px;align-items:flex-start;padding:6px;border-radius:6px;cursor:pointer;font:12px var(--f);color:var(--ink)}
 .menu.back label:hover{background:color-mix(in srgb,var(--select) 12%,transparent)}
 .menu.back small{display:block;color:var(--muted);font-weight:400}
-.menu.back .row2{display:flex;gap:6px;justify-content:flex-end;padding-top:4px}
+.menu.back .row2{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:6px;padding-top:4px}
+.menu.back .row2 .btn{width:100%}
+.bprev{position:absolute;z-index:8;box-sizing:border-box;border:2px dashed var(--select);border-radius:3px;pointer-events:none}
+.bprev span{position:absolute;left:4px;top:4px;padding:1px 5px;border-radius:3px;background:var(--select);color:var(--select-ink);font:600 11px var(--f);white-space:nowrap}
+.bprev.sm span{font-size:10px;padding:0 3px}
+@media (forced-colors:active){.bprev{border-color:Highlight}}
 #reslist details{margin-top:4px;font-size:12px;color:var(--muted)}
 #reslist .btn{margin-top:4px}
 .seam{position:absolute;z-index:6;display:grid;place-items:center;touch-action:none}
@@ -1252,7 +1257,7 @@ function render(){
   cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
   const anyFree=!!(LIVE&&s&&snap.monitors.some(q=>mk(q)&&s.grids[mk(q)]&&isFree(s.grids[mk(q)])));
-  $("hint").textContent=anyFree?"Drag to a space to pin, or to the list to keep put. Hold Shift to drag the whole line. Zones pause while Free Layout is on: turn it off to draw a zone.":LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
+  $("hint").textContent=anyFree?"Drag the line between two windows to resize both. Hold Shift to move the whole line. Zones pause while Free Layout is on: turn it off to draw a zone.":LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   {const fe=LIVE&&s?freeEmpty():"";if(fe)$("hint").textContent=fe;$("fillon").hidden=!fe;
     // A disabled Draw Zone is described by the hint, which gives the reason in a free monitor (the all-empty sentence replaces it).
@@ -2096,7 +2101,8 @@ function renderFree(){
   if(fdrag)return;
   renderSpaces();
   for(const e of stage.querySelectorAll(".seam"))e.remove();segStore=[];
-  if(!LIVE||!scene())return;
+  drawBackPreview();
+  if(!LIVE||!scene()||backM)return;
   for(const m of snap.monitors){const info=freeInfo(m);if(!info)continue;const all=freeSegs(info);
     all.forEach(sg=>{const e=document.createElement("div"),k=segStore.length;segStore.push({m,info,all,sg});
       e.className=`seam ${sg.ax?"h":"v"}${sg.locked?" stuck":""}${G.S<.1?" small":""}`;e.dataset.seg=k;e.innerHTML="<i></i>";
@@ -2408,7 +2414,7 @@ function freeSplitPreview(id,dir,keep){
 // ---- Back to the Grid (F13). Switching the switch off asks first and saves nothing until Back to Grid. Snap to Cells puts each pinned window on the cells its space is nearest to (a window whose
 // cells another has taken goes to Windows That Stay Put). Restore the Grid Layout gives each pin the cells it had before Free Layout (a pin made in Free Layout has none, so it goes there too).
 function backPlan(m,g,mode){
-  const info=freeFill(freeInfo(m,g)),s=scene(),P=prev(),W=GC(g),H=GR(g),cw=m.w/W,ch=m.h/H,used=new Set(),assign=[],drop=[];let n=0;
+  const info=freeFill(freeInfo(m,g)),s=scene(),P=prev(),W=GC(g),H=GR(g),cw=m.w/W,ch=m.h/H,used=new Set(),assign=[],drop=[],chg=[];let n=0;
   const sizeOf=sl=>{const b=bbox(sl,g),r=cellRect(m,g,b.c,b.r,b.cs,b.rs);return[r.w,r.h]};
   const snapCells=o=>{const c0=clamp(Math.round((o.r.x-m.x)/cw),0,W-1),c1=clamp(Math.round((o.r.x+o.r.w-m.x)/cw),c0+1,W),r0=clamp(Math.round((o.r.y-m.y)/ch),0,H-1),r1=clamp(Math.round((o.r.y+o.r.h-m.y)/ch),r0+1,H),sl=[];
     for(let r=r0;r<r1;r++)for(let c=c0;c<c1;c++)sl.push(r*W+c);return sl};
@@ -2419,21 +2425,33 @@ function backPlan(m,g,mode){
     else{sl=(s.pins[o.pin].slots||[]).filter(v=>v>=0&&v<W*H);if(!sl.length&&o.lock)sl=snapCells(o)}
     if(!sl.length||sl.some(v=>used.has(v))){drop.push(o.pin);continue}
     sl.forEach(v=>used.add(v));assign.push({pin:o.pin,slots:sl});
-    const[w0,h0]=sizeOf(sl);if(Math.abs(w0-o.r.w)>1||Math.abs(h0-o.r.h)>1)n++}
+    const[w0,h0]=sizeOf(sl);
+    if(Math.abs(w0-o.r.w)>1||Math.abs(h0-o.r.h)>1){n++;const b=bbox(sl,g);chg.push({name:appName(s.pins[o.pin].app),cs:b.cs,rs:b.rs,r:cellRect(m,g,b.c,b.r,b.cs,b.rs)})}}
   // A pin whose space is gone (no area names it) keeps its own cells in Restore, so it is not touched here.
-  return{assign,drop,n,P}}
+  return{assign,drop,n,P,chg}}
+// The windows that change size, by app, and where the board shows them (a dashed box on each new place, drawn on every render while the popover is open).
+function backSay(pl){
+  if(!pl.n)return"No window changes size.";
+  const k=new Map();for(const c of pl.chg)k.set(c.name,(k.get(c.name)||0)+1);
+  return `${plural(pl.n,"window")} ${pl.n===1?"changes":"change"} size: ${nameList([...k].map(([n,v])=>v>1?`${v} ${n}`:n))}. The board shows where.`}
+function drawBackPreview(){
+  for(const e of stage.querySelectorAll(".bprev"))e.remove();
+  const r=backM&&document.querySelector("#backpop input[name=backmode]:checked"),g=backM&&gridOf(backM);if(!r||!g||!isFree(g))return;
+  for(const c of backPlan(backM,g,r.value).chg){const e=document.createElement("div");e.className="bprev"+(G.S<.1?" sm":"");Object.assign(e.style,px(c.r));e.innerHTML=`<span>${esc(c.name)} ${c.cs}×${c.rs}</span>`;stage.appendChild(e)}}
 let backM=null;  // the monitor the open Back to the Grid popover is for
-function closeBack(focus){const e=$("backpop");if(e)e.remove();backM=null;if(focus){const sw=$("freeSw");if(sw)sw.focus()}}
+function closeBack(focus){const e=$("backpop");if(e)e.remove();const was=backM;backM=null;if(was&&snap){drawBackPreview();renderFree()}if(focus){const sw=$("freeSw");if(sw)sw.focus()}}
 function openBack(m){
   closeBack(false);closeSplit(false);closeMenu();const g=gridOf(m);if(!g||isBusy)return;backM=m;
-  const say=n=>n?`${plural(n,"window")} will change size.`:"No window changes size.",sn=backPlan(m,g,"snap"),rs=backPlan(m,g,"restore");
+  const sn=backPlan(m,g,"snap"),rs=backPlan(m,g,"restore");
   const d=document.createElement("div");
   d.innerHTML=`<div class="menu back" role="dialog" id="backpop" aria-labelledby="backh"><p class="mh" id="backh">Back to the Grid</p>
-    <label><input type="radio" name="backmode" value="snap" checked><span><b>Snap to Cells</b><small>Each window takes the cells its space is nearest to. ${say(sn.n)}${sn.drop.length?` ${plural(sn.drop.length,"window")} that would share a cell ${sn.drop.length===1?"goes":"go"} to Windows That Stay Put.`:""}</small></span></label>
-    <label><input type="radio" name="backmode" value="restore"><span><b>Restore the Grid Layout</b><small>The cells each window had before Free Layout. ${say(rs.n)} An unlocked pin made in Free Layout has no cells, so it goes to Windows That Stay Put. A locked one snaps to the nearest cells.${rs.drop.length?` That is ${plural(rs.drop.length,"window")} now.`:""}</small></span></label>
-    <p class="mf">Nothing is saved until you press Back to Grid.</p>
-    <div class="row2"><button type="button" class="btn" id="backcancel">Keep Free Layout</button><button type="button" class="btn pri" id="backgo">Back to Grid</button></div></div>`;
+    <label><input type="radio" name="backmode" value="snap" checked><span><b>Snap to Cells</b><small>Each window takes the cells its space is nearest to.${sn.drop.length?` ${plural(sn.drop.length,"window")} that would share a cell ${sn.drop.length===1?"goes":"go"} to Windows That Stay Put.`:""}</small></span></label>
+    <label><input type="radio" name="backmode" value="restore"><span><b>Restore the Grid Layout</b><small>The cells each window had before Free Layout. An unlocked pin made in Free Layout has no cells, so it goes to Windows That Stay Put. A locked one snaps to the nearest cells.${rs.drop.length?` That is ${plural(rs.drop.length,"window")} now.`:""}</small></span></label>
+    <p class="mf" id="backsum" aria-live="polite"></p>
+    <div class="row2"><button type="button" class="btn pri" id="backgo">Back to Grid</button><button type="button" class="btn" id="backcancel">Keep Free Layout</button></div></div>`;
   const e=d.firstElementChild;document.body.appendChild(e);
+  const sum=()=>{const c=e.querySelector("input:checked");$("backsum").textContent=backSay(c&&c.value==="restore"?rs:sn);drawBackPreview()};
+  e.addEventListener("change",sum);sum();renderFree();
   // The popover stays inside the inspector, so it never covers the board's controls (the Keyboard link at 1024). The switch is scrolled into view first: it can sit below the inspector's fold.
   const sw=$("freeSw");if(sw)sw.scrollIntoView({block:"nearest"});
   const lab=sw&&sw.closest("label"),r=lab?lab.getBoundingClientRect():{left:16,bottom:60,top:60},ir=lab&&lab.closest(".insp")?lab.closest(".insp").getBoundingClientRect():null;
@@ -2447,7 +2465,10 @@ document.addEventListener("pointerdown",ev=>{if(backM&&!ev.target.closest("#back
 function backToGrid(m,mode){
   const g=gridOf(m);if(!g||!isFree(g)||isBusy)return;
   const key=mk(m),pl=backPlan(m,g,mode),s=scene(),P=prev(),
-    bayed=pl.drop.map(i=>{const p=s.pins[i],pp=P&&P.placed.find(q=>q.pin===i&&!q.behind),w=pp&&winById(pp.id);return w?{id:w.id,app:w.app,title:w.title}:{app:p.app,title:p.match||""}}),
+    // A dropped pin's open windows behind its front one go to Windows That Stay Put with it.
+    bayed=pl.drop.flatMap(i=>{const p=s.pins[i],pp=P&&P.placed.find(q=>q.pin===i&&!q.behind),w=pp&&winById(pp.id),
+      back=((P&&P.placed.filter(q=>q.pin===i&&q.behind))||[]).map(q=>winById(q.id)).filter(Boolean).map(b=>({id:b.id,app:b.app,title:b.title}));
+      return[w?{id:w.id,app:w.app,title:w.title}:{app:p.app,title:p.match||""},...back]}),
     gone=pl.drop.map(i=>s.pins[i]);
   selSp=null;closeBack(false);
   edit(x=>{delete x.grids[key].free;
