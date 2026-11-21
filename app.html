@@ -284,7 +284,7 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .cue .mon .cell{border-color:color-mix(in srgb,var(--select) 70%,transparent);background:color-mix(in srgb,var(--select) 9%,transparent)}
 .cue .mon .cell,.cue .tile{cursor:crosshair}
 /* Phone width: the armed hint takes its own row, so Draw Zone, Pick Cells by Menu and Clear Board share the next one and the bar is no taller than idle. */
-@media (max-width:760px){.boardbar .hint.armed{flex-basis:100%}.boardbar{column-gap:8px}}
+@media (max-width:760px){.boardbar .hint.armed{flex-basis:100%}.boardbar{column-gap:8px}.boardbar .btn{padding-inline:8px}}
 /* Forced colors: forced-color-adjust:none keeps the pressed fill, and the cells' edges show the board is ready to draw on. */
 @media (forced-colors:active){.btn[aria-pressed="true"]{forced-color-adjust:none;background:Highlight;color:HighlightText;border-color:Highlight}.cue .mon .cell{border-color:Highlight}}
 .keys{font-size:12px;color:var(--muted)}
