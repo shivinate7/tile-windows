@@ -1,7 +1,7 @@
 # Draw Zone hard to find: design notes
 
 Mockup: `draw-zone-hard-to-find.html`, beside this file. Debt `draw-zone-hard-to-find`
-(`debts/draw-zone-hard-to-find.md`; decision `bay-and-group-zones`; design review
+(retired after its fix in PR 111; decision `bay-and-group-zones`; design review
 `docs/design/reviews/bay-round3.md` row 1). Designer kind: informed. Built from `app.html` on
 main at ad8a0b8.
 

@@ -1,0 +1,1 @@
+- direct-run-headless-scan: The scan in test/direct-run.ps1:75 finds an Edge launch only by a string that is exactly '--headless', so a launch that carries the flag inside another string is not checked. Decision: none (test harness). Found at f55111d. Seen: 2026-11-20 x1

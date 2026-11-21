@@ -1,6 +1,6 @@
 # Failed preview message: design notes
 
-Mockup: `selected-fail-status-only.html`, beside this file. Closes debt `selected-fail-status-only`
+Mockup: `selected-fail-status-only.html`, beside this file. Closed debt `selected-fail-status-only` (retired after PR 109)
 (a failed preview of the selected scene shows only in the status line).
 Deep links: `#s=<state>`, plus `w=1024`, `t=light|dark` and `hide=<option,...>`. With no `t`, the page follows the system theme. `#s=all` (the default) shows every state.
 States: `today`, `under`, `banner`, `ok`. Option keys for `hide`: `under`, `banner`. Each option has a switch on the page.
