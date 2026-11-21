@@ -359,7 +359,8 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
     $sa = $ss.stopAsk
     Check 'page: Stop Server asks first, on Cancel, and Cancel keeps the server' ($sa.open -and $sa.text -and $sa.cancelFirst -and $sa.alive) ($sa | ConvertTo-Json -Compress)
     $sb = @($ss.saveBay)
-    Check 'page: a saved scene keeps only list entries that match an open window, without handles' ($sb.Count -eq 1 -and $sb[0].title -eq 'pwsh - docs watch' -and -not ($sb[0].PSObject.Properties.Name -contains 'id')) ($ss.saveBay | ConvertTo-Json -Compress)
+    Check 'page: a saved scene keeps the list entry of a closed window' (@($sb | ? { $_.title -ceq 'A closed window' }).Count -eq 1) "entries of the closed window kept: $(@($sb | ? { $_.title -ceq 'A closed window' }).Count) of 1; saved list: $($ss.saveBay | ConvertTo-Json -Compress)"
+    Check 'page, control: a saved scene keeps the list entry of an open window, without a window handle' (@($sb | ? { $_.title -ceq 'pwsh - docs watch' }).Count -eq 1 -and -not @($sb | ? { $_.PSObject.Properties.Name -contains 'id' }).Count) "saved list: $($ss.saveBay | ConvertTo-Json -Compress)"
     $bb = $ss.bay
     Check 'page: a window sent to the bay leaves the board, shows in the bay, and comes back when placed' ($bb -and $bb.why -eq 'in the bay' -and $bb.chip -and $bb.kept -eq 2 -and $bb.back) ($bb | ConvertTo-Json -Compress)
     Check 'page cell size rounds like tile.ps1 ([int], to even)' ($ss.cell.w -eq [int](1365 / 2) -and $ss.cell.h -eq [int](1001 / 2)) ($ss.cell | ConvertTo-Json -Compress)
