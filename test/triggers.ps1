@@ -22,7 +22,7 @@ function Sig($o = @{}) {
 }
 # One tick. Returns the ids applied, comma-joined.
 function Run($s, [datetime]$t, $cfg, $sig, [string]$active = 'plain', $key = $null, $call = $null) { Ids (Step-Tray $s $t $cfg $key $call $active $sig) }
-function Win($id, $app, $w = 900, $h = 700) { [pscustomobject]@{ id = $id; app = $app; title = "$app $id"; w = $w; h = $h } }
+function Win($id, $app, $w = 900, $h = 700, $x = 0, $y = 0, $min = $false) { [pscustomobject]@{ id = $id; app = $app; title = "$app $id"; x = $x; y = $y; w = $w; h = $h; min = $min } }
 function Agenda($events, $date = '2026-10-21') { ConvertFrom-Json (@{ date = $date; events = $events } | ConvertTo-Json -Depth 5) }
 function Ev($start, $end, $att = 4, $teams = $true, $showAs = 'busy') { @{ start = "2026-10-21T$start"; end = "2026-10-21T$end"; attendees = $att; teams = $teams; showAs = $showAs } }
 function Scene($id, $auto = @{}, $extra = @{}) {
@@ -95,6 +95,82 @@ $s = New-TrayState; $x = @((WinRun $s 0 @($w1)), (WinRun $s 3 @($w1, $w2)), (Win
 Check 'new window: never while a mouse button is down; it re-flows when the button is up' ((Joined $x) -eq '//' + '/focus') (Joined $x)
 $s = New-TrayState; $c2 = WithOpt 'focus' '{"window":{"holdSec":1}}' @{ focus = @{ window = $true } }; $x = @((WinRun $s 0 @($w1) $c2), (WinRun $s 3 @($w1, $w2) $c2), (WinRun $s 5 @($w1, $w2) $c2))
 Check 'threshold: how long a new window must hold comes from the scene' ((Joined $x) -eq '//focus') (Joined $x)
+
+# ---- A move the hook does not report (debt manual-move-keyboard-unseen): a window moved by keyboard, Win+Arrow or snap assist ----
+# The tray's hook reports the end of a drag (TileInput, event 0x000B). A move by keyboard or snap assist may fire none, so sig.manualAt stays
+# where it was, and an automatic apply moves the window back. No case can send a real keyboard move (it lands on the owner's foreground window,
+# and the live-move guard refuses a real move from an agent shell), and the hook is never started here. The signal the cases use is the one the
+# tray has without the hook: two window reads in which a window's rect differs, with manualAt unchanged.
+# Contract the builder meets (Step-Tray, sig.wins):
+#   A window with the same id in two reads, with a different x, y, w or h, is a manual move at the read that shows it: the same 10 s hold, and the
+#   same cancel of what was waiting (a new window, a held one-shot), as a move the hook reports. The tray's tick reads every 3 s and gives $null in
+#   between, so a $null read keeps the last list to compare with. A window that opens or closes, or a list in another order, is no move.
+#   The agent's own apply moves windows too: the first read after Step-Tray returns an apply is no manual move, and a move after it still is.
+#   A rect change with no user signal (sig.idleSec 300: no input for five minutes) is no move: a monitor unplug relocates windows, and a window can
+#   restore its own bounds. With input at the read (idleSec 0) it is a move. A minimized window (min) is no move, at either end of a change.
+#   These cases fix the rule in Step-Tray. A fix that only adds a hook event (0x800B), or one made in the tick alone, leaves them red.
+# Times are synthetic: Secs runs one Step-Tray a second as the tick does, a window read every 3 s. It gives each apply as 'id@second'.
+$w1m = Win 1 claude 900 700 320 240   # w1 after a keyboard move: same size, new corner
+$w1r = Win 1 claude 700 700           # w1 after a keyboard resize: same corner, new width
+function Secs($s, $given, [int]$last, $keys = @{}, $cfg = $cfg, $active = 'focus', [double]$idle = 0) {
+  $cur = $null; $got = @()
+  for ($i = 0; $i -le $last; $i++) {
+    $o = @{ idleSec = $idle }
+    if ($i % 3 -eq 0) { if ($given.ContainsKey($i)) { $cur = $given[$i] }; $o.wins = @($cur) }
+    $r = Run $s $t0.AddSeconds($i) $cfg (Sig $o) $active $keys[$i]
+    if ($r) { $got += "$r@$i" }
+  }
+  $got
+}
+# Scope first: each moved case has a control with the same reads and no move, so the re-flow it must stop was due.
+$x = @(Secs (New-TrayState) @{ 0 = @($w1); 3 = @($w1, $w2) } 30)
+Check 'unseen move (control): a new window with nothing moved re-flows once, 3 s after it opened' ((Joined $x) -eq 'focus@6') (Joined $x)
+$x = @(Secs (New-TrayState) @{ 0 = @($w1); 3 = @($w1); 6 = @($w1, $w2) } 30)
+Check 'unseen move (control): a new window that opens 3 s after the last read re-flows 3 s after it opened' ((Joined $x) -eq 'focus@9') (Joined $x)
+$many = @(1..40 | % { Win $_ claude }); $w41 = Win 41 claude
+$x = @(Secs (New-TrayState) @{ 0 = $many; 3 = @($many + $w41) } 30)
+Check 'unseen move (control): 40 windows and a new one, nothing moved, re-flow once' ((Joined $x) -eq 'focus@6') (Joined $x)
+$w3 = Win 3 claude
+$x = @(Secs (New-TrayState) @{ 0 = @($w1, $w3); 3 = @($w1, $w3, $w2); 6 = @($w2, $w1) } 30)
+Check 'unseen move (control): a window that closes and a list in another order are no move' ((Joined $x) -eq 'focus@6') (Joined $x)
+# The own apply (at 6 s) moves the windows: the first read after it (9 s) shows new rects. A monitor change that landed before that read (7 s)
+# waits for the 30 s cap and must still go through, so a fix that takes every rect change for a manual move cancels it and goes red here.
+$w1t = Win 1 claude 900 700 100 100; $w2t = Win 2 claude 900 700 1000 100   # where the apply put them
+$x = @(Secs (New-TrayState) @{ 0 = @($w1); 3 = @($w1, $w2); 9 = @($w1t, $w2t) } 40 @{ 0 = $k2; 7 = $k1 })
+Check 'unseen move (control): the agent''s own apply is no manual move, so a monitor change held by the cap still applies' ((Joined $x) -eq 'focus@6/solo@36') (Joined $x)
+
+$x = @(Secs (New-TrayState) @{ 0 = @($w1); 3 = @($w1, $w2); 6 = @($w1m, $w2) } 36)
+Check 'unseen move: a window moved by keyboard cancels a new window that was waiting, so the re-flow does not undo the move' ((Joined $x) -eq '') "a rect change between two reads (manualAt unchanged) cancelled nothing; applied: $(Joined $x)"
+$x = @(Secs (New-TrayState) @{ 0 = @($w1); 3 = @($w1m); 6 = @($w1m, $w2) } 30)
+Check 'unseen move: a new window that opens after a window moved by keyboard waits until the move is 10 s old' ($x.Count -eq 1 -and $x[0] -in 'focus@12', 'focus@15') "a rect change between two reads (manualAt unchanged) held nothing; applied: $(Joined $x)"
+$x = @(Secs (New-TrayState) @{ 0 = @($w1); 3 = @($w1, $w2); 6 = @($w1r, $w2) } 36)
+Check 'unseen move: a window resized by keyboard (same corner, new size) counts as a move' ((Joined $x) -eq '') "a size change between two reads (manualAt unchanged) cancelled nothing; applied: $(Joined $x)"
+$many40 = @(@(1..39 | % { Win $_ claude }) + (Win 40 claude 900 700 320 240))
+$x = @(Secs (New-TrayState) @{ 0 = $many; 3 = @($many + $w41); 6 = @($many40 + $w41) } 36)
+Check 'unseen move: the last of 40 windows moved by keyboard counts' ((Joined $x) -eq '') "a rect change on the 40th window (manualAt unchanged) cancelled nothing; applied: $(Joined $x)"
+$x = @(Secs (New-TrayState) @{ 0 = @($w1); 3 = @($w1, $w2); 9 = @($w1t, $w2t); 12 = @($w1t, $w2t, $w3); 15 = @($w1m, $w2t, $w3) } 42)
+Check 'unseen move: a window moved by keyboard after the agent''s own apply still cancels a new window that was waiting' ((Joined $x) -eq 'focus@6') "a rect change after the apply (manualAt unchanged) cancelled nothing; applied: $(Joined $x)"
+
+# No user signal is no manual move. A monitor unplug relocates windows, and a window can restore its own bounds, with no key or mouse input.
+# The control has input at the read (idleSec 0), a keyboard move, and is held 10 s as the cases above are.
+$w1rel = Win 1 claude 900 700 1920 0; $w2rel = Win 2 claude 900 700 1920 700   # w1 and w2 after an unplug: same size, on another screen
+$manyRel = @(1..40 | % { Win $_ claude 900 700 (1920 + $_) 0 })                 # all 40 windows relocated in one read
+$x = @(Secs (New-TrayState) @{ 0 = @($w1, $w2); 3 = @($w1m, $w2) } 40 @{ 0 = $k2; 4 = $k1 } $cfg 'focus' 0)
+Check 'unseen move (control): a keyboard move with input at the read is held 10 s, so the setup scene applies at 13 s' ((Joined $x) -eq 'solo@13') (Joined $x)
+$x = @(Secs (New-TrayState) @{ 0 = @($w1, $w2); 3 = @($w1rel, $w2) } 40 @{ 0 = $k2; 4 = $k1 } $cfg 'focus' 300)
+Check 'unseen move: a relocation with no input, in one read before the key tick, is no manual move, so the setup scene applies at 4 s' ((Joined $x) -eq 'solo@4') "a relocation with no input counted as a manual move and held the setup scene; applied: $(Joined $x)"
+$x = @(Secs (New-TrayState) @{ 0 = @($w1, $w2); 3 = @($w1rel, $w2); 6 = @($w1rel, $w2rel) } 40 @{ 0 = $k2; 4 = $k1 } $cfg 'focus' 300)
+Check 'unseen move: a relocation with no input, in two reads, is no manual move, so the setup scene applies at 4 s' ((Joined $x) -eq 'solo@4') "a relocation with no input counted as a manual move and cancelled the setup scene; applied: $(Joined $x)"
+$x = @(Secs (New-TrayState) @{ 0 = $many; 3 = $manyRel } 30 @{ 0 = $k2; 4 = $k1 } $cfg 'focus' 300)
+Check 'unseen move: a monitor unplug that relocates all 40 windows in one read is no manual move, so the setup scene applies at 4 s' ((Joined $x) -eq 'solo@4') "40 windows relocated with no input counted as a manual move; applied: $(Joined $x)"
+# A minimize or a restore is no move. A minimized window is parked off screen (min), so its rect jumps; a restore puts it back. Both cases have
+# input at the read (idleSec 0), so the min flag is the only thing that excludes them. The control is the case above: the same reads with the window
+# moved and not minimized, which cancels the waiting re-flow.
+$w1min = Win 1 claude 900 700 -32000 -32000 $true   # w1 minimized
+$x = @(Secs (New-TrayState) @{ 0 = @($w1); 3 = @($w1, $w2); 6 = @($w1min, $w2) } 30)
+Check 'unseen move: a minimize is no manual move, so a new window waiting at the minimize still re-flows at 6 s' ((Joined $x) -eq 'focus@6') "a minimize counted as a manual move and cancelled the waiting re-flow; applied: $(Joined $x)"
+$x = @(Secs (New-TrayState) @{ 0 = @($w1min); 3 = @($w1min, $w2); 6 = @($w1, $w2) } 30)
+Check 'unseen move: a restore is no manual move, so a new window waiting at the restore still re-flows at 6 s' ((Joined $x) -eq 'focus@6') "a restore counted as a manual move and cancelled the waiting re-flow; applied: $(Joined $x)"
 
 # ---- Activity snap ----
 function FgRun($s, $secs, $app, $title, $cfg = $cfg, $active = 'plain') { Run $s $t0.AddSeconds($secs) $cfg (Sig @{ fg = [pscustomobject]@{ app = $app; title = $title } }) $active }

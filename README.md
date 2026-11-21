@@ -92,7 +92,7 @@ Two scenes can hold the same extra (the gap, the laptop-only and the setup scene
 Guards, for every automatic apply:
 
 - During a Teams call only the call trigger applies. A scheduled apply that falls in a call is skipped, not kept for later.
-- Nothing moves within 10 s of your own window drag, or while a mouse button is down. A manual move also cancels what was waiting before it (a dwell, a new window, a held one-shot), so nothing undoes your move. A one-shot trigger that arrives during the hold waits up to 60 s, then drops.
+- Nothing moves within 10 s of your own window drag, keyboard move, snap or resize, or while a mouse button is down. A keyboard, snap or resize move is seen only while a scene with window or activity triggers is on. A manual move also cancels what was waiting before it (a dwell, a new window, a held one-shot), so nothing undoes your move. A one-shot trigger that arrives during the hold waits up to 60 s, then drops.
 - At most one automatic apply per 30 s. The call trigger is exempt.
 
 ### agenda.json
