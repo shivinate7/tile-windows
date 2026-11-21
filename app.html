@@ -279,6 +279,8 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 /* Draw Zone armed: the button takes the ink fill of the other toggles, the hint is the instruction, and the board says it is ready to draw on. */
 .btn[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink);font-weight:600}
 .hint.armed{color:var(--ink);font-weight:600}
+/* The armed hint is short, so it asks for less room: with Pick Cells by Menu in the bar, every button and the key list stay on the hint's row, and the bar keeps the idle height that render() holds as its minimum. */
+.boardbar .hint.armed{flex-basis:240px}
 .cue .mon .cell{border-color:color-mix(in srgb,var(--select) 70%,transparent);background:color-mix(in srgb,var(--select) 9%,transparent)}
 .cue .mon .cell,.cue .tile{cursor:crosshair}
 @media (forced-colors:active){.btn[aria-pressed="true"]{background:Highlight;color:HighlightText;border-color:Highlight}}
