@@ -132,12 +132,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (275). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (276). Shard 1 runs
 # gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 275
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 276
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -634,8 +634,10 @@ function PlFaultOff($id) { if ($id) { [void](SlSend 'Page.removeScriptToEvaluate
 # preview with none in flight, the wrapper saw a POST, and the call finished. over* are #over right after the call (first), and
 # steps are the reads -Steps adds: JS run in the page after the call, with the fault still armed (a click or a settle through the
 # test harness would run a preview of its own and clear the failure). In it: p (the target), read(tag), tick(), settle(id) and steps.
-function PvDrive([string]$mode, [string]$Steps = '', [switch]$Other) {
+# -Name sets the scene's name (JSON-escaped); the default is Stack and lock. A case that checks a name is shown as text uses it.
+function PvDrive([string]$mode, [string]$Steps = '', [switch]$Other, [string]$Name = '') {
   $one = SlSceneJson '[]' '["*"]'
+  if ($Name) { $one = $one.Replace('"name":"Stack and lock"', '"name":' + (ConvertTo-Json $Name -Compress)) }
   $scenes = if ($Other) { '[' + $one + ',' + $one.Replace('"id":"sl"', '"id":"sl2"').Replace('"name":"Stack and lock"', '"name":"Second scene"') + ']' } else { $one }
   $ld = SlCase $scenes -Soft
   if (-not $ld.ready) { return [pscustomobject]@{ ready = $false; ok = $false; diag = "the page did not draw the scene: $($ld.diag)" } }
@@ -3077,6 +3079,17 @@ try {
   $pvMk = PvDrive 'status500-markup'
   Check 'preview failed line, markup in the server''s words, scope: the fault answered a POST of the scene''s preview with a 500 that holds markup and the call finished' ([bool]$pvMk.ok) (PvWhy $pvMk)
   Check 'preview failed line, markup in the server''s words, red: the words are shown as text (the < and & are not read as markup)' ([bool]($pvMk.ok -and $pvMk.over.Contains('<i>Out</i> of order &amp; more'))) "line under the board: '$($pvMk.over)'; italic elements in it: $($pvMk.overI)"
+  }
+
+  # Markup in the scene's name: the line under the board takes the name from the scene, and the name is escaped there too. The server's
+  # words are another string, so the case above does not catch a missing escape on the name. The post-build mutant that drops that escape
+  # is what shows this case catches it. The status line keeps the name as typed (textContent), so the control reads the name as saved.
+  if (Shard-Take) {
+  $pvName = PvDrive 'status500' -Name '<i>Q</i> & Z'
+  Check 'preview failed line, markup in the scene''s name, scope: the fault answered a POST of the scene''s preview with a 500 and the call finished' ([bool]$pvName.ok) (PvWhy $pvName)
+  Check 'preview failed line, markup in the scene''s name, control: the status line names the scene as typed, <i>Q</i> & Z' ([bool]($pvName.ok -and $pvName.msg -ceq 'Preview failed for <i>Q</i> & Z: Server out of order')) "status: '$($pvName.msg)'"
+  Check 'preview failed line, markup in the scene''s name, red: the line under the board shows the name as text, the literal <i>Q</i> & Z' ([bool]($pvName.ok -and $pvName.over -ceq (PvLine '<i>Q</i> & Z'))) "line under the board: '$($pvName.over)'"
+  Check 'preview failed line, markup in the scene''s name, red: the line draws no i element (the < of the name is not read as markup)' ([bool]($pvName.ok -and $pvName.overI -eq 0)) "italic elements in it: $($pvName.overI); line under the board: '$($pvName.over)'"
   }
 
   # Pick again (the line's own promise): after a failure, a press on the scene's card sends a new preview, and the line goes with the
