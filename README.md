@@ -97,7 +97,7 @@ Guards, for every automatic apply:
 
 ### agenda.json
 
-Meeting size, Focus in gaps and the offer read `agenda.json` in the app folder (`%USERPROFILE%\.tile-windows\app`, or the clone's folder). Without the file, or when its `date` is not today, those three do nothing. Reinstalling replaces the app folder and removes the file, so write it each morning. It is not tracked by git.
+Meeting size, Focus in gaps and the offer read `agenda.json` in the app folder (`%USERPROFILE%\.tile-windows\app`, or the clone's folder). Without the file, or when its `date` is not today, those three do nothing. A reinstall copies the file into the new app folder, so it survives; the morning task still writes it each day. It is not tracked by git.
 
 ```json
 { "date": "2026-10-22",

@@ -33,6 +33,15 @@
 #     Both cases keep the staging holder ahead of the renames with a gate: tray.pid names a first holder (a stand-in for a running
 #     tray), and the install waits on that process, up to 10 s, before it renames anything. The gate is released only once the staging
 #     holder is up and checked, so the hold is in place however slow the machine is, with no fixed sleep.
+#   Agenda across a reinstall (case 10, debt reinstall-loses-agenda-json): the morning task writes agenda.json where the tray reads it, and
+#     a reinstall must leave that file, byte for byte, where the installed tray reads it. Where that is comes from the one Join-Path of
+#     'agenda.json' in tray.ps1 and config.ps1 (the files the tray takes its paths from), evaluated in a child with the profile's
+#     USERPROFILE (10a). So a fix may keep the file in the app folder or hold it elsewhere, but the tray's read must follow it. When the
+#     fix changes how the path is written (a second mention, another call than Join-Path), 10a fails by name: extend Get-AgendaPathExpr.
+#     Red on ad8a0b8: the reinstall removes the old app folder with the file in it (10d). Green controls: 10b a swap that fails keeps the
+#     file; 10c the reinstall itself works (exit 0, a new app, no leftover folder); 10e what is kept has the bytes that were written. 10e
+#     runs only when the file is there, so a lost file is the one failed check 10d. Reinstalls with no agenda.json (the empty state) are
+#     cases 1, 3 and 4.
 # Scope before subject (P7): each case checks that the holder is up and that a rename of the folder is refused before it reads
 # the install's result. Each check names one cause.
 # Why 8 s: on the dev machine install.ps1 reaches its rename about 4 s after it starts (most of that is dot-sourcing tray.ps1 -Lib),
@@ -305,6 +314,44 @@ function Invoke-SecondRenameRun([string]$tag, [bool]$frees) {
   $res
 }
 
+# ---- Case 10 helpers: where the installed tray reads agenda.json (debt reinstall-loses-agenda-json). ----
+# The one Join-Path command, as text, that names 'agenda.json' in the files of $appDir the tray takes its paths from (tray.ps1 and
+# config.ps1). $null when there is not exactly one such mention, or it is not a three-part Join-Path. Found in the syntax tree, so a
+# comment or a longer string that mentions the file does not count.
+function Get-AgendaPathExpr([string]$appDir) {
+  $found = @()
+  foreach ($f in 'tray.ps1', 'config.ps1') {
+    $found += @((Get-ScriptTree ([IO.File]::ReadAllText((Join-Path $appDir $f)))).FindAll({ param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -eq 'agenda.json' }, $true))
+  }
+  if ($found.Count -ne 1) { return $null }
+  $cmd = $found[0].Parent
+  if ($cmd -isnot [Management.Automation.Language.CommandAst] -or $cmd.GetCommandName() -ne 'Join-Path' -or $cmd.CommandElements.Count -ne 3) { return $null }
+  $cmd.Extent.Text
+}
+
+# The path that command gives for the profile $prof: a child powershell dot-sources the installed config.ps1 (so $TileHome is the
+# profile's, with TILE_HOME cleared) and evaluates the text with $PSScriptRoot standing for the app folder, which is what it is in the
+# tray. $null when the child fails, does not end within 60 s (a cap well above its second or two), or prints nothing.
+function Resolve-AgendaPath([string]$prof, [string]$expr) {
+  $appDir = Join-Path $prof '.tile-windows\app'
+  $exprFile = Join-Path $run 'agenda-expr.txt'; $script = Join-Path $run 'agenda-resolve.ps1'
+  $utf8 = New-Object Text.UTF8Encoding $false
+  [IO.File]::WriteAllText($exprFile, $expr.Replace('$PSScriptRoot', '$App'), $utf8)
+  $resolver = @'
+param([string]$App, [string]$ExprFile)
+$ErrorActionPreference = 'Stop'
+. (Join-Path $App 'config.ps1')
+[Console]::Out.Write([string](Invoke-Expression ([IO.File]::ReadAllText($ExprFile))))
+'@
+  [IO.File]::WriteAllText($script, $resolver, $utf8)
+  $c = Start-Child $prof "-File `"$script`" `"$appDir`" `"$exprFile`"" @{ TILE_HOME = '' }
+  [void]$started.Add($c)
+  $out = $c.StandardOutput.ReadToEndAsync(); [void]$c.StandardError.ReadToEndAsync()
+  if (-not (Wait-Exit $c 60000) -or $c.ExitCode -ne 0) { return $null }
+  $t = "$($out.Result)".Trim()
+  if ($t) { $t } else { $null }
+}
+
 try {
   Check 'swap: the cases run in their own run folder, not the real profile' ($env:USERPROFILE.StartsWith($run))
 
@@ -514,6 +561,61 @@ try {
       Check 'install exits non-zero when the second rename never frees up' ($r.Exited -and $r.Code -ne 0) "exit $($r.Code)"
       Check 'install fails because the staging folder is locked, not for another reason' ($r.Err -match 'in use|used by another process') "reported: $err1"
       Check 'the old app is back in place after the second rename failed' ($st.Count -eq 9 -and $st.Stamp -eq $marker) "$($st.Count) files, tile.ps1 time $($st.Stamp)"
+    }
+  }
+
+  # ---- Case 10: a reinstall keeps agenda.json where the tray reads it (debt reinstall-loses-agenda-json). ----
+  # One profile: a first install; the morning task's agenda.json at the path the tray reads (10a); an install whose swap fails (10b, a
+  # green control); then a reinstall that works (10c, 10d, 10e). The agenda is a made-up day with an event title that is not ASCII, so a
+  # copy that round-trips the text through the system code page changes its bytes (10e). The tray ignores the title.
+  $p10 = Make-Profile 'agenda'
+  $old10 = New-OldApp $p10
+  Check 'setup (agenda): a first install puts the old app in place (nine files)' $old10.Ok "first install exit $($old10.Code): $(@($old10.Err.Result.Trim() -split "`r?`n")[0])"
+  if ($old10.Ok) {
+    $expr10 = Get-AgendaPathExpr (Join-Path $p10 '.tile-windows\app')
+    Check '10a scope: tray.ps1 and config.ps1 name agenda.json in exactly one three-part Join-Path, so the path the tray reads can be worked out' ($null -ne $expr10) 'not exactly one Join-Path of agenda.json: extend Get-AgendaPathExpr for the fix'
+    $path10 = $null
+    if ($expr10) { $path10 = Resolve-AgendaPath $p10 $expr10 }
+    # GetFullPath expands an 8.3 short name (TEMP can be one), so both sides go through it before they are compared.
+    $home10 = [IO.Path]::GetFullPath((Join-Path $p10 '.tile-windows'))
+    $inHome10 = $false
+    if ($path10) { try { $inHome10 = [IO.Path]::GetFullPath($path10).StartsWith($home10 + '\', [StringComparison]::OrdinalIgnoreCase) } catch { } }
+    if ($expr10) { Check '10a scope: that path resolves, in a child of the profile, to a file inside the profile''s .tile-windows folder' $inHome10 "the expression '$expr10' gave: [$path10]" }
+    if ($inHome10) {
+      $path10 = [IO.Path]::GetFullPath($path10)
+      $title10 = 'Revue trimestrielle ' + [char]0xE9 + 'quipe ' + [char]0x4F1A  # e-acute and a CJK character: not ASCII, and the CJK one is in no Western code page
+      $agenda10 = @(
+        '{', '  "date": "2026-01-15",', '  "events": [',
+        '    { "start": "2026-01-15T09:00", "end": "2026-01-15T09:30", "attendees": 3, "teams": true, "showAs": "busy", "title": "Stand-up" },',
+        ('    { "start": "2026-01-15T10:00", "end": "2026-01-15T11:00", "attendees": 40, "teams": true, "showAs": "busy", "title": "' + $title10 + '" },'),
+        '    { "start": "2026-01-15T13:00", "end": "2026-01-15T13:45", "attendees": 1, "teams": false, "showAs": "free", "title": "Focus" }',
+        '  ]', '}') -join "`r`n"
+      New-Item -ItemType Directory -Force (Split-Path $path10) | Out-Null
+      [IO.File]::WriteAllText($path10, $agenda10, (New-Object Text.UTF8Encoding $false))
+      $hash10 = if (Test-Path -LiteralPath $path10) { (Get-FileHash -LiteralPath $path10 -Algorithm SHA256).Hash } else { '' }
+      Check '10a scope: the agenda.json the morning task wrote is at the path the tray reads, before the reinstall' ($hash10 -ne '') "no file at $path10"
+      if ($hash10) {
+        # 10b (green control): the swap fails between its two renames. The old app goes back, and so does what it holds.
+        $i10b = Start-Install $p10 '-NoStartup -NoLaunch' @{ TILE_TEST_SWAP_FAIL = '1'; TILE_HOME = '' }
+        $exited10b = Wait-Exit $i10b.Proc 120000
+        Check '10b scope: an install whose swap fails exits non-zero' ($exited10b -and $i10b.Proc.ExitCode -ne 0) "exit $($i10b.Proc.ExitCode)"
+        $now10b = if (Test-Path -LiteralPath $path10) { (Get-FileHash -LiteralPath $path10 -Algorithm SHA256).Hash } else { '' }
+        Check '10b control: an install whose swap fails keeps agenda.json with the bytes written' ($now10b -eq $hash10) "hash after the failed install: [$now10b], before: [$hash10]"
+
+        # 10c-10e: the reinstall that works.
+        $i10 = Start-Install $p10 '-NoStartup -NoLaunch' @{ TILE_TEST_SWAP_FAIL = ''; TILE_HOME = '' }
+        $exited10 = Wait-Exit $i10.Proc 120000
+        Check '10c scope: the reinstall exits 0' ($exited10 -and $i10.Proc.ExitCode -eq 0) "exit $($i10.Proc.ExitCode): $(@($i10.Err.Result.Trim() -split "`r?`n")[0])"
+        $st10 = Get-AppState $p10
+        Check '10c scope: the reinstall puts a new copy of the app in place (tile.ps1 is not the old one)' ($null -ne $st10.Stamp -and $st10.Stamp -ne $marker) "tile.ps1 time $($st10.Stamp)"
+        Check '10c control: no staging or old folder is left after the reinstall' ($st10.Staging -eq 0) "$($st10.Staging) app.* folder(s) left beside the app"
+        $kept10 = Test-Path -LiteralPath $path10
+        Check '10d a reinstall keeps agenda.json at the path the tray reads' $kept10 "no file at $path10 after the reinstall"
+        if ($kept10) {
+          $after10 = (Get-FileHash -LiteralPath $path10 -Algorithm SHA256).Hash
+          Check '10e the agenda.json a reinstall keeps has the bytes the morning task wrote' ($after10 -eq $hash10) "hash after: [$after10], before: [$hash10]"
+        }
+      }
     }
   }
 } catch {

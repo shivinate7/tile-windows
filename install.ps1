@@ -60,6 +60,12 @@ param([switch]$NoStartup, [switch]$NoLaunch)
     if (Test-Path -LiteralPath $app) {
       Rename-Retry $app (Split-Path $old -Leaf) 'Could not move the old app folder aside' "The app folder is in use, most likely by a running board or a terminal or Explorer window open in it. Close those and run the install again."
     }
+    # The morning task writes agenda.json in the app folder and the tray reads it there, so carry the old file into the new copy (a byte copy).
+    # A copy that fails warns and the install goes on: the morning task writes the file again.
+    $oldAgenda = Join-Path $old 'agenda.json'
+    if (Test-Path -LiteralPath $oldAgenda) {
+      try { Copy-Item -LiteralPath $oldAgenda -Destination (Join-Path $new 'agenda.json') -Force } catch { Write-Warning "agenda.json was not carried over: $($_.Exception.Message)" }
+    }
     if ($env:TILE_TEST_SWAP_FAIL) { throw 'Test: the swap failed.' }  # test seam: a failure between the renames
     Rename-Retry $new 'app' 'Could not move the new app folder into place' 'The new app folder is in use, most likely by antivirus or a file indexer. Run the install again.'
   } catch {
