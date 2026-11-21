@@ -138,12 +138,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (284). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (286). Shard 1 runs
 # gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the explicit Save section and the stack
 # tweaks ruling section), shard 3 the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 284
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 286
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -2355,6 +2355,38 @@ try {
   Check 'explicit save, held, scope: the scene holds one closed window and one open window' ($shListed -eq 2 -and $shOpenNow -eq 1 -and $shClosedNow -eq 0) "held entries: $shListed; open windows matching the open entry: $shOpenNow; open windows matching the closed entry: $shClosedNow"
   Check 'explicit save, held: the saved scene keeps the held entry of the closed window' ($shKeptClosed -eq 1) "entries of the closed window kept: $shKeptClosed of 1; saved held list: $(SlShort $shSavedHeld)"
   Check 'explicit save, held, control: the saved scene keeps the held entry of the open window' ($shKeptOpen -eq 1) "entries of the open window kept: $shKeptOpen of 1; saved held list: $(SlShort $shSavedHeld)"
+  }
+
+  # A held entry for a closed notepad window, and notepad has one open window with another title. The entry has no handle, so
+  # heldWin falls back to that one window of the app, and Save writes its title over the closed window's own.
+  $f1Held = '[{"app":"notepad","title":"Closed draft - Notepad","mon":"wide","slots":[0]}]'
+  SlCase (SlSceneJson '[]' '["*"]' '' (SlHeldFill $f1Held))
+  $f1Listed = SlGet 'work[selId].fill.held.length'
+  $f1Closed = SlGet "snap.windows.filter(w => w.title === 'Closed draft - Notepad').length"
+  $f1Open = SlGet "snap.windows.filter(w => w.app === 'notepad').length"
+  [void](SlJs 'saveScene().then(() => true)'); SlSettle
+  $f1Saved = SlSavedScene
+  $f1Entries = @(@($f1Saved.fill.held) | ? { "$($_.app)" -ceq 'notepad' })
+  if (Shard-Take) {
+  Check 'explicit save, held title, scope: one held entry for a closed notepad window, and notepad has one open window with another title' ($f1Listed -eq 1 -and $f1Closed -eq 0 -and $f1Open -eq 1) "held entries: $f1Listed; open windows titled as the entry: $f1Closed; open notepad windows: $f1Open"
+  Check 'explicit save, held title: the saved scene keeps one held entry for the closed notepad window' ($f1Entries.Count -eq 1) "notepad held entries saved: $($f1Entries.Count); saved held list: $(SlShort @(@($f1Saved.fill.held) | ? { $_ }))"
+  Check 'explicit save, held title: the held entry keeps the closed window''s own title, not the open window''s' ($f1Entries.Count -eq 1 -and "$($f1Entries[0].title)" -ceq 'Closed draft - Notepad') "saved title: $(@($f1Entries | % { $_.title }) -join ' | ')"
+  }
+
+  # A closed bay entry whose handle (id 1010) is now a window of another app (explorer, 'Projects'). Save reads the title by handle
+  # alone, whatever the app, so the claude entry was written with 'Projects' as its title.
+  $f2Bay = ',"bay":[{"id":1010,"app":"claude","title":"Closed notes for the retro"}]'
+  SlCase (SlSceneJson '[]' '["*"]' $f2Bay)
+  $f2Listed = SlGet 'work[selId].bay.length'
+  $f2Owner = SlGet "(snap.windows.find(w => w.id === 1010) || {}).app"
+  $f2Closed = SlGet "snap.windows.filter(w => w.title === 'Closed notes for the retro').length"
+  [void](SlJs 'saveScene().then(() => true)'); SlSettle
+  $f2Saved = SlSavedScene
+  $f2Entries = @(@($f2Saved.bay) | ? { "$($_.app)" -ceq 'claude' })
+  if (Shard-Take) {
+  Check 'explicit save, bay handle, scope: one closed bay entry whose handle is a window of another app, and no open window has its title' ($f2Listed -eq 1 -and $f2Owner -ceq 'explorer' -and $f2Closed -eq 0) "bay entries: $f2Listed; app of window 1010: $f2Owner; open windows titled as the entry: $f2Closed"
+  Check 'explicit save, bay handle: the saved scene keeps one Windows That Stay Put entry for the closed claude window' ($f2Entries.Count -eq 1) "claude entries saved: $($f2Entries.Count); saved list: $(SlShort @(@($f2Saved.bay) | ? { $_ }))"
+  Check 'explicit save, bay handle: the entry keeps its own title, not the title of the window that has its handle' ($f2Entries.Count -eq 1 -and "$($f2Entries[0].title)" -ceq 'Closed notes for the retro') "saved title: $(@($f2Entries | % { $_.title }) -join ' | ')"
   }
   SlViewport 1440 900
 
