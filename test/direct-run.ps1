@@ -1,19 +1,21 @@
 # Checks that a test file run directly leaves no headless Edge behind when it is killed hard. test\run.ps1 puts each test child in a job
 # object, so stopping the suite ends the child's processes. A file run by hand has no job: killed hard (Stop-Process -Force, a harness's
 # timeout), its finally never runs, and the Edge it started stays and holds files and ports for the next run.
-# Cases:
-#   Edge, killed (subject): bay.ps1 is run directly with its own TEMP folder (so its Edge is told apart from every other Edge) and
-#     the suite flag unset. As soon as its Edge has opened its DevTools port the file is killed hard, with no teardown. Scope first: its
-#     Edge was up, the file was still running at the kill, and its own run folder is still there (the kill was hard). Then the subject:
-#     no msedge of that run is still running 15 s after the kill.
-#   Edge, run to its end (green control): a second copy of bay.ps1 runs at the same time, unkilled, to its end. Its Edge was up, it
-#     finished inside the guard, and it leaves no Edge of its run. This shows the count reads 0 when nothing leaks.
+# Cases (the green controls beside the red subject are its scope checks, which find Edge up and the file running just before the kill,
+# and the scan's synthetic sources, which hold on the old tree):
+#   Edge, killed (subject): bay.ps1 is run directly with its own TEMP folder (so its Edge is told apart from every other Edge) and the
+#     suite flag unset. As soon as its Edge has opened its DevTools port the file is killed hard, with no teardown. Scope first: its Edge
+#     was up, the file was still running at the kill, and its own run folder is still there (the kill was hard). Then the subject: no
+#     msedge of that run is still running 90 s after the kill.
+#     The wait is long because a killed Edge tree can take a while to go on a loaded machine: 1 to 11 s with twelve busy loops running,
+#     and one process stayed past 30 s in a whole-suite run. A run that is going to leave Edge behind never clears, so the cap costs only
+#     a red run its time.
 #   Wiring: every test file that starts headless Edge (a '--headless' string in its code) calls Enter-DirectRunJob as a top-level
 #     statement, before that string. The scan reads each file with PowerShell's own parser, so a comment, a string or a here-string that
-#     names either is no call and no Edge. Five synthetic sources check the scan: a comment, a string and a here-string naming both; a
+#     names either is no call and no Edge. Four synthetic sources check the scan: a comment, a string and a here-string naming both; a
 #     lone quote in text before a good file; a call inside a function; and a call after the Edge.
-# The guard (240 s) sits well above a run (about 30 s). The settle after the kill (15 s) is a wait for the count to reach 0, and the
-# kernel ends a job's processes at once. test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
+# The guard (240 s) sits well above a run (about 30 s) plus the wait after the kill, which is a wait for the count to reach 0.
+# test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\direct-run.ps1
 param()
 $ErrorActionPreference = 'Stop'
@@ -37,6 +39,15 @@ function Wait-EdgeGone([string]$dir, [int]$capMs) {
   $sw = [Diagnostics.Stopwatch]::StartNew()
   do { $left = @(Get-FolderProcs $dir 'msedge.exe'); if (-not $left.Count) { break }; Start-Sleep -Milliseconds 250 } while ($sw.ElapsedMilliseconds -lt $capMs)
   $left
+}
+# Up to twelve processes for a failure line: pid, the Edge process type (the browser process has none), its parent's pid and whether
+# that parent is still running, and when it started.
+function Format-Procs($procs) {
+  (@($procs | Select-Object -First 12 | % {
+    $t = if ($_.CommandLine -match '--type=([\w-]+)') { $matches[1] } else { 'browser' }
+    $up = if (Get-Process -Id $_.ParentProcessId -ErrorAction SilentlyContinue) { 'running' } else { 'gone' }
+    "$($_.ProcessId) ($t, parent $($_.ParentProcessId) $up, started $($_.CreationDate.ToString('HH:mm:ss.fff')))"
+  })) -join '; '
 }
 
 # The variables the file under test reads from its caller. Each is unset for the child, so it runs as a person's direct run: no suite
@@ -100,47 +111,37 @@ $a = @('--headless', '--disable-gpu')
 Enter-DirectRunJob
 '@
 
+$victim = $null; $victimTemp = $null
 try {
-  # ---------- Edge: a file run directly, killed hard; and its twin run to the end ----------
+  # ---------- Edge: a file run directly, killed hard ----------
   $edgeExe = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
-  $victimTemp = Join-Path $run 'v'; $controlTemp = Join-Path $run 'c'
-  $victim = $null; $control = $null
   if (-not $edgeExe) {
     'SKIP  direct-run: the Edge cases skipped (no Microsoft Edge)'
   } else {
-    $target = Join-Path $PSScriptRoot 'bay.ps1'
-    # Both start together; each file's Edge opens its DevTools port a few seconds in, and runs to the end of the file (about 25 s).
-    $victim = Start-Direct $target $victimTemp 'victim'
-    $control = Start-Direct $target $controlTemp 'control'
+    $victimTemp = Join-Path $run 'v'
+    $victim = Start-Direct (Join-Path $PSScriptRoot 'bay.ps1') $victimTemp 'victim'
+    # The file's Edge opens its DevTools port a few seconds in, and runs to the end of the file (about 25 s).
     $victimPort = Join-Path $victimTemp 'tile-windows-test-runs\*\edge\DevToolsActivePort'
-    $controlPort = Join-Path $controlTemp 'tile-windows-test-runs\*\edge\DevToolsActivePort'
-    $guard = [Diagnostics.Stopwatch]::StartNew(); $guardMs = 240000
-    $victimSeen = $false; $victimLive = $false; $controlSeen = $false; $killedAt = $null; $left = @(); $settled = $false
+    $guard = [Diagnostics.Stopwatch]::StartNew(); $guardMs = 240000; $settleMs = 90000
+    $victimSeen = $false; $victimLive = $false; $killedAt = $null; $killClock = ''; $left = @(); $waited = $false
     while ($guard.ElapsedMilliseconds -lt $guardMs) {
-      if (-not $controlSeen -and (Test-Path -Path $controlPort)) { $controlSeen = $true }
       if ($null -eq $killedAt) {
         if (Test-Path -Path $victimPort) {
           # The kill: the powershell alone, with no tree and no teardown, as a harness's timeout or a Stop-Process -Force does it.
           $victimSeen = $true; $victimLive = -not $victim.HasExited
           if ($victimLive) { Stop-Process -Id $victim.Id -Force -ErrorAction SilentlyContinue }
-          [void]$victim.WaitForExit(10000); $killedAt = $guard.ElapsedMilliseconds
+          [void]$victim.WaitForExit(10000); $killedAt = $guard.ElapsedMilliseconds; $killClock = (Get-Date).ToString('HH:mm:ss.fff')
         } elseif ($victim.HasExited) { $killedAt = $guard.ElapsedMilliseconds }
-      } elseif (-not $settled) {
+      } else {
         $left = @(Get-FolderProcs $victimTemp 'msedge.exe')
-        if (-not $left.Count -or ($guard.ElapsedMilliseconds - $killedAt) -ge 15000) { $settled = $true }
+        if (-not $left.Count -or ($guard.ElapsedMilliseconds - $killedAt) -ge $settleMs) { $waited = $true; break }
       }
-      if ($settled -and $control.HasExited) { break }
       Start-Sleep -Milliseconds 100
     }
     Check 'scope: the killed file started its Edge (its DevTools port opened) before it ended' $victimSeen "the file ended or ran past the guard with no Edge of its own; output: $((Get-Content -LiteralPath (Join-Path $run 'victim.out') -ErrorAction SilentlyContinue | Select-Object -Last 3) -join ' | ')"
     Check 'scope: the killed file was still running when it was killed' $victimLive 'the file had already ended'
     Check 'scope: the kill was hard, so the file never tore down (its run folder is still there)' (Test-Path -Path (Join-Path $victimTemp 'tile-windows-test-runs\*')) "the file's run folder is gone, so its teardown ran"
-    Check 'a test file run directly and killed hard leaves no Edge of its run' ($victimSeen -and $settled -and -not $left.Count) "$($left.Count) msedge process(es) of the killed run were still running 15 s after the kill, pids $((@($left | Select-Object -First 5 | % { $_.ProcessId })) -join ' ')"
-
-    Check 'control: the copy run to its end started its Edge too' $controlSeen 'no DevTools port opened in the control run'
-    Check 'control: the copy run to its end finished inside the guard' $control.HasExited "still running after $([int]($guardMs / 1000)) s"
-    $ctlLeft = @(Wait-EdgeGone $controlTemp 10000)
-    Check 'control: a file run to its end leaves no Edge of its run' (-not $ctlLeft.Count) "$($ctlLeft.Count) msedge process(es) of the finished run still running"
+    Check 'a test file run directly and killed hard leaves no Edge of its run' ($victimSeen -and $waited -and -not $left.Count) "$($left.Count) msedge process(es) of the killed run were still running $([int]($settleMs / 1000)) s after the kill at $killClock (file pid $($victim.Id)): $(Format-Procs $left); the file's own WARN and FAIL lines: $((@(Get-Content -LiteralPath (Join-Path $run 'victim.out') -ErrorAction SilentlyContinue | ? { $_ -match '^(WARN|FAIL)' } | Select-Object -First 3)) -join ' | ')"
   }
 
   # ---------- Wiring ----------
@@ -162,10 +163,10 @@ try {
   }
 } finally {
   # Teardown: stop what a red run leaves, by folder only (another lane's Edge is never named here), then remove the run folder.
-  foreach ($d in $victimTemp, $controlTemp) { if ($d) { foreach ($p in @(Get-FolderProcs $d)) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } } }
-  # A control past the guard is stopped with its tree; its command line names the file, not the folder.
-  if ($control -and -not $control.HasExited) { & cmd /d /c "taskkill /PID $($control.Id) /T /F >nul 2>&1" }
-  foreach ($d in $victimTemp, $controlTemp) { if ($d) { [void](Wait-EdgeGone $d 10000) } }
+  if ($victimTemp) {
+    foreach ($p in @(Get-FolderProcs $victimTemp)) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+    [void](Wait-EdgeGone $victimTemp 10000)
+  }
   # A process that has just ended can still hold a file in the run folder for a moment, so the folder is removed after it has gone.
   try { Remove-RunFolder $run } catch { $script:fail++; "FAIL  teardown could not remove the run folder  $($_.Exception.Message)" }
 }

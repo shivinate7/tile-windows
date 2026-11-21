@@ -8,6 +8,10 @@ $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixtu
 $tmp = Join-Path $env:TEMP "tile-test-$PID"; New-Item -ItemType Directory $tmp | Out-Null
 $utf8 = New-Object Text.UTF8Encoding $false
 . (Join-Path $PSScriptRoot 'place-step.ps1')
+# The job type, and the run's own job: a hard kill of this run ends its inline Edge and servers too, as each child's job ends the child's.
+# It comes before the run sets TILE_TEST_SUITE below, which would make Enter-DirectRunJob skip.
+. (Join-Path $PSScriptRoot 'direct-run-job.ps1')
+Enter-DirectRunJob
 $script:fail = 0
 function Check($name, $ok, $detail = '') { Start-Ready; if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 function Child { & powershell -NoProfile -ExecutionPolicy Bypass -File @args }
@@ -65,53 +69,6 @@ function Start-Ready {
   while ($script:queue.Count -and @($script:suites | ? { -not $_.Proc.HasExited }).Count -lt $suiteCap) {
     $q = $script:queue.Dequeue(); $script:suites += Start-Suite $q[0] $q[1] $q[2]
   }
-}
-# The job object type: P/Invoke in a new type of its own. A job made here ends its processes when it is stopped, and when this
-# run's process ends, so a child cannot outlive the run.
-function Add-SuiteJobType {
-  if ('SuiteJob' -as [type]) { return }
-  Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class SuiteJob {
-  const int ExtendedLimitInfo = 9;
-  const uint KillOnJobClose = 0x2000;
-  [StructLayout(LayoutKind.Sequential)] public struct BasicLimit {
-    public long PerProcessUserTimeLimit; public long PerJobUserTimeLimit; public uint LimitFlags;
-    public UIntPtr MinimumWorkingSetSize; public UIntPtr MaximumWorkingSetSize; public uint ActiveProcessLimit;
-    public UIntPtr Affinity; public uint PriorityClass; public uint SchedulingClass; }
-  [StructLayout(LayoutKind.Sequential)] public struct IoCounters { public ulong A, B, C, D, E, F; }
-  [StructLayout(LayoutKind.Sequential)] public struct ExtendedLimit {
-    public BasicLimit Basic; public IoCounters Io; public UIntPtr ProcessMemoryLimit; public UIntPtr JobMemoryLimit;
-    public UIntPtr PeakProcessMemoryUsed; public UIntPtr PeakJobMemoryUsed; }
-  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateJobObject(IntPtr attributes, string name);
-  [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
-  [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
-  [DllImport("kernel32.dll", SetLastError = true)] static extern bool TerminateJobObject(IntPtr job, uint exitCode);
-  [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
-  // A job whose close ends every process in it. Zero when it could not be made.
-  public static IntPtr Create() {
-    IntPtr job = CreateJobObject(IntPtr.Zero, null);
-    if (job == IntPtr.Zero) return IntPtr.Zero;
-    ExtendedLimit info = new ExtendedLimit();
-    info.Basic.LimitFlags = KillOnJobClose;
-    int size = Marshal.SizeOf(typeof(ExtendedLimit));
-    IntPtr ptr = Marshal.AllocHGlobal(size);
-    try {
-      Marshal.StructureToPtr(info, ptr, false);
-      if (!SetInformationJobObject(job, ExtendedLimitInfo, ptr, (uint)size)) { CloseHandle(job); return IntPtr.Zero; }
-    } finally { Marshal.FreeHGlobal(ptr); }
-    return job;
-  }
-  public static bool Assign(IntPtr job, IntPtr process) { return AssignProcessToJobObject(job, process); }
-  // Ends every process in the job, then closes it.
-  public static void Stop(IntPtr job) {
-    if (job == IntPtr.Zero) return;
-    TerminateJobObject(job, 1);
-    CloseHandle(job);
-  }
-}
-'@
 }
 # Stops a child and every process under it. While its cmd wrapper stands, taskkill ends the tree by its parent links; the job then ends
 # what is left, including a process whose parent has gone (a grandchild that outlived its child).
