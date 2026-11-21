@@ -33,6 +33,8 @@ if ($Scenario) {
   $fnText = @($ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] }, $true) | % { $_.Extent.Text })
   $lib = Join-Path $Folder 'run-functions.ps1'
   [IO.File]::WriteAllText($lib, ($fnText -join "`r`n"), $utf8)
+  # Start-Suite calls Add-SuiteJobType, which lives in direct-run-job.ps1, not in run.ps1's own text.
+  . (Join-Path $PSScriptRoot 'direct-run-job.ps1')
   . $lib
   # The collection loop waits on each child. The parent scenario runs the other loop over $suites: the one in the finally, which
   # stops each child and prints what it left.

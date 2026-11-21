@@ -21,6 +21,9 @@
 # their checks at the top level, so neither can be dot-sourced (as safe-moves.ps1 says of fresh-screens.ps1's Invoke-PsChild).
 param()
 $ErrorActionPreference = 'Stop'
+# A direct run gets a job of its own, so a hard kill of the file also ends its Edge and servers (test\direct-run-job.ps1).
+. (Join-Path $PSScriptRoot 'direct-run-job.ps1')
+Enter-DirectRunJob
 $root = Split-Path $PSScriptRoot
 $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
