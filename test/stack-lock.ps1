@@ -138,12 +138,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (290). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (291). Shard 1 runs
 # gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the explicit Save section and the stack
 # tweaks ruling section), shard 3 the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 290
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 291
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -262,7 +262,7 @@ $run = Join-Path $SlTempRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item 
 $savedEnv = @{ TILE_HOME = $env:TILE_HOME }
 $profile = Join-Path $run 'profile'; New-Item -ItemType Directory -Force (Join-Path $profile 'AppData\Roaming') | Out-Null
 $env:TILE_HOME = Join-Path $run 'home'
-$srv = $null; $srvDup = $null; $edgeProc = $null; $script:ws = $null; $script:cdpId = 0; $script:url = ''; $script:udd = Join-Path $run 'edge'
+$srv = $null; $srvDup = $null; $sbSrv = $null; $edgeProc = $null; $script:ws = $null; $script:cdpId = 0; $script:url = ''; $script:udd = Join-Path $run 'edge'
 
 function SlSend($method, $params) {
   $script:cdpId++; $id = $script:cdpId
@@ -3298,6 +3298,65 @@ try {
   Check 'bay pin, lead control: after the drop, one pin names Quarterly roadmap' ([bool]($lcNames -eq 1)) "pins naming it: $lcNames; pins: $(SlShort $lcPins)"
   }
 
+  # ---------- Sibling pin: a saved pin whose title a sibling window contains is not that window's pin (matchFor, pinEdit, putBehind) ----------
+  # One app, three windows: "Projects" (1010), "Projects - archive" (1011) and "Other" (1030). matchFor gives "Projects - archive" its whole
+  # title, because the sibling "Projects" holds its lead word, so a drop makes a pin with that match. The saved pin "Projects" holds 1010 (the
+  # engine takes an exact title first). The new pin's match is not the saved one's, so both pins must survive. Two drives share one served copy
+  # of the fixture, whose explorer windows are these three: a drop on a free cell (pinEdit), then a Put Behind on Other's lower band (putBehind).
+  # Both drives are in this one gate, so the second server starts once and only in this shard.
+  if (Shard-Take) {
+  # The engine gives a pin the open window with the lowest X that holds its match (tile.ps1, pin matching), so the three windows sit at
+  # different X: "Projects" (1010) is the lowest, and holds the saved pin.
+  function SbWin($id, $title, $x, $y) { [pscustomobject]@{ id = $id; app = 'explorer'; title = $title; x = $x; y = $y; w = 1000; h = 700 } }
+  # The saved pins of app explorer whose match is exactly Projects.
+  function SbSaved($pins) { @(@($pins) | ? { "$($_.app)" -eq 'explorer' -and "$($_.match)" -eq 'Projects' }) }
+  $sbFx = Join-Path $run 'fixture-sibling.json'
+  $sbDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+  $sbDoc.windows = @(@($sbDoc.windows) | ? { $_.app -ne 'explorer' }) + @((SbWin 1010 'Projects' 2000 300), (SbWin 1011 'Projects - archive' 2200 500), (SbWin 1030 'Other' 2400 700))
+  [IO.File]::WriteAllText($sbFx, (ConvertTo-Json -Depth 10 -Compress $sbDoc), $utf8)
+  $sbHome = Join-Path $run 'home-sibling'; New-Item -ItemType Directory -Force $sbHome | Out-Null
+  $sbPair = SlStartServer $sbFx $sbHome; $sbSrv = $sbPair[0]; $sbUrlMain = $script:url; $script:url = $sbPair[1]
+  try {
+    SlViewport 1440 900
+    $sbPin = SlPins '{"app":"explorer","match":"Projects","mon":"wide","slots":[0]}'
+    # Drop on a free cell. Scope first: the saved pin holds 1010 on slot 0, 1011 is placed by the fill with no pin, and slot 9 is empty
+    # (placed[] counts slots from 1, so slot 9 is 10 there).
+    SlCase (SlSceneJson $sbPin '["explorer"]')
+    $sbPre = @(SbSaved (SlList 'work[selId].pins'))
+    $sbHeld = SlPlacedOf 1010; $sbFill = SlPlacedOf 1011
+    $sbCell9 = SlList "prevs[selId].placed.filter(p => (p.slots || []).includes(10)).map(p => p.id)"
+    Check 'sibling drop, scope: before the drop, the saved pin Projects holds slot 0 and window 1010 is placed by it' ([bool]($sbPre.Count -eq 1 -and (SlCells ($sbPre[0])) -eq '0' -and $sbHeld -and $sbHeld.pin -eq 0)) "pins: $(SlShort $sbPre); placed 1010: $(SlShort $sbHeld)"
+    Check 'sibling drop, scope: before the drop, Projects - archive (1011) is placed by the fill with no pin' ([bool]($sbFill -and $sbFill.pin -lt 0)) "placed 1011: $(SlShort $sbFill)"
+    Check 'sibling drop, scope: before the drop, slot 9 holds no window' (@($sbCell9).Count -eq 0) "placed on slot 9: $(SlShort $sbCell9)"
+    SlDrag (SlAt (SlBox 1011) 0.5 0.5) (SlSlotAt 9)
+    $sbPins = @((SlGet 'work[selId]').pins)
+    $sbNew = @($sbPins | ? { "$($_.app)" -eq 'explorer' -and "$($_.match)" -eq 'Projects - archive' })
+    $sbSaved = @(SbSaved $sbPins)
+    Check 'sibling drop, control: the drop makes a pin for Projects - archive on slot 9' ([bool]($sbNew.Count -eq 1 -and (SlCells ($sbNew[0])) -eq '9')) "pins: $(SlShort $sbPins)"
+    Check 'sibling drop, red: after the drop, the saved pin Projects still holds slot 0 beside the new pin' ([bool]($sbSaved.Count -eq 1 -and (SlCells ($sbSaved[0])) -eq '0')) "pins: $(SlShort $sbPins)"
+    # Put Behind: Projects - archive dropped on the lower band of Other. Scope first, from a fresh scene with the same pins.
+    SlCase (SlSceneJson $sbPin '["explorer"]')
+    $sbPre2 = @(SbSaved (SlList 'work[selId].pins'))
+    $sbHeld2 = SlPlacedOf 1010; $sbFill2 = SlPlacedOf 1011; $sbOther = SlPlacedOf 1030
+    Check 'sibling put behind, scope: before the drop, the saved pin Projects holds slot 0 and window 1010 is placed by it' ([bool]($sbPre2.Count -eq 1 -and (SlCells ($sbPre2[0])) -eq '0' -and $sbHeld2 -and $sbHeld2.pin -eq 0)) "pins: $(SlShort $sbPre2); placed 1010: $(SlShort $sbHeld2)"
+    Check 'sibling put behind, scope: before the drop, Projects - archive (1011) and Other (1030) are placed by the fill with no pin' ([bool]($sbFill2 -and $sbFill2.pin -lt 0 -and $sbOther -and $sbOther.pin -lt 0)) "placed 1011: $(SlShort $sbFill2); placed 1030: $(SlShort $sbOther)"
+    $sbOtherBox = SlBox 1030
+    SlMarkEngine
+    if ($sbOtherBox) { SlDropNoSettle (SlAt (SlBox 1011) 0.5 0.5) (SlAt $sbOtherBox 0.5 0.85) }
+    $sbLanded = SlWaitBehind 1011
+    $sbScene2 = SlGet 'work[selId]'
+    $sbPins2 = @($sbScene2.pins)
+    $sbSaved2 = @(SbSaved $sbPins2)
+    Check 'sibling put behind, control: the drop asks the engine for a new answer' ([bool]$sbLanded.fresh) "no new answer from the engine after the drop"
+    Check 'sibling put behind, control: Other holds Projects - archive behind it' ([bool](SlHasBehind (SlPin $sbScene2 'Other') 'Projects - archive')) "pins: $(SlShort $sbPins2)"
+    Check 'sibling put behind, red: after the put behind, the saved pin Projects still holds slot 0' ([bool]($sbSaved2.Count -eq 1 -and (SlCells ($sbSaved2[0])) -eq '0')) "pins: $(SlShort $sbPins2)"
+  } finally {
+    if ($sbSrv -and -not $sbSrv.HasExited) { try { [void](Invoke-WebRequest -UseBasicParsing "$($script:url)quit" -Method Post -Body 'quit') } catch {}; [void]$sbSrv.WaitForExit(5000) }
+    if ($sbSrv -and -not $sbSrv.HasExited) { $sbSrv.Kill() }
+    $script:url = $sbUrlMain
+  }
+  }
+
   # ---------- Page load: the first data fetch fails once ----------
   # app.html loadAll fetches the snapshot once, so one dropped fetch (a TypeError, as a dropped connection gives) must not leave the
   # board empty. The fault goes into the page before its scripts run, so it reaches loadAll's first call. Each fault counts its
@@ -3470,6 +3529,7 @@ selId = 'sl'; render(); steps.push(read('back on the first scene'));
   if ($script:ws) { $script:ws.Dispose() }
   if ($srv -and -not $srv.HasExited) { $srv.Kill() }
   if ($srvDup -and -not $srvDup.HasExited) { $srvDup.Kill() }
+  if ($sbSrv -and -not $sbSrv.HasExited) { $sbSrv.Kill() }
   foreach ($k in $savedEnv.Keys) { if ($null -eq $savedEnv[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $savedEnv[$k] } }
   if (Test-Path -LiteralPath $run) { Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue }
 }
