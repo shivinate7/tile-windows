@@ -111,6 +111,9 @@
 #     a working row (a conflict note does not make one inert) keeps a bare On, the Extra Triggers line reads N on, N inactive, N warning, and
 #     the callout of a scene with only inert switches reads No working trigger is on. The control checks hold on the page as it stands.
 #     On the strip (under 1180 px) an inert chip's reason line is shown, as it is at 1440.
+#     Turning a switch On (debt inert-switch-announces-moves): the line it says, in the footer and in the note under the scene, agrees with
+#     its row. An inert switch says it is inactive and does not say it moves windows without asking; a working switch still says it moves them,
+#     and any switch turned Off still says Save to keep it.
 #   Free Layout stacked space: a window put on a space whose pin has a behind stack, by a drop from the list
 #     or by Move To, takes the stack: the new pin's behind list is the holder's, as the grid's swapInto hands it on.
 #   Draw Zone armed (mockup docs/design/mockups/draw-zone-hard-to-find.html, its notes beside it): #zadd is a toggle. aria-pressed reads false when it is off and
@@ -142,7 +145,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 177
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 178
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -4499,12 +4502,27 @@ const row = k => { const i = document.querySelector('#scenebox input[data-auto="
 const stat = k => { const r = row(k); if (!r) return null; const c = r.cloneNode(true); c.querySelectorAll(".xwarn, .xopt").forEach(n => n.remove());
   return { checked: r.querySelector("input").checked, text: c.textContent.replace(/\s+/g, " ").trim(), bareOn: [...c.querySelectorAll("*")].some(e => e.children.length === 0 && e.textContent.trim() === "On") } };
 const s = document.querySelector("#scenebox .xsum");
-return { size: stat("size"), gaps: stat("gaps"), activity: stat("activity"), sum: s ? s.textContent.replace(/\s+/g, " ").trim() : null };
+return { size: stat("size"), gaps: stat("gaps"), activity: stat("activity"), setup: stat("setup"), sum: s ? s.textContent.replace(/\s+/g, " ").trim() : null };
 '@
   # Picks a scene's card, as a user does, and waits for its inspector.
   function Inert-Select($sock, [string]$scene) {
     [void](Js $sock ('document.querySelector("[data-pick=__S__]").click(); return true'.Replace('__S__', $scene)))
     WaitFor $sock ('selId === "__S__" && !!document.querySelector("#scenebox .callout")'.Replace('__S__', $scene))
+  }
+  # Flips one extra switch of the open scene, as the page's own change handler hears it, and reads the two lines it says in the same turn: the
+  # footer (#msg) and the note under the scene (#smsg). The handler runs inside the dispatch, so nothing later can have replaced the words.
+  # Then reads the switch's row (the shared $inertRowsJs) for what it shows after the flip.
+  $inertFlipJs = @'
+const i = document.querySelector('#scenebox input[data-auto="__K__"]');
+if (!i) return { found: false };
+i.checked = __ON__; i.dispatchEvent(new Event("change", { bubbles: true }));
+const words = id => { const e = document.getElementById(id); return e ? e.textContent.replace(/\s+/g, " ").trim() : "" };
+return { found: true, footer: words("msg"), note: words("smsg") };
+'@
+  function Inert-Flip($sock, [string]$key, [bool]$on) {
+    $said = Js $sock ($inertFlipJs.Replace('__K__', $key).Replace('__ON__', $(if ($on) { 'true' } else { 'false' })))
+    $rows = Js $sock $inertRowsJs
+    [pscustomobject]@{ found = [bool]$said.found; footer = [string]$said.footer; note = [string]$said.note; row = $rows.$key }
   }
 
   Case 'inert switch, rail: the chip of a switch that does nothing is marked apart from a working chip, and the rail counts only scenes with a working trigger' {
@@ -4608,6 +4626,57 @@ return { chips: want.map(([scene, label]) => {
       $at1440 = @((Js $ws ($reasonJs.Replace('__WANT__', $want))).chips)
       Check 'inert switch, 1024: at 1440 the reason line of each of those 3 chips is shown (control)' (@($at1440 | ? { $_.shown }).Count -eq 3) "shown at 1440: $(@($at1440 | ? { $_.shown } | % { $_.label }) -join ', ')"
     } finally { Fix-View $ws }
+  }
+
+  # Turning a switch On (debt inert-switch-announces-moves). The page's change handler words the line itself, and it words it for every switch
+  # the same way, so an inert switch is told that it moves windows while its own row reads On, inactive. The probes turn one switch On in
+  # each of the three kinds of inert switch (needNote's cases) and, for each kind, a working switch of the same key as a control. The line
+  # lives in two places, the footer and the note under the scene, and the same words fill both. $flipWarn is the move claim's own words;
+  # $flipInactive is the two ways the page already says a switch does nothing (the row's "inactive", the reason sentences' "does nothing").
+  $flipWarn = 'without asking|moves windows'
+  $flipInactive = 'inactive|does nothing|do nothing'
+  Case 'inert switch, turning On: a switch that does nothing says it is inactive and not that it moves windows, and a working switch and an Off switch say what they did' {
+    # Every switch is off. Meetings carries a setup key (Inert-Config sets it for the scenes it is asked about, so Meetings is named with no switch).
+    Put-Config (Inert-Config @{ meetings = @() } @{ meetings = $plugKey })
+    $opened = Open-Page $ws $url 'focus'
+    Check 'inert switch, turn On: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $probes = @(
+      [pscustomobject]@{ scene = 'focus'; key = 'size'; name = 'Call Size on Focus'; inert = $true }          # Focus is neither Listen nor Meetings
+      [pscustomobject]@{ scene = 'focus'; key = 'setup'; name = 'Setup on Focus'; inert = $true }             # no setup is picked for Focus
+      [pscustomobject]@{ scene = 'solo'; key = 'activity'; name = 'Work Match on Solo'; inert = $true }       # no entry of the activity map points at Solo
+      [pscustomobject]@{ scene = 'listen'; key = 'size'; name = 'Call Size on Listen'; inert = $false }       # Listen is the meeting rule's big-call scene
+      [pscustomobject]@{ scene = 'meetings'; key = 'setup'; name = 'Setup on Meetings'; inert = $false }      # Meetings has the Desk setup picked
+      [pscustomobject]@{ scene = 'focus'; key = 'activity'; name = 'Work Match on Focus'; inert = $false }    # the activity map points Claude at Focus
+    )
+    foreach ($p in $probes) {
+      $sel = Inert-Select $ws $p.scene
+      Check "inert switch, turn On: $($p.scene) opens in the inspector for $($p.name) (control)" $sel "the inspector did not open on $($p.scene) in time"
+      if (-not $sel) { continue }
+      $r = Inert-Flip $ws $p.key $true
+      Check "inert switch, turn On: $($p.name) has a switch to turn On (scope)" $r.found "no data-auto=$($p.key) switch in the inspector of $($p.scene)"
+      if (-not $r.found) { continue }
+      $rowSays = if ($r.row) { "row reads: '$($r.row.text)', checked $($r.row.checked)" } else { 'no row' }
+      $lines = "footer reads: '$($r.footer)'; note reads: '$($r.note)'"
+      if ($p.inert) {
+        Check "inert switch, turn On: $($p.name), turned On, reads On, inactive (scope)" ([bool]($r.row -and $r.row.checked -and $r.row.text -match 'inactive')) $rowSays
+        Check "inert switch, turn On: $($p.name), turned On, says something in the footer and in the note (scope)" ($r.footer.Length -gt 0 -and $r.note.Length -gt 0) $lines
+        if (-not ($r.row -and $r.row.checked -and $r.row.text -match 'inactive') -or $r.footer.Length -eq 0 -or $r.note.Length -eq 0) { continue }
+        Check "inert switch, turn On: $($p.name), which does nothing there, does not say it moves windows" (-not ($r.footer -match $flipWarn) -and -not ($r.note -match $flipWarn)) $lines
+        Check "inert switch, turn On: $($p.name), which does nothing there, says it is inactive" ($r.footer -match $flipInactive -and $r.note -match $flipInactive) $lines
+      } else {
+        Check "inert switch, turn On: $($p.name), turned On, reads a bare On and not inactive (scope)" ([bool]($r.row -and $r.row.checked -and $r.row.bareOn -and $r.row.text -notmatch 'inactive')) $rowSays
+        Check "inert switch, turn On: $($p.name), a working switch, still says it moves windows without asking (control)" ($r.footer -match 'moves windows without asking' -and $r.note -match 'moves windows without asking') $lines
+      }
+    }
+    # Control: a switch turned Off keeps its line. Focus's Call Size was turned On, and is inert, in the first probe; its work copy is still On.
+    $sel = Inert-Select $ws 'focus'
+    Check 'inert switch, turn Off: focus opens again in the inspector (control)' $sel 'the inspector did not open on focus in time'
+    if (-not $sel) { return }
+    $r = Inert-Flip $ws 'size' $false
+    Check 'inert switch, turn Off: Call Size on Focus has a switch to turn Off (scope)' ($r.found -and $r.row -and -not $r.row.checked) "found $($r.found), row: $(ConvertTo-Json -Compress -InputObject $r.row)"
+    if (-not ($r.found -and $r.row -and -not $r.row.checked)) { return }
+    Check 'inert switch, turn Off: Call Size on Focus, turned Off, still says Save to keep it (control)' ($r.footer -match 'Save to keep it' -and $r.note -match 'Save to keep it') "footer reads: '$($r.footer)'; note reads: '$($r.note)'"
   }
 
   # ---- Draw Zone armed (mockup docs/design/mockups/draw-zone-hard-to-find.html, its notes beside it) -----------------------------------
