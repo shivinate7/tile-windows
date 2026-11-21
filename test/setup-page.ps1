@@ -127,6 +127,9 @@ param([int]$Shard = 1, [int]$Of = 1)
 if (($Of -ne 1 -and $Of -ne 3) -or $Shard -lt 1 -or $Shard -gt $Of) { throw "setup-page shards: -Of is 1 or 3, and -Shard is 1 to -Of (got $Shard of $Of)" }
 $shardCuts = @(39, 79)   # shard 1 runs cases 1 to 39, shard 2 runs 40 to 79, shard 3 runs 80 to the last (about a third of the time each)
 $ErrorActionPreference = 'Stop'
+# A direct run gets a job of its own, so a hard kill of the file also ends its Edge and server (test\direct-run-job.ps1).
+. (Join-Path $PSScriptRoot 'direct-run-job.ps1')
+Enter-DirectRunJob
 $root = Split-Path $PSScriptRoot
 $serve = Join-Path $root 'serve.ps1'; $appHtml = Join-Path $root 'app.html'
 $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root 'scenes.json'
@@ -3509,9 +3512,13 @@ function () {
     $out
   }
   # The named nodes drawn on the board of monitor role $board (the ultrawide, wide, unless given), polled until $want of them are named or
-  # $seconds pass (a page update lands after its POST). Emitted flat, one object per half: a caller takes the list with @(...).
+  # $seconds pass (a page update lands after its POST). The first read waits for no preview in flight: until it lands, the board still
+  # names the old preview's places, and a half the new one draws would be missed. Emitted flat, one object per half: a caller takes the
+  # list with @(...).
   function Wait-Halves($sock, [string]$rx = 'Open half|Stays empty|Kept empty', [int]$want = 1, [int]$seconds = 10, [string]$board = 'wide') {
     $t0 = Get-Date
+    # The same wait as Empty-Select, out of the same $seconds as the poll below, so the cap does not double. The poll reads at least once.
+    [void](WaitFor $sock 'Object.keys(inflight).length === 0' $seconds)
     do {
       $found = @(Ax-Named $sock $rx $board | ? { $_.slot -ge 0 })
       if ($found.Count -ge $want) { break }
@@ -3532,6 +3539,58 @@ function () {
     $z = @(@((ConvertFrom-Json $p[0].body).layout.zones) | ? { $_ })
     if ($z.Count -eq 0) { return 'none' }
     ((@($z | % { Split-Ints $_.slots })) | Sort-Object) -join ','
+  }
+
+  # Wait-Halves called while a preview is in flight (debt wait-halves-first-poll). A page edit starts a preview, and until it lands the
+  # board still names the places the old preview drew; a half the new preview draws is missed by a read taken before. Here Hold-Js holds
+  # the preview of the edit, so it is in flight when the helper is called. The gate opens at the second read of the page's in-flight table
+  # (a wait that polls reads it again; one glance at it does not wait) and, as a hang guard that sits well above the run of a read, after
+  # 8 s. A helper that reads the board first returns the old board, and the gate is still shut at its return. The helper's own cap is
+  # 20 s here, above the guard.
+  $gateArmJs = @'
+const keys = Object.keys;
+window.__pvOpened = false; window.__pvReads = 0;
+window.__pvOpenNow = () => { window.__pvOpened = true; window.__pvOpen(); };
+window.__pvUnhook = () => { Object.keys = keys; };
+Object.keys = function (o) { if (o === inflight && ++window.__pvReads >= 2) { window.__pvUnhook(); window.__pvOpenNow(); } return keys.apply(this, arguments); };
+window.__pvTimer = setTimeout(window.__pvOpenNow, 8000);
+return true;
+'@
+  $gateDisarmJs = 'clearTimeout(window.__pvTimer); if (window.__pvUnhook) window.__pvUnhook(); if (window.__pvOpen) window.__pvOpen(); return true'
+  Case 'wait halves: a half the preview in flight draws is waited for: Wait-Halves returns the board once the preview has landed, not the old one' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1')
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'wait halves: the page opens on Focus with ten windows pinned, one open half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    [void](WaitFor $ws 'Object.keys(inflight).length === 0' 20)
+    $first = @(Ax-Named $ws 'Open half' | ? { $_.slot -ge 0 })
+    Check 'wait halves: before the edit the board names one open half, on slot 1 (control)' ((($first | % { $_.slot }) -join ',') -eq '1') "named halves: $(Half-Text $first)"
+    if ((($first | % { $_.slot }) -join ',') -ne '1') { return }
+    [void](Js $ws (Hold-Js 'preview' 'pv' 'answer'))
+    try {
+      # Window 1002 holds cells 2 and 3 (slots 2 and 3); pinned to slot 2 alone, the new preview leaves slot 3 as an open half.
+      [void](Js $ws 'pinWin(1002, snap.monitors.find(m => m.role === "wide"), 2); return true')
+      $flying = WaitFor $ws '!!inflight.focus' 20
+      $held = WaitFor $ws 'window.__pvAnswered === true' 20
+      Check 'wait halves: the edit starts a preview of Focus, and its answer is held by the gate (scope)' ($flying -and $held) "preview in flight: $flying, answer held: $held"
+      if (-not ($flying -and $held)) { return }
+      $old = @(Ax-Named $ws 'Open half' | ? { $_.slot -ge 0 })
+      Check 'wait halves: while the preview is in flight the board still names only slot 1, the old preview''s half (scope)' ((($old | % { $_.slot }) -join ',') -eq '1') "named halves: $(Half-Text $old)"
+      if ((($old | % { $_.slot }) -join ',') -ne '1') { return }
+      [void](Js $ws $gateArmJs)
+      $halves = @(Wait-Halves $ws 'Open half' 1 20)
+      $gateOpen = Js $ws 'return window.__pvOpened === true'
+      [void](Js $ws $gateDisarmJs)
+      [void](WaitFor $ws 'Object.keys(inflight).length === 0' 20)
+      $settled = @(Ax-Named $ws 'Open half' | ? { $_.slot -ge 0 })
+      $want = (($settled | % { $_.slot } | Sort-Object) -join ',')
+      Check 'wait halves: once the preview has landed the board names open halves on slots 1 and 3 (scope)' ($want -eq '1,3') "named halves: $(Half-Text $settled)"
+      if ($want -ne '1,3') { return }
+      $got = (($halves | % { $_.slot } | Sort-Object) -join ',')
+      Check 'wait halves: Wait-Halves, called while the preview is in flight, returns the open halves on slots 1 and 3' ($got -eq '1,3') "returned: $(Half-Text $halves); the page names $(Half-Text $settled) once the preview lands; the gate had opened by its return: $gateOpen"
+    } finally {
+      [void](Js $ws $gateDisarmJs)
+    }
   }
 
   Case 'split open: a still click on a whole empty cell selects it: the inspector reads Empty Space, with Split Cell, and sends no POST /layout' {

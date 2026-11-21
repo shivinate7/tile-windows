@@ -5,6 +5,8 @@
 # Page load (before the Sora cases): one dropped snapshot fetch must not leave the board empty.
 # Preview POST (after the page load cases): previewRun sends its POST again after each dropped connection (a TypeError), on the loadAll
 # schedule: four tries in all. A 500 reply and an unreadable 200 reply are not sent again. The cases call preview(id) and read prevs, selId and #msg.
+# Failed preview, selected scene (mockup selected-fail-status-only): while the selected scene's newest preview failed (pfail[selId] set, no
+# preview kept), #over under the board says so in the Not open: look. The cases read #over after the failing preview (PvDrive).
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\stack-lock.ps1
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
 #
@@ -21,7 +23,7 @@
 #     pins may be left out, as in an older scene file: tile.ps1 reads none, and the page keeps the scene raw, so an edit on it still applies.
 #   tile.ps1 -Scene -From <fixture> -Json, placed[]: a stacked window has behind = true, pin = its front pin's index,
 #     and slots, x, y, w, h equal to the front's. A minimized stacked window is placed too (Apply restores it).
-#   app.html, names read by the harness (keep them): work, selId, prevs, preview(id), els (window id -> its tile element,
+#   app.html, names read by the harness (keep them): work, selId, prevs, pfail, inflight, preview(id), newestPrev(id), render(), els (window id -> its tile element,
 #     dataset.id), snap, stage, cellRect(mon, grid, c, r, cs, rs) with px(rect) (a cell's rect, as the drop label uses it),
 #     and the Save button with id save.
 #   app.html DOM the harness drives:
@@ -117,25 +119,28 @@
 #     Ruling 2026-11-16 13:29 CST: a block with no room clear of the Swap circle, even for the icon at 8 px or more, shows no Put
 #     Behind label. Its solid border and the circle carry the cue. Forced colours drops box-shadow, so the icon-alone chip has a border.
 #   Closed front (decision stack-and-lock): when a pin's front window is not open, the first open back window is
-#     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Keep Where It Is act on that
+#     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Stay Put act on that
 #     window. Bring to Front lists the promoted window behind the new front once, never twice. A move or resize keeps the window the front of
-#     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Keep Where It Is leaves no pin naming it.
+#     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Stay Put leaves no pin naming it.
 #     With a covered pin at a lower index than the closed front's pin, a resize or a Merge keeps the promoted window the front too.
 #     A promoted window put behind another window is listed once across the pins, and no entry is left with no open window.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
 
 param([int]$Shard = 1, [int]$Of = 1)
 $ErrorActionPreference = 'Stop'
+# A direct run gets a job of its own, so a hard kill of the file also ends its Edge and server (test\direct-run-job.ps1).
+. (Join-Path $PSScriptRoot 'direct-run-job.ps1')
+Enter-DirectRunJob
 $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (272). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (279). Shard 1 runs
 # gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 272
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 279
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -620,22 +625,36 @@ function PlFaultOn([string]$mode, [string]$key) {
   "$($r.result.identifier)"
 }
 function PlFaultOff($id) { if ($id) { [void](SlSend 'Page.removeScriptToEvaluateOnNewDocument' @{ identifier = $id }); [void](SlSend 'Page.disable' @{}) } }
-# Preview POST fault (app.html previewRun): loads the one-scene page, then wraps fetch in the page so the scene's POSTs to /preview
+# Preview POST fault (app.html previewRun): loads the page, then wraps fetch in the page so the target scene's POSTs to /preview
 # meet -mode, and runs one preview(id) of it. The wrapper is armed after the load, so the page's own previews are neither failed nor
 # counted (PlFaultOn is a new-document script for the snapshot request, set before the load, and counts failures, not every POST; it
 # cannot arm late, answer with a status or a body, or count the POSTs the cases here compare). Modes: 'drop-once' (the first POST is a
 # TypeError, as a dropped connection gives; later ones go on to the server), 'drop-twice' (the first two are, the third goes on),
-# 'drop-always', 'status500' (a 500 reply with a text) and
-# 'badbody' (a 200 reply that is not JSON). The call is capped at 20 s in the page. Returns the page's read; ok is the scope: the page
-# held the scene's preview with none in flight, the wrapper saw a POST, and the call finished.
-function PvDrive([string]$mode) {
-  $ld = SlCase (SlSceneJson '[]' '["*"]') -Soft
+# 'drop-always', 'status500' (a 500 reply with a text), 'status500-once' (a 500 for the first POST, later ones go on),
+# 'status500-markup' (a 500 whose text holds markup characters) and 'badbody' (a 200 reply that is not JSON).
+# The target is the one-scene page's scene (sl). With -Other the page holds two scenes, sl selected and sl2 not, and the faulted
+# POSTs and the call are sl2's. The call is capped at 20 s in the page. Returns the page's read; ok is the scope: the target held its
+# preview with none in flight, the wrapper saw a POST, and the call finished. over* are #over right after the call (first), and
+# steps are the reads -Steps adds: JS run in the page after the call, with the fault still armed (a click or a settle through the
+# test harness would run a preview of its own and clear the failure). In it: p (the target), read(tag), tick(), settle(id) and steps.
+# -Name sets the scene's name (JSON-escaped); the default is Stack and lock. A case that checks a name is shown as text uses it.
+function PvDrive([string]$mode, [string]$Steps = '', [switch]$Other, [string]$Name = '') {
+  $one = SlSceneJson '[]' '["*"]'
+  if ($Name) { $one = $one.Replace('"name":"Stack and lock"', '"name":' + (ConvertTo-Json $Name -Compress)) }
+  $scenes = if ($Other) { '[' + $one + ',' + $one.Replace('"id":"sl"', '"id":"sl2"').Replace('"name":"Stack and lock"', '"name":"Second scene"') + ']' } else { $one }
+  $ld = SlCase $scenes -Soft
   if (-not $ld.ready) { return [pscustomobject]@{ ready = $false; ok = $false; diag = "the page did not draw the scene: $($ld.diag)" } }
   $arm = @'
-(() => {
-  const MODE = '__MODE__', ID = selId, orig = window.fetch;
+(async () => {
+  const MODE = '__MODE__', TARGET = '__TARGET__', orig = window.fetch;
+  // The second scene's own preview comes after the selected scene's on load, so it is waited for: none in flight, and its preview drawn.
+  if (TARGET) {
+    for (let i = 0; i < 300 && (Object.keys(inflight).length || !prevs[TARGET]); i++) await new Promise(r => setTimeout(r, 100));
+    if (!prevs[TARGET]) await preview(TARGET);
+  }
+  const ID = TARGET || selId;
   window.__pvOrig = orig;
-  window.__pv = { id: ID, posts: 0, before: !!prevs[ID], idle: !inflight[ID], old: prevs[ID], at: [] };
+  window.__pv = { id: ID, posts: 0, before: !!prevs[ID], idle: TARGET ? !Object.keys(inflight).length : !inflight[ID], old: prevs[ID], at: [] };
   window.fetch = function (input, init) {
     const u = String(typeof input === 'string' ? input : (input && input.url) || input);
     let bid = null;
@@ -644,7 +663,8 @@ function PvDrive([string]$mode) {
       const n = ++window.__pv.posts;
       window.__pv.at.push(document.getElementById('msg').textContent.trim());
       if (MODE === 'drop-always' || (MODE === 'drop-once' && n === 1) || (MODE === 'drop-twice' && n <= 2)) return Promise.reject(new TypeError('Failed to fetch'));
-      if (MODE === 'status500') return Promise.resolve(new Response('Server out of order.', { status: 500 }));
+      if (MODE === 'status500' || (MODE === 'status500-once' && n === 1)) return Promise.resolve(new Response('Server out of order.', { status: 500 }));
+      if (MODE === 'status500-markup') return Promise.resolve(new Response('<i>Out</i> of order &amp; more.', { status: 500 }));
       if (MODE === 'badbody') return Promise.resolve(new Response('not json', { status: 200 }));
     }
     return orig.apply(this, arguments);
@@ -654,24 +674,40 @@ function PvDrive([string]$mode) {
 '@
   $drive = @'
 (async () => {
-  const p = window.__pv;
+  const p = window.__pv, steps = [];
+  const tick = () => new Promise(r => setTimeout(r, 0));
+  const settle = (id) => Promise.race([newestPrev(id).then(() => 'drawn'), new Promise(r => setTimeout(() => r('hung'), 20000))]);
+  const read = (tag) => {
+    const o = document.getElementById('over'), b = o.querySelector(':scope > b');
+    return { tag: tag, sel: selId, selDrawn: !!prevs[selId], pfSel: pfail[selId] || '', pfTarget: pfail[p.id] || '', drawn: !!prevs[p.id],
+      over: o.textContent.trim(), overWarn: o.classList.contains('warn'), overBold: b ? b.textContent : null, overRole: o.getAttribute('role'),
+      overLive: !!o.closest('[aria-live],[role="status"],[role="alert"]'), overI: o.querySelectorAll('i').length };
+  };
   const done = await Promise.race([preview(p.id).then(() => 'done'), new Promise(r => setTimeout(() => r('hung'), 20000))]);
-  const now = prevs[p.id];
-  return JSON.stringify({ done: done, posts: p.posts, at: p.at, before: p.before, idle: p.idle, drawn: !!now, fresh: !!now && now !== p.old && Array.isArray(now.placed), msg: document.getElementById('msg').textContent.trim() });
+  const now = prevs[p.id], msg = document.getElementById('msg').textContent.trim(), first = read('after the call');
+  /*STEPS*/
+  return JSON.stringify({ done: done, posts: p.posts, at: p.at, before: p.before, idle: p.idle, drawn: !!now, fresh: !!now && now !== p.old && Array.isArray(now.placed), msg: msg, first: first, steps: steps });
 })()
 '@
+  $drive = $drive.Replace('/*STEPS*/', $Steps)
+  $target = if ($Other) { 'sl2' } else { '' }
   try {
     $script:jsErr = ''
-    $armed = SlJs ($arm.Replace('__MODE__', $mode))
+    $armed = SlJs ($arm.Replace('__MODE__', $mode).Replace('__TARGET__', $target))
     if (-not $armed) { return [pscustomobject]@{ ready = $false; ok = $false; diag = "the fault did not arm: $script:jsErr" } }
     $text = SlJs $drive
     if (-not $text) { return [pscustomobject]@{ ready = $false; ok = $false; diag = "the page read failed: $script:jsErr" } }
     $r = $text | ConvertFrom-Json
-    [pscustomobject]@{ ready = $true; ok = [bool]($r.before -and $r.idle -and $r.posts -ge 1 -and $r.done -eq 'done'); diag = ''; done = $r.done; posts = $r.posts; before = $r.before; idle = $r.idle; drawn = $r.drawn; fresh = $r.fresh; msg = $r.msg; at = @($r.at) }
+    [pscustomobject]@{ ready = $true; ok = [bool]($r.before -and $r.idle -and $r.posts -ge 1 -and $r.done -eq 'done'); diag = ''; done = $r.done; posts = $r.posts; before = $r.before; idle = $r.idle; drawn = $r.drawn; fresh = $r.fresh; msg = $r.msg; at = @($r.at)
+      first = $r.first; over = "$($r.first.over)"; overWarn = [bool]$r.first.overWarn; overBold = $r.first.overBold; overRole = $r.first.overRole; overLive = [bool]$r.first.overLive; overI = $r.first.overI; steps = @($r.steps) }
   } finally {
     [void](SlJs "(() => { if (window.__pvOrig) { window.fetch = window.__pvOrig; delete window.__pvOrig; } return true; })()")
   }
 }
+# One step read of a PvDrive result, by its tag ($null when there is none).
+function PvStep($pv, [string]$tag) { @($pv.steps | ? { $_.tag -eq $tag })[0] }
+# The line under the board for a failed preview of the selected scene (mockup selected-fail-status-only): the words, once.
+function PvLine([string]$scene, [string]$why = 'Server out of order') { "Preview failed: $why. The board shows the windows where they are now, not where $scene would put them. Pick the scene again to try once more." }
 # The detail line of a PvDrive scope check: each part of the scope on its own, so a failure names which one broke.
 function PvWhy($pv) { "page drew the scene: $($pv.ready) $($pv.diag); had a preview: $($pv.before); none in flight: $($pv.idle); POSTs seen: $($pv.posts); call: $($pv.done)" }
 function SlStartServer($from = $fixture, $tileHome = $env:TILE_HOME) {
@@ -732,6 +768,29 @@ function SlSwitch([switch]$Click) {
 function SlBadgeText($id) { SlJs "(() => { const t = els.get($id), s = t && t.querySelector('.stk'); return s ? s.textContent.replace(/\s+/g, ' ').trim() : null; })()" }
 # The window ids drawn in Windows That Stay Put, read from the page's chips.
 function SlBayIds { @(("$(SlJs "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => b.dataset.bay).join(',')")") -split ',' | ? { $_ } | % { [int]$_ }) }
+# One name for the Stay Put act (debt one-act-four-names, docs/design/mockups/one-act-four-names-notes.md): what a user can read of the act
+# on the board now. hint, slot (the drop slot, idle or over the list), kline (the K line of the keyboard list), bayh (the list heading),
+# tobay and unpin (the inspector's buttons, null when not drawn), tile (window 1001's own Stay Put button) and bayDrop (the list is lit
+# for a drop). hits lists each old name (keep put, keep it where it is, keep where it is, release to keep) found in the text a user can
+# read: text nodes outside script, style and template, and every title and aria-label. A state line such as "stays where it is" is not an
+# old name. Read after SlCase; the inspector's buttons need window 1001 selected.
+function SlNames {
+  SlGet @'
+(() => {
+  const clean = s => s.replace(/\s+/g, ' ').trim();
+  const txt = id => { const e = document.getElementById(id); return e ? clean(e.textContent) : null; };
+  const k = [...document.querySelectorAll('#keys li')].find(l => l.textContent.includes('Delete unpins it.'));
+  const t = els.get(1001), sp = t ? t.querySelector('.stayput') : null, tb = document.getElementById('tobay');
+  const old = /keep put|keeps? it where it is|keep where it is|release to keep/i, hits = [];
+  const note = s => { const m = old.exec(s || ''); if (m && !hits.includes(m[0].toLowerCase())) hits.push(m[0].toLowerCase()); };
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: n => /^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT)$/.test(n.parentElement ? n.parentElement.tagName : '') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+  while (w.nextNode()) note(w.currentNode.nodeValue);
+  document.querySelectorAll('[title],[aria-label]').forEach(e => { note(e.getAttribute('title')); note(e.getAttribute('aria-label')); });
+  return { hint: txt('hint'), slot: txt('dropslot'), kline: k ? clean(k.textContent) : null, bayh: txt('bayh'), tobay: txt('tobay'), tobayH: tb ? Math.round(tb.getBoundingClientRect().height) : null,
+    unpin: txt('unpin'), tile: sp ? clean(sp.textContent) : null, bayShown: !document.getElementById('bay').hidden, bayDrop: document.getElementById('bay').classList.contains('drop'), hits: hits };
+})()
+'@
+}
 # Call before the drop: keeps the engine's current answer, so the wait below can tell when a new one has replaced it, and
 # records the page's uncaught errors from then on, so a red case names the exception that stopped the redraw.
 # -Rejections also records an unhandled promise rejection, as an edit run from a promise (the Fill Empty Cells switch) raises.
@@ -2776,7 +2835,7 @@ try {
   # front while the scene still names the closed one. Here the closed front is closedapp (match empty), and Draft release (claude, 1003) is
   # promoted over Quarterly (chrome, 1006). The pin has to be this shape: if the closed front were claude with a match, a move would copy that
   # match and the engine would promote the same window again. Refactor (claude, 1001) is the window that wrongly takes the front instead.
-  # A move, a resize, Delete and Keep Where It Is act on the window on screen; Bring to Front swaps it with the one behind. The scene's
+  # A move, a resize, Delete and Stay Put act on the window on screen; Bring to Front swaps it with the one behind. The scene's
   # closed entry is not asserted: the debt's fix drops it. The same actions on an open front (Refactor over the same two windows) are the
   # controls, and each action's own control shows it ran, so a red is never a key or a button that did nothing.
   $pinsCF = SlPins '{"app":"closedapp","match":"","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}'
@@ -2833,15 +2892,15 @@ try {
   Check 'closed front, Delete, red: Quarterly, the window behind, is the front on cell 4' (SlFrontOn 1006 '4') "placed: $(SlPlacedBrief)"
   }
 
-  # (b) Keep Where It Is (Windows That Stay Put): the window leaves the pin, so no pin still names it.
+  # (b) Stay Put (the inspector button; the window goes to Windows That Stay Put): the window leaves the pin, so no pin still names it.
   SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
   SlClick (SlAt (SlBox 1003) 0.5 0.5)
-  $kpPress = SlBtnPress '#win' 'Keep Where It Is'
+  $kpPress = SlBtnPress '#win' 'Stay Put'
   $kpS = SlGet 'work[selId]'
   $kpNamed = @($kpS.pins | ? { "$($_.match)" -like '*Draft release*' -or (SlHasBehind $_ 'Draft release') })
   if (Shard-Take) {
-  Check 'closed front, Keep Where It Is, control: Draft release is in Windows That Stay Put' ([bool]($kpPress -and (SlHasBay $kpS 'Draft release'))) "pressed: $kpPress; bay: $(SlShort $kpS.bay)"
-  Check 'closed front, Keep Where It Is, red: no pin still names Draft release' ($kpNamed.Count -eq 0) "pins: $(SlShort $kpS.pins)"
+  Check 'closed front, Stay Put, control: Draft release is in Windows That Stay Put' ([bool]($kpPress -and (SlHasBay $kpS 'Draft release'))) "pressed: $kpPress; bay: $(SlShort $kpS.bay)"
+  Check 'closed front, Stay Put, red: no pin still names Draft release' ($kpNamed.Count -eq 0) "pressed: $kpPress; pins: $(SlShort $kpS.pins)"
   }
 
   # Controls on an open front (Refactor over the same two windows): the same three actions already work.
@@ -2865,6 +2924,73 @@ try {
   if (Shard-Take) {
   Check 'open front, Delete, control: one press lets Draft release, the window behind, take cell 4 as the front' (SlFrontOn 1003 '4') "placed: $(SlPlacedBrief)"
   }
+
+  # ---------- One name for the Stay Put act (debt one-act-four-names; mockup docs/design/mockups/one-act-four-names.html) ----------
+  # Sending a window off the board into Windows That Stay Put has one verb, Stay Put. Five labels change: the board hint, the drop slot
+  # (idle, and over the list), the K line of the keyboard list and the inspector button (was Keep Where It Is). The tile button and the
+  # list heading already read Stay Put. Pin keeps its own name (a pin holds a cell; Stay Put takes the window off the board), and the
+  # state lines ("It stays where it is") say what happened, so neither changes. Each gate reads the rendered page (SlNames), never
+  # app.html's source. Labels do not depend on the theme, so one theme is read. The scope Checks come first: the board is live, the
+  # list is on screen, the inspector draws the button, and the list is lit while a window is held over it.
+  # 1440, the board at rest and window 1001 selected: the hint, the drop slot, the K line and the inspector button. The button is then
+  # pressed by its id, so its work does not depend on its words, and the selected window's state line is read once it is in the list.
+  if (Shard-Take) {
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ); SlPark
+  $onRest = SlNames
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $onSel = SlNames
+  $onPress = SlJs "(() => { const b = document.getElementById('tobay'); if (!b || b.disabled) return false; b.click(); return true; })()"
+  SlSettle
+  $onS = SlGet 'work[selId]'
+  $onState = SlJs "(() => { const m = document.querySelector('#win .m'); return m ? m.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'one name, scope: the board hint is the live one (it opens with Drag to a cell to pin)' ([bool]($onRest -and $onRest.hint -clike 'Drag to a cell to pin*')) "hint: $($onRest.hint)"
+  Check 'one name, scope: the list is on screen' ([bool]($onRest -and $onRest.bayShown)) "list shown: $($onRest.bayShown)"
+  Check 'one name, scope: window 1001 is selected and the inspector draws its Unpin and act buttons' ([bool]($onSel -and $null -ne $onSel.tobay -and $null -ne $onSel.unpin)) "act button: $($onSel.tobay); unpin button: $($onSel.unpin)"
+  Check 'one name, hint, red: the hint names the act Stay Put (to the list to make it stay put)' ([bool]($onRest -and $onRest.hint -clike 'Drag to a cell to pin it, or to the list to make it stay put.*')) "hint: $($onRest.hint)"
+  Check 'one name, hint, control: the rest of the hint is as it was (the taken cell, the right-click)' ([bool]($onRest -and $onRest.hint -clike '*On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.')) "hint: $($onRest.hint)"
+  Check 'one name, drop slot, red: the idle slot reads Drag a window here to make it stay put' ([bool]($onRest -and $onRest.slot -ceq 'Drag a window here to make it stay put')) "slot: $($onRest.slot)"
+  Check 'one name, K line, red: the keyboard list reads K makes it stay put (off the board)' ([bool]($onRest -and $onRest.kline -ceq 'Delete unpins it. K makes it stay put (off the board).')) "K line: $($onRest.kline)"
+  Check 'one name, inspector button, red: the button reads Stay Put' ([bool]($onSel -and $onSel.tobay -ceq 'Stay Put')) "button: $($onSel.tobay)"
+  Check 'one name, red: no old name (keep put, keep it where it is, keep where it is) is on the page' ([bool]($onSel -and @($onSel.hits).Count -eq 0)) "old names found: $(@($onSel.hits) -join ', ')"
+  Check 'one name, inspector button, control: the button is one row tall' ([bool]($onSel -and $null -ne $onSel.tobayH -and $onSel.tobayH -le 40)) "button height: $($onSel.tobayH)px"
+  Check 'one name, control: the tile button reads Stay Put' ([bool]($onSel -and $onSel.tile -ceq 'Stay Put')) "tile button: $($onSel.tile)"
+  Check 'one name, control: the list heading reads Windows That Stay Put' ([bool]($onRest -and $onRest.bayh -clike 'Windows That Stay Put*')) "heading: $($onRest.bayh)"
+  Check 'one name, control, Pin keeps its own name: the inspector button reads Unpin and Let It Fill' ([bool]($onSel -and $onSel.unpin -ceq 'Unpin and Let It Fill')) "unpin button: $($onSel.unpin)"
+  Check 'one name, control: pressing the act button by its id puts the window in Windows That Stay Put' ([bool]($onPress -and (SlHasBay $onS 'Refactor the grid solver'))) "pressed: $onPress; bay: $(SlShort $onS.bay)"
+  Check 'one name, control, a state line is not renamed: the window in the list is told it stays where it is' ([bool]($onState -clike '*It stays where it is.*')) "state line: $onState"
+  }
+
+  # 1440, a window held over the list: the drop slot names the act, and the release still puts the window in the list.
+  if (Shard-Take) {
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ); SlPark
+  $heldBay = SlGet "(() => { const b = document.getElementById('bay').getBoundingClientRect(); return { l: b.left, t: b.top, w: b.width, h: b.height }; })()"
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlAt $heldBay 0.5 0.5) -Hold
+  $onHeld = SlNames
+  SlRelease (SlAt $heldBay 0.5 0.5)
+  $heldS = SlGet 'work[selId]'
+  Check 'one name, drop slot, scope: the list is lit while Refactor the grid solver is held over it' ([bool]($onHeld -and $onHeld.bayDrop)) "list lit: $($onHeld.bayDrop); slot: $($onHeld.slot)"
+  Check 'one name, drop slot, red: over the list the slot reads Release to make Claude: Refactor the grid solver stay put, under Code' ([bool]($onHeld -and $onHeld.slot -ceq 'Release to make Claude: Refactor the grid solver stay put, under Code')) "slot: $($onHeld.slot)"
+  Check 'one name, red: no old name (keep put, keep it where it is, keep where it is, release to keep) is on the page while the window is held' ([bool]($onHeld -and @($onHeld.hits).Count -eq 0)) "old names found: $(@($onHeld.hits) -join ', ')"
+  Check 'one name, drop slot, control: the release puts the window in Windows That Stay Put' (SlHasBay $heldS 'Refactor the grid solver') "bay: $(SlShort $heldS.bay)"
+  }
+
+  # 1024, the same labels at the narrow size, and the K key does what its line says.
+  if (Shard-Take) {
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCQ); SlPark
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $on24 = SlNames
+  SlKey 1001 'k' 75
+  $k24 = SlGet 'work[selId]'
+  Check 'one name, 1024, scope: the board hint is the live one, and the inspector draws the act button' ([bool]($on24 -and $on24.hint -clike 'Drag to a cell to pin*' -and $null -ne $on24.tobay)) "hint: $($on24.hint); act button: $($on24.tobay)"
+  Check 'one name, 1024, hint, red: the hint names the act Stay Put (to the list to make it stay put)' ([bool]($on24 -and $on24.hint -clike 'Drag to a cell to pin it, or to the list to make it stay put.*')) "hint: $($on24.hint)"
+  Check 'one name, 1024, drop slot, red: the idle slot reads Drag a window here to make it stay put' ([bool]($on24 -and $on24.slot -ceq 'Drag a window here to make it stay put')) "slot: $($on24.slot)"
+  Check 'one name, 1024, K line, red: the keyboard list reads K makes it stay put (off the board)' ([bool]($on24 -and $on24.kline -ceq 'Delete unpins it. K makes it stay put (off the board).')) "K line: $($on24.kline)"
+  Check 'one name, 1024, inspector button, red: the button reads Stay Put' ([bool]($on24 -and $on24.tobay -ceq 'Stay Put')) "button: $($on24.tobay)"
+  Check 'one name, 1024, red: no old name (keep put, keep it where it is, keep where it is) is on the page' ([bool]($on24 -and @($on24.hits).Count -eq 0)) "old names found: $(@($on24.hits) -join ', ')"
+  Check 'one name, 1024, inspector button, control: the button is one row tall' ([bool]($on24 -and $null -ne $on24.tobayH -and $on24.tobayH -le 40)) "button height: $($on24.tobayH)px"
+  Check 'one name, 1024, control: the K key puts the selected window in Windows That Stay Put' (SlHasBay $k24 'Refactor the grid solver') "bay: $(SlShort $k24.bay)"
+  }
+  SlViewport 1440 900
 
   # ---------- Edit on a scene with no pins key (each edit settles the closed fronts, and reads pins first) ----------
   # A scene file may leave the pins key out. tile.ps1 reads it as an empty list, and the page keeps the scene as it is. An edit on it must
@@ -3000,6 +3126,7 @@ try {
   Check 'preview POST, dropped once, scope: the fault dropped a POST of the scene''s preview and the call finished' ([bool]$pvOnce.ok) (PvWhy $pvOnce)
   Check 'preview POST, dropped once, red: the POST is sent again after the drop (two POSTs)' ([bool]($pvOnce.ok -and $pvOnce.posts -eq 2)) "POSTs seen: $($pvOnce.posts); the page gave up at the first drop"
   Check 'preview POST, dropped once, red: the scene''s preview is drawn from the second answer, with no Preview failed line' ([bool]($pvOnce.ok -and $pvOnce.fresh -and $pvOnce.msg -notlike 'Preview failed*')) "fresh preview: $($pvOnce.fresh); status: '$($pvOnce.msg)'"
+  Check 'preview failed line, preview drawn, control: the line under the board names no failure while the scene''s preview is drawn' ([bool]($pvOnce.ok -and $pvOnce.fresh -and -not $pvOnce.over.Contains('Preview failed'))) "line under the board: '$($pvOnce.over)'"
   }
 
   if (Shard-Take) {
@@ -3023,6 +3150,12 @@ try {
   Check 'preview POST, 500 reply, scope: the fault answered a POST of the scene''s preview with a 500 and the call finished' ([bool]$pv500.ok) (PvWhy $pv500)
   Check 'preview POST, 500 reply, control: the POST is not sent again (one POST)' ([bool]($pv500.ok -and $pv500.posts -eq 1)) "POSTs seen: $($pv500.posts)"
   Check 'preview POST, 500 reply, control: it fails as today (the status line names the scene and the server''s words, and no preview is kept)' ([bool]($pv500.ok -and $pv500.msg -ceq 'Preview failed for Stack and lock: Server out of order' -and -not $pv500.drawn)) "status: '$($pv500.msg)'; preview kept: $($pv500.drawn)"
+  # Failed preview, selected scene (mockup selected-fail-status-only, pick 1): the same failure, read under the board. No preview is kept, so
+  # the board shows the windows where they are now, and #over says so in the words of PvLine, in the Not open: look (class over warn).
+  Check 'preview failed line, selected scene, red: the line under the board says the preview failed, what the board shows and how to try again' ([bool]($pv500.ok -and $pv500.over -ceq (PvLine 'Stack and lock'))) "line under the board: '$($pv500.over)'"
+  Check 'preview failed line, selected scene, red: the line has the warning look of Not open (class over warn)' ([bool]($pv500.ok -and $pv500.overWarn)) "class warn: $($pv500.overWarn); line under the board: '$($pv500.over)'"
+  Check 'preview failed line, selected scene, red: the words Preview failed: lead the line in bold' ([bool]($pv500.ok -and $pv500.overBold -ceq 'Preview failed:')) "bold lead-in: '$($pv500.overBold)'; line under the board: '$($pv500.over)'"
+  Check 'preview failed line, selected scene, control: the line is no live region (the status line announces the failure, so it is not read twice)' ([bool]($pv500.ok -and -not $pv500.overRole -and -not $pv500.overLive)) "role: '$($pv500.overRole)'; in a live region: $($pv500.overLive)"
   }
 
   if (Shard-Take) {
@@ -3030,6 +3163,59 @@ try {
   Check 'preview POST, unreadable 200 reply, scope: the fault answered a POST of the scene''s preview with a body that is not JSON and the call finished' ([bool]$pvBad.ok) (PvWhy $pvBad)
   Check 'preview POST, unreadable 200 reply, control: the POST is not sent again (one POST)' ([bool]($pvBad.ok -and $pvBad.posts -eq 1)) "POSTs seen: $($pvBad.posts)"
   Check 'preview POST, unreadable 200 reply, control: it fails as today (the status line names the scene and says the server gave no layout, and no preview is kept)' ([bool]($pvBad.ok -and $pvBad.msg -ceq 'Preview failed for Stack and lock: The server gave no layout' -and -not $pvBad.drawn)) "status: '$($pvBad.msg)'; preview kept: $($pvBad.drawn)"
+  }
+
+  # ---------- Failed preview line under the board (mockup selected-fail-status-only) ----------
+  # The server's words go into the line as text: a < or & in them is shown, not read as markup. It fails on the old code only because
+  # the line is missing; the post-build mutant that drops the escape is what shows this case catches markup.
+  if (Shard-Take) {
+  $pvMk = PvDrive 'status500-markup'
+  Check 'preview failed line, markup in the server''s words, scope: the fault answered a POST of the scene''s preview with a 500 that holds markup and the call finished' ([bool]$pvMk.ok) (PvWhy $pvMk)
+  Check 'preview failed line, markup in the server''s words, red: the words are shown as text (the < and & are not read as markup)' ([bool]($pvMk.ok -and $pvMk.over.Contains('<i>Out</i> of order &amp; more'))) "line under the board: '$($pvMk.over)'; italic elements in it: $($pvMk.overI)"
+  }
+
+  # Markup in the scene's name: the line under the board takes the name from the scene, and the name is escaped there too. The server's
+  # words are another string, so the case above does not catch a missing escape on the name. The post-build mutant that drops that escape
+  # is what shows this case catches it. The status line keeps the name as typed (textContent), so the control reads the name as saved.
+  if (Shard-Take) {
+  $pvName = PvDrive 'status500' -Name '<i>Q</i> & Z'
+  Check 'preview failed line, markup in the scene''s name, scope: the fault answered a POST of the scene''s preview with a 500 and the call finished' ([bool]$pvName.ok) (PvWhy $pvName)
+  Check 'preview failed line, markup in the scene''s name, control: the status line names the scene as typed, <i>Q</i> & Z' ([bool]($pvName.ok -and $pvName.msg -ceq 'Preview failed for <i>Q</i> & Z: Server out of order')) "status: '$($pvName.msg)'"
+  Check 'preview failed line, markup in the scene''s name, red: the line under the board shows the name as text, the literal <i>Q</i> & Z' ([bool]($pvName.ok -and $pvName.over -ceq (PvLine '<i>Q</i> & Z'))) "line under the board: '$($pvName.over)'"
+  Check 'preview failed line, markup in the scene''s name, red: the line draws no i element (the < of the name is not read as markup)' ([bool]($pvName.ok -and $pvName.overI -eq 0)) "italic elements in it: $($pvName.overI); line under the board: '$($pvName.over)'"
+  }
+
+  # Pick again (the line's own promise): after a failure, a press on the scene's card sends a new preview, and the line goes with the
+  # next answer. The press and the wait run in the page with the fault still armed (-Steps): a harness click settles with a preview of
+  # its own, and that one would clear the failure before the read. 'status500-once' fails the first POST only.
+  if (Shard-Take) {
+  $pvRepickJs = @'
+const card = document.querySelector('button[data-pick="' + p.id + '"]');
+steps.push({ tag: 'card', found: !!card });
+if (card) { card.click(); await tick(); steps.push({ tag: 'wait', result: await settle(p.id) }); }
+steps.push(read('after the pick'));
+'@
+  $pvRe = PvDrive 'status500-once' -Steps $pvRepickJs
+  $reCard = PvStep $pvRe 'card'; $reWait = PvStep $pvRe 'wait'; $reAfter = PvStep $pvRe 'after the pick'
+  Check 'preview failed line, picked again, scope: the scene''s first preview got a 500, its card is on the rail, and the pick finished' ([bool]($pvRe.ok -and $reCard -and $reCard.found -and $reWait -and $reWait.result -eq 'drawn' -and $reAfter)) "$(PvWhy $pvRe); card: $(SlShort $reCard); wait: $(SlShort $reWait)"
+  Check 'preview failed line, picked again, red: the line is up after the failure and gone once the second preview is drawn' ([bool]($pvRe.ok -and $reAfter -and $pvRe.over.StartsWith('Preview failed') -and $reAfter.drawn -and -not $reAfter.over.Contains('Preview failed'))) "after the failure: '$($pvRe.over)'; after the pick: '$($reAfter.over)'; preview drawn: $($reAfter.drawn)"
+  Check 'preview failed line, picked again, control: the pick sends a second POST and its preview is drawn (the line says it does)' ([bool]($pvRe.ok -and $pvRe.posts -eq 2 -and $reAfter -and $reAfter.drawn)) "POSTs seen: $($pvRe.posts); preview drawn after the pick: $($reAfter.drawn)"
+  }
+
+  # Selected only: the line follows pfail[selId]. Two scenes, sl selected and sl2 not. sl2's preview fails; the line stays clear while sl
+  # is selected, shows sl2's failure when sl2 is selected, and goes again when sl is selected back. The selection changes in the page
+  # (selId, then render()), since a click or a settle would run a preview and clear the failure.
+  if (Shard-Take) {
+  $pvTwoJs = @'
+selId = p.id; render(); steps.push(read('failed scene selected'));
+selId = 'sl'; render(); steps.push(read('back on the first scene'));
+'@
+  $pvTwo = PvDrive 'status500' -Other -Steps $pvTwoJs
+  $twSel = PvStep $pvTwo 'failed scene selected'; $twBack = PvStep $pvTwo 'back on the first scene'
+  Check 'preview failed line, another scene failed, scope: sl is selected with its preview drawn, sl2 failed its preview with a 500 and kept none, and the call finished' ([bool]($pvTwo.ok -and $pvTwo.first.sel -eq 'sl' -and $pvTwo.first.selDrawn -and $pvTwo.first.pfTarget -and -not $pvTwo.drawn -and $twSel -and $twBack)) "$(PvWhy $pvTwo); first read: $(SlShort $pvTwo.first)"
+  Check 'preview failed line, another scene failed, control: while the selected scene is fine, the other scene''s failure puts no line under the board' ([bool]($pvTwo.ok -and -not $pvTwo.over.Contains('Preview failed'))) "line under the board: '$($pvTwo.over)'"
+  Check 'preview failed line, another scene failed, red: selecting the scene that failed puts its line under the board, naming that scene' ([bool]($pvTwo.ok -and $twSel -and $twSel.sel -eq 'sl2' -and $twSel.over -ceq (PvLine 'Second scene'))) "line under the board: '$(if ($twSel) { $twSel.over })'"
+  Check 'preview failed line, another scene failed, control: selecting back the scene with a preview takes the line away' ([bool]($pvTwo.ok -and $twBack -and $twBack.sel -eq 'sl' -and $twBack.selDrawn -and -not $twBack.over.Contains('Preview failed'))) "line under the board: '$(if ($twBack) { $twBack.over })'; preview drawn: $(if ($twBack) { $twBack.selDrawn })"
   }
 
   # ---------- Ruling 2026-11-16 (label fallback): the Put Behind label with Sora loaded ----------
