@@ -715,7 +715,8 @@ try {
     Check 'keep: no window covers slot 2, the kept half' ($onKept.Count -eq 0) "on slot 2: $(@($onKept | % { $_.title }) -join ', ')"
     Check 'keep: window 1 takes the next whole block, slots 3+4 (272,0,272,500)' (OhIs $r 8001 (OhPairH 1) (CellRect $ohM 5 2 1)) (Desc $r 8001)
   }
-  Case 'control: keep, horizontal: a kept open half stays empty, so the tenth window is left with no free cell' {
+  # Debt kept-half-wait-reason: a window that waits only because a kept half stays empty reads 'half kept empty', not 'no free cell'.
+  Case 'keep, horizontal: a kept open half stays empty, so the tenth window reads half kept empty (debt kept-half-wait-reason)' {
     $fill = [pscustomobject]@{ mon = $ohId; apps = @('claude'); skip = @(); sort = 'app'; unit = @(2, 1); keepEmpty = @([pscustomobject]@{ mon = $ohId; slots = @(1) }) }
     $sc = FgScene 'oh-k2-scene.json' (FgGrid 2 1) @((FgPin 'chrome' 'Pin A' @(0) $ohId)) $fill @() $ohId
     $wins = @((FgWin 8101 'chrome' 'Pin A' 0)) + @(1..10 | % { FgWin (8110 + $_) 'claude' "Fill $_" (100 * $_) })
@@ -723,7 +724,38 @@ try {
     Check 'scope: the pin takes the left half of cell 1 (slot 1, 0,0,136,500)' (OnCell $r 8101 1 '0,0,136,500') (Desc $r 8101)
     $onKept = @($r.placed | ? { @($_.slots) -contains 2 })
     Check 'control: no window covers slot 2, the kept open half' ($onKept.Count -eq 0) "on slot 2: $(@($onKept | % { $_.title }) -join ', ')"
-    Check 'control: window 10 is left with no free cell' ((LeftWhy $r 8120) -ceq 'no free cell') (Desc $r 8120)
+    Check 'keep: window 10 reads half kept empty, not no free cell (debt kept-half-wait-reason)' ((LeftWhy $r 8120) -ceq 'half kept empty') (Desc $r 8120)
+  }
+  # Debt kept-half-wait-reason, false-alarm guard: a pin on the kept half takes that cell, so the kept half is not free and no waiting window reads the kept-half reason.
+  Case 'keep, horizontal: a pin on the kept half leaves the tenth window with no free cell, not half kept empty' {
+    $fill = [pscustomobject]@{ mon = $ohId; apps = @('claude'); skip = @(); sort = 'app'; unit = @(2, 1); keepEmpty = @([pscustomobject]@{ mon = $ohId; slots = @(1) }) }
+    $sc = FgScene 'oh-k9-scene.json' (FgGrid 2 1) @((FgPin 'chrome' 'Pin A' @(0) $ohId), (FgPin 'chrome' 'Pin K' @(1) $ohId)) $fill @() $ohId
+    $wins = @((FgWin 8501 'chrome' 'Pin A' 0), (FgWin 8502 'chrome' 'Pin K' 100)) + @(1..10 | % { FgWin (8510 + $_) 'claude' "Fill $_" (100 * $_) })
+    $r = Invoke-SceneFrom $sc (Write-Snap 'oh-k9-snap.json' @($ohM) $wins)
+    Check 'scope: the two pins take slot 1 (0,0,136,500) and slot 2, the kept half (136,0,136,500)' ((OnCell $r 8501 1 '0,0,136,500') -and (OnCell $r 8502 2 (OhHalfH 1))) "$(Desc $r 8501) | $(Desc $r 8502)"
+    Check 'scope: nine claude windows are placed, the tenth waits' ((@(1..9 | ? { PlacedOf $r (8510 + $_) }).Count -eq 9) -and -not (PlacedOf $r 8520)) "placed $(@($r.placed).Count), left $(@($r.left).Count)"
+    Check 'keep: the tenth window reads no free cell, not half kept empty (the kept half is a pin)' ((LeftWhy $r 8520) -ceq 'no free cell') (Desc $r 8520)
+  }
+  # Debt kept-half-wait-reason, false-alarm guard: a zone that covers the kept half takes it out of the kept-half count, so the waiting window reads no free cell.
+  Case 'keep, horizontal: a zone over the kept half leaves the tenth window with no free cell, not half kept empty' {
+    $fill = [pscustomobject]@{ mon = $ohId; apps = @('claude'); skip = @(); sort = 'app'; unit = @(2, 1); keepEmpty = @([pscustomobject]@{ mon = $ohId; slots = @(1) }) }
+    $zone = [pscustomobject]@{ mon = $ohId; slots = @(0, 1); app = 'chrome' }
+    $sc = FgScene 'oh-k10-scene.json' (FgGrid 2 1) @() $fill @($zone) $ohId
+    $wins = @((FgWin 8601 'chrome' 'Zone A' 0)) + @(1..10 | % { FgWin (8610 + $_) 'claude' "Fill $_" (100 * $_) })
+    $r = Invoke-SceneFrom $sc (Write-Snap 'oh-k10-snap.json' @($ohM) $wins)
+    Check 'scope: the zone window takes slot 1 (0,0,136,500)' (OnCell $r 8601 1 '0,0,136,500') (Desc $r 8601)
+    Check 'scope: nine claude windows are placed, the tenth waits' ((@(1..9 | ? { PlacedOf $r (8610 + $_) }).Count -eq 9) -and -not (PlacedOf $r 8620)) "placed $(@($r.placed).Count), left $(@($r.left).Count)"
+    Check 'keep: the tenth window reads no free cell, not half kept empty (the zone covers the kept half)' ((LeftWhy $r 8620) -ceq 'no free cell') (Desc $r 8620)
+  }
+  # Debt kept-half-wait-reason: one kept half gives one cell back, so the first window that waits reads half kept empty and the next reads no free cell.
+  Case 'keep, horizontal: one kept half and two windows waiting: the first reads half kept empty, the second no free cell' {
+    $fill = [pscustomobject]@{ mon = $ohId; apps = @('claude'); skip = @(); sort = 'app'; unit = @(2, 1); keepEmpty = @([pscustomobject]@{ mon = $ohId; slots = @(1) }) }
+    $sc = FgScene 'oh-k11-scene.json' (FgGrid 2 1) @((FgPin 'chrome' 'Pin A' @(0) $ohId)) $fill @() $ohId
+    $wins = @((FgWin 8701 'chrome' 'Pin A' 0)) + @(1..11 | % { FgWin (8710 + $_) 'claude' "Fill $_" (100 * $_) })
+    $r = Invoke-SceneFrom $sc (Write-Snap 'oh-k11-snap.json' @($ohM) $wins)
+    Check 'scope: nine claude windows are placed, the tenth and eleventh wait' ((@(1..9 | ? { PlacedOf $r (8710 + $_) }).Count -eq 9) -and -not (PlacedOf $r 8720) -and -not (PlacedOf $r 8721)) "placed $(@($r.placed).Count), left $(@($r.left).Count)"
+    Check 'keep: the first window that waits reads half kept empty (debt kept-half-wait-reason)' ((LeftWhy $r 8720) -ceq 'half kept empty') (Desc $r 8720)
+    Check 'keep: the second window that waits reads no free cell, not half kept empty' ((LeftWhy $r 8721) -ceq 'no free cell') (Desc $r 8721)
   }
   Case 'control: keep, horizontal: a pin on a kept half still takes it' {
     $fill = [pscustomobject]@{ mon = $ohId; apps = @(); skip = @(); sort = 'app'; keepEmpty = @([pscustomobject]@{ mon = $ohId; slots = @(1) }) }
