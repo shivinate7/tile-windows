@@ -3303,7 +3303,9 @@ document.addEventListener("change",ev=>{const t=ev.target;
   else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});
   else if(t.id==="time"&&t.value)edit(s=>{s.trigger.time=t.value});
   else if(t.id==="back")edit(s=>{s.trigger.back=t.checked});
-  else if(t.dataset.auto){const x=AUTO.find(a=>a[0]===t.dataset.auto),msg=`${x[1]} is ${t.checked?"on":"off"} for ${scene().name}. ${t.checked?"It moves windows without asking once you Save.":"Save to keep it."}`;
+  else if(t.dataset.auto){const x=AUTO.find(a=>a[0]===t.dataset.auto),ic=t.checked?inertCase(x[0],{...scene(),auto:{...scene().auto,[x[0]]:true}}):"",
+    // An inert switch does nothing for this scene, so it gets its reason in place of the move warning.
+    msg=`${x[1]} is ${t.checked?"on":"off"} for ${scene().name}. ${ic?`It is inactive here. ${INERT[ic][1]}`:t.checked?"It moves windows without asking once you Save.":"Save to keep it."}`;
     edit(s=>{(s.auto||(s.auto={}))[t.dataset.auto]=t.checked},msg);sceneMsg=msg;if($("smsg"))$("smsg").textContent=msg}
   else if(t.dataset.xs==="setup")edit(s=>{if(t.value)s.setupKey=t.value;else delete s.setupKey},t.value?`${scene().name} applies on ${setupName(t.value)}. Save to keep it.`:"No setup picked. Save to keep it.");
   else if(t.dataset.xk){const v=clamp(Math.round(+t.value)||1,1,+t.max),f=t.dataset.xf,k=t.dataset.xk,sc=t.dataset.xs;
