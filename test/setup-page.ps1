@@ -113,6 +113,15 @@
 #     On the strip (under 1180 px) an inert chip's reason line is shown, as it is at 1440.
 #   Free Layout stacked space: a window put on a space whose pin has a behind stack, by a drop from the list
 #     or by Move To, takes the stack: the new pin's behind list is the holder's, as the grid's swapInto hands it on.
+#   Draw Zone armed (mockup docs/design/mockups/draw-zone-hard-to-find.html, its notes beside it): #zadd is a toggle. aria-pressed reads false when it is off and
+#     true when it is on. A press arms it and opens no dialog; a second press turns it off. While it is on, #hint reads "Draw Zone is on. Drag across cells to draw a
+#     zone. Esc cancels.", #msg reads "Draw Zone is on. Drag across cells to draw a zone, or use Pick Cells by Menu. Esc cancels.", and #bbar has a button "Pick Cells by
+#     Menu" (not shown when it is off) that opens today's "Draw a Zone on" dialog. A drag from any cell or window draws a zone with no Shift (the New Zone dialog opens
+#     on release and the window stays where it was), and a still click picks no cell. It turns off after a zone is added or canceled, on Esc (also in the middle of a
+#     draw), on a second press, and on a change of scene. The pressed button is filled in --ink, with --panel text. #keys reads "Draw Zone, then Pick Cells by Menu, picks
+#     a zone's cells with the keyboard." and "Esc cancels a drag, a resize, a zone you are drawing, or Draw Zone." Two options have a case each: the board cue (while it is
+#     on, a cell's edge is blue and dashed, its tint is blue, and the pointer over a window and over an empty cell is a crosshair) and the idle hint (#hint reads today's
+#     live hint and then " Drag across empty cells to draw a zone.").
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
 # clears Undo, delete, size id, and Could not forget cases.
 #
@@ -130,7 +139,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 163
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 176
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -3424,11 +3433,11 @@ const spaceAt = (i, where) => { const r = RR(spaceOf(i)); if (!r) return null; r
   function Cell-Point($sock, [int]$slot) {
     Js $sock ('const m = snap.monitors.find(q => q.role === "wide"); const c = m && m.el ? m.el.querySelectorAll(".cell")[__S__] : null; if (!c) return null; const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };'.Replace('__S__', "$slot"))
   }
-  # A still press and release at a point, as a mouse makes them.
-  function Click-At($sock, [double]$x, [double]$y) {
-    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x; y = $y })
-    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x; y = $y; button = 'left'; buttons = 1; clickCount = 1 })
-    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x; y = $y; button = 'left'; buttons = 0; clickCount = 1 })
+  # A still press and release at a point, as a mouse makes them. $mods holds the modifier bits the events carry (8 is Shift).
+  function Click-At($sock, [double]$x, [double]$y, [int]$mods = 0) {
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $x; y = $y; modifiers = $mods })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $x; y = $y; button = 'left'; buttons = 1; clickCount = 1; modifiers = $mods })
+    [void](Cdp $sock 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $x; y = $y; button = 'left'; buttons = 0; clickCount = 1; modifiers = $mods })
   }
   # A drag from one point to another, as a mouse makes it: pressed, moved in four steps with the button held, released at the end.
   function Drag-At($sock, [double]$x1, [double]$y1, [double]$x2, [double]$y2) {
@@ -4540,6 +4549,400 @@ return { chips: want.map(([scene, label]) => {
       $at1440 = @((Js $ws ($reasonJs.Replace('__WANT__', $want))).chips)
       Check 'inert switch, 1024: at 1440 the reason line of each of those 3 chips is shown (control)' (@($at1440 | ? { $_.shown }).Count -eq 3) "shown at 1440: $(@($at1440 | ? { $_.shown } | % { $_.label }) -join ', ')"
     } finally { Fix-View $ws }
+  }
+
+  # ---- Draw Zone armed (mockup docs/design/mockups/draw-zone-hard-to-find.html, its notes beside it) -----------------------------------
+  # Every case here is new, except the ones marked control, which pass on main. On main a press on Draw Zone opens the "Draw a Zone on" dialog at once
+  # and the button has no pressed state, so a case that needs the armed board fails on main for that cause. No lookup throws: a missing button,
+  # hint or dialog reads null or false, and the check on it fails. The two option cases (the board cue and the idle hint) stand alone, so an owner
+  # who declines one removes one case and lowers the gate total by one.
+  $dzIdleHint = 'Drag to a cell to pin it, or to the list to make it stay put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.'
+  $dzArmedHint = 'Draw Zone is on. Drag across cells to draw a zone. Esc cancels.'
+  $dzArmedStatus = 'Draw Zone is on. Drag across cells to draw a zone, or use Pick Cells by Menu. Esc cancels.'
+  # All ten windows of the fixture, each pinned to its own cell of the 5 by 2 board: no cell is empty.
+  $dzPins = @(0..9 | % { Split-Pin $_ @($_) })
+  # Colours as the page computes them: rgb() or color(srgb). Blue is a clear lead of the blue channel over red and green.
+  $cueJs = @'
+const rgb = s => { let m = /^rgba?\(([^)]*)\)$/.exec(s); if (m) { const p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2] }; }
+  m = /^color\(srgb ([^)]*)\)$/.exec(s); if (m) { const p = m[1].split(/[ \/]+/).filter(Boolean).map(Number); return { r: p[0] * 255, g: p[1] * 255, b: p[2] * 255 }; } return null; };
+const blue = s => { const c = rgb(s); return !!c && c.b - c.r >= 100 && c.b - c.g >= 60; };
+const mon = snap.monitors.find(q => q.role === "wide"), cells = mon && mon.el ? mon.el.querySelectorAll(".cell") : [], cell = cells[9], tile = els.get(1001);
+if (!cell || !tile) return null;
+const r = cell.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2), cs = getComputedStyle(cell);
+return { edgeStyle: cs.borderTopStyle, edge: cs.borderTopColor, edgeBlue: blue(cs.borderTopColor), tintBlue: blue(cs.backgroundColor), tileCursor: getComputedStyle(tile).cursor, cellCursor: hit ? getComputedStyle(hit).cursor : null, hitCell: !!hit && !!hit.closest(".cell") };
+'@
+
+  # What the cases read, in one page call: the Draw Zone button, the hint, the status line, the key list, the dialog, and the menu button.
+  $dzReadJs = @'
+const norm = e => e ? e.textContent.replace(/\s+/g, " ").trim() : null;
+const z = document.getElementById("zadd"), d = document.getElementById("dlg");
+const menu = [...document.querySelectorAll("#bbar button")].find(b => b.textContent.trim() === "Pick Cells by Menu");
+return { shown: !!z && !z.hidden && z.getClientRects().length > 0, disabled: !!z && z.disabled, pressed: z ? z.getAttribute("aria-pressed") : null,
+  hint: norm(document.getElementById("hint")), msg: norm(document.getElementById("msg")), keys: norm(document.getElementById("keys")),
+  dlg: !!d && d.open, dlgTitle: d && d.open ? norm(d.querySelector("h2")) : null,
+  menuShown: !!menu && !menu.hidden && menu.getClientRects().length > 0 };
+'@
+  # The centre of the Pick Cells by Menu button on the board bar, or null when it is not shown.
+  $dzMenuJs = 'const b = [...document.querySelectorAll("#bbar button")].find(x => x.textContent.trim() === "Pick Cells by Menu"); if (!b || b.hidden || b.getClientRects().length === 0) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };'
+  function Dz-Read($sock) { Js $sock $dzReadJs }
+  # Opens Focus on a snapshot and waits for the page to rest, so no preview's status line lands after a press.
+  function Dz-Open($sock, [string]$snapText) {
+    $ok = Open-Page $sock $url 'focus' $snapText
+    if ($ok) { [void](WaitFor $sock 'Object.keys(inflight).length === 0' 10) }
+    $ok
+  }
+  # One press on Draw Zone, then the wait for what a press does. $want 'on' waits until the button reads pressed or a dialog is open (main opens
+  # one); 'off' waits until it no longer reads pressed. Answers the page read, or null when the press found no enabled button.
+  function Dz-Press($sock, [string]$want) {
+    $hit = Js $sock 'const z = document.getElementById("zadd"); if (!z || z.disabled) return false; z.click(); return true'
+    if ($hit -ne $true) { return $null }
+    $cond = if ($want -eq 'on') { '(() => { const z = document.getElementById("zadd"); return (!!z && z.getAttribute("aria-pressed") === "true") || document.getElementById("dlg").open; })()' } else { '(() => { const z = document.getElementById("zadd"); return !!z && z.getAttribute("aria-pressed") !== "true"; })()' }
+    [void](WaitFor $sock $cond 5)
+    Dz-Read $sock
+  }
+  # Whether a read shows the button pressed.
+  function Dz-On($r) { [bool]($r -and $r.pressed -ceq 'true') }
+  # Closes the open dialog with its Cancel button. Answers whether it is closed.
+  function Dz-CloseDialog($sock) {
+    [void](Js $sock 'const d = document.getElementById("dlg"), b = document.getElementById("dlgCancel"); if (d && d.open && b) b.click(); return true')
+    WaitFor $sock '!document.getElementById("dlg").open' 10
+  }
+  # The New Zone dialog for three columns is open now (the old text of a closed dialog does not count).
+  $dzNewZoneCond = 'document.getElementById("dlg").open && /New Zone: 3 Columns/.test((document.getElementById("dlgform") || {}).textContent || "")'
+  # The layout POST count, once the page has settled.
+  function Dz-Posts($sock) { [int](Js $sock 'await window.__h.settle(); return window.__h.posts("layout").length') }
+
+  Case 'draw zone: a press arms it, so the button reads pressed and no dialog opens, and a second press turns it off' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $idle = Dz-Read $ws
+    $ready = [bool]($idle -and $idle.shown -and -not $idle.disabled)
+    Check 'draw zone: the Draw Zone button is shown and enabled before a press (scope)' $ready "shown $($idle.shown), disabled $($idle.disabled)"
+    if (-not $ready) { return }
+    Check 'draw zone: before a press the button reads not pressed (aria-pressed false)' ($idle.pressed -ceq 'false') "aria-pressed reads: '$($idle.pressed)'"
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone: a press leaves the button pressed (aria-pressed true)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    Check 'draw zone: a press opens no dialog' ($on -and -not $on.dlg) "a dialog is open: '$($on.dlgTitle)'"
+    if (-not (Dz-On $on)) { return }
+    $off = Dz-Press $ws 'off'
+    Check 'draw zone: a second press turns it off (aria-pressed false)' ($off -and $off.pressed -ceq 'false') "aria-pressed reads: '$($off.pressed)'"
+  }
+
+  Case 'draw zone: while it is on, the hint and the status bar name zones, and the key list names the menu path' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $idle = Dz-Read $ws
+    Check 'draw zone: before a press the hint starts with the live hint of today (control)' ($idle -and ([string]$idle.hint).StartsWith($dzIdleHint)) "hint reads: '$($idle.hint)'"
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone: while it is on, the hint reads: Draw Zone is on. Drag across cells to draw a zone. Esc cancels.' ($on -and $on.hint -ceq $dzArmedHint) "hint reads: '$($on.hint)'"
+    Check 'draw zone: while it is on, the status bar names the menu path as well' ($on -and $on.msg -ceq $dzArmedStatus) "status reads: '$($on.msg)'"
+    Check 'draw zone: the key list line for Draw Zone names Pick Cells by Menu' ($on -and ([string]$on.keys).Contains("Draw Zone, then Pick Cells by Menu, picks a zone's cells with the keyboard.")) "key list reads: '$($on.keys)'"
+    Check 'draw zone: the key list line for Esc adds Draw Zone' ($on -and ([string]$on.keys).Contains('Esc cancels a drag, a resize, a zone you are drawing, or Draw Zone.')) "key list reads: '$($on.keys)'"
+  }
+
+  Case 'draw zone: while it is on, a drag from a window with no Shift draws a zone and moves no window' {
+    Put-Split (Split-Json 5 2 $dzPins)
+    $opened = Dz-Open $ws $tenWinSnap
+    Check 'draw zone: the page opens on Focus with ten windows on ten cells (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $on = Dz-Press $ws 'on'
+    # Main opens the corner dialog on this press. It is closed here so the drag reaches the board and the checks below read what the drag does.
+    if ($on -and $on.dlg) { [void](Dz-CloseDialog $ws) }
+    $a = Tile-Centre $ws 1001; $b = Tile-Centre $ws 1005
+    $reach = [bool]($a -and $a.hit -and $b -and $b.hit)
+    Check 'draw zone: windows 1001 and 1005 are drawn, and a press lands on each tile (scope)' $reach 'a tile is not drawn, or the press hits a button in it'
+    if (-not $reach) { return }
+    $before = Dz-Posts $ws
+    Drag-At $ws $a.x $a.y $b.x $b.y
+    [void](WaitFor $ws ($dzNewZoneCond + ' || window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    $dlg = (Js $ws ('return !!(' + $dzNewZoneCond + ')')) -eq $true
+    Check 'draw zone: a drag from window 1001 across window 1005 opens the New Zone dialog for 3 columns' $dlg 'no New Zone dialog after the drag'
+    Check 'draw zone: the drag moves no window (no POST /layout before Add Zone)' ($sent.Count -eq 0) "POST /layout count: $($sent.Count), bodies: $(Post-Text $sent)"
+    if (-not $dlg) { return }
+    Confirm-Ask $ws
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    $zs = Posted-Zones $sent
+    Check 'draw zone: Add Zone sends one POST /layout with the zone on cells 0, 1 and 2' ($sent.Count -eq 1 -and $zs -eq '0,1,2') "POST /layout count: $($sent.Count), zone slots: $zs"
+    if ($sent.Count -ne 1) { return }
+    $own = Split-SlotsOf (ConvertFrom-Json $sent[0].body).layout 'Refactor the grid solver'
+    Check 'draw zone: window 1001 keeps its pin on cell 0' ($own -ceq '0') "its pin holds: $own"
+  }
+
+  Case 'draw zone: with it off, a drag from a window moves it and opens no zone dialog (control)' {
+    Put-Split (Split-Json 5 2 $dzPins)
+    $opened = Dz-Open $ws $tenWinSnap
+    Check 'draw zone: the page opens on Focus with ten windows on ten cells (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $a = Tile-Centre $ws 1001; $b = Tile-Centre $ws 1005
+    $reach = [bool]($a -and $a.hit -and $b -and $b.hit)
+    Check 'draw zone: windows 1001 and 1005 are drawn, and a press lands on each tile (scope)' $reach 'a tile is not drawn, or the press hits a button in it'
+    if (-not $reach) { return }
+    $before = Dz-Posts $ws
+    Drag-At $ws $a.x $a.y $b.x $b.y
+    [void](WaitFor $ws ($dzNewZoneCond + ' || window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    Check 'draw zone: a plain drag from window 1001 onto window 1005 sends a POST /layout, so the window moved (scope)' ($sent.Count -ge 1) 'no POST /layout after the drag'
+    $dlg = (Js $ws ('return !!(' + $dzNewZoneCond + ')')) -eq $true
+    Check 'draw zone: a plain drag opens no New Zone dialog (control)' (-not $dlg) 'a New Zone dialog is open after a plain drag'
+  }
+
+  Case 'draw zone: it turns off after a zone is canceled, and after a zone is added' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone: a press arms it before the zone is drawn (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    $a = Cell-Point $ws 2; $b = Cell-Point $ws 4
+    Check 'draw zone: cells 2 and 4 are drawn (scope)' ($null -ne $a -and $null -ne $b) 'a cell is not drawn on the ultrawide'
+    if ($null -eq $a -or $null -eq $b) { return }
+    Drag-At $ws $a.x $a.y $b.x $b.y
+    $dlg = WaitFor $ws $dzNewZoneCond 10
+    Check 'draw zone: a drag across cells 2 to 4 while it is on opens the New Zone dialog (scope)' $dlg 'no New Zone dialog after the drag'
+    if (-not $dlg) { return }
+    [void](Dz-CloseDialog $ws)
+    $r = Dz-Read $ws
+    Check 'draw zone: after the zone dialog is canceled the button reads not pressed' ($r.pressed -ceq 'false') "aria-pressed reads: '$($r.pressed)'"
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone: a press arms it again (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    Drag-At $ws $a.x $a.y $b.x $b.y
+    $dlg = WaitFor $ws $dzNewZoneCond 10
+    Check 'draw zone: a second drag across cells 2 to 4 opens the New Zone dialog (scope)' $dlg 'no New Zone dialog after the second drag'
+    if (-not $dlg) { return }
+    $before = Dz-Posts $ws
+    Confirm-Ask $ws
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $r = Dz-Read $ws
+    Check 'draw zone: after the zone is added the button reads not pressed' ($r.pressed -ceq 'false') "aria-pressed reads: '$($r.pressed)'"
+  }
+
+  Case 'draw zone: Esc turns it off, in the middle of a draw too, and so does a change of scene' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone: a press arms it before Esc (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    Press-Key $ws 'Escape' 27
+    [void](WaitFor $ws '(document.getElementById("zadd") || {}).getAttribute("aria-pressed") !== "true"' 5)
+    $r = Dz-Read $ws
+    Check 'draw zone: Esc turns it off (aria-pressed false)' ($r.pressed -ceq 'false') "aria-pressed reads: '$($r.pressed)'"
+    Check 'draw zone: after Esc the hint is the live hint of today again' (([string]$r.hint).StartsWith($dzIdleHint)) "hint reads: '$($r.hint)'"
+    # Esc in the middle of a draw: the outline is up, Esc cancels it, and the release after it draws no zone.
+    $on = Dz-Press $ws 'on'
+    $a = Cell-Point $ws 2; $b = Cell-Point $ws 4
+    $ready = [bool]((Dz-On $on) -and $null -ne $a -and $null -ne $b)
+    Check 'draw zone: a press arms it again, and cells 2 and 4 are drawn (scope)' $ready "aria-pressed reads: '$($on.pressed)'"
+    if (-not $ready) { return }
+    [void](Cdp $ws 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $a.x; y = $a.y })
+    [void](Cdp $ws 'Input.dispatchMouseEvent' @{ type = 'mousePressed'; x = $a.x; y = $a.y; button = 'left'; buttons = 1; clickCount = 1 })
+    foreach ($f in 0.5, 1.0) { [void](Cdp $ws 'Input.dispatchMouseEvent' @{ type = 'mouseMoved'; x = $a.x + ($b.x - $a.x) * $f; y = $a.y + ($b.y - $a.y) * $f; button = 'left'; buttons = 1 }) }
+    $drawing = WaitFor $ws 'getComputedStyle(document.getElementById("zdraw")).display !== "none"' 5
+    Check 'draw zone: the outline is up in the middle of the draw (scope)' $drawing 'no zone outline while the button is held'
+    Press-Key $ws 'Escape' 27
+    [void](Cdp $ws 'Input.dispatchMouseEvent' @{ type = 'mouseReleased'; x = $b.x; y = $b.y; button = 'left'; buttons = 0; clickCount = 1 })
+    $r = Dz-Read $ws
+    Check 'draw zone: Esc in the middle of a draw turns it off' ($r.pressed -ceq 'false') "aria-pressed reads: '$($r.pressed)'"
+    Check 'draw zone: Esc in the middle of a draw opens no New Zone dialog' (-not $r.dlg) "a dialog is open: '$($r.dlgTitle)'"
+    # A change of scene: it ends the draw mode, which belongs to the scene on the board.
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone: a press arms it a third time (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    [void](Js $ws 'document.querySelector("[data-pick=default]").click(); return true')
+    $moved = WaitFor $ws 'selId === "default"' 10
+    Check 'draw zone: the Default card opens that scene (scope)' $moved 'the page did not switch to Default'
+    if (-not $moved) { return }
+    $r = Dz-Read $ws
+    Check 'draw zone: a change of scene turns it off' ($r.pressed -ceq 'false') "aria-pressed reads: '$($r.pressed)'"
+  }
+
+  Case 'draw zone: while it is on, a still click on an empty cell stays armed and picks no cell' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    # Control: with it off, a still click on cell 8 picks it.
+    $c = Cell-Click $ws 8
+    Check 'draw zone: empty cell 8 is drawn, and the press lands on it (scope)' ($null -ne $c -and $c.on) "cell 8 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    [void](WaitFor $ws $headEmptyCond 10)
+    $sel = @(Selected-Cells $ws)
+    Check 'draw zone: with it off, a still click on cell 8 picks it (control)' ($sel -contains 8) "picked cells: $($sel -join ',')"
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone: a press arms it before the click (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    $c = Cell-Click $ws 9
+    Check 'draw zone: empty cell 9 is drawn, and the press lands on it (scope)' ($null -ne $c -and $c.on) "cell 9 is not drawn, or the press hits: $($c.hit)"
+    if ($null -eq $c -or -not $c.on) { return }
+    $sel = @(Selected-Cells $ws)
+    Check 'draw zone: while it is on, a still click on cell 9 picks no cell' (-not ($sel -contains 9)) "picked cells: $($sel -join ',')"
+    $r = Dz-Read $ws
+    Check 'draw zone: a still click leaves it on' ($r.pressed -ceq 'true') "aria-pressed reads: '$($r.pressed)'"
+  }
+
+  Case 'draw zone: Pick Cells by Menu is on the board bar only while it is on, and opens the corner dialog' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $idle = Dz-Read $ws
+    Check 'draw zone: with it off, the board bar has no Pick Cells by Menu button (control)' ($idle -and -not $idle.menuShown) 'a Pick Cells by Menu button is shown while it is off'
+    $on = Dz-Press $ws 'on'
+    if ($on -and $on.dlg) { [void](Dz-CloseDialog $ws) }
+    $shown = [bool]($on -and $on.menuShown)
+    Check 'draw zone: while it is on, the board bar has a Pick Cells by Menu button' $shown 'no Pick Cells by Menu button on the board bar'
+    if (-not $shown) { return }
+    [void](Js $ws '[...document.querySelectorAll("#bbar button")].find(b => b.textContent.trim() === "Pick Cells by Menu").click(); return true')
+    $opens = WaitFor $ws 'document.getElementById("dlg").open && /Draw a Zone on/.test((document.getElementById("dlgform") || {}).textContent || "")' 10
+    Check 'draw zone: Pick Cells by Menu opens the Draw a Zone dialog' $opens 'no Draw a Zone dialog after the press'
+    if (-not $opens) { return }
+    $pickers = Js $ws 'return document.querySelectorAll("#dlgform select[name=za], #dlgform select[name=zb]").length'
+    Check 'draw zone: that dialog still has its From and To corner menus (control)' ($pickers -eq 2) "corner menus in the dialog: $pickers"
+  }
+
+  Case 'draw zone: the pressed button takes the ink fill, in light and dark, at 1440 and 1024' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    # The page's own --ink and --panel, as a probe element resolves them in the current theme.
+    $fillJs = @'
+const z = document.getElementById("zadd"); if (!z) return null;
+const p = document.createElement("i"); p.style.cssText = "position:fixed;background-color:var(--ink);color:var(--panel)"; document.body.append(p);
+const q = getComputedStyle(p), c = getComputedStyle(z), out = { ink: q.backgroundColor, panel: q.color, bg: c.backgroundColor, fg: c.color }; p.remove(); return out;
+'@
+    try {
+      foreach ($theme in 'light', 'dark') {
+        foreach ($w in 1440, 1024) {
+          $tag = "$theme at $w"
+          Set-View $ws $w 900; Set-Theme $ws $theme
+          $on = Dz-Press $ws 'on'
+          if ($on -and $on.dlg) { [void](Dz-CloseDialog $ws) }
+          Check "draw zone: a press arms it in $tag (scope)" (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+          if (-not (Dz-On $on)) { continue }
+          $look = Js $ws $fillJs
+          Check "draw zone: the pressed button's fill is the ink colour in $tag" ($look -and $look.bg -ceq $look.ink) "fill $($look.bg), ink $($look.ink)"
+          Check "draw zone: the pressed button's label is the panel colour in $tag" ($look -and $look.fg -ceq $look.panel) "label $($look.fg), panel $($look.panel)"
+          [void](Dz-Press $ws 'off')
+        }
+      }
+    } finally { Reset-Look $ws }
+  }
+
+  # Option, the board cue (item 4 of the notes): a cell's edge and tint are blue and dashed while it is on, and the pointer over the board is a crosshair.
+  Case 'draw zone, board cue: while it is on, cells have a blue dashed edge and tint and the pointer is a crosshair' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone, board cue: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $idle = Js $ws $cueJs
+    Check 'draw zone, board cue: before a press the cells are drawn and a press on cell 9 lands on a cell (scope)' ($idle -and $idle.hitCell) 'no cell 9, or the point is not on a cell'
+    if (-not ($idle -and $idle.hitCell)) { return }
+    Check 'draw zone, board cue: before a press the cell edge is dashed and not blue (control)' ($idle.edgeStyle -ceq 'dashed' -and -not $idle.edgeBlue) "edge $($idle.edgeStyle) $($idle.edge)"
+    Check 'draw zone, board cue: before a press a window shows the grab pointer (control)' ($idle.tileCursor -ceq 'grab') "tile pointer: $($idle.tileCursor)"
+    try {
+      foreach ($theme in 'light', 'dark') {
+        Set-Theme $ws $theme
+        $on = Dz-Press $ws 'on'
+        if ($on -and $on.dlg) { [void](Dz-CloseDialog $ws) }
+        $look = Js $ws $cueJs
+        Check "draw zone, board cue: while it is on the cell edge is blue and dashed in $theme" ($look -and $look.edgeStyle -ceq 'dashed' -and $look.edgeBlue) "edge $($look.edgeStyle) $($look.edge)"
+        Check "draw zone, board cue: while it is on the cell tint is blue in $theme" ($look -and $look.tintBlue) 'the cell fill is not blue'
+        Check "draw zone, board cue: while it is on the pointer over a window is a crosshair in $theme" ($look -and $look.tileCursor -ceq 'crosshair') "tile pointer: $($look.tileCursor)"
+        Check "draw zone, board cue: while it is on the pointer over an empty cell is a crosshair in $theme" ($look -and $look.cellCursor -ceq 'crosshair') "cell pointer: $($look.cellCursor)"
+        if (Dz-On $on) { [void](Dz-Press $ws 'off') }
+      }
+    } finally { Reset-Look $ws }
+  }
+
+  # Option, the idle hint (item 5 of the notes): one sentence added to the hint a user reads before pressing anything.
+  Case 'draw zone, idle hint: the hint also says to drag across empty cells to draw a zone' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone, idle hint: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $r = Dz-Read $ws
+    Check 'draw zone, idle hint: the hint starts with the live hint of today (control)' ($r -and ([string]$r.hint).StartsWith($dzIdleHint)) "hint reads: '$($r.hint)'"
+    Check 'draw zone, idle hint: the hint ends with: Drag across empty cells to draw a zone.' ($r -and $r.hint -ceq ($dzIdleHint + ' Drag across empty cells to draw a zone.')) "hint reads: '$($r.hint)'"
+  }
+
+  # Shift+click two-corner path, with Draw Zone armed (the notes' item 1: the drag path is the main path, and the Shift path stays). A control
+  # first, with Draw Zone off: a Shift+click on cell 2 sets the first corner and a Shift+click on cell 4 opens the New Zone dialog for 3 columns.
+  # Then the subject: the same two corners with Draw Zone armed, and after the zone is added Draw Zone reads not pressed, with no armed hint,
+  # no armed status line and no armed cue on an empty cell.
+  Case 'draw zone, Shift path: with it armed, two Shift+clicks draw a zone, and after it Draw Zone reads not pressed, with no armed hint or cue' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone, Shift path: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $a = Cell-Point $ws 2; $b = Cell-Point $ws 4
+    $drawn = [bool]($null -ne $a -and $null -ne $b)
+    Check 'draw zone, Shift path: cells 2 and 4 are drawn (scope)' $drawn 'a cell is not drawn on the ultrawide'
+    if (-not $drawn) { return }
+    Click-At $ws $a.x $a.y 8
+    $corner = WaitFor $ws 'document.getElementById("msg").textContent.includes("Zone corner at")' 10
+    Check 'draw zone, Shift path: with it off, a Shift+click on cell 2 sets the first corner (control)' $corner 'no "Zone corner at" status after the first Shift+click'
+    Click-At $ws $b.x $b.y 8
+    $dlg = WaitFor $ws $dzNewZoneCond 10
+    Check 'draw zone, Shift path: with it off, a Shift+click on cell 4 opens the New Zone dialog for 3 columns (control)' $dlg 'no New Zone dialog after the second Shift+click'
+    if (-not $dlg) { return }
+    [void](Dz-CloseDialog $ws)
+    # The subject: Draw Zone armed, then the same two Shift+clicks.
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone, Shift path: a press arms it before the corners are picked (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    Click-At $ws $a.x $a.y 8
+    Click-At $ws $b.x $b.y 8
+    $dlg = WaitFor $ws $dzNewZoneCond 10
+    Check 'draw zone, Shift path: with it armed, the two Shift+clicks open the New Zone dialog for 3 columns (scope)' $dlg 'no New Zone dialog after the two Shift+clicks'
+    if (-not $dlg) { return }
+    $before = Dz-Posts $ws
+    Confirm-Ask $ws
+    [void](WaitFor $ws ('window.__h.posts("layout").length > ' + $before) 10)
+    $sent = Layout-Posts-After $ws $before
+    Check 'draw zone, Shift path: Add Zone sends one POST /layout (scope)' ($sent.Count -eq 1) "POST /layout count: $($sent.Count)"
+    $r = Dz-Read $ws
+    Check 'draw zone, Shift path: after the zone is added Draw Zone reads not pressed (aria-pressed false)' ($r.pressed -ceq 'false') "aria-pressed reads: '$($r.pressed)'"
+    Check 'draw zone, Shift path: after the zone is added the hint is not the armed hint, and starts with the idle hint' ($r.hint -cne $dzArmedHint -and ([string]$r.hint).StartsWith($dzIdleHint)) "hint reads: '$($r.hint)'"
+    Check 'draw zone, Shift path: after the zone is added the status line is not the armed status' ($r.msg -cne $dzArmedStatus) "status reads: '$($r.msg)'"
+    Check 'draw zone, Shift path: after the zone is added Pick Cells by Menu is not shown' (-not $r.menuShown) 'a Pick Cells by Menu button is shown after the zone is added'
+    $cue = Js $ws $cueJs
+    Check 'draw zone, Shift path: after the zone is added an empty cell has no armed cue (no blue edge, no blue tint, no crosshair)' ($cue -and -not $cue.edgeBlue -and -not $cue.tintBlue -and $cue.cellCursor -cne 'crosshair') "edge $($cue.edgeStyle) $($cue.edge), tint blue $($cue.tintBlue), cell pointer $($cue.cellCursor)"
+  }
+
+  # Pick Cells by Menu, pressed as a mouse presses it: it opens the corner dialog, Draw Zone reads not pressed while the dialog is open, and
+  # when the dialog closes focus is on the Draw Zone button.
+  Case 'draw zone, menu: Pick Cells by Menu turns Draw Zone off, and focus returns to Draw Zone when the dialog closes' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone, menu: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone, menu: a press arms it before the menu is used (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    Check 'draw zone, menu: while it is on, Pick Cells by Menu is shown on the board bar (scope)' ([bool]$on.menuShown) 'no Pick Cells by Menu button on the board bar'
+    if (-not $on.menuShown) { return }
+    $at = Js $ws $dzMenuJs
+    Click-At $ws $at.x $at.y
+    $opens = WaitFor $ws 'document.getElementById("dlg").open && /Draw a Zone on/.test((document.getElementById("dlgform") || {}).textContent || "")' 10
+    Check 'draw zone, menu: Pick Cells by Menu opens the Draw a Zone dialog (scope)' $opens 'no Draw a Zone dialog after the press'
+    if (-not $opens) { return }
+    $during = Dz-Read $ws
+    Check 'draw zone, menu: Pick Cells by Menu turns Draw Zone off (aria-pressed false while the dialog is open)' ($during.pressed -ceq 'false') "aria-pressed reads: '$($during.pressed)'"
+    [void](Dz-CloseDialog $ws)
+    $focused = WaitFor $ws 'document.activeElement !== null && document.activeElement.id === "zadd"' 10
+    Check 'draw zone, menu: after the dialog closes, focus is on the Draw Zone button' $focused "focus is on: $(Js $ws 'return document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : null')"
+    $after = Dz-Read $ws
+    Check 'draw zone, menu: after the dialog closes Draw Zone still reads not pressed, with the idle hint' ($after.pressed -ceq 'false' -and ([string]$after.hint).StartsWith($dzIdleHint)) "aria-pressed reads: '$($after.pressed)', hint reads: '$($after.hint)'"
   }
 
 } catch {
