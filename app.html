@@ -283,7 +283,10 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .boardbar .hint.armed{flex-basis:240px}
 .cue .mon .cell{border-color:color-mix(in srgb,var(--select) 70%,transparent);background:color-mix(in srgb,var(--select) 9%,transparent)}
 .cue .mon .cell,.cue .tile{cursor:crosshair}
-@media (forced-colors:active){.btn[aria-pressed="true"]{background:Highlight;color:HighlightText;border-color:Highlight}}
+/* Phone width: the armed hint takes its own row, so Draw Zone, Pick Cells by Menu and Clear Board share the next one and the bar is no taller than idle. */
+@media (max-width:760px){.boardbar .hint.armed{flex-basis:100%}.boardbar{column-gap:8px}}
+/* Forced colors: forced-color-adjust:none keeps the pressed fill, and the cells' edges show the board is ready to draw on. */
+@media (forced-colors:active){.btn[aria-pressed="true"]{forced-color-adjust:none;background:Highlight;color:HighlightText;border-color:Highlight}.cue .mon .cell{border-color:Highlight}}
 .keys{font-size:12px;color:var(--muted)}
 .keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
 .keys ul{margin:4px 0 0;padding-left:18px}
@@ -1324,7 +1327,7 @@ function render(){
   $("zadd").hidden=!(LIVE&&s);
   {const zf=!!(LIVE&&s&&curMon&&isFree(gridOf(curMon)));$("zadd").disabled=zf;
     // Draw Zone stays armed only on the scene it was armed on, on a live board, while the monitor is not in Free Layout (zones pause there).
-    if(zarmed&&(!LIVE||!s||zf||selId!==zarmedScene))zarmed=false;
+    if(zarmed&&(!LIVE||!s||zf||selId!==zarmedScene)){zarmed=false;zoneOffStatus()}
     $("zadd").setAttribute("aria-pressed",String(zarmed));$("stage").classList.toggle("cue",zarmed);
     $("zkey").textContent=zarmed?"Draw Zone, then Pick Cells by Menu, picks a zone's cells with the keyboard.":"Draw Zone picks a zone's cells with the keyboard.";
     $("zadd").title=zf?"Zones pause in Free Layout. Turn it off to draw a zone.":zarmed?"Turn off Draw Zone. Esc does the same.":""}
@@ -2237,7 +2240,9 @@ function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort(
 const zoneFill=v=>v.startsWith("app:")?{app:v.slice(4)}:{cat:v.slice(4)};
 const ZARMED_STATUS="Draw Zone is on. Drag across cells to draw a zone, or use Pick Cells by Menu. Esc cancels.";
 // Draw Zone turns off here for every way out: a second press, Esc, a zone drawn by drag or by two Shift+clicks, and Pick Cells by Menu.
-function disarmZone(){if(!zarmed)return;zarmed=false;render()}
+// The armed status line must not outlive the mode: every path that turns Draw Zone off ends here or in render()'s reset.
+function zoneOffStatus(){if($("msg").textContent===ZARMED_STATUS)status("Draw Zone is off.")}
+function disarmZone(){if(!zarmed)return;zarmed=false;render();zoneOffStatus()}
 function toggleZone(){zarmed=!zarmed;zarmedScene=selId;zanchor=null;render();status(zarmed?ZARMED_STATUS:"Draw Zone is off.")}
 async function drawZoneDialog(){const m=curMon,g=gridOf(m);if(!g)return;
   const cellOpts=sel=>[...Array(GC(g)*GR(g)).keys()].map(i=>`<option value="${i}"${i===sel?" selected":""}>Column ${i%GC(g)+1}, Row ${Math.floor(i/GC(g))+1}</option>`).join("");
