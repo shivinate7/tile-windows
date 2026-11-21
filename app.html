@@ -276,6 +276,12 @@ h2 .btn{text-transform:none;letter-spacing:0;font-weight:500;min-height:26px;pad
 .boardbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;width:100%}
 /* layout() reads the bar's height, so the Free Layout hint is kept as long as the grid's: a bar that changes height when Free Layout switches on rescales the board. */
 .boardbar .hint{margin:0;flex:1 1 300px}
+/* Draw Zone armed: the button takes the ink fill of the other toggles, the hint is the instruction, and the board says it is ready to draw on. */
+.btn[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink);font-weight:600}
+.hint.armed{color:var(--ink);font-weight:600}
+.cue .mon .cell{border-color:color-mix(in srgb,var(--select) 70%,transparent);background:color-mix(in srgb,var(--select) 9%,transparent)}
+.cue .mon .cell,.cue .tile{cursor:crosshair}
+@media (forced-colors:active){.btn[aria-pressed="true"]{background:Highlight;color:HighlightText;border-color:Highlight}}
 .keys{font-size:12px;color:var(--muted)}
 .keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
 .keys ul{margin:4px 0 0;padding-left:18px}
@@ -709,7 +715,7 @@ dialog form{display:grid;gap:10px}
   <main class="canvas">
     <div id="setbar" class="setbar" hidden></div>
     <div id="stage" tabindex="-1" aria-label="Monitors and windows"><div id="drop"></div><div id="dest"><span></span></div><div id="zdraw"><span></span></div><div id="rzdraw"><span></span></div><div id="rzdest" aria-hidden="true"></div></div><div id="ghost" aria-hidden="true"></div>
-    <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" hidden>Draw Zone</button><button type="button" class="btn" id="fillon" hidden>Turn On Fill Empty Cells</button><button type="button" class="btn" id="clearbd" aria-describedby="whyclear" hidden>Clear Board</button><span class="vh" id="whyclear"></span>
+    <div id="bbar" class="boardbar"><p id="hint" class="hint"></p><button type="button" class="btn" id="zadd" aria-pressed="false" hidden>Draw Zone</button><button type="button" class="btn" id="zmenu" hidden>Pick Cells by Menu</button><button type="button" class="btn" id="fillon" hidden>Turn On Fill Empty Cells</button><button type="button" class="btn" id="clearbd" aria-describedby="whyclear" hidden>Clear Board</button><span class="vh" id="whyclear"></span>
     <details id="keys" class="keys"><summary>Keyboard</summary><ul>
       <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
       <li>Ctrl+Shift+arrows resize it from its top or left edge.</li>
@@ -719,8 +725,8 @@ dialog form{display:grid;gap:10px}
       <li>A locked window moves only after a warning.</li>
       <li>Ctrl+click cells to pick them, then Merge joins them.</li>
       <li>Enter on a window that stays put opens it in the inspector, where Move To places it.</li>
-      <li>Draw Zone picks a zone's cells with the keyboard.</li>
-      <li>Esc cancels a drag, a resize or a zone you are drawing.</li></ul></details></div>
+      <li id="zkey">Draw Zone picks a zone's cells with the keyboard.</li>
+      <li>Esc cancels a drag, a resize, a zone you are drawing, or Draw Zone.</li></ul></details></div>
     <p id="over" class="over"></p>
     <section id="results" class="panel" hidden aria-label="Apply results">
       <div class="phead"><b id="sum"></b><button id="closeres" class="btn ghost" type="button">Close</button></div>
@@ -801,7 +807,7 @@ const PIN='<svg class="pinmark" viewBox="0 0 12 12" fill="currentColor" aria-hid
 
 let snap=null,cfg={scenes:[],cats:LIVE?{}:OFFLINE_CATS,categories:CATS0},work={},selId=null,prevs={},pseq={},selWin=null,curMon=null,hist=[],isBusy=false,serverDry=false,
   st={active:"",log:[]},hidden=new Set(),showGrid=true,G={x0:0,y0:0,S:1},els=new Map(),drawn={},optim=null,drag=null,raf=0,
-  offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zanchor=null,selZone=null,xOpen=false,rz=null,hdl=null,noteEl=null,noteT=0,flashId=null,flashT=0,picks=null,lockAsk=null,bayFlash=new Set(),bayFlashT=0,
+  offRects=null,offOrig=null,offGrids={},toastT=0,sceneMsg="",noteUp=false,zdraw=null,zarmed=false,zarmedScene=null,zanchor=null,selZone=null,xOpen=false,rz=null,hdl=null,noteEl=null,noteT=0,flashId=null,flashT=0,picks=null,lockAsk=null,bayFlash=new Set(),bayFlashT=0,
   selCell=null,halfMemo=null,cellEls=new Map(),
   plug=null,layoutsOk=false,mgSay=null,lays={},lsaved={},lq={},unsaved={},failed={},stale={},readErr="",svT={},svBusy={},svAgain={},lastKey="";
 const clone=o=>JSON.parse(JSON.stringify(o));
@@ -810,6 +816,7 @@ const rect=w=>({x:w.x,y:w.y,w:w.w,h:w.h});
 const same=(a,b)=>a&&b&&a.x===b.x&&a.y===b.y&&a.w===b.w&&a.h===b.h;
 const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
 const status=t=>{$("msg").textContent=t};
+const ZARMED_HINT="Draw Zone is on. Drag across cells to draw a zone. Esc cancels.";
 const scene=()=>work[selId];
 const saved=id=>cfg.scenes.find(s=>s.id===id);
 // Id mode: the layout autosaves, so only a name, trigger or extra that Save has not kept counts as an edit.
@@ -1313,15 +1320,24 @@ function render(){
   $("undo").title=isBusy?"Wait for the current action to finish.":hist.length?"Undo the last change or "+(LIVE?verb():"Apply")+".":"Nothing to undo yet.";
   $("pend").textContent=moves?`${plural(moves,"window")} will move on ${LIVE?verb():"Apply"}`:"The board matches your screen";
   $("zadd").hidden=!(LIVE&&s);
-  {const zf=!!(LIVE&&s&&curMon&&isFree(gridOf(curMon)));$("zadd").disabled=zf;$("zadd").title=zf?"Zones pause in Free Layout. Turn it off to draw a zone.":""}
+  {const zf=!!(LIVE&&s&&curMon&&isFree(gridOf(curMon)));$("zadd").disabled=zf;
+    // Draw Zone stays armed only on the scene it was armed on, on a live board, while the monitor is not in Free Layout (zones pause there).
+    if(zarmed&&(!LIVE||!s||zf||selId!==zarmedScene))zarmed=false;
+    $("zadd").setAttribute("aria-pressed",String(zarmed));$("stage").classList.toggle("cue",zarmed);
+    $("zkey").textContent=zarmed?"Draw Zone, then Pick Cells by Menu, picks a zone's cells with the keyboard.":"Draw Zone picks a zone's cells with the keyboard.";
+    $("zadd").title=zf?"Zones pause in Free Layout. Turn it off to draw a zone.":zarmed?"Turn off Draw Zone. Esc does the same.":""}
   // Clear Board turns Fill Empty Cells off. With only pinned windows on the board there is nothing to clear.
   const cb=$("clearbd"),unpinned=prevs[selId]?prevs[selId].placed.filter(p=>p.pin<0&&!p.behind).length:0;
   cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
   const anyFree=!!(LIVE&&s&&snap.monitors.some(q=>mk(q)&&s.grids[mk(q)]&&isFree(s.grids[mk(q)])));
-  $("hint").textContent=anyFree?"Drag the line between two windows to resize both. Hold Shift to move the whole line. Zones pause while Free Layout is on: turn it off to draw a zone.":LIVE?"Drag to a cell to pin it, or to the list to make it stay put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
+  $("hint").textContent=anyFree?"Drag the line between two windows to resize both. Hold Shift to move the whole line. Zones pause while Free Layout is on: turn it off to draw a zone.":LIVE?"Drag to a cell to pin it, or to the list to make it stay put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell. Drag across empty cells to draw a zone.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   {const fe=LIVE&&s?freeEmpty():"";if(fe)$("hint").textContent=fe;$("fillon").hidden=!fe;
+    // The armed hint and Pick Cells by Menu change what the bar holds, but not its height: layout() reads the bar, so a taller or shorter bar rescales the board.
+    // The bar's idle height (this text in the idle weight, no menu button) is measured first and held as its minimum while armed.
+    {const bb=$("bbar"),zm=$("zmenu"),hn=$("hint");zm.hidden=true;bb.style.minHeight="";hn.classList.remove("armed");
+      if(zarmed){const h=bb.offsetHeight;bb.style.minHeight=h+"px";zm.hidden=false;hn.classList.add("armed");hn.textContent=ZARMED_HINT}}
     // A disabled Draw Zone is described by the hint, which gives the reason in a free monitor (the all-empty sentence replaces it).
     const zb=$("zadd");if(zb.disabled&&!fe)zb.setAttribute("aria-describedby","hint");else zb.removeAttribute("aria-describedby")}
   if(selWin)selCell=null;
@@ -2213,6 +2229,10 @@ addEventListener("scroll",ev=>{if(smenu&&!(smenu.at&&ev.target.closest&&ev.targe
 function zoneOpts(cur){const apps=[...new Set(snap.windows.map(w=>w.app))].sort((a,b)=>appName(a).localeCompare(appName(b)));
   return `<optgroup label="Category">${cfg.categories.map(([c,l])=>`<option value="cat:${c}"${cur==="cat:"+c?" selected":""}>${esc(l)}</option>`).join("")}</optgroup><optgroup label="App">${apps.map(a=>`<option value="app:${esc(a)}"${cur==="app:"+a?" selected":""}>${esc(appName(a))}</option>`).join("")}</optgroup>`}
 const zoneFill=v=>v.startsWith("app:")?{app:v.slice(4)}:{cat:v.slice(4)};
+const ZARMED_STATUS="Draw Zone is on. Drag across cells to draw a zone, or use Pick Cells by Menu. Esc cancels.";
+// Draw Zone turns off here for every way out: a second press, Esc, a zone drawn by drag or by two Shift+clicks, and Pick Cells by Menu.
+function disarmZone(){if(!zarmed)return;zarmed=false;render()}
+function toggleZone(){zarmed=!zarmed;zarmedScene=selId;zanchor=null;render();status(zarmed?ZARMED_STATUS:"Draw Zone is off.")}
 async function drawZoneDialog(){const m=curMon,g=gridOf(m);if(!g)return;
   const cellOpts=sel=>[...Array(GC(g)*GR(g)).keys()].map(i=>`<option value="${i}"${i===sel?" selected":""}>Column ${i%GC(g)+1}, Row ${Math.floor(i/GC(g))+1}</option>`).join("");
   const f=await ask(`Draw a Zone on ${onMon(m)}`,`<p class="note">Pick two corner cells. The zone fills with these windows in fill order; a pin inside it keeps its cell; windows that do not fit stay put.</p>
@@ -2901,10 +2921,10 @@ stage.addEventListener("pointerdown",ev=>{peekBtn=ctlUnderPeek(ev);
   if(picks){picks=null;render()}
   // The strip above a stacked front tile is part of that tile.
   const pk=ev.target.closest(".peek"),e=pk?els.get(+pk.dataset.id):ev.target.closest(".tile");
-  // Zone drawing: from an empty cell, or with Shift from anywhere on a grid.
+  // Zone drawing: from an empty cell, with Shift from anywhere on a grid, or from anywhere while Draw Zone is armed.
   const fm=LIVE?freeMonAt(ev.clientX,ev.clientY):null;
   if(fm&&!e){ev.preventDefault();freePick(ev.clientX,ev.clientY,fm);return}
-  if(LIVE&&!fm&&(!e||ev.shiftKey)){const c=cellAt(ev.clientX,ev.clientY);if(!c)return;ev.preventDefault();
+  if(LIVE&&!fm&&(!e||ev.shiftKey||zarmed)){const c=cellAt(ev.clientX,ev.clientY);if(!c)return;ev.preventDefault();
     try{stage.setPointerCapture(ev.pointerId)}catch(_){}
     zdraw={m:c.m,g:c.g,c0:c.c,r0:c.r,c1:c.c,r1:c.r,pid:ev.pointerId,shift:ev.shiftKey,sx:ev.clientX,sy:ev.clientY,tile:e?+e.dataset.id:null};return}
   if(!e)return;
@@ -2946,11 +2966,14 @@ function endZone(ev){
   if(!z)return;
   if(ev.type!=="pointerup")return;
   const still=z.c0===z.c1&&z.r0===z.r1&&Math.abs(ev.clientX-z.sx)+Math.abs(ev.clientY-z.sy)<5;
-  if(!still){zanchor=null;newZone(z.m,z.g,z.c0,z.r0,z.c1,z.r1);return}
+  if(!still){zanchor=null;disarmZone();newZone(z.m,z.g,z.c0,z.r0,z.c1,z.r1);return}
   // A click: Shift+click sets one corner, then the other.
   // A still click on a free cell selects it (item 2); a press that is not on a free place only clears the zone selection.
-  if(!z.shift){zanchor=null;selZone=null;if(!pickCell(z.m,z.g,z.c0,z.r0))render();return}
-  if(zanchor&&zanchor.m===z.m){const a=zanchor;zanchor=null;newZone(z.m,z.g,a.c,a.r,z.c0,z.r0);return}
+  // A still click while Draw Zone is armed leaves it armed: on a window it selects the window as a click does (endDrag), on an empty cell it picks nothing.
+  if(!z.shift){zanchor=null;selZone=null;
+    if(zarmed){if(z.tile!==null)selWin=z.tile;curMon=z.m;render()}
+    else if(!pickCell(z.m,z.g,z.c0,z.r0))render();return}
+  if(zanchor&&zanchor.m===z.m){const a=zanchor;zanchor=null;disarmZone();newZone(z.m,z.g,a.c,a.r,z.c0,z.r0);return}
   zanchor={m:z.m,c:z.c0,r:z.r0};status(`Zone corner at ${monName(z.m)} column ${z.c0+1}, row ${z.r0+1}. Shift+click the other corner.`)}
 function endDrag(ev){
   if(fdrag&&ev.pointerId===fdrag.pid)return freeEnd(ev);
@@ -3243,7 +3266,9 @@ document.addEventListener("click",async ev=>{
   else if(t.dataset.bo!==undefined){const pp=pinOf(selWin);if(pp)takeOut(pp.p.pin,+t.dataset.bo)}
   else if(t.id==="baymore"){bayAll=!bayAll;render()}
   else if(t.id==="tobay")unplace(selWin);
-  else if(t.id==="zadd")drawZoneDialog();
+  else if(t.id==="zadd")toggleZone();
+  // The menu button hides when Draw Zone turns off, so focus goes to Draw Zone once the dialog closes.
+  else if(t.id==="zmenu"){disarmZone();await drawZoneDialog();$("zadd").focus()}
   else if(t.id==="fillon")edit(x=>{delete x.fill.off;delete x.fill.held},"Fill Empty Cells is on. Windows that are not pinned fill the free cells.");
   else if(t.id==="closegap")closeGap();
   else if(t.id==="backgo"){const r=document.querySelector("#backpop input[name=backmode]:checked"),m=backM;if(m)backToGrid(m,r?r.value:"snap")}
@@ -3328,7 +3353,8 @@ addEventListener("keydown",ev=>{if(ev.key==="Escape"&&menuId){closeMenu(true);re
   if(ev.key==="Escape"&&picks&&!rz&&!zdraw&&!drag){picks=null;render();status("Pick cleared.");return}
   if(ev.key==="Escape"&&fdrag){const f=fdrag;fdrag=null;flUIHide();flLive=null;try{f.el.releasePointerCapture(f.pid)}catch(_){}render();status("Line move canceled. Nothing changed.");return}
   if(ev.key==="Escape"&&rz){const r=rz;endResize({type:"cancel"});try{r.grip.releasePointerCapture(r.pid)}catch(_){}status("Resize canceled. Nothing changed.");return}
-  if(ev.key==="Escape"&&(zdraw||zanchor)){zanchor=null;const z=zdraw;if(z){endZone({type:"cancel"});try{stage.releasePointerCapture(z.pid)}catch(_){}}status("Zone drawing canceled. Nothing changed.");return}if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
+  if(ev.key==="Escape"&&(zdraw||zanchor)){zanchor=null;const z=zdraw;if(z){endZone({type:"cancel"});try{stage.releasePointerCapture(z.pid)}catch(_){}}disarmZone();status("Zone drawing canceled. Nothing changed.");return}
+  if(ev.key==="Escape"&&zarmed){disarmZone();status("Draw Zone is off.");return}if(ev.key==="Escape"){if(drag){try{drag.el.releasePointerCapture(drag.pid)}catch(_){}}else $("toast").hidden=true}});
 // The board's size depends on the text and list below it, so lay out again when they change height.
 addEventListener("scroll",()=>{if(menuId)closeMenu()},true);addEventListener("resize",()=>{if(menuId)closeMenu()});
 let rlay=0;const relay=()=>{if(snap&&!rlay)rlay=requestAnimationFrame(()=>{rlay=0;layout();render()})};addEventListener("resize",relay);
