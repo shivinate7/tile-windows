@@ -86,6 +86,10 @@
 #     A zone on a monitor that is not the fill monitor names no half Zone fills last (tile.ps1 gives that monitor no unit, so it fills the
 #     cell first); the same zone on U1 still does. A zone half offers Keep This Half Empty and no Join Halves, and its Keep line reads
 #     No window goes here. A zone half on a [1,2] unit is named as the engine fills it.
+#   Kept half wait reason (debt kept-half-wait-reason, decision fill-controls): a window the fill leaves in Windows That Stay Put only because
+#     a half is kept empty reads a reason that names the kept half (the words "keep" or "kept", and "half") and does not read No room, since no
+#     column is missing. Read from the chip's accessible name, the reason between the title and "Stays put". Controls: with no kept half the open half takes
+#     that window (so the kept half is the cause), and on a full board with no half the reason is still No room: add a column.
 #   Split Cell, selection and stacks: a selected empty cell is still the cell the user picked after Undo or a Columns change, or it is
 #     cleared. Join Halves on an empty half takes the front window of the other half, never a window stacked behind it. A split that doubles
 #     nothing is one page-only undo step: Undo sends no POST, names the split in the status, and keeps the saved pins.
@@ -136,7 +140,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 165
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 167
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -3957,6 +3961,60 @@ return true;
   $zoneVScene = ConvertTo-Json -Depth 12 -Compress -InputObject ([pscustomobject]@{ id = 'zonev'; name = 'Zone vertical'; grids = [pscustomobject]@{ U1 = [pscustomobject]@{ c = 5; r = 1; mult = @(1, 2) } }; pins = @($zoneVSeed); zones = @($zoneV); fill = [pscustomobject]@{ mon = 'U1'; apps = @('*'); skip = @(); sort = 'app'; unit = @(1, 2) } })
   # F4: the small line under the Keep This Half Empty switch in the Window section, read from the page (null when not drawn).
   $keepLineJs = 'const w = document.getElementById("win"); if (!w) return null; const l = [...w.querySelectorAll("label.switch")].find(x => x.textContent.includes("Keep This Half Empty")); const s = l ? l.querySelector("small") : null; return s ? s.textContent.trim() : null;'
+
+  # ---- Kept half: why a window waits (debt kept-half-wait-reason; decision fill-controls) ------------------------------------------------
+  # The halfSeed board plus window 1016, which no pin holds, with Keep This Half Empty on the open half (slot 1, 1-based slot 2): the fill
+  # never uses the half, so 1016 waits in Windows That Stay Put. The engine hands back why 'no free cell' for it and BAYWHY words that
+  # "No room: add a column", though no column is missing. The reason is read from the chip's accessible name: the text between the window's
+  # title and ". Stays put.". Builder interface: a kept-half reason that holds the words "keep" or "kept", and "half" (the mockup's fill-keep
+  # state, split-cell.html, draws the waiting chip with the engine's "No free cell" and names no kept-half reason, so the debt's own words rule).
+  $keptWhyJs = 'const e = document.querySelector("[data-bay=\"1016\"]"); if (!e) return null; const l = e.getAttribute("aria-label") || ""; const t = (snap.windows.find(w => w.id === 1016) || {}).title || ""; const i = l.indexOf(t + ". "), j = l.indexOf(". Stays put."); return i >= 0 && j > i ? l.slice(i + t.length + 2, j) : l;'
+  $keptChipCond = '!!document.querySelector("[data-bay=\"1016\"]")'
+  $keptChipJs = 'return ' + $keptChipCond + ';'
+  $keptPlacedJs = 'const p = ((prevs[selId] || {}).placed || []).find(x => x.id === 1016); return p ? (p.slots || []) : null;'
+  $keptOnHalfJs = 'return ((prevs[selId] || {}).placed || []).filter(x => (x.slots || []).includes(2)).map(x => x.id);'
+  $keptSceneJs = 'const k = ((scene() || {}).fill || {}).keepEmpty || []; return k.map(x => x.mon + ":" + (x.slots || []).join(",")).join(";");'
+  $fullSeed = @(Split-Pin 0 @(0, 1)) + @(1..9 | % { Split-Pin $_ @((2 * $_), (2 * $_ + 1)) })
+
+  Case 'kept half wait reason: a window the fill leaves waiting only because a half is kept empty reads a reason that names the kept half, not No room' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ apps = @('*'); keepEmpty = @([pscustomobject]@{ mon = 'U1'; slots = @(1) }) })
+    $opened = Open-Page $ws $url 'focus' $zoneEngSnap
+    Check 'kept half wait reason: the page opens on Focus with one kept half and fill on (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $waits = WaitFor $ws $keptChipCond 10
+    Check 'kept half wait reason: window 1016 waits in Windows That Stay Put (scope)' $waits 'no entry for window 1016 in Windows That Stay Put'
+    if (-not $waits) { return }
+    $keptScene = [string](Js $ws $keptSceneJs)
+    Check 'kept half wait reason: the scene keeps slot 1 of U1 empty (scope)' ($keptScene -ceq 'U1:1') "fill.keepEmpty: '$keptScene'"
+    $onHalf = @(Split-Ints (Js $ws $keptOnHalfJs))
+    Check 'kept half wait reason: no window is placed on the kept half, slot 2 (scope)' ($onHalf.Count -eq 0) "windows on slot 2: $($onHalf -join ', ')"
+    if ($keptScene -cne 'U1:1' -or $onHalf.Count -ne 0) { return }
+    $why = [string](Js $ws $keptWhyJs)
+    Check 'kept half wait reason: the reason does not read No room, since no column is missing' ($why -notlike '*No room*') "reason read: '$why'"
+    Check 'kept half wait reason: the reason names the kept half (the words keep or kept, and half)' (($why -match '(?i)\b(keep|kept)\b') -and ($why -match '(?i)\bhalf\b')) "reason read: '$why'"
+  }
+
+  Case 'kept half wait reason: control: with no kept half the open half takes window 1016, and on a full board its reason is still No room: add a column' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ apps = @('*') })
+    $opened = Open-Page $ws $url 'focus' $zoneEngSnap
+    Check 'kept half wait reason: the page opens on Focus with the open half not kept (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $took = WaitFor $ws '((prevs[selId] || {}).placed || []).some(x => x.id === 1016)' 10
+    Check 'kept half wait reason: with no kept half the fill places window 1016 (scope)' $took 'window 1016 is not placed: the board has no cell for it'
+    if (-not $took) { return }
+    $slots = (Split-Ints (Js $ws $keptPlacedJs)) -join ','
+    Check 'kept half wait reason: with no kept half window 1016 takes the open half, slot 2 (control)' ($slots -eq '2') "window 1016 slots: '$slots'"
+    Check 'kept half wait reason: with no kept half window 1016 is not in Windows That Stay Put (control)' ((Js $ws $keptChipJs) -eq $false) 'window 1016 has an entry in Windows That Stay Put'
+    Put-Split (Split-Json 5 2 $fullSeed '2,1' '2,1' @() @{ apps = @('*') })
+    $opened = Open-Page $ws $url 'focus' $zoneEngSnap
+    Check 'kept half wait reason: the page opens on Focus with a full board (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $waits = WaitFor $ws $keptChipCond 10
+    Check 'kept half wait reason: on a full board window 1016 waits in Windows That Stay Put (scope)' $waits 'no entry for window 1016 in Windows That Stay Put'
+    if (-not $waits) { return }
+    $why = [string](Js $ws $keptWhyJs)
+    Check 'kept half wait reason: on a full board the reason still reads No room: add a column (control)' ($why -like '*No room*') "reason read: '$why'"
+  }
 
   Case 'split open: a free half inside a zone is named Open half and Zone fills last, with fill on' {
     Put-Split $zoneHalfLayout
