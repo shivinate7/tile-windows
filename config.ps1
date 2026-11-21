@@ -113,7 +113,9 @@ function Get-TileConfigText {
       if ($ok) { return $ok }
     }
   }
-  $t = [IO.File]::ReadAllText($TileStarters, $TileUtf8); Save-TileConfigText $t; $t
+  # appNames stays in scenes.json: Get-TileAppNames reads it from there only, so a copy in config.json would be one an edit never reaches.
+  $c = ConvertFrom-Json ([IO.File]::ReadAllText($TileStarters, $TileUtf8)); $c.PSObject.Properties.Remove('appNames')
+  $t = ConvertTo-Json -Depth 10 $c; Save-TileConfigText $t; $t
 }
 # Validates, then writes the text as given: a round trip through objects would cut nesting (ConvertTo-Json depth).
 function Save-TileConfigText([string]$text) { Test-TileConfig $text; Use-TileLock { Write-TileFile $TileConfig $text } }
