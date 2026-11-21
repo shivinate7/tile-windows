@@ -145,7 +145,7 @@ $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 178
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 184
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -4730,6 +4730,11 @@ return { shown: !!z && !z.hidden && z.getClientRects().length > 0, disabled: !!z
   }
   # Whether a read shows the button pressed.
   function Dz-On($r) { [bool]($r -and $r.pressed -ceq 'true') }
+  # Forced colors on or off, as the OS sets them, through DevTools media emulation. Off sends an empty feature list, which clears it.
+  function Set-Forced($sock, [bool]$on) {
+    $features = @(); if ($on) { $features = @(@{ name = 'forced-colors'; value = 'active' }) }
+    [void](Cdp $sock 'Emulation.setEmulatedMedia' @{ features = $features })
+  }
   # Closes the open dialog with its Cancel button. Answers whether it is closed.
   function Dz-CloseDialog($sock) {
     [void](Js $sock 'const d = document.getElementById("dlg"), b = document.getElementById("dlgCancel"); if (d && d.open && b) b.click(); return true')
@@ -5071,6 +5076,139 @@ const q = getComputedStyle(p), c = getComputedStyle(z), out = { ink: q.backgroun
     Check 'draw zone, menu: after the dialog closes, focus is on the Draw Zone button' $focused "focus is on: $(Js $ws 'return document.activeElement ? (document.activeElement.id || document.activeElement.tagName) : null')"
     $after = Dz-Read $ws
     Check 'draw zone, menu: after the dialog closes Draw Zone still reads not pressed, with the idle hint' ($after.pressed -ceq 'false' -and ([string]$after.hint).StartsWith($dzIdleHint)) "aria-pressed reads: '$($after.pressed)', hint reads: '$($after.hint)'"
+  }
+
+  # Status line, a canceled New Zone dialog. The turn-off is checked first (scope), so a failure on the status line is not a failure to turn off.
+  Case 'draw zone, status: after a canceled New Zone dialog turns it off, the status line no longer says Draw Zone is on' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone, status: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone, status: a press arms it before the zone is drawn (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    Check 'draw zone, status: while it is on the status line reads the armed status (scope)' ($on.msg -ceq $dzArmedStatus) "status reads: '$($on.msg)'"
+    $a = Cell-Point $ws 2; $b = Cell-Point $ws 4
+    Check 'draw zone, status: cells 2 and 4 are drawn (scope)' ($null -ne $a -and $null -ne $b) 'a cell is not drawn on the ultrawide'
+    if ($null -eq $a -or $null -eq $b) { return }
+    Drag-At $ws $a.x $a.y $b.x $b.y
+    $dlg = WaitFor $ws $dzNewZoneCond 10
+    Check 'draw zone, status: a drag across cells 2 to 4 while it is on opens the New Zone dialog (scope)' $dlg 'no New Zone dialog after the drag'
+    if (-not $dlg) { return }
+    [void](Dz-CloseDialog $ws)
+    $r = Dz-Read $ws
+    Check 'draw zone, status: after the zone dialog is canceled Draw Zone reads not pressed (scope)' ($r.pressed -ceq 'false') "aria-pressed reads: '$($r.pressed)'"
+    if ($r.pressed -cne 'false') { return }
+    Check 'draw zone, status: after the zone dialog is canceled the status line does not say Draw Zone is on' (-not ([string]$r.msg).Contains('Draw Zone is on')) "status reads: '$($r.msg)'"
+  }
+
+  # Status line, Pick Cells by Menu. Its dialog is closed with Cancel, and then the status line is read.
+  Case 'draw zone, status: after Pick Cells by Menu turns it off and its dialog closes, the status line no longer says Draw Zone is on' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone, status, menu: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone, status, menu: a press arms it before the menu is used (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    Check 'draw zone, status, menu: while it is on, Pick Cells by Menu is shown on the board bar (scope)' ([bool]$on.menuShown) 'no Pick Cells by Menu button on the board bar'
+    if (-not $on.menuShown) { return }
+    $at = Js $ws $dzMenuJs
+    Click-At $ws $at.x $at.y
+    $opens = WaitFor $ws 'document.getElementById("dlg").open && /Draw a Zone on/.test((document.getElementById("dlgform") || {}).textContent || "")' 10
+    Check 'draw zone, status, menu: Pick Cells by Menu opens the Draw a Zone dialog (scope)' $opens 'no Draw a Zone dialog after the press'
+    if (-not $opens) { return }
+    [void](Dz-CloseDialog $ws)
+    $after = Dz-Read $ws
+    Check 'draw zone, status, menu: after the dialog closes Draw Zone reads not pressed (scope)' ($after.pressed -ceq 'false') "aria-pressed reads: '$($after.pressed)'"
+    if ($after.pressed -cne 'false') { return }
+    Check 'draw zone, status, menu: after the dialog closes the status line does not say Draw Zone is on' (-not ([string]$after.msg).Contains('Draw Zone is on')) "status reads: '$($after.msg)'"
+  }
+
+  # Bar height, 1024 and 1440. The bar keeps its idle height while Draw Zone is on, so the board does not rescale.
+  Case 'draw zone, bar height: while it is on, the board bar is as tall as it is idle, at 1024 and at 1440' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone, bar height: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    try {
+      foreach ($w in 1024, 1440) {
+        Set-View $ws $w 900
+        [void](Js $ws 'await window.__h.settle(); return true')
+        $idle = Dz-Read $ws
+        $idleH = Js $ws 'return document.getElementById("bbar").offsetHeight'
+        Check "draw zone, bar height: at $w the Draw Zone button is shown and not pressed before a press (scope)" ($idle -and $idle.shown -and $idle.pressed -ceq 'false') "shown $($idle.shown), aria-pressed $($idle.pressed)"
+        $on = Dz-Press $ws 'on'
+        Check "draw zone, bar height: at $w a press arms it (scope)" (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+        if (Dz-On $on) {
+          $armedH = Js $ws 'return document.getElementById("bbar").offsetHeight'
+          Check "draw zone, bar height: at $w the armed board bar is as tall as the idle one" ($armedH -eq $idleH) "idle $idleH px, armed $armedH px"
+          [void](Dz-Press $ws 'off')
+        }
+      }
+    } finally { Fix-View $ws }
+  }
+
+  # Window click while armed. A still click on a window selects that window, and Draw Zone stays on: the click is a window's, not a cell's.
+  Case 'draw zone, window click: while it is on, a still click on a window selects it and leaves Draw Zone on' {
+    Put-Split (Split-Json 5 2 $dzPins)
+    $opened = Dz-Open $ws $tenWinSnap
+    Check 'draw zone, window click: the page opens on Focus with ten windows on ten cells (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone, window click: a press arms it before the click (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    $t = Tile-Centre $ws 1001
+    $reach = [bool]($t -and $t.hit)
+    Check 'draw zone, window click: window 1001 is drawn, and a press lands on its tile (scope)' $reach 'a tile is not drawn, or the press hits a button in it'
+    if (-not $reach) { return }
+    Click-At $ws $t.x $t.y
+    $selected = WaitFor $ws 'selWin === 1001' 10
+    Check 'draw zone, window click: a still click on window 1001 while it is on selects window 1001' $selected "selected window: $(Js $ws 'return typeof selWin === "undefined" ? null : selWin')"
+    $r = Dz-Read $ws
+    Check 'draw zone, window click: after the click Draw Zone still reads pressed (aria-pressed true)' (Dz-On $r) "aria-pressed reads: '$($r.pressed)'"
+  }
+
+  # Forced colors. The pressed button's label must differ from its fill, or the label does not show. The page is read with forced colors on.
+  Case 'draw zone, forced colors: while it is on, the pressed button label is not the same colour as its fill' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone, forced colors: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $on = Dz-Press $ws 'on'
+    Check 'draw zone, forced colors: a press arms it before forced colors are on (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+    if (-not (Dz-On $on)) { return }
+    $lookJs = 'const z = document.getElementById("zadd"); if (!z) return null; const c = getComputedStyle(z); return { forced: matchMedia("(forced-colors: active)").matches, pressed: z.getAttribute("aria-pressed"), label: c.color, fill: c.backgroundColor };'
+    try {
+      Set-Forced $ws $true
+      $look = Js $ws $lookJs
+      Check 'draw zone, forced colors: the page reads forced colors as active (scope)' ($look -and $look.forced -eq $true) "forced-colors active: $($look.forced)"
+      if (-not ($look -and $look.forced -eq $true)) { return }
+      Check 'draw zone, forced colors: the pressed Draw Zone button still reads pressed (scope)' ($look.pressed -ceq 'true') "aria-pressed reads: '$($look.pressed)'"
+      Check 'draw zone, forced colors: the pressed Draw Zone label is not the same colour as its fill' ($look.label -cne $look.fill) "label $($look.label), fill $($look.fill)"
+    } finally { Set-Forced $ws $false }
+  }
+
+  # Phone width, 390 (the phone layout is 760 px and under). The bar is no taller while Draw Zone is on, so the board does not rescale.
+  Case 'draw zone, phone: at 390 wide the board bar is no taller while it is on than it is idle' {
+    Put-Split (Split-Json 5 2 @(Split-Pin 0 @(0)))
+    $opened = Dz-Open $ws $oneWinSnap
+    Check 'draw zone, phone: the page opens on Focus with one window pinned (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    try {
+      Set-View $ws 390 844
+      [void](Js $ws 'await window.__h.settle(); return true')
+      $idle = Dz-Read $ws
+      $ready = [bool]($idle -and $idle.shown -and -not $idle.disabled)
+      Check 'draw zone, phone: at 390 Draw Zone is shown and enabled before a press (scope)' $ready "shown $($idle.shown), disabled $($idle.disabled)"
+      if (-not $ready) { return }
+      $idleH = Js $ws 'return document.getElementById("bbar").offsetHeight'
+      $on = Dz-Press $ws 'on'
+      Check 'draw zone, phone: at 390 a press arms it (scope)' (Dz-On $on) "aria-pressed reads: '$($on.pressed)'"
+      if (-not (Dz-On $on)) { return }
+      $armedH = Js $ws 'return document.getElementById("bbar").offsetHeight'
+      Check 'draw zone, phone: at 390 the armed board bar is no taller than the idle one' ($armedH -le $idleH) "idle $idleH px, armed $armedH px"
+    } finally { Fix-View $ws }
   }
 
 } catch {
