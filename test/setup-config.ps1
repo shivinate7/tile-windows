@@ -14,6 +14,8 @@
 #   A lone plugged screen holds laptop and wide, and tall when it is portrait, as on main (coordinator ruling 2026-11-17 17:42 CST).
 #   With two or more screens the rule above stands: a built-in never takes wide.
 # A key is the sorted monitor ids joined. Its separator is not pinned: every key here comes from the product.
+# First run (debt first-run-appnames-copy-unread): the appNames map is read from scenes.json only, so a first run's config.json must not carry a copy of it
+#   that nothing reads. The cases at the end of the file run a first read in a new powershell with an empty TILE_HOME.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
 $utf8 = New-Object Text.UTF8Encoding $false
@@ -778,6 +780,81 @@ Use-TileLock { [void]$ready.Set(); [void]$release.WaitOne(120000) }
     } finally {
       Remove-Item -LiteralPath $ownRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
+  }
+
+  # ---- First run: the appNames map (debt first-run-appnames-copy-unread) ----
+  # The first read of an empty home writes config.json from scenes.json (config.ps1 Get-TileConfigText), and scenes.json holds an appNames map. Get-TileAppNames
+  # reads that map from scenes.json only, so the copy in config.json is one nothing reads: an edit to it shows nowhere. Two red cases say so. The first pins the
+  # fix the debt names (a first run writes no appNames). The second pins the outcome whichever way it is fixed (an appNames in config.json is read, or is absent).
+  # The two controls stay green on both: the rest of the starters still reach config.json, and the display name still comes from the starters.
+  # A first run needs a home with no config.json, and $TileConfig is fixed when config.ps1 is read, so each case runs its reads in its own powershell, with
+  # its own empty home under the run folder. The child inherits this run's USERPROFILE and APPDATA.
+  $startersCfg = ConvertFrom-Json ([IO.File]::ReadAllText((Join-Path $root 'scenes.json'), $utf8))
+  $editedName = 'Edited In Config'
+  # Runs $command in a new powershell that has read config.ps1 with TILE_HOME at $tileHome. Returns its output lines. TILE_HOME is put back after.
+  function Invoke-InHome([string]$tileHome, [string]$command) {
+    $real = $env:TILE_HOME; $env:TILE_HOME = $tileHome
+    try { @(& powershell -NoProfile -ExecutionPolicy Bypass -Command (". '$((Join-Path $root 'config.ps1').Replace("'", "''"))'; $command") 2>&1 | ForEach-Object { "$_" }) }
+    finally { if ($null -eq $real) { Remove-Item env:TILE_HOME -ErrorAction SilentlyContinue } else { $env:TILE_HOME = $real } }
+  }
+  # A first run: a new home with no config.json, then one read of the config. Returns the home, whether it was empty, the config.json text (or ''), and the output.
+  function New-FirstRun {
+    $h = Join-Path $runDir ('first-run-' + [guid]::NewGuid().ToString('n').Substring(0, 8)); $p = Join-Path $h 'config.json'
+    $empty = -not (Test-Path -LiteralPath $p)
+    $out = Invoke-InHome $h '[void](Get-TileConfigText)'
+    [pscustomobject]@{ home = $h; path = $p; empty = $empty; out = ($out -join ' '); text = $(if (Test-Path -LiteralPath $p) { [IO.File]::ReadAllText($p, $utf8) } else { '' }) }
+  }
+  # The scope of a first run, before any check on what it wrote: the home was empty, and config.json is the starters' copy (the scenes it holds are the starters' scenes).
+  # Returns why it is not, or $null.
+  function Get-FirstRunScopeFault($fr) {
+    if (-not $fr.empty) { return 'the new home already held a config.json before the first read' }
+    if (-not $fr.text) { return "the first read wrote no config.json: $($fr.out)" }
+    try { $ids = @((ConvertFrom-Json $fr.text).scenes.id) -join ',' } catch { return "the first read wrote a config.json that does not parse: $($_.Exception.Message)" }
+    $want = @($startersCfg.scenes.id) -join ','
+    if ($ids -cne $want) { return "the scenes in config.json ($ids) are not the starters' scenes ($want)" }
+    $null
+  }
+
+  Case 'first run: config.json holds no appNames copy' {
+    $fr = New-FirstRun
+    $why = Get-FirstRunScopeFault $fr
+    Check 'first run, scope: a first read of an empty home writes config.json from the starters' ($null -eq $why) $why
+    if ($why) { return }
+    $n = $(try { Count-Props (ConvertFrom-Json $fr.text).appNames } catch { -1 })
+    Check 'first run: config.json holds no appNames (Get-TileAppNames reads scenes.json only, so a copy there is never read)' (-not (ConvertFrom-Json $fr.text).PSObject.Properties['appNames']) "config.json carries an appNames map of $n entries that nothing reads"
+  }
+  Case 'first run: an appNames entry edited in config.json shows, or config.json has none' {
+    $fr = New-FirstRun
+    $why = Get-FirstRunScopeFault $fr
+    Check 'first run, scope: a first read of an empty home writes config.json from the starters' ($null -eq $why) $why
+    if ($why) { return }
+    $has = [bool](ConvertFrom-Json $fr.text).PSObject.Properties['appNames']
+    if ($has) {
+      # Edit the claude entry in place in the text, so nothing else in the file changes.
+      $edit = ([regex]'("appNames"\s*:\s*\{[^}]*?"claude"\s*:\s*)"[^"]*"').Replace($fr.text, ('${1}"' + $editedName + '"'), 1)
+      Check 'first run, scope: the claude entry of the appNames map in config.json was edited' ($edit -cne $fr.text) 'the edit found no claude entry to change'
+      if ($edit -ceq $fr.text) { return }
+      [IO.File]::WriteAllText($fr.path, $edit, $utf8)
+    }
+    $name = @(Invoke-InHome $fr.home "Get-TileAppName 'claude'")[-1]
+    $known = @([string]$startersCfg.appNames.claude, $editedName)
+    Check 'first run, scope: the display-name read answers a name' ($known -ccontains $name) "answered '$name'"
+    if ($known -cnotcontains $name) { return }
+    Check "first run: claude's name edited in config.json shows as '$editedName', or config.json has no appNames" ((-not $has) -or $name -ceq $editedName) "config.json's appNames.claude was edited to '$editedName' and Get-TileAppName answers '$name': the copy is never read"
+  }
+  Case 'first run, control: config.json keeps every starters key but appNames, with the starters values' {
+    $fr = New-FirstRun
+    $why = Get-FirstRunScopeFault $fr
+    Check 'first run, scope: a first read of an empty home writes config.json from the starters' ($null -eq $why) $why
+    if ($why) { return }
+    $lost = Find-Lost $startersCfg (ConvertFrom-Json $fr.text) '$' @('$.appNames')
+    Check 'first run, control: every starters value but appNames is in config.json as it is in scenes.json' ($null -eq $lost) "first changed: $lost"
+  }
+  Case 'first run, control: the display name comes from the starters map, an unlisted app shows capitalized' {
+    $home2 = Join-Path $runDir ('names-' + [guid]::NewGuid().ToString('n').Substring(0, 8))
+    $got = @(Invoke-InHome $home2 "Get-TileAppName 'msedge'; Get-TileAppName 'zzunlisted'")
+    $want = @([string]$startersCfg.appNames.msedge, 'Zzunlisted')
+    Check 'first run, control: msedge shows as the starters name, zzunlisted as Zzunlisted' (($got -join '|') -ceq ($want -join '|')) "answered '$($got -join '|')', wanted '$($want -join '|')'"
   }
 } finally {
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }

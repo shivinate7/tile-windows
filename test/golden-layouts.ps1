@@ -15,6 +15,9 @@
 # Run alone: powershell -NoProfile -ExecutionPolicy Bypass -File test\golden-layouts.ps1
 # test\run.ps1 runs this file in a child powershell and counts its FAIL lines.
 $ErrorActionPreference = 'Stop'
+# A direct run gets a job of its own, so a hard kill of the file also ends its Edge and server (test\direct-run-job.ps1).
+. (Join-Path $PSScriptRoot 'direct-run-job.ps1')
+Enter-DirectRunJob
 $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $goldenDir = Join-Path $PSScriptRoot 'golden'

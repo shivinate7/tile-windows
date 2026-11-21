@@ -37,6 +37,9 @@
 # removes sibling run folders older than a day and keeps newer ones. The sweep and its delete are run-folders.ps1's; this file keeps
 # its own copy of the headless-Edge helpers that stack-lock.ps1 has, because the fill-keep branch edits stack-lock.ps1 (see the commit message).
 $ErrorActionPreference = 'Stop'
+# A direct run gets a job of its own, so a hard kill of the file also ends its Edge and server (test\direct-run-job.ps1).
+. (Join-Path $PSScriptRoot 'direct-run-job.ps1')
+Enter-DirectRunJob
 $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false

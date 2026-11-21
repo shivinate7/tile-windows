@@ -1412,7 +1412,11 @@ function cellWords(p){const g=LIVE&&scene().grids[p.mon],n=`cell${p.slots.length
   const v=p.slots[0]-1,col=v%GC(g),row=Math.floor(v/GC(g)),cell=Math.floor(row/my)*g.c+Math.floor(col/mx)+1;
   const part=mx===2&&my===1?(col%2?"the right half":"the left half"):mx===1&&my===2?(row%2?"the bottom half":"the top half"):"a part";
   return `${n}, ${part} of cell ${cell}`}
-function overText(V){const P=prev(),o=$("over");if(!LIVE||!P){o.textContent="";o.classList.remove("warn");return}
+function overText(V){const P=prev(),o=$("over");
+  // A failed preview of the selected scene keeps no preview (previewRun drops it), so the board shows the windows where they are now: say so here (mockup selected-fail-status-only). The status line still announces the failure, so this line is no live region.
+  if(LIVE&&!P&&pfail[selId]){const sc=cfg.scenes.find(x=>x.id===selId)||work[selId]||{};
+    o.classList.add("warn");o.innerHTML=`<b>Preview failed:</b> ${esc(pfail[selId])}. The board shows the windows where they are now, not where ${esc(sc.name||selId)} would put them. Pick the scene again to try once more.`;return}
+  if(!LIVE||!P){o.textContent="";o.classList.remove("warn");return}
   const parts=[];
   if(P.missing.length)parts.push(`<b>Not open:</b> ${esc([...new Set(P.missing.map(m=>appName(m.app)+(m.why!=="no open window"?` (${m.why})`:"")))].join(", "))}.`);
   o.classList.toggle("warn",parts.length>0);o.innerHTML=parts.join(" ")}
