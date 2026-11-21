@@ -1755,8 +1755,8 @@ function unplace(id,force=false){const w=winById(id);if(selWin===id)optim=null;
 const winSpec=w=>({app:w.app,match:w.min?w.title:matchFor(w)});
 // Whether the stack entry b (an app and a title match) names window w, as the engine matches it.
 const hitsWin=(b,w)=>w.app===b.app&&(!b.match||w.title.toLowerCase().includes(String(b.match).toLowerCase()));
-// Whether saved pin q is the same pin as the one made for window w with match m: it stores that match, or it names w by a title the window contains (a full-title pin and a lead-words pin of one window are the same pin). The saved pin is not changed.
-const samePin=(q,w,m)=>q.app===w.app&&((q.match||"")===m||(!!q.match&&hitsWin(q,w)));
+// Whether saved pin q is the same pin as the one made for window w with match m: it stores that match, or it names w by a title w contains and names no other open window of the app (w's full-title pin, or a lead-words pin only w carries). A pin a sibling window also matches stays: the engine lets both coexist. The saved pin is not changed.
+const samePin=(q,w,m)=>q.app===w.app&&((q.match||"")===m||(!!q.match&&hitsWin(q,w)&&!snap.windows.some(o=>o.app===w.app&&!sameWin(o,w)&&hitsWin(q,o))));
 // Whether pin pi's own front window is not open: the engine reports it missing.
 const frontShut=(P,pi,pin)=>P.missing.some(m=>m.pin===pi&&m.app===pin.app&&(m.match||"")===(pin.match||""));
 // The windows stacked behind pin pi, each with the open window it resolves to (null when it is not open).
