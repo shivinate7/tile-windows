@@ -3189,8 +3189,8 @@ try {
   }
 
   # ---------- Drag pin: a pin made by a drag matches the app and the stable part of the title ----------
-  # app.html matchFor gives a pin made by a drag the window's whole title when its app has more than one open window, so a browser tab
-  # whose title changes stops matching and the pin stops placing it (debts/drag-pin-matches-full-title.md). Each drag is of a window
+  # app.html matchFor gives a pin made by a drag the title's lead, the text before ' - ', when its app has more than one open window and no
+  # other open window of that app has a title holding the lead. So a browser tab whose title changes after its lead still matches, and its pin still places it. Each drag is of a window
   # the fill placed, with no pin: a window a pin already holds keeps that pin's match (pinEdit's grab), and never meets matchFor.
   # The engine then runs on the page's own scene (as the 'send to bay' cases do), on the fixture and on a copy with two titles
   # changed. Each new title keeps the old title's lead words and no longer contains the old whole title, so a match of the whole
