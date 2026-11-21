@@ -1,0 +1,1 @@
+- relocation-after-typing: A monitor unplug, a DPI change or a window restoring its own bounds, within 10 s of input, still counts as a manual move (tray.ps1:245), because the idle test passes. Decision: live-move guard (`live-move-guard`). Found at f55111d. Seen: 2026-11-20 x1

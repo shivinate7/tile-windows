@@ -1,0 +1,1 @@
+- manual-move-stall-gap: A read 10 s or more after input skips the rect compare (tray.ps1:245), and the rects still update, so a manual move made in that gap is never counted. Decision: live-move guard (`live-move-guard`). Found at f55111d. Seen: 2026-11-20 x1

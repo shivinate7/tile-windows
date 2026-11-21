@@ -1,6 +1,6 @@
 # One name for Stay Put: design notes
 
-Mockup: `one-act-four-names.html`, beside this file. Debt `one-act-four-names` (design review bay round 3, row 2). Informed designer. Line numbers are app.html at ad8a0b8.
+Mockup: `one-act-four-names.html`, beside this file. Debt `one-act-four-names`, retired after its fix in PR 110 (design review bay round 3, row 2). Informed designer. Line numbers are app.html at ad8a0b8.
 
 Deep links: `#s=today|new|both`, `w=1440|1024`, `t=light|dark`, `drop=1` (a window dragged over the list), `hide=hint,drop,button,keys` (puts each named label back to today's words). Focus ids for the waiting page: `new-hint`, `new-dropslot`, `new-button`, `new-keys`, and `labels` (the table of every change). Sizes 1440 and 1024 (the repo has no device list); light and dark.
 

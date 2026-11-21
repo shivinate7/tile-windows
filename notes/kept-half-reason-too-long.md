@@ -1,0 +1,1 @@
+- kept-half-reason-too-long: The kept-half reason, "A half is kept empty: turn off Keep This Half Empty" (51 characters, app.html:1245), is cut in the bay headings. The reason is lowercased at app.html:1423 and app.html:1555, so the control name reads "keep this half empty". Decision: fill controls (`fill-controls`). Found at f55111d. Seen: 2026-11-20 x1

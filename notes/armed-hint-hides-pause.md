@@ -1,0 +1,1 @@
+- armed-hint-hides-pause: While Draw Zone is armed, its hint replaces the Free Layout sentence (ZARMED_HINT set at app.html:1345; the sentence is set at app.html:1339), so a monitor that is Free Layout and not the armed one gets no note that zones pause there. Decision: bay and group zones (`bay-and-group-zones`). Found at f55111d. Seen: 2026-11-20 x1

@@ -1,0 +1,1 @@
+- held-title-not-refreshed: On Save, an open held entry with no handle keeps its saved title (stripIds, app.html:3234). Decision: bay list (`bay-list`). Found at f55111d. Seen: 2026-11-20 x1
