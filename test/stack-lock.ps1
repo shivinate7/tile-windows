@@ -138,12 +138,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (286). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (291). Shard 1 runs
 # gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the explicit Save section and the stack
 # tweaks ruling section), shard 3 the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 286
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 291
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -262,7 +262,7 @@ $run = Join-Path $SlTempRoot ("$PID-" + [guid]::NewGuid().ToString()); New-Item 
 $savedEnv = @{ TILE_HOME = $env:TILE_HOME }
 $profile = Join-Path $run 'profile'; New-Item -ItemType Directory -Force (Join-Path $profile 'AppData\Roaming') | Out-Null
 $env:TILE_HOME = Join-Path $run 'home'
-$srv = $null; $srvDup = $null; $edgeProc = $null; $script:ws = $null; $script:cdpId = 0; $script:url = ''; $script:udd = Join-Path $run 'edge'
+$srv = $null; $srvDup = $null; $sbSrv = $null; $edgeProc = $null; $script:ws = $null; $script:cdpId = 0; $script:url = ''; $script:udd = Join-Path $run 'edge'
 
 function SlSend($method, $params) {
   $script:cdpId++; $id = $script:cdpId
@@ -3188,6 +3188,175 @@ try {
   Check 'closed front, swap, control: Draft release, the window dragged, is the front of cell 2 after the swap' (SlFrontOn 1003 '2') "placed: $(SlPlacedBrief)"
   }
 
+  # ---------- Drag pin: a pin made by a drag matches the app and the stable part of the title ----------
+  # app.html matchFor gives a pin made by a drag the window's whole title when its app has more than one open window, so a browser tab
+  # whose title changes stops matching and the pin stops placing it (debts/drag-pin-matches-full-title.md). Each drag is of a window
+  # the fill placed, with no pin: a window a pin already holds keeps that pin's match (pinEdit's grab), and never meets matchFor.
+  # The engine then runs on the page's own scene (as the 'send to bay' cases do), on the fixture and on a copy with two titles
+  # changed. Each new title keeps the old title's lead words and no longer contains the old whole title, so a match of the whole
+  # old title fails and a match on the lead holds. Chrome has three windows, so its pin needs a title match; Outlook has one.
+  # One gate: its drive and its Checks run in one shard.
+  if (Shard-Take) {
+  SlViewport 1440 900
+  SlCase (SlSceneJson '[]' '["chrome","outlook"]')
+  $dpFillPre = SlList "prevs[selId].placed.filter(p => p.id === 1006 || p.id === 1013).map(p => ({ id: p.id, pin: p.pin }))"
+  SlDrag (SlAt (SlBox 1006) 0.5 0.5) (SlSlotAt 9)
+  SlDrag (SlAt (SlBox 1013) 0.5 0.5) (SlSlotAt 8)
+  $dpScene = SlGet 'work[selId]'
+  $dpChIdx = -1; $dpOlIdx = -1; $dpPins = @($dpScene.pins)
+  for ($i = 0; $i -lt $dpPins.Count; $i++) {
+    if ($dpPins[$i].app -eq 'chrome' -and (SlCells $dpPins[$i]) -eq '9') { $dpChIdx = $i }
+    if ($dpPins[$i].app -eq 'outlook' -and (SlCells $dpPins[$i]) -eq '8') { $dpOlIdx = $i }
+  }
+  $dpCh = if ($dpChIdx -ge 0) { $dpPins[$dpChIdx] } else { $null }
+  # The new titles come from the fixture's own, so the scope check below reads the old title from the file, not from this case.
+  $dpFx = Join-Path $run 'fixture-drag-pin.json'
+  $dpDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+  $dpOldCh = ''; $dpOldOl = ''; $dpNewCh = 'Quarterly roadmap v2 - Example'; $dpNewOl = 'Inbox (3) - sample@example.com - Outlook'
+  foreach ($w in @($dpDoc.windows)) {
+    if ($w.id -eq 1006) { $dpOldCh = "$($w.title)"; $w.title = $dpNewCh }
+    if ($w.id -eq 1013) { $dpOldOl = "$($w.title)"; $w.title = $dpNewOl }
+  }
+  [IO.File]::WriteAllText($dpFx, (ConvertTo-Json -Depth 10 -Compress $dpDoc), $utf8)
+  $dpJson = if ($dpScene) { ConvertTo-Json -Depth 12 -Compress $dpScene } else { '' }
+  $dpErr = ''; $dpBefore = $null; $dpAfter = $null
+  try { if ($dpJson) { $dpBefore = SlDry $dpJson; $dpAfter = SlDry $dpJson $dpFx } } catch { $dpErr = "the engine failed: $($_.Exception.Message)" }
+  function DpOn($r, $id, $pinIdx, $slot) { $p = @($r.placed | ? { $_.id -eq $id })[0]; [bool]($p -and $pinIdx -ge 0 -and $p.pin -eq $pinIdx -and ($p.slots -join ',') -eq "$slot") }
+  function DpWhy($r, $id) { if (-not $r) { return "no engine answer. $dpErr" }; "placed: $(SlShort (@($r.placed | ? { $_.id -eq $id }))); missing: $(SlShort @($r.missing))" }
+  Check 'drag pin, scope: the fill placed Quarterly roadmap and Inbox before the drags, with no pin, so each drag makes its own pin' ([bool](@($dpFillPre).Count -eq 2 -and @($dpFillPre | ? { $_.pin -lt 0 }).Count -eq 2)) "placed before the drags: $(SlShort $dpFillPre)"
+  Check 'drag pin, scope: the drags made one chrome pin on cell 9 with a title match (chrome has three windows) and one outlook pin on cell 8' ([bool]($dpCh -and "$($dpCh.match)" -ne '' -and $dpOlIdx -ge 0 -and $dpPins.Count -eq 2)) "pins: $(SlShort $dpPins)"
+  Check 'drag pin, scope: each new title is not a title that contains the old whole title (the engine matches by contains, ignoring case)' ([bool]($dpOldCh -and $dpOldOl -and $dpNewCh.IndexOf($dpOldCh, [StringComparison]::OrdinalIgnoreCase) -lt 0 -and $dpNewOl.IndexOf($dpOldOl, [StringComparison]::OrdinalIgnoreCase) -lt 0)) "old: '$dpOldCh' and '$dpOldOl'; new: '$dpNewCh' and '$dpNewOl'"
+  Check 'drag pin, control: with its title as it was, each window is placed by the pin its drag made, on that pin''s cell' ([bool]((DpOn $dpBefore 1006 $dpChIdx 10) -and (DpOn $dpBefore 1013 $dpOlIdx 9))) "$(DpWhy $dpBefore 1006); $(DpWhy $dpBefore 1013)"
+  Check 'drag pin, red: after its title changes, Quarterly roadmap is still placed by the pin its drag made (the pin matches the app and the stable part of the title, not the whole title)' (DpOn $dpAfter 1006 $dpChIdx 10) "the pin's match: '$($dpCh.match)'; the window's title is now '$dpNewCh'; $(DpWhy $dpAfter 1006)"
+  Check 'drag pin, control: after the title change, no other chrome window is placed by that pin (the pin is not the whole app)' ([bool]($dpAfter -and $dpChIdx -ge 0 -and -not @($dpAfter.placed | ? { $_.pin -eq $dpChIdx -and $_.id -ne 1006 }).Count)) "placed by the chrome pin: $(SlShort @($dpAfter.placed | ? { $_.pin -eq $dpChIdx }))"
+  Check 'drag pin, control: Inbox, the only Outlook window, is still placed by its pin after its title changes' (DpOn $dpAfter 1013 $dpOlIdx 9) "the window's title is now '$dpNewOl'; $(DpWhy $dpAfter 1013)"
+  }
+
+  # ---------- Bay pin: a window dropped from Windows That Stay Put makes one pin, not a second beside a saved full-title pin ----------
+  # matchFor gives a pin made by a drop the lead words of the title, but a saved pin can hold the whole title. pinEdit removes a saved
+  # pin only when its app and match equal the new pin's, so the saved one stays beside the new one. The bay claims the window before any
+  # pin (tile.ps1), so no pin places it when it is dropped. The saved pin is on cell 2 and the drop goes to cell 9.
+  if (Shard-Take) {
+  SlViewport 1440 900
+  SlCase (SlSceneJson (SlPins '{"app":"chrome","match":"Quarterly roadmap - Example","mon":"wide","slots":[1]}') '[]' ',"bay":[{"app":"chrome","title":"Quarterly roadmap - Example"}]')
+  $bdPre = SlBayIds
+  $bdHeld = SlPlacedOf 1006
+  $bdSaved = SlList 'work[selId].pins'
+  $bdChip = SlGet "(() => { const e = [...document.querySelectorAll('#bgrps [data-bay]')].find(b => b.dataset.bay === '1006'); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  if ($bdChip) { SlDrag (SlAt $bdChip 0.5 0.5) (SlSlotAt 8) }
+  $bdScene = SlGet 'work[selId]'
+  $bdPins = @($bdScene.pins)
+  $bdNames = SlNamesCount $bdPins 'chrome' 'Quarterly roadmap - Example'
+  $bdS0 = @($bdSaved)[0]
+  Check 'bay pin, scope: before the drop, Windows That Stay Put lists Quarterly roadmap (1006) and no pin places it' ([bool](($bdPre -contains 1006) -and -not $bdHeld)) "bay ids: $($bdPre -join ','); placed: $(SlShort $bdHeld)"
+  Check 'bay pin, scope: the scene holds one saved pin, named with the whole title, on cell 2' ([bool](@($bdSaved).Count -eq 1 -and "$($bdS0.match)" -eq 'Quarterly roadmap - Example' -and (SlCells $bdS0) -eq '1')) "saved pins: $(SlShort $bdSaved)"
+  Check 'bay pin, control: the drop puts a chrome pin on cell 9' ([bool](@($bdPins | ? { $_.app -eq 'chrome' -and (SlCells $_) -eq '8' }).Count -eq 1)) "pins: $(SlShort $bdPins)"
+  Check 'bay pin, red: after the drop, one pin names Quarterly roadmap, not the saved full-title pin beside the new one' ([bool]($bdNames -eq 1)) "pins naming it: $bdNames; pins: $(SlShort $bdPins)"
+  }
+
+  # ---------- Bay pin, put behind: a window put behind a pin from Windows That Stay Put keeps one entry, not a second beside a saved full-title pin ----------
+  # Put Behind (putBehind) removes a saved pin only when its app and match equal the stack entry's, and that entry comes from matchFor. The
+  # front is Refactor on cell 1, the saved full-title pin is on cell 2 and holds nothing, and the drop is on the front's lower band.
+  if (Shard-Take) {
+  SlViewport 1440 900
+  SlCase (SlSceneJson (SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"chrome","match":"Quarterly roadmap - Example","mon":"wide","slots":[1]}') '[]' ',"bay":[{"app":"chrome","title":"Quarterly roadmap - Example"}]')
+  $bpPre = SlBayIds
+  $bpHeld = SlPlacedOf 1006
+  $bpSaved = SlList 'work[selId].pins'
+  $bpChip = SlGet "(() => { const e = [...document.querySelectorAll('#bgrps [data-bay]')].find(b => b.dataset.bay === '1006'); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  SlMarkEngine
+  if ($bpChip -and (SlBox 1001)) { SlDropNoSettle (SlAt $bpChip 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.85) }
+  $bpLanded = SlWaitBehind 1006
+  $bpScene = SlGet 'work[selId]'
+  $bpPins = @($bpScene.pins)
+  $bpNames = SlNamesCount $bpPins 'chrome' 'Quarterly roadmap - Example'
+  Check 'bay pin, put behind, scope: before the drop, Windows That Stay Put lists Quarterly roadmap (1006) and no pin places it' ([bool](($bpPre -contains 1006) -and -not $bpHeld)) "bay ids: $($bpPre -join ','); placed: $(SlShort $bpHeld)"
+  Check 'bay pin, put behind, scope: the scene holds two pins before the drop: Refactor on cell 1 (the front) and the saved full-title pin on cell 2' ([bool](@($bpSaved).Count -eq 2 -and (SlCells (SlPin $bpScene 'Refactor')) -eq '0')) "pins: $(SlShort $bpSaved)"
+  Check 'bay pin, put behind, control: the drop asks the engine for a new answer' ([bool]$bpLanded.fresh) "no new answer from the engine after the drop"
+  Check 'bay pin, put behind, control: the front Refactor lists a stack entry for Quarterly roadmap' ([bool](SlHasBehind (SlPin $bpScene 'Refactor') 'Quarterly')) "pins: $(SlShort $bpPins)"
+  Check 'bay pin, put behind, red: after the put behind, one pin or stack entry names Quarterly roadmap, not the saved full-title pin beside it' ([bool]($bpNames -eq 1)) "entries naming it: $bpNames; pins: $(SlShort $bpPins)"
+  }
+
+  # ---------- Bay pin, lead-words control: a saved pin with the lead words is the same pin, so the drop replaces it ----------
+  # The first bay gate's drop, with the saved pin's match as matchFor now gives it: the lead words. pinEdit removes it, so one pin
+  # names the window after the drop.
+  if (Shard-Take) {
+  SlViewport 1440 900
+  SlCase (SlSceneJson (SlPins '{"app":"chrome","match":"Quarterly roadmap","mon":"wide","slots":[1]}') '[]' ',"bay":[{"app":"chrome","title":"Quarterly roadmap - Example"}]')
+  $lcPre = SlBayIds
+  $lcHeld = SlPlacedOf 1006
+  $lcSaved = SlList 'work[selId].pins'
+  $lcChip = SlGet "(() => { const e = [...document.querySelectorAll('#bgrps [data-bay]')].find(b => b.dataset.bay === '1006'); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  if ($lcChip) { SlDrag (SlAt $lcChip 0.5 0.5) (SlSlotAt 8) }
+  $lcScene = SlGet 'work[selId]'
+  $lcPins = @($lcScene.pins)
+  $lcNames = SlNamesCount $lcPins 'chrome' 'Quarterly roadmap - Example'
+  $lcS0 = @($lcSaved)[0]
+  Check 'bay pin, lead control, scope: before the drop, Windows That Stay Put lists Quarterly roadmap (1006) and no pin places it' ([bool](($lcPre -contains 1006) -and -not $lcHeld)) "bay ids: $($lcPre -join ','); placed: $(SlShort $lcHeld)"
+  Check 'bay pin, lead control, scope: the scene holds one saved pin, named with the lead words, on cell 2' ([bool](@($lcSaved).Count -eq 1 -and "$($lcS0.match)" -eq 'Quarterly roadmap' -and (SlCells $lcS0) -eq '1')) "saved pins: $(SlShort $lcSaved)"
+  Check 'bay pin, lead control: the drop puts a chrome pin on cell 9' ([bool](@($lcPins | ? { $_.app -eq 'chrome' -and (SlCells $_) -eq '8' }).Count -eq 1)) "pins: $(SlShort $lcPins)"
+  Check 'bay pin, lead control: after the drop, one pin names Quarterly roadmap' ([bool]($lcNames -eq 1)) "pins naming it: $lcNames; pins: $(SlShort $lcPins)"
+  }
+
+  # ---------- Sibling pin: a saved pin whose title a sibling window contains is not that window's pin (matchFor, pinEdit, putBehind) ----------
+  # One app, three windows: "Projects" (1010), "Projects - archive" (1011) and "Other" (1030). matchFor gives "Projects - archive" its whole
+  # title, because the sibling "Projects" holds its lead word, so a drop makes a pin with that match. The saved pin "Projects" holds 1010 (the
+  # engine takes an exact title first). The new pin's match is not the saved one's, so both pins must survive. Two drives share one served copy
+  # of the fixture, whose explorer windows are these three: a drop on a free cell (pinEdit), then a Put Behind on Other's lower band (putBehind).
+  # Both drives are in this one gate, so the second server starts once and only in this shard.
+  if (Shard-Take) {
+  # The engine gives a pin the open window with the lowest X that holds its match (tile.ps1, pin matching), so the three windows sit at
+  # different X: "Projects" (1010) is the lowest, and holds the saved pin.
+  function SbWin($id, $title, $x, $y) { [pscustomobject]@{ id = $id; app = 'explorer'; title = $title; x = $x; y = $y; w = 1000; h = 700 } }
+  # The saved pins of app explorer whose match is exactly Projects.
+  function SbSaved($pins) { @(@($pins) | ? { "$($_.app)" -eq 'explorer' -and "$($_.match)" -eq 'Projects' }) }
+  $sbFx = Join-Path $run 'fixture-sibling.json'
+  $sbDoc = Get-Content -Raw -Encoding UTF8 -LiteralPath $fixture | ConvertFrom-Json
+  $sbDoc.windows = @(@($sbDoc.windows) | ? { $_.app -ne 'explorer' }) + @((SbWin 1010 'Projects' 2000 300), (SbWin 1011 'Projects - archive' 2200 500), (SbWin 1030 'Other' 2400 700))
+  [IO.File]::WriteAllText($sbFx, (ConvertTo-Json -Depth 10 -Compress $sbDoc), $utf8)
+  $sbHome = Join-Path $run 'home-sibling'; New-Item -ItemType Directory -Force $sbHome | Out-Null
+  $sbPair = SlStartServer $sbFx $sbHome; $sbSrv = $sbPair[0]; $sbUrlMain = $script:url; $script:url = $sbPair[1]
+  try {
+    SlViewport 1440 900
+    $sbPin = SlPins '{"app":"explorer","match":"Projects","mon":"wide","slots":[0]}'
+    # Drop on a free cell. Scope first: the saved pin holds 1010 on slot 0, 1011 is placed by the fill with no pin, and slot 9 is empty
+    # (placed[] counts slots from 1, so slot 9 is 10 there).
+    SlCase (SlSceneJson $sbPin '["explorer"]')
+    $sbPre = @(SbSaved (SlList 'work[selId].pins'))
+    $sbHeld = SlPlacedOf 1010; $sbFill = SlPlacedOf 1011
+    $sbCell9 = SlList "prevs[selId].placed.filter(p => (p.slots || []).includes(10)).map(p => p.id)"
+    Check 'sibling drop, scope: before the drop, the saved pin Projects holds slot 0 and window 1010 is placed by it' ([bool]($sbPre.Count -eq 1 -and (SlCells ($sbPre[0])) -eq '0' -and $sbHeld -and $sbHeld.pin -eq 0)) "pins: $(SlShort $sbPre); placed 1010: $(SlShort $sbHeld)"
+    Check 'sibling drop, scope: before the drop, Projects - archive (1011) is placed by the fill with no pin' ([bool]($sbFill -and $sbFill.pin -lt 0)) "placed 1011: $(SlShort $sbFill)"
+    Check 'sibling drop, scope: before the drop, slot 9 holds no window' (@($sbCell9).Count -eq 0) "placed on slot 9: $(SlShort $sbCell9)"
+    SlDrag (SlAt (SlBox 1011) 0.5 0.5) (SlSlotAt 9)
+    $sbPins = @((SlGet 'work[selId]').pins)
+    $sbNew = @($sbPins | ? { "$($_.app)" -eq 'explorer' -and "$($_.match)" -eq 'Projects - archive' })
+    $sbSaved = @(SbSaved $sbPins)
+    Check 'sibling drop, control: the drop makes a pin for Projects - archive on slot 9' ([bool]($sbNew.Count -eq 1 -and (SlCells ($sbNew[0])) -eq '9')) "pins: $(SlShort $sbPins)"
+    Check 'sibling drop, red: after the drop, the saved pin Projects still holds slot 0 beside the new pin' ([bool]($sbSaved.Count -eq 1 -and (SlCells ($sbSaved[0])) -eq '0')) "pins: $(SlShort $sbPins)"
+    # Put Behind: Projects - archive dropped on the lower band of Other. Scope first, from a fresh scene with the same pins.
+    SlCase (SlSceneJson $sbPin '["explorer"]')
+    $sbPre2 = @(SbSaved (SlList 'work[selId].pins'))
+    $sbHeld2 = SlPlacedOf 1010; $sbFill2 = SlPlacedOf 1011; $sbOther = SlPlacedOf 1030
+    Check 'sibling put behind, scope: before the drop, the saved pin Projects holds slot 0 and window 1010 is placed by it' ([bool]($sbPre2.Count -eq 1 -and (SlCells ($sbPre2[0])) -eq '0' -and $sbHeld2 -and $sbHeld2.pin -eq 0)) "pins: $(SlShort $sbPre2); placed 1010: $(SlShort $sbHeld2)"
+    Check 'sibling put behind, scope: before the drop, Projects - archive (1011) and Other (1030) are placed by the fill with no pin' ([bool]($sbFill2 -and $sbFill2.pin -lt 0 -and $sbOther -and $sbOther.pin -lt 0)) "placed 1011: $(SlShort $sbFill2); placed 1030: $(SlShort $sbOther)"
+    $sbOtherBox = SlBox 1030
+    SlMarkEngine
+    if ($sbOtherBox) { SlDropNoSettle (SlAt (SlBox 1011) 0.5 0.5) (SlAt $sbOtherBox 0.5 0.85) }
+    $sbLanded = SlWaitBehind 1011
+    $sbScene2 = SlGet 'work[selId]'
+    $sbPins2 = @($sbScene2.pins)
+    $sbSaved2 = @(SbSaved $sbPins2)
+    Check 'sibling put behind, control: the drop asks the engine for a new answer' ([bool]$sbLanded.fresh) "no new answer from the engine after the drop"
+    Check 'sibling put behind, control: Other holds Projects - archive behind it' ([bool](SlHasBehind (SlPin $sbScene2 'Other') 'Projects - archive')) "pins: $(SlShort $sbPins2)"
+    Check 'sibling put behind, red: after the put behind, the saved pin Projects still holds slot 0' ([bool]($sbSaved2.Count -eq 1 -and (SlCells ($sbSaved2[0])) -eq '0')) "pins: $(SlShort $sbPins2)"
+  } finally {
+    if ($sbSrv -and -not $sbSrv.HasExited) { try { [void](Invoke-WebRequest -UseBasicParsing "$($script:url)quit" -Method Post -Body 'quit') } catch {}; [void]$sbSrv.WaitForExit(5000) }
+    if ($sbSrv -and -not $sbSrv.HasExited) { $sbSrv.Kill() }
+    $script:url = $sbUrlMain
+  }
+  }
+
   # ---------- Page load: the first data fetch fails once ----------
   # app.html loadAll fetches the snapshot once, so one dropped fetch (a TypeError, as a dropped connection gives) must not leave the
   # board empty. The fault goes into the page before its scripts run, so it reaches loadAll's first call. Each fault counts its
@@ -3360,6 +3529,7 @@ selId = 'sl'; render(); steps.push(read('back on the first scene'));
   if ($script:ws) { $script:ws.Dispose() }
   if ($srv -and -not $srv.HasExited) { $srv.Kill() }
   if ($srvDup -and -not $srvDup.HasExited) { $srvDup.Kill() }
+  if ($sbSrv -and -not $sbSrv.HasExited) { $sbSrv.Kill() }
   foreach ($k in $savedEnv.Keys) { if ($null -eq $savedEnv[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $savedEnv[$k] } }
   if (Test-Path -LiteralPath $run) { Remove-Item -LiteralPath $run -Recurse -Force -ErrorAction SilentlyContinue }
 }

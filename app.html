@@ -1686,7 +1686,10 @@ async function saveLayout(id){
   finally{svBusy[id]=false;render()}}
 const unsavedCount=()=>Object.keys(unsaved).filter(i=>work[i]).reduce((n,i)=>n+unsaved[i],0);
 const retrySave=()=>{for(const id of Object.keys(failed))if(!stale[id])saveLayout(id)};
-const matchFor=w=>snap.windows.filter(x=>x.app===w.app).length>1?w.title:"";
+// A pin made by a drag matches the title's lead words (the part before " - ") when no sibling window of the app has a title containing them
+// (the engine matches by contains), so a browser tab whose title changes keeps its pin. Otherwise it keeps the whole title.
+const matchFor=w=>{const sib=snap.windows.filter(x=>x.app===w.app);if(sib.length<2)return"";const lead=w.title.split(" - ")[0];
+  return lead&&!sib.some(x=>x.id!==w.id&&x.title.toLowerCase().includes(lead.toLowerCase()))?lead:w.title};
 // force: the owner confirmed moving a locked tile (askMove); every other caller still refuses it.
 function pinWin(id,mon,slot,cs=1,rs=1,force=false){
   const w=winById(id);
@@ -1710,7 +1713,7 @@ function pinEdit(x,id,mon,slot,cs=1,rs=1,grab=pinNow(x,id),opt={}){
   for(let r=r0;r<r0+rs;r++)for(let c=c0;c<c0+cs;c++)slots.push(r*GC(g)+c);
   const match=grab?grab.match||"":w.min?w.title:matchFor(w),cells=new Set(slots);
   const covers=q=>{const qs=q.slots.filter(v=>v<GC(g)*GR(g));return q.mon===mk(mon)&&qs.length&&bbox(qs,g).cells.some(c=>cells.has(c))};
-  x.pins=x.pins.filter(q=>q!==grab&&!(q.app===w.app&&(q.match||"")===match)&&!covers(q));
+  x.pins=x.pins.filter(q=>q!==grab&&!samePin(q,w,match)&&!covers(q));
   // The new pin goes first in the list (callers read it as x.pins[0]). It keeps its own stack and lock.
   const np={app:w.app,match,mon:mk(mon),slots},behind=opt.behind||(grab&&grab.behind);
   if(behind&&behind.length)np.behind=behind;if(grab&&grab.lock)np.lock=true;
@@ -1773,6 +1776,8 @@ function unplace(id,force=false){const w=winById(id);if(selWin===id)optim=null;
 const winSpec=w=>({app:w.app,match:w.min?w.title:matchFor(w)});
 // Whether the stack entry b (an app and a title match) names window w, as the engine matches it.
 const hitsWin=(b,w)=>w.app===b.app&&(!b.match||w.title.toLowerCase().includes(String(b.match).toLowerCase()));
+// Whether saved pin q is the same pin as the one made for window w with match m: it stores that match, or it names w by a title w contains and names no other open window of the app (w's full-title pin, or a lead-words pin only w carries). A pin a sibling window also matches stays: the engine lets both coexist. The saved pin is not changed.
+const samePin=(q,w,m)=>q.app===w.app&&((q.match||"")===m||(!!q.match&&hitsWin(q,w)&&!snap.windows.some(o=>o.app===w.app&&!sameWin(o,w)&&hitsWin(q,o))));
 // Whether pin pi's own front window is not open: the engine reports it missing.
 const frontShut=(P,pi,pin)=>P.missing.some(m=>m.pin===pi&&m.app===pin.app&&(m.match||"")===(pin.match||""));
 // The windows stacked behind pin pi, each with the open window it resolves to (null when it is not open).
@@ -1793,7 +1798,7 @@ function putBehind(aId,bId){
     if(gA)settleFront(x,gA);
     let fb=pinNow(x,bId);if(!fb){pinEdit(x,bId,mon,bb.r*GC(g)+bb.c,bb.cs,bb.rs,null);fb=x.pins[0]}
     const own=gA&&gA!==fb?gA:null,spec=winSpec(A);
-    x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
+    x.pins=x.pins.filter(q=>q===fb||(q!==own&&!samePin(q,A,spec.match)));
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
     x.bay=bayOf(x).filter(b=>!sameWin(b,A));if(!x.bay.length)delete x.bay;heldOff(x,A)},`${pairNames(A,B)[0]} is behind ${pairNames(A,B)[1]}.`);
   if(ok)dropNote(px(cellRect(mon,g,bb.c,bb.r,bb.cs,bb.rs)),`<b>${esc(pairNames(A,B)[0])}</b> is behind <b>${esc(pairNames(A,B)[1])}</b>`,hist[hist.length-1]);
@@ -2648,7 +2653,7 @@ function freePutBehind(id,o,info,oc,from){
   selWin=oc.id;selSp=null;curMon=info.m;
   edit(x=>{const a=x.grids[key].free.areas[o.i],own=pinNow(x,id);
     let fb=a.pin!=null&&a.pin!==""?x.pins[+a.pin]:null;
-    x.pins=x.pins.filter(q=>q===fb||(q!==own&&!(q.app===spec.app&&(q.match||"")===spec.match)));
+    x.pins=x.pins.filter(q=>q===fb||(q!==own&&!samePin(q,w,spec.match)));
     if(!fb){fb={app:oc.app,match:winSpec(oc).match,mon:key,slots:[]};x.pins.push(fb)}
     freeSetPin(a,x.pins.indexOf(fb));delete a.app;delete a.title;
     fb.behind=[...(fb.behind||[]),spec,...((own&&own.behind)||[])];
