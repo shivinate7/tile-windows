@@ -237,10 +237,12 @@ function Step-Tray($s, [datetime]$now, $cfg, $key, $call, [string]$active, $sig 
   # A move the hook misses (keyboard, Win+Arrow, snap assist) shows as a changed rect on a window in two reads: it counts as a manual move at the read
   # that shows it. A window that opens or closes, a minimize or restore, or a list in another order is no move. The first read after an apply is only
   # compared against, never counted: the apply moved the windows (skipRead is set below, and by the tick after a gap-fill run).
+  # A rect change also needs input at the read (idle under 10 s, as the desk trigger's back-at-desk test): Windows relocates windows with no input
+  # (a monitor unplug, a DPI change, a window restoring its own bounds), and that is no manual move. The rects still update, so it is not counted later.
   if ($null -ne $sig.wins) {
     $rects = @{}; foreach ($w in $sig.wins) { $rects["$($w.id)"] = $w }
     if ($s.skipRead) { $s.skipRead = $false }
-    elseif ($s.rects) {
+    elseif ($s.rects -and [double]$sig.idleSec -lt 10) {
       foreach ($k in @($rects.Keys)) {
         $o = $s.rects[$k]; $w = $rects[$k]
         if ($o -and -not $o.min -and -not $w.min -and ($o.x -ne $w.x -or $o.y -ne $w.y -or $o.w -ne $w.w -or $o.h -ne $w.h)) { $s.seenMove = $now; break }
