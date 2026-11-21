@@ -117,9 +117,9 @@
 #     Ruling 2026-11-16 13:29 CST: a block with no room clear of the Swap circle, even for the icon at 8 px or more, shows no Put
 #     Behind label. Its solid border and the circle carry the cue. Forced colours drops box-shadow, so the icon-alone chip has a border.
 #   Closed front (decision stack-and-lock): when a pin's front window is not open, the first open back window is
-#     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Keep Where It Is act on that
+#     the front on the board (tile.ps1 promotes it). Bring to Front, an arrow or Shift+arrow move, Delete and Stay Put act on that
 #     window. Bring to Front lists the promoted window behind the new front once, never twice. A move or resize keeps the window the front of
-#     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Keep Where It Is leaves no pin naming it.
+#     its pin on the new cells. One Delete takes it off the cell and lets the window behind take it; Stay Put leaves no pin naming it.
 #     With a covered pin at a lower index than the closed front's pin, a resize or a Merge keeps the promoted window the front too.
 #     A promoted window put behind another window is listed once across the pins, and no entry is left with no open window.
 #   Run folders: one per run, under <TEMP>\tile-windows-test-runs, named <pid>-<UUID>. A run removes siblings older than a day.
@@ -130,12 +130,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (272). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (275). Shard 1 runs
 # gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the stack tweaks ruling section), shard 3
 # the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 272
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 275
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -732,6 +732,29 @@ function SlSwitch([switch]$Click) {
 function SlBadgeText($id) { SlJs "(() => { const t = els.get($id), s = t && t.querySelector('.stk'); return s ? s.textContent.replace(/\s+/g, ' ').trim() : null; })()" }
 # The window ids drawn in Windows That Stay Put, read from the page's chips.
 function SlBayIds { @(("$(SlJs "[...document.querySelectorAll('#bgrps [data-bay]')].map(b => b.dataset.bay).join(',')")") -split ',' | ? { $_ } | % { [int]$_ }) }
+# One name for the Stay Put act (debt one-act-four-names, docs/design/mockups/one-act-four-names-notes.md): what a user can read of the act
+# on the board now. hint, slot (the drop slot, idle or over the list), kline (the K line of the keyboard list), bayh (the list heading),
+# tobay and unpin (the inspector's buttons, null when not drawn), tile (window 1001's own Stay Put button) and bayDrop (the list is lit
+# for a drop). hits lists each old name (keep put, keep it where it is, keep where it is, release to keep) found in the text a user can
+# read: text nodes outside script, style and template, and every title and aria-label. A state line such as "stays where it is" is not an
+# old name. Read after SlCase; the inspector's buttons need window 1001 selected.
+function SlNames {
+  SlGet @'
+(() => {
+  const clean = s => s.replace(/\s+/g, ' ').trim();
+  const txt = id => { const e = document.getElementById(id); return e ? clean(e.textContent) : null; };
+  const k = [...document.querySelectorAll('#keys li')].find(l => l.textContent.includes('Delete unpins it.'));
+  const t = els.get(1001), sp = t ? t.querySelector('.stayput') : null, tb = document.getElementById('tobay');
+  const old = /keep put|keeps? it where it is|keep where it is|release to keep/i, hits = [];
+  const note = s => { const m = old.exec(s || ''); if (m && !hits.includes(m[0].toLowerCase())) hits.push(m[0].toLowerCase()); };
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: n => /^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT)$/.test(n.parentElement ? n.parentElement.tagName : '') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+  while (w.nextNode()) note(w.currentNode.nodeValue);
+  document.querySelectorAll('[title],[aria-label]').forEach(e => { note(e.getAttribute('title')); note(e.getAttribute('aria-label')); });
+  return { hint: txt('hint'), slot: txt('dropslot'), kline: k ? clean(k.textContent) : null, bayh: txt('bayh'), tobay: txt('tobay'), tobayH: tb ? Math.round(tb.getBoundingClientRect().height) : null,
+    unpin: txt('unpin'), tile: sp ? clean(sp.textContent) : null, bayShown: !document.getElementById('bay').hidden, bayDrop: document.getElementById('bay').classList.contains('drop'), hits: hits };
+})()
+'@
+}
 # Call before the drop: keeps the engine's current answer, so the wait below can tell when a new one has replaced it, and
 # records the page's uncaught errors from then on, so a red case names the exception that stopped the redraw.
 # -Rejections also records an unhandled promise rejection, as an edit run from a promise (the Fill Empty Cells switch) raises.
@@ -2776,7 +2799,7 @@ try {
   # front while the scene still names the closed one. Here the closed front is closedapp (match empty), and Draft release (claude, 1003) is
   # promoted over Quarterly (chrome, 1006). The pin has to be this shape: if the closed front were claude with a match, a move would copy that
   # match and the engine would promote the same window again. Refactor (claude, 1001) is the window that wrongly takes the front instead.
-  # A move, a resize, Delete and Keep Where It Is act on the window on screen; Bring to Front swaps it with the one behind. The scene's
+  # A move, a resize, Delete and Stay Put act on the window on screen; Bring to Front swaps it with the one behind. The scene's
   # closed entry is not asserted: the debt's fix drops it. The same actions on an open front (Refactor over the same two windows) are the
   # controls, and each action's own control shows it ran, so a red is never a key or a button that did nothing.
   $pinsCF = SlPins '{"app":"closedapp","match":"","mon":"wide","slots":[3],"behind":[{"app":"claude","match":"Draft release"},{"app":"chrome","match":"Quarterly"}]}'
@@ -2833,15 +2856,15 @@ try {
   Check 'closed front, Delete, red: Quarterly, the window behind, is the front on cell 4' (SlFrontOn 1006 '4') "placed: $(SlPlacedBrief)"
   }
 
-  # (b) Keep Where It Is (Windows That Stay Put): the window leaves the pin, so no pin still names it.
+  # (b) Stay Put (the inspector button; the window goes to Windows That Stay Put): the window leaves the pin, so no pin still names it.
   SlViewport 1440 900; SlCase (SlSceneJson $pinsCF)
   SlClick (SlAt (SlBox 1003) 0.5 0.5)
-  $kpPress = SlBtnPress '#win' 'Keep Where It Is'
+  $kpPress = SlBtnPress '#win' 'Stay Put'
   $kpS = SlGet 'work[selId]'
   $kpNamed = @($kpS.pins | ? { "$($_.match)" -like '*Draft release*' -or (SlHasBehind $_ 'Draft release') })
   if (Shard-Take) {
-  Check 'closed front, Keep Where It Is, control: Draft release is in Windows That Stay Put' ([bool]($kpPress -and (SlHasBay $kpS 'Draft release'))) "pressed: $kpPress; bay: $(SlShort $kpS.bay)"
-  Check 'closed front, Keep Where It Is, red: no pin still names Draft release' ($kpNamed.Count -eq 0) "pins: $(SlShort $kpS.pins)"
+  Check 'closed front, Stay Put, control: Draft release is in Windows That Stay Put' ([bool]($kpPress -and (SlHasBay $kpS 'Draft release'))) "pressed: $kpPress; bay: $(SlShort $kpS.bay)"
+  Check 'closed front, Stay Put, red: no pin still names Draft release' ($kpNamed.Count -eq 0) "pressed: $kpPress; pins: $(SlShort $kpS.pins)"
   }
 
   # Controls on an open front (Refactor over the same two windows): the same three actions already work.
@@ -2865,6 +2888,73 @@ try {
   if (Shard-Take) {
   Check 'open front, Delete, control: one press lets Draft release, the window behind, take cell 4 as the front' (SlFrontOn 1003 '4') "placed: $(SlPlacedBrief)"
   }
+
+  # ---------- One name for the Stay Put act (debt one-act-four-names; mockup docs/design/mockups/one-act-four-names.html) ----------
+  # Sending a window off the board into Windows That Stay Put has one verb, Stay Put. Five labels change: the board hint, the drop slot
+  # (idle, and over the list), the K line of the keyboard list and the inspector button (was Keep Where It Is). The tile button and the
+  # list heading already read Stay Put. Pin keeps its own name (a pin holds a cell; Stay Put takes the window off the board), and the
+  # state lines ("It stays where it is") say what happened, so neither changes. Each gate reads the rendered page (SlNames), never
+  # app.html's source. Labels do not depend on the theme, so one theme is read. The scope Checks come first: the board is live, the
+  # list is on screen, the inspector draws the button, and the list is lit while a window is held over it.
+  # 1440, the board at rest and window 1001 selected: the hint, the drop slot, the K line and the inspector button. The button is then
+  # pressed by its id, so its work does not depend on its words, and the selected window's state line is read once it is in the list.
+  if (Shard-Take) {
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ); SlPark
+  $onRest = SlNames
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $onSel = SlNames
+  $onPress = SlJs "(() => { const b = document.getElementById('tobay'); if (!b || b.disabled) return false; b.click(); return true; })()"
+  SlSettle
+  $onS = SlGet 'work[selId]'
+  $onState = SlJs "(() => { const m = document.querySelector('#win .m'); return m ? m.textContent.replace(/\s+/g, ' ').trim() : null; })()"
+  Check 'one name, scope: the board hint is the live one (it opens with Drag to a cell to pin)' ([bool]($onRest -and $onRest.hint -clike 'Drag to a cell to pin*')) "hint: $($onRest.hint)"
+  Check 'one name, scope: the list is on screen' ([bool]($onRest -and $onRest.bayShown)) "list shown: $($onRest.bayShown)"
+  Check 'one name, scope: window 1001 is selected and the inspector draws its Unpin and act buttons' ([bool]($onSel -and $null -ne $onSel.tobay -and $null -ne $onSel.unpin)) "act button: $($onSel.tobay); unpin button: $($onSel.unpin)"
+  Check 'one name, hint, red: the hint names the act Stay Put (to the list to make it stay put)' ([bool]($onRest -and $onRest.hint -clike 'Drag to a cell to pin it, or to the list to make it stay put.*')) "hint: $($onRest.hint)"
+  Check 'one name, hint, control: the rest of the hint is as it was (the taken cell, the right-click)' ([bool]($onRest -and $onRest.hint -clike '*On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.')) "hint: $($onRest.hint)"
+  Check 'one name, drop slot, red: the idle slot reads Drag a window here to make it stay put' ([bool]($onRest -and $onRest.slot -ceq 'Drag a window here to make it stay put')) "slot: $($onRest.slot)"
+  Check 'one name, K line, red: the keyboard list reads K makes it stay put (off the board)' ([bool]($onRest -and $onRest.kline -ceq 'Delete unpins it. K makes it stay put (off the board).')) "K line: $($onRest.kline)"
+  Check 'one name, inspector button, red: the button reads Stay Put' ([bool]($onSel -and $onSel.tobay -ceq 'Stay Put')) "button: $($onSel.tobay)"
+  Check 'one name, red: no old name (keep put, keep it where it is, keep where it is) is on the page' ([bool]($onSel -and @($onSel.hits).Count -eq 0)) "old names found: $(@($onSel.hits) -join ', ')"
+  Check 'one name, inspector button, control: the button is one row tall' ([bool]($onSel -and $null -ne $onSel.tobayH -and $onSel.tobayH -le 40)) "button height: $($onSel.tobayH)px"
+  Check 'one name, control: the tile button reads Stay Put' ([bool]($onSel -and $onSel.tile -ceq 'Stay Put')) "tile button: $($onSel.tile)"
+  Check 'one name, control: the list heading reads Windows That Stay Put' ([bool]($onRest -and $onRest.bayh -clike 'Windows That Stay Put*')) "heading: $($onRest.bayh)"
+  Check 'one name, control, Pin keeps its own name: the inspector button reads Unpin and Let It Fill' ([bool]($onSel -and $onSel.unpin -ceq 'Unpin and Let It Fill')) "unpin button: $($onSel.unpin)"
+  Check 'one name, control: pressing the act button by its id puts the window in Windows That Stay Put' ([bool]($onPress -and (SlHasBay $onS 'Refactor the grid solver'))) "pressed: $onPress; bay: $(SlShort $onS.bay)"
+  Check 'one name, control, a state line is not renamed: the window in the list is told it stays where it is' ([bool]($onState -clike '*It stays where it is.*')) "state line: $onState"
+  }
+
+  # 1440, a window held over the list: the drop slot names the act, and the release still puts the window in the list.
+  if (Shard-Take) {
+  SlViewport 1440 900; SlCase (SlSceneJson $pinsCQ); SlPark
+  $heldBay = SlGet "(() => { const b = document.getElementById('bay').getBoundingClientRect(); return { l: b.left, t: b.top, w: b.width, h: b.height }; })()"
+  SlDrag (SlAt (SlBox 1001) 0.5 0.5) (SlAt $heldBay 0.5 0.5) -Hold
+  $onHeld = SlNames
+  SlRelease (SlAt $heldBay 0.5 0.5)
+  $heldS = SlGet 'work[selId]'
+  Check 'one name, drop slot, scope: the list is lit while Refactor the grid solver is held over it' ([bool]($onHeld -and $onHeld.bayDrop)) "list lit: $($onHeld.bayDrop); slot: $($onHeld.slot)"
+  Check 'one name, drop slot, red: over the list the slot reads Release to make Claude: Refactor the grid solver stay put, under Code' ([bool]($onHeld -and $onHeld.slot -ceq 'Release to make Claude: Refactor the grid solver stay put, under Code')) "slot: $($onHeld.slot)"
+  Check 'one name, red: no old name (keep put, keep it where it is, keep where it is, release to keep) is on the page while the window is held' ([bool]($onHeld -and @($onHeld.hits).Count -eq 0)) "old names found: $(@($onHeld.hits) -join ', ')"
+  Check 'one name, drop slot, control: the release puts the window in Windows That Stay Put' (SlHasBay $heldS 'Refactor the grid solver') "bay: $(SlShort $heldS.bay)"
+  }
+
+  # 1024, the same labels at the narrow size, and the K key does what its line says.
+  if (Shard-Take) {
+  SlViewport 1024 768; SlCase (SlSceneJson $pinsCQ); SlPark
+  SlClick (SlAt (SlBox 1001) 0.5 0.5)
+  $on24 = SlNames
+  SlKey 1001 'k' 75
+  $k24 = SlGet 'work[selId]'
+  Check 'one name, 1024, scope: the board hint is the live one, and the inspector draws the act button' ([bool]($on24 -and $on24.hint -clike 'Drag to a cell to pin*' -and $null -ne $on24.tobay)) "hint: $($on24.hint); act button: $($on24.tobay)"
+  Check 'one name, 1024, hint, red: the hint names the act Stay Put (to the list to make it stay put)' ([bool]($on24 -and $on24.hint -clike 'Drag to a cell to pin it, or to the list to make it stay put.*')) "hint: $($on24.hint)"
+  Check 'one name, 1024, drop slot, red: the idle slot reads Drag a window here to make it stay put' ([bool]($on24 -and $on24.slot -ceq 'Drag a window here to make it stay put')) "slot: $($on24.slot)"
+  Check 'one name, 1024, K line, red: the keyboard list reads K makes it stay put (off the board)' ([bool]($on24 -and $on24.kline -ceq 'Delete unpins it. K makes it stay put (off the board).')) "K line: $($on24.kline)"
+  Check 'one name, 1024, inspector button, red: the button reads Stay Put' ([bool]($on24 -and $on24.tobay -ceq 'Stay Put')) "button: $($on24.tobay)"
+  Check 'one name, 1024, red: no old name (keep put, keep it where it is, keep where it is) is on the page' ([bool]($on24 -and @($on24.hits).Count -eq 0)) "old names found: $(@($on24.hits) -join ', ')"
+  Check 'one name, 1024, inspector button, control: the button is one row tall' ([bool]($on24 -and $null -ne $on24.tobayH -and $on24.tobayH -le 40)) "button height: $($on24.tobayH)px"
+  Check 'one name, 1024, control: the K key puts the selected window in Windows That Stay Put' (SlHasBay $k24 'Refactor the grid solver') "bay: $(SlShort $k24.bay)"
+  }
+  SlViewport 1440 900
 
   # ---------- Edit on a scene with no pins key (each edit settles the closed fronts, and reads pins first) ----------
   # A scene file may leave the pins key out. tile.ps1 reads it as an empty list, and the page keeps the scene as it is. An edit on it must
