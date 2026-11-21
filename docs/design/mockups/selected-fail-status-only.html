@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Failed Preview Message</title>
+<style>
+/* Tokens copied from app.html :root. Board, tile and .over rules copied from app.html as on main (ad8a0b8). No web fonts: the page opens from disk with no network. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-mono:"DM Mono",ui-monospace,Consolas,monospace; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --dot:#C9CEC4; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --screen:#F7F8F5; --bezel:#2B302C;
+  --comms:#7343E0; --code:#0B7A6D; --browse:#B84D0A; --other:#5E6A7D; --tmix:26%; --hi:#E3A008; --hi-bg:#FDF3D7; --hi-ink:#1C211D; --ok:#17754B; --bad:#B42318;
+  --ann-new:#C0267A; --ann-today:#4F574F;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --dot:#2B302C; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --screen:#232824; --bezel:#0B0D0B;
+  --comms:#A98BFA; --code:#3CCBB8; --browse:#F58A45; --other:#94A3B8; --tmix:36%; --hi:#F2C14E; --hi-bg:#3A3112; --hi-ink:#141715; --ok:#4ADE9B; --bad:#FF8A80;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- Mockup shell (not product UI) ---------- */
+.mk{display:grid;gap:12px;padding:16px;max-width:1280px}
+.banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
+.banner b{color:var(--ann-new)}
+.mkhead{display:grid;gap:4px}
+.mkhead h1{margin:0;font:700 20px var(--f-disp);letter-spacing:-.01em}
+.mkhead p{margin:0;color:var(--muted);max-width:80ch}
+.mkbar{display:grid;gap:8px}
+.mkgrp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkgrp>span{color:var(--muted);font-size:12px;min-width:44px}
+.mkseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.mkseg button{min-height:32px;border:0;background:transparent;padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.mkseg button+button{border-left:1px solid var(--line)}
+.mkseg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.mkopts{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;font-size:12.5px}
+.mkopts label{display:inline-flex;gap:6px;align-items:center;min-height:32px;cursor:pointer}
+.mkopts input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.mkopts .sep{color:var(--muted);font-size:12px}
+.shots{display:flex;flex-wrap:wrap;gap:34px 24px;align-items:flex-start;padding-top:10px}
+.shot{display:grid;gap:6px;min-width:0;max-width:100%}
+.shot h2.cap{margin:0;font:700 15px var(--f-disp);letter-spacing:-.01em}
+.shot .capn{margin:0;color:var(--muted);max-width:66ch}
+.kind{font:600 11px var(--f);padding:1px 6px;border-radius:3px;border:1px dashed var(--ann-new);color:var(--ann-new);margin-left:6px;vertical-align:2px}
+.kind.today{border-color:var(--ann-today);color:var(--ann-today)}
+.kind.pick{border-style:solid}
+.scroll{overflow-x:auto;max-width:100%;border:1px solid var(--line);border-radius:8px}
+.abox{position:relative;outline:1.5px dashed var(--ann-new);outline-offset:3px;border-radius:8px}
+.abox.today{outline-color:var(--ann-today)}
+.abox>em{position:absolute;top:-22px;left:-4px;font:600 10.5px/1 var(--f);font-style:normal;white-space:nowrap;padding:2px 5px;border-radius:3px;background:var(--panel);color:var(--ann-new);border:1px dashed var(--ann-new);z-index:6}
+.abox.today>em{color:var(--ann-today);border-color:var(--ann-today)}
+.nolabels .abox{outline:0}.nolabels .abox>em{display:none}
+
+/* ---------- Canvas column of app.html (the part that changes) ---------- */
+.col{display:flex;flex-direction:column;gap:30px;padding:22px 18px;background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1px,transparent 1.2px);background-size:16px 16px}
+.setbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.setbar .sid{display:grid;gap:1px;min-width:0;flex:1 1 220px}
+.setbar .sid span{color:var(--muted);font-size:12px}
+.setbar .mgb{min-height:30px;border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:3px 10px;font-size:12px}
+.stage{position:relative}
+.mon{position:absolute;background:var(--screen);border:3px solid var(--bezel);border-radius:5px;display:grid;padding:2px;gap:2px}
+.mon .cell{border:1px dashed color-mix(in srgb,var(--muted) 45%,transparent);background:color-mix(in srgb,var(--ink) 6%,transparent);border-radius:2px;position:relative;min-width:0;min-height:0}
+.mon .cell i{position:absolute;right:3px;bottom:1px;font:normal 11px var(--f-mono);color:var(--muted)}
+.mlab{position:absolute;display:flex;gap:6px;align-items:baseline;font-size:11px;color:var(--muted);white-space:nowrap;transform:translateY(-100%);padding-bottom:3px}
+.mlab b{font-weight:600;color:var(--ink);font-size:11.5px}
+.cat-comms{--cat:var(--comms)} .cat-code{--cat:var(--code)} .cat-browse{--cat:var(--browse)} .cat-other{--cat:var(--other)}
+.tile{position:absolute;display:flex;flex-direction:column;align-items:flex-start;gap:2px;overflow:hidden;padding:3px 5px 3px 8px;border-radius:3px;
+  border:1px solid color-mix(in srgb,var(--cat) 70%,transparent);background:color-mix(in srgb,var(--cat) var(--tmix),var(--panel));color:var(--ink);font-size:12px;line-height:1.2;contain:layout paint}
+.tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cat)}
+.tile b{font:600 11px var(--f);padding:1px 5px;border-radius:2px;background:var(--cat);color:var(--panel);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;max-width:100%}
+.tile.pin{border-width:2px;border-color:var(--cat);background:color-mix(in srgb,var(--cat) 34%,var(--panel))}
+.tile.stay{background:transparent;border-style:dashed;border-color:color-mix(in srgb,var(--muted) 60%,transparent);color:var(--muted);z-index:0}
+.tile.stay::before{background:color-mix(in srgb,var(--cat) 40%,transparent)}
+.tile.stay b{background:color-mix(in srgb,var(--cat) 30%,var(--panel));color:var(--ink)}
+.tile.pin,.tile.fill{z-index:2}
+.keys{font-size:12px;color:var(--muted)}
+.keys summary{cursor:pointer;color:var(--ink);font-weight:600;width:max-content}
+.over{font-size:12px;color:var(--muted);margin:0;min-height:0}
+.over:empty{display:none}
+.over b{color:var(--ink);font-weight:600}
+.over.warn{background:var(--hi-bg);border-left:3px solid var(--hi);padding:8px 10px;border-radius:4px;color:var(--ink)}
+.status{padding:6px 16px;border-top:1px solid var(--line);background:var(--panel);font-size:12px;color:var(--muted);min-height:28px}
+
+/* ---------- New: the on-board banner option ---------- */
+.fbanner{position:absolute;left:8px;right:8px;bottom:8px;z-index:5;display:flex;gap:8px;align-items:flex-start;padding:7px 10px;border:1px solid color-mix(in srgb,var(--bad) 55%,var(--line));border-left:3px solid var(--bad);border-radius:5px;background:var(--panel);color:var(--ink);font-size:12px;box-shadow:0 6px 14px -8px rgba(0,0,0,.45)}
+.fbanner svg{width:14px;height:14px;flex:none;margin-top:1px;color:var(--bad)}
+.fbanner b{color:var(--bad);font-weight:600}
+@media (forced-colors:active){.over.warn,.fbanner{border-left-color:CanvasText}}
+@media (max-width:760px){.mk{padding:12px 16px}}
+</style>
+</head>
+<body>
+<div class="mk" id="mk">
+  <p class="banner" role="note"><b>Sample.</b><span>Every window, scene name and error on this page is invented. No figure here is real.</span></p>
+  <header class="mkhead">
+    <h1>Failed Preview Message</h1>
+    <p>When the preview of the selected scene fails, the board drops the old preview and draws the windows where they are now. Today the only word of it is in the status line. Dashed pink labels mark what is new; dashed grey labels mark what exists today. Each option has a switch that hides it.</p>
+  </header>
+  <nav class="mkbar" aria-label="Mockup controls">
+    <div class="mkgrp"><span id="lblState">State</span><div class="mkseg" id="segState" role="group" aria-labelledby="lblState"></div></div>
+    <div class="mkgrp"><span id="lblW">Width</span><div class="mkseg" id="segW" role="group" aria-labelledby="lblW"></div></div>
+    <div class="mkgrp"><span id="lblT">Theme</span><div class="mkseg" id="segT" role="group" aria-labelledby="lblT"></div></div>
+    <div class="mkopts" role="group" aria-label="Show options">
+      <span class="sep">Options:</span>
+      <label><input type="checkbox" data-o="under" checked>Message Under the Board</label>
+      <label><input type="checkbox" data-o="banner" checked>Banner on the Board</label>
+      <span class="sep">Overlays:</span>
+      <label><input type="checkbox" id="oLabels" checked>Today and New Labels</label>
+    </div>
+  </nav>
+  <main class="shots" id="shots"></main>
+</div>
+<script>
+(()=>{
+const $=id=>document.getElementById(id);
+const WARNI='<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1 15 14H1L8 1zm-.8 5v4h1.6V6H7.2zm0 5v1.6h1.6V11H7.2z"/></svg>';
+// Sample scene "Focus" on a sample two-monitor desk. Windows are drawn as fractions of their monitor.
+const SCENE="Focus",WHY="The app server stopped answering";
+const MONS=[{name:"Left monitor",g:[3,2]},{name:"Right monitor",g:[2,2]}];
+// stay = where the window is on the real desktop now (the board has no layout to show); cell = where Focus places it.
+const WINS=[
+  {app:"Teams",title:"Weekly sync",cat:"comms",stay:[0,.04,.06,.42,.5],cell:[0,0,0,1,1],pin:true},
+  {app:"Outlook",title:"Inbox",cat:"comms",stay:[0,.52,.14,.44,.62],cell:[0,0,1,1,1]},
+  {app:"Code",title:"app.html",cat:"code",stay:[1,.04,.06,.46,.7],cell:[1,0,0,1,2]},
+  {app:"Edge",title:"Design docs",cat:"browse",stay:[1,.52,.2,.44,.7],cell:[0,1,0,1,2]},
+  {app:"Terminal",title:"pwsh",cat:"code",stay:[0,.14,.52,.46,.42],cell:[0,2,0,1,1]}
+];
+const STATES={
+  today:{t:"Failed, as Today",k:"today",n:"Failed preview of the selected scene. The status line says it; the board and the area under it say nothing."},
+  under:{t:"Message Under the Board",k:"new",o:"under",n:"The same state, with the message in the line under the board that already holds the Not open warning."},
+  banner:{t:"Banner on the Board",k:"new",o:"banner",n:"The same state, with a banner on the board itself, over the bottom edge of the monitors."},
+  ok:{t:"After a Preview Works",k:"new",n:"The next preview succeeds. The message goes and the board draws Focus's layout again. Nothing else changes."}
+};
+const WIDTHS={1440:904,1024:524}; // canvas column width: page width less the 232px rail and 268px inspector
+const P={s:"all",w:"1440",t:"",hide:new Set()};
+const opts=document.querySelectorAll("[data-o]");
+
+function parse(){
+  const o={};for(const kv of location.hash.replace(/^#/,"").split("&")){const[k,v]=kv.split("=");if(k)o[k]=decodeURIComponent(v||"")}
+  P.s=STATES[o.s]||o.s==="all"?o.s:"all";P.w=WIDTHS[o.w]?o.w:"1440";P.t=o.t==="dark"||o.t==="light"?o.t:"";
+  P.hide=new Set((o.hide||"").split(",").filter(Boolean));
+}
+function sync(){
+  const a=[];if(P.s!=="all")a.push("s="+P.s);if(P.w!=="1440")a.push("w="+P.w);if(P.t)a.push("t="+P.t);if(P.hide.size)a.push("hide="+[...P.hide].join(","));
+  history.replaceState(null,"",location.pathname+(a.length?"#"+a.join("&"):""));
+}
+function seg(el,items,cur,fn){el.innerHTML="";for(const[v,l]of items){const b=document.createElement("button");b.type="button";b.textContent=l;b.setAttribute("aria-pressed",String(v===cur));b.onclick=()=>{fn(v);draw()};el.appendChild(b)}}
+
+function board(st,SW,key){
+  const gap=14,mw=Math.floor((SW-gap)/2),mh=Math.round(mw*9/16),lab=20,H=mh+lab;
+  let h=`<div class="stage" style="height:${H}px">`;
+  MONS.forEach((m,mi)=>{
+    const x=mi*(mw+gap),[c,r]=m.g;
+    h+=`<div class="mlab" style="left:${x}px;top:${lab-3}px"><b>${m.name}</b><span class="num">${c}×${r}</span></div>`;
+    h+=`<div class="mon" style="left:${x}px;top:${lab}px;width:${mw}px;height:${mh}px;grid-template-columns:repeat(${c},minmax(0,1fr));grid-template-rows:repeat(${r},minmax(0,1fr))">`;
+    for(let i=0;i<c*r;i++)h+=`<div class="cell"><i>${i+1}</i></div>`;
+    h+=`</div>`;
+  });
+  const iw=mw-10,ih=mh-10;
+  for(const w of WINS){
+    if(st==="ok"){
+      const[mi,cx,cy,sx,sy]=w.cell,[c,r]=MONS[mi].g,cw=iw/c,ch=ih/r;
+      h+=`<div class="tile cat-${w.cat} ${w.pin?"pin":"fill"}" style="left:${mi*(mw+gap)+5+cx*cw}px;top:${lab+5+cy*ch}px;width:${sx*cw-2}px;height:${sy*ch-2}px"><b>${w.app}</b><span>${w.title}</span></div>`;
+    }else{
+      const[mi,fx,fy,fw,fh]=w.stay;
+      h+=`<div class="tile stay cat-${w.cat}" style="left:${mi*(mw+gap)+5+fx*iw}px;top:${lab+5+fy*ih}px;width:${fw*iw}px;height:${fh*ih}px"><b>${w.app}</b><span>${w.title}</span></div>`;
+    }
+  }
+  if(st==="banner")h+=`<div class="fbanner" id="${key}-msg" role="note">${WARNI}<span><b>Preview failed.</b> ${WHY}. These are the windows where they are now, not where ${SCENE} puts them.</span></div>`;
+  return h+`</div>`;
+}
+function frame(st,key){
+  const SW=WIDTHS[P.w]-36;
+  const bar=`<div class="setbar"><div class="sid"><b>Desk setup</b><span><strong>${SCENE}</strong> starts from its starter layout here. Board changes save as you make them.</span></div><button type="button" class="mgb" tabindex="-1">Monitors and Setups</button></div>`;
+  let b=board(st,SW,key);
+  const keys=`<details class="keys"><summary>Keyboard</summary></details>`;
+  const over=st==="under"?`<p class="over warn" id="${key}-over"><b>Preview failed:</b> ${WHY}. The board shows the windows where they are now, not where ${SCENE} would put them. Pick the scene again to try once more.</p>`:`<p class="over"></p>`;
+  const sline=st==="ok"?`Showing ${SCENE}.`:`Preview failed for ${SCENE}: ${WHY}`;
+  const stat=`<div class="status" role="status">${sline}</div>`;
+  const wrapB=st==="banner"?`<div class="abox"><em>New: board banner</em>${b}</div>`:b;
+  const wrapO=st==="under"?`<div class="abox"><em>New: message under the board</em>${over}</div>`:over;
+  const wrapS=st==="today"?`<div class="abox today" style="margin:0 16px 6px;border-radius:4px"><em>Today: status line</em>${stat.replace('class="status"','class="status" style="border-top:0"')}</div>`:stat;
+  return `<div class="scroll"><div style="width:${WIDTHS[P.w]}px"><div class="col" style="padding-top:34px">${bar}${wrapB}${keys}${wrapO}</div>${wrapS}</div></div>`;
+}
+function draw(){
+  seg($("segState"),[["all","All"],...Object.entries(STATES).map(([k,v])=>[k,v.t])],P.s,v=>{P.s=v;sync()});
+  seg($("segW"),[["1440","1440"],["1024","1024"]],P.w,v=>{P.w=v;sync()});
+  seg($("segT"),[["","System"],["light","Light"],["dark","Dark"]],P.t,v=>{P.t=v;sync()});
+  if(P.t)document.documentElement.dataset.theme=P.t;else document.documentElement.removeAttribute("data-theme");
+  opts.forEach(i=>i.checked=!P.hide.has(i.dataset.o));
+  const keys=Object.keys(STATES).filter(k=>(P.s==="all"||P.s===k)&&!(STATES[k].o&&P.hide.has(STATES[k].o)));
+  $("shots").innerHTML=keys.map(k=>{const s=STATES[k];
+    return `<section class="shot"><h2 class="cap">${s.t}<span class="kind ${s.k==="today"?"today":s.o?"pick":""}">${s.k==="today"?"Today":s.o?"New option":"New"}</span></h2><p class="capn">${s.n}</p>${frame(k,k)}</section>`}).join("")||`<p>Every option is hidden. Turn one on above.</p>`;
+  $("mk").classList.toggle("nolabels",!$("oLabels").checked);
+}
+opts.forEach(i=>i.addEventListener("change",()=>{if(i.checked)P.hide.delete(i.dataset.o);else P.hide.add(i.dataset.o);sync();draw()}));
+$("oLabels").addEventListener("change",draw);
+addEventListener("hashchange",()=>{parse();draw()});
+parse();draw();
+})();
+</script>
+</body>
+</html>

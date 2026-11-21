@@ -86,6 +86,10 @@
 #     A zone on a monitor that is not the fill monitor names no half Zone fills last (tile.ps1 gives that monitor no unit, so it fills the
 #     cell first); the same zone on U1 still does. A zone half offers Keep This Half Empty and no Join Halves, and its Keep line reads
 #     No window goes here. A zone half on a [1,2] unit is named as the engine fills it.
+#   Kept half wait reason (debt kept-half-wait-reason, decision fill-controls): a window the fill leaves in Windows That Stay Put only because
+#     a half is kept empty reads a reason that names the kept half (the words "keep" or "kept", and "half") and does not read No room, since no
+#     column is missing. Read from the chip's accessible name, the reason between the title and "Stays put". Controls: with no kept half the open half takes
+#     that window (so the kept half is the cause), and on a full board with no half the reason is still No room: add a column.
 #   Split Cell, selection and stacks: a selected empty cell is still the cell the user picked after Undo or a Columns change, or it is
 #     cleared. Join Halves on an empty half takes the front window of the other half, never a window stacked behind it. A split that doubles
 #     nothing is one page-only undo step: Undo sends no POST, names the split in the status, and keeps the saved pins.
@@ -111,6 +115,9 @@
 #     a working row (a conflict note does not make one inert) keeps a bare On, the Extra Triggers line reads N on, N inactive, N warning, and
 #     the callout of a scene with only inert switches reads No working trigger is on. The control checks hold on the page as it stands.
 #     On the strip (under 1180 px) an inert chip's reason line is shown, as it is at 1440.
+#     Turning a switch On (debt inert-switch-announces-moves): the line it says, in the footer and in the note under the scene, agrees with
+#     its row. An inert switch says it is inactive and does not say it moves windows without asking; a working switch still says it moves them,
+#     and any switch turned Off still says Save to keep it.
 #   Free Layout stacked space: a window put on a space whose pin has a behind stack, by a drop from the list
 #     or by Move To, takes the stack: the new pin's behind list is the holder's, as the grid's swapInto hands it on.
 # Guards: they hold on the page as it stands, and a mutant on a scratch copy turns each red. They are the unplugged, offline, Refresh
@@ -124,13 +131,16 @@ param([int]$Shard = 1, [int]$Of = 1)
 if (($Of -ne 1 -and $Of -ne 3) -or $Shard -lt 1 -or $Shard -gt $Of) { throw "setup-page shards: -Of is 1 or 3, and -Shard is 1 to -Of (got $Shard of $Of)" }
 $shardCuts = @(39, 79)   # shard 1 runs cases 1 to 39, shard 2 runs 40 to 79, shard 3 runs 80 to the last (about a third of the time each)
 $ErrorActionPreference = 'Stop'
+# A direct run gets a job of its own, so a hard kill of the file also ends its Edge and server (test\direct-run-job.ps1).
+. (Join-Path $PSScriptRoot 'direct-run-job.ps1')
+Enter-DirectRunJob
 $root = Split-Path $PSScriptRoot
 $serve = Join-Path $root 'serve.ps1'; $appHtml = Join-Path $root 'app.html'
 $fixture = Join-Path $PSScriptRoot 'fixture.json'; $scenesFile = Join-Path $root 'scenes.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 163
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 167
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 # One case. An error inside it is one FAIL line, and the run goes on. A case outside this shard's range is not run; it is counted, so
 # every shard counts the same cases.
@@ -3506,9 +3516,13 @@ function () {
     $out
   }
   # The named nodes drawn on the board of monitor role $board (the ultrawide, wide, unless given), polled until $want of them are named or
-  # $seconds pass (a page update lands after its POST). Emitted flat, one object per half: a caller takes the list with @(...).
+  # $seconds pass (a page update lands after its POST). The first read waits for no preview in flight: until it lands, the board still
+  # names the old preview's places, and a half the new one draws would be missed. Emitted flat, one object per half: a caller takes the
+  # list with @(...).
   function Wait-Halves($sock, [string]$rx = 'Open half|Stays empty|Kept empty', [int]$want = 1, [int]$seconds = 10, [string]$board = 'wide') {
     $t0 = Get-Date
+    # The same wait as Empty-Select, out of the same $seconds as the poll below, so the cap does not double. The poll reads at least once.
+    [void](WaitFor $sock 'Object.keys(inflight).length === 0' $seconds)
     do {
       $found = @(Ax-Named $sock $rx $board | ? { $_.slot -ge 0 })
       if ($found.Count -ge $want) { break }
@@ -3529,6 +3543,58 @@ function () {
     $z = @(@((ConvertFrom-Json $p[0].body).layout.zones) | ? { $_ })
     if ($z.Count -eq 0) { return 'none' }
     ((@($z | % { Split-Ints $_.slots })) | Sort-Object) -join ','
+  }
+
+  # Wait-Halves called while a preview is in flight (debt wait-halves-first-poll). A page edit starts a preview, and until it lands the
+  # board still names the places the old preview drew; a half the new preview draws is missed by a read taken before. Here Hold-Js holds
+  # the preview of the edit, so it is in flight when the helper is called. The gate opens at the second read of the page's in-flight table
+  # (a wait that polls reads it again; one glance at it does not wait) and, as a hang guard that sits well above the run of a read, after
+  # 8 s. A helper that reads the board first returns the old board, and the gate is still shut at its return. The helper's own cap is
+  # 20 s here, above the guard.
+  $gateArmJs = @'
+const keys = Object.keys;
+window.__pvOpened = false; window.__pvReads = 0;
+window.__pvOpenNow = () => { window.__pvOpened = true; window.__pvOpen(); };
+window.__pvUnhook = () => { Object.keys = keys; };
+Object.keys = function (o) { if (o === inflight && ++window.__pvReads >= 2) { window.__pvUnhook(); window.__pvOpenNow(); } return keys.apply(this, arguments); };
+window.__pvTimer = setTimeout(window.__pvOpenNow, 8000);
+return true;
+'@
+  $gateDisarmJs = 'clearTimeout(window.__pvTimer); if (window.__pvUnhook) window.__pvUnhook(); if (window.__pvOpen) window.__pvOpen(); return true'
+  Case 'wait halves: a half the preview in flight draws is waited for: Wait-Halves returns the board once the preview has landed, not the old one' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1')
+    $opened = Open-Page $ws $url 'focus' $tenWinSnap
+    Check 'wait halves: the page opens on Focus with ten windows pinned, one open half (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    [void](WaitFor $ws 'Object.keys(inflight).length === 0' 20)
+    $first = @(Ax-Named $ws 'Open half' | ? { $_.slot -ge 0 })
+    Check 'wait halves: before the edit the board names one open half, on slot 1 (control)' ((($first | % { $_.slot }) -join ',') -eq '1') "named halves: $(Half-Text $first)"
+    if ((($first | % { $_.slot }) -join ',') -ne '1') { return }
+    [void](Js $ws (Hold-Js 'preview' 'pv' 'answer'))
+    try {
+      # Window 1002 holds cells 2 and 3 (slots 2 and 3); pinned to slot 2 alone, the new preview leaves slot 3 as an open half.
+      [void](Js $ws 'pinWin(1002, snap.monitors.find(m => m.role === "wide"), 2); return true')
+      $flying = WaitFor $ws '!!inflight.focus' 20
+      $held = WaitFor $ws 'window.__pvAnswered === true' 20
+      Check 'wait halves: the edit starts a preview of Focus, and its answer is held by the gate (scope)' ($flying -and $held) "preview in flight: $flying, answer held: $held"
+      if (-not ($flying -and $held)) { return }
+      $old = @(Ax-Named $ws 'Open half' | ? { $_.slot -ge 0 })
+      Check 'wait halves: while the preview is in flight the board still names only slot 1, the old preview''s half (scope)' ((($old | % { $_.slot }) -join ',') -eq '1') "named halves: $(Half-Text $old)"
+      if ((($old | % { $_.slot }) -join ',') -ne '1') { return }
+      [void](Js $ws $gateArmJs)
+      $halves = @(Wait-Halves $ws 'Open half' 1 20)
+      $gateOpen = Js $ws 'return window.__pvOpened === true'
+      [void](Js $ws $gateDisarmJs)
+      [void](WaitFor $ws 'Object.keys(inflight).length === 0' 20)
+      $settled = @(Ax-Named $ws 'Open half' | ? { $_.slot -ge 0 })
+      $want = (($settled | % { $_.slot } | Sort-Object) -join ',')
+      Check 'wait halves: once the preview has landed the board names open halves on slots 1 and 3 (scope)' ($want -eq '1,3') "named halves: $(Half-Text $settled)"
+      if ($want -ne '1,3') { return }
+      $got = (($halves | % { $_.slot } | Sort-Object) -join ',')
+      Check 'wait halves: Wait-Halves, called while the preview is in flight, returns the open halves on slots 1 and 3' ($got -eq '1,3') "returned: $(Half-Text $halves); the page names $(Half-Text $settled) once the preview lands; the gate had opened by its return: $gateOpen"
+    } finally {
+      [void](Js $ws $gateDisarmJs)
+    }
   }
 
   Case 'split open: a still click on a whole empty cell selects it: the inspector reads Empty Space, with Split Cell, and sends no POST /layout' {
@@ -3895,6 +3961,60 @@ function () {
   $zoneVScene = ConvertTo-Json -Depth 12 -Compress -InputObject ([pscustomobject]@{ id = 'zonev'; name = 'Zone vertical'; grids = [pscustomobject]@{ U1 = [pscustomobject]@{ c = 5; r = 1; mult = @(1, 2) } }; pins = @($zoneVSeed); zones = @($zoneV); fill = [pscustomobject]@{ mon = 'U1'; apps = @('*'); skip = @(); sort = 'app'; unit = @(1, 2) } })
   # F4: the small line under the Keep This Half Empty switch in the Window section, read from the page (null when not drawn).
   $keepLineJs = 'const w = document.getElementById("win"); if (!w) return null; const l = [...w.querySelectorAll("label.switch")].find(x => x.textContent.includes("Keep This Half Empty")); const s = l ? l.querySelector("small") : null; return s ? s.textContent.trim() : null;'
+
+  # ---- Kept half: why a window waits (debt kept-half-wait-reason; decision fill-controls) ------------------------------------------------
+  # The halfSeed board plus window 1016, which no pin holds, with Keep This Half Empty on the open half (slot 1, 1-based slot 2): the fill
+  # never uses the half, so 1016 waits in Windows That Stay Put. The engine hands back why 'no free cell' for it and BAYWHY words that
+  # "No room: add a column", though no column is missing. The reason is read from the chip's accessible name: the text between the window's
+  # title and ". Stays put.". Builder interface: a kept-half reason that holds the words "keep" or "kept", and "half" (the mockup's fill-keep
+  # state, split-cell.html, draws the waiting chip with the engine's "No free cell" and names no kept-half reason, so the debt's own words rule).
+  $keptWhyJs = 'const e = document.querySelector("[data-bay=\"1016\"]"); if (!e) return null; const l = e.getAttribute("aria-label") || ""; const t = (snap.windows.find(w => w.id === 1016) || {}).title || ""; const i = l.indexOf(t + ". "), j = l.indexOf(". Stays put."); return i >= 0 && j > i ? l.slice(i + t.length + 2, j) : l;'
+  $keptChipCond = '!!document.querySelector("[data-bay=\"1016\"]")'
+  $keptChipJs = 'return ' + $keptChipCond + ';'
+  $keptPlacedJs = 'const p = ((prevs[selId] || {}).placed || []).find(x => x.id === 1016); return p ? (p.slots || []) : null;'
+  $keptOnHalfJs = 'return ((prevs[selId] || {}).placed || []).filter(x => (x.slots || []).includes(2)).map(x => x.id);'
+  $keptSceneJs = 'const k = ((scene() || {}).fill || {}).keepEmpty || []; return k.map(x => x.mon + ":" + (x.slots || []).join(",")).join(";");'
+  $fullSeed = @(Split-Pin 0 @(0, 1)) + @(1..9 | % { Split-Pin $_ @((2 * $_), (2 * $_ + 1)) })
+
+  Case 'kept half wait reason: a window the fill leaves waiting only because a half is kept empty reads a reason that names the kept half, not No room' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ apps = @('*'); keepEmpty = @([pscustomobject]@{ mon = 'U1'; slots = @(1) }) })
+    $opened = Open-Page $ws $url 'focus' $zoneEngSnap
+    Check 'kept half wait reason: the page opens on Focus with one kept half and fill on (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $waits = WaitFor $ws $keptChipCond 10
+    Check 'kept half wait reason: window 1016 waits in Windows That Stay Put (scope)' $waits 'no entry for window 1016 in Windows That Stay Put'
+    if (-not $waits) { return }
+    $keptScene = [string](Js $ws $keptSceneJs)
+    Check 'kept half wait reason: the scene keeps slot 1 of U1 empty (scope)' ($keptScene -ceq 'U1:1') "fill.keepEmpty: '$keptScene'"
+    $onHalf = @(Split-Ints (Js $ws $keptOnHalfJs))
+    Check 'kept half wait reason: no window is placed on the kept half, slot 2 (scope)' ($onHalf.Count -eq 0) "windows on slot 2: $($onHalf -join ', ')"
+    if ($keptScene -cne 'U1:1' -or $onHalf.Count -ne 0) { return }
+    $why = [string](Js $ws $keptWhyJs)
+    Check 'kept half wait reason: the reason does not read No room, since no column is missing' ($why -notlike '*No room*') "reason read: '$why'"
+    Check 'kept half wait reason: the reason names the kept half (the words keep or kept, and half)' (($why -match '(?i)\b(keep|kept)\b') -and ($why -match '(?i)\bhalf\b')) "reason read: '$why'"
+  }
+
+  Case 'kept half wait reason: control: with no kept half the open half takes window 1016, and on a full board its reason is still No room: add a column' {
+    Put-Split (Split-Json 5 2 $halfSeed '2,1' '2,1' @() @{ apps = @('*') })
+    $opened = Open-Page $ws $url 'focus' $zoneEngSnap
+    Check 'kept half wait reason: the page opens on Focus with the open half not kept (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $took = WaitFor $ws '((prevs[selId] || {}).placed || []).some(x => x.id === 1016)' 10
+    Check 'kept half wait reason: with no kept half the fill places window 1016 (scope)' $took 'window 1016 is not placed: the board has no cell for it'
+    if (-not $took) { return }
+    $slots = (Split-Ints (Js $ws $keptPlacedJs)) -join ','
+    Check 'kept half wait reason: with no kept half window 1016 takes the open half, slot 2 (control)' ($slots -eq '2') "window 1016 slots: '$slots'"
+    Check 'kept half wait reason: with no kept half window 1016 is not in Windows That Stay Put (control)' ((Js $ws $keptChipJs) -eq $false) 'window 1016 has an entry in Windows That Stay Put'
+    Put-Split (Split-Json 5 2 $fullSeed '2,1' '2,1' @() @{ apps = @('*') })
+    $opened = Open-Page $ws $url 'focus' $zoneEngSnap
+    Check 'kept half wait reason: the page opens on Focus with a full board (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $waits = WaitFor $ws $keptChipCond 10
+    Check 'kept half wait reason: on a full board window 1016 waits in Windows That Stay Put (scope)' $waits 'no entry for window 1016 in Windows That Stay Put'
+    if (-not $waits) { return }
+    $why = [string](Js $ws $keptWhyJs)
+    Check 'kept half wait reason: on a full board the reason still reads No room: add a column (control)' ($why -like '*No room*') "reason read: '$why'"
+  }
 
   Case 'split open: a free half inside a zone is named Open half and Zone fills last, with fill on' {
     Put-Split $zoneHalfLayout
@@ -4431,12 +4551,27 @@ const row = k => { const i = document.querySelector('#scenebox input[data-auto="
 const stat = k => { const r = row(k); if (!r) return null; const c = r.cloneNode(true); c.querySelectorAll(".xwarn, .xopt").forEach(n => n.remove());
   return { checked: r.querySelector("input").checked, text: c.textContent.replace(/\s+/g, " ").trim(), bareOn: [...c.querySelectorAll("*")].some(e => e.children.length === 0 && e.textContent.trim() === "On") } };
 const s = document.querySelector("#scenebox .xsum");
-return { size: stat("size"), gaps: stat("gaps"), activity: stat("activity"), sum: s ? s.textContent.replace(/\s+/g, " ").trim() : null };
+return { size: stat("size"), gaps: stat("gaps"), activity: stat("activity"), setup: stat("setup"), sum: s ? s.textContent.replace(/\s+/g, " ").trim() : null };
 '@
   # Picks a scene's card, as a user does, and waits for its inspector.
   function Inert-Select($sock, [string]$scene) {
     [void](Js $sock ('document.querySelector("[data-pick=__S__]").click(); return true'.Replace('__S__', $scene)))
     WaitFor $sock ('selId === "__S__" && !!document.querySelector("#scenebox .callout")'.Replace('__S__', $scene))
+  }
+  # Flips one extra switch of the open scene, as the page's own change handler hears it, and reads the two lines it says in the same turn: the
+  # footer (#msg) and the note under the scene (#smsg). The handler runs inside the dispatch, so nothing later can have replaced the words.
+  # Then reads the switch's row (the shared $inertRowsJs) for what it shows after the flip.
+  $inertFlipJs = @'
+const i = document.querySelector('#scenebox input[data-auto="__K__"]');
+if (!i) return { found: false };
+i.checked = __ON__; i.dispatchEvent(new Event("change", { bubbles: true }));
+const words = id => { const e = document.getElementById(id); return e ? e.textContent.replace(/\s+/g, " ").trim() : "" };
+return { found: true, footer: words("msg"), note: words("smsg") };
+'@
+  function Inert-Flip($sock, [string]$key, [bool]$on) {
+    $said = Js $sock ($inertFlipJs.Replace('__K__', $key).Replace('__ON__', $(if ($on) { 'true' } else { 'false' })))
+    $rows = Js $sock $inertRowsJs
+    [pscustomobject]@{ found = [bool]$said.found; footer = [string]$said.footer; note = [string]$said.note; row = $rows.$key }
   }
 
   Case 'inert switch, rail: the chip of a switch that does nothing is marked apart from a working chip, and the rail counts only scenes with a working trigger' {
@@ -4540,6 +4675,57 @@ return { chips: want.map(([scene, label]) => {
       $at1440 = @((Js $ws ($reasonJs.Replace('__WANT__', $want))).chips)
       Check 'inert switch, 1024: at 1440 the reason line of each of those 3 chips is shown (control)' (@($at1440 | ? { $_.shown }).Count -eq 3) "shown at 1440: $(@($at1440 | ? { $_.shown } | % { $_.label }) -join ', ')"
     } finally { Fix-View $ws }
+  }
+
+  # Turning a switch On (debt inert-switch-announces-moves). The page's change handler words the line itself, and it words it for every switch
+  # the same way, so an inert switch is told that it moves windows while its own row reads On, inactive. The probes turn one switch On in
+  # each of the three kinds of inert switch (needNote's cases) and, for each kind, a working switch of the same key as a control. The line
+  # lives in two places, the footer and the note under the scene, and the same words fill both. $flipWarn is the move claim's own words;
+  # $flipInactive is the two ways the page already says a switch does nothing (the row's "inactive", the reason sentences' "does nothing").
+  $flipWarn = 'without asking|moves windows'
+  $flipInactive = 'inactive|does nothing|do nothing'
+  Case 'inert switch, turning On: a switch that does nothing says it is inactive and not that it moves windows, and a working switch and an Off switch say what they did' {
+    # Every switch is off. Meetings carries a setup key (Inert-Config sets it for the scenes it is asked about, so Meetings is named with no switch).
+    Put-Config (Inert-Config @{ meetings = @() } @{ meetings = $plugKey })
+    $opened = Open-Page $ws $url 'focus'
+    Check 'inert switch, turn On: the page opens on Focus (control)' $opened 'the page did not open on Focus in time'
+    if (-not $opened) { return }
+    $probes = @(
+      [pscustomobject]@{ scene = 'focus'; key = 'size'; name = 'Call Size on Focus'; inert = $true }          # Focus is neither Listen nor Meetings
+      [pscustomobject]@{ scene = 'focus'; key = 'setup'; name = 'Setup on Focus'; inert = $true }             # no setup is picked for Focus
+      [pscustomobject]@{ scene = 'solo'; key = 'activity'; name = 'Work Match on Solo'; inert = $true }       # no entry of the activity map points at Solo
+      [pscustomobject]@{ scene = 'listen'; key = 'size'; name = 'Call Size on Listen'; inert = $false }       # Listen is the meeting rule's big-call scene
+      [pscustomobject]@{ scene = 'meetings'; key = 'setup'; name = 'Setup on Meetings'; inert = $false }      # Meetings has the Desk setup picked
+      [pscustomobject]@{ scene = 'focus'; key = 'activity'; name = 'Work Match on Focus'; inert = $false }    # the activity map points Claude at Focus
+    )
+    foreach ($p in $probes) {
+      $sel = Inert-Select $ws $p.scene
+      Check "inert switch, turn On: $($p.scene) opens in the inspector for $($p.name) (control)" $sel "the inspector did not open on $($p.scene) in time"
+      if (-not $sel) { continue }
+      $r = Inert-Flip $ws $p.key $true
+      Check "inert switch, turn On: $($p.name) has a switch to turn On (scope)" $r.found "no data-auto=$($p.key) switch in the inspector of $($p.scene)"
+      if (-not $r.found) { continue }
+      $rowSays = if ($r.row) { "row reads: '$($r.row.text)', checked $($r.row.checked)" } else { 'no row' }
+      $lines = "footer reads: '$($r.footer)'; note reads: '$($r.note)'"
+      if ($p.inert) {
+        Check "inert switch, turn On: $($p.name), turned On, reads On, inactive (scope)" ([bool]($r.row -and $r.row.checked -and $r.row.text -match 'inactive')) $rowSays
+        Check "inert switch, turn On: $($p.name), turned On, says something in the footer and in the note (scope)" ($r.footer.Length -gt 0 -and $r.note.Length -gt 0) $lines
+        if (-not ($r.row -and $r.row.checked -and $r.row.text -match 'inactive') -or $r.footer.Length -eq 0 -or $r.note.Length -eq 0) { continue }
+        Check "inert switch, turn On: $($p.name), which does nothing there, does not say it moves windows" (-not ($r.footer -match $flipWarn) -and -not ($r.note -match $flipWarn)) $lines
+        Check "inert switch, turn On: $($p.name), which does nothing there, says it is inactive" ($r.footer -match $flipInactive -and $r.note -match $flipInactive) $lines
+      } else {
+        Check "inert switch, turn On: $($p.name), turned On, reads a bare On and not inactive (scope)" ([bool]($r.row -and $r.row.checked -and $r.row.bareOn -and $r.row.text -notmatch 'inactive')) $rowSays
+        Check "inert switch, turn On: $($p.name), a working switch, still says it moves windows without asking (control)" ($r.footer -match 'moves windows without asking' -and $r.note -match 'moves windows without asking') $lines
+      }
+    }
+    # Control: a switch turned Off keeps its line. Focus's Call Size was turned On, and is inert, in the first probe; its work copy is still On.
+    $sel = Inert-Select $ws 'focus'
+    Check 'inert switch, turn Off: focus opens again in the inspector (control)' $sel 'the inspector did not open on focus in time'
+    if (-not $sel) { return }
+    $r = Inert-Flip $ws 'size' $false
+    Check 'inert switch, turn Off: Call Size on Focus has a switch to turn Off (scope)' ($r.found -and $r.row -and -not $r.row.checked) "found $($r.found), row: $(ConvertTo-Json -Compress -InputObject $r.row)"
+    if (-not ($r.found -and $r.row -and -not $r.row.checked)) { return }
+    Check 'inert switch, turn Off: Call Size on Focus, turned Off, still says Save to keep it (control)' ($r.footer -match 'Save to keep it' -and $r.note -match 'Save to keep it') "footer reads: '$($r.footer)'; note reads: '$($r.note)'"
   }
 
 } catch {
