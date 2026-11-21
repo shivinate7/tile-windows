@@ -714,7 +714,7 @@ dialog form{display:grid;gap:10px}
       <li>Tab to a window, then arrows move it one cell and Shift+arrows resize it.</li>
       <li>Ctrl+Shift+arrows resize it from its top or left edge.</li>
       <li>S or Shift+F10 opens Split Cell on the selected window, open half or empty cell. Shift+S or a double-click splits a window side by side at once. J joins a split cell. Tab reaches each empty cell and open half after the windows.</li>
-      <li>Delete unpins it. K keeps it where it is (off the board).</li>
+      <li>Delete unpins it. K makes it stay put (off the board).</li>
       <li>L locks or unlocks it. B brings the window behind it to the front.</li>
       <li>A locked window moves only after a warning.</li>
       <li>Ctrl+click cells to pick them, then Merge joins them.</li>
@@ -1230,7 +1230,7 @@ function view(){
 const inBay=x=>LIVE&&!!prev()&&(x.kind==="left"||x.kind==="stay");
 // A bay entry carries `why: COVERED` when a resize covered its window, or `why: MERGED` when a Merge moved it; tile.ps1 hands it back in left[].why, and BAYWHY words it.
 const COVERED="covered by a resize",MERGED="moved by a merge";
-const BAYWHY={"in the bay":"You kept it here",[COVERED]:"Covered by a resize",[MERGED]:"Moved by a merge","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","fill is off":"Fill is off","Its screen is unplugged":"Its screen is unplugged"};
+const BAYWHY={"in the bay":"You kept it here",[COVERED]:"Covered by a resize",[MERGED]:"Moved by a merge","zone full":"Zone full: make the zone bigger","no free cell":"No room: add a column","half kept empty":"A half is kept empty: turn off Keep This Half Empty","fill is off":"Fill is off","Its screen is unplugged":"Its screen is unplugged"};
 // The reason a heading shows whole, on a second row when it does not fit, never cut with an ellipsis (a heading with any other reason is one row).
 const BAYWHOLE=BAYWHY["Its screen is unplugged"];
 const BAYNOWHY="Not in this scene";
@@ -1319,7 +1319,7 @@ function render(){
   cb.hidden=!(LIVE&&s);cb.disabled=!unpinned;cb.title=unpinned?"Send every window that is not pinned to Windows That Stay Put, and turn off Fill Empty Cells.":"Only pinned windows are on the board.";
   $("whyclear").textContent=unpinned?"":"Only pinned windows are on the board.";
   const anyFree=!!(LIVE&&s&&snap.monitors.some(q=>mk(q)&&s.grids[mk(q)]&&isFree(s.grids[mk(q)])));
-  $("hint").textContent=anyFree?"Drag the line between two windows to resize both. Hold Shift to move the whole line. Zones pause while Free Layout is on: turn it off to draw a zone.":LIVE?"Drag to a cell to pin, or to the list to keep put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
+  $("hint").textContent=anyFree?"Drag the line between two windows to resize both. Hold Shift to move the whole line. Zones pause while Free Layout is on: turn it off to draw a zone.":LIVE?"Drag to a cell to pin it, or to the list to make it stay put. On a taken cell, the circle swaps and the rest puts it behind. Right-click a window to split its cell.":
     "Offline: drag a window onto a cell to move it there. Apply downloads a place file for tile.ps1.";
   {const fe=LIVE&&s?freeEmpty():"";if(fe)$("hint").textContent=fe;$("fillon").hidden=!fe;
     // A disabled Draw Zone is described by the hint, which gives the reason in a free monitor (the all-empty sentence replaces it).
@@ -1398,7 +1398,7 @@ function renderBay(V){
   bay.classList.toggle("all",bayAll);
   const m=$("baymore");m.hidden=!more&&!bayAll;m.textContent=bayAll?"Show Fewer":`Show ${more} More`;
   $("dropslot").textContent=dropText()}
-const dropText=(w,c)=>w?`Release to keep ${appName(w.app)}: ${w.title} here, under ${catName(c)}`:"Drag a window here to keep it where it is";
+const dropText=(w,c)=>w?`Release to make ${appName(w.app)}: ${w.title} stay put, under ${catName(c)}`:"Drag a window here to make it stay put";
 function where(x){if(inBay(x))return`no cell (${bayWhy(x).toLowerCase()}), stays where it is`;if(!x.r)return"minimized, stays minimized";if(x.kind==="left")return"no free cell, stays where it is";
   if(x.kind==="stay")return LIVE?"not in this scene, stays where it is":"where it is now";
   const p=x.p,m=p?snap.monitors.find(m=>mk(m)===p.mon):monAt(x.r.x+x.r.w/2,x.r.y+x.r.h/2);
@@ -1412,7 +1412,11 @@ function cellWords(p){const g=LIVE&&scene().grids[p.mon],n=`cell${p.slots.length
   const v=p.slots[0]-1,col=v%GC(g),row=Math.floor(v/GC(g)),cell=Math.floor(row/my)*g.c+Math.floor(col/mx)+1;
   const part=mx===2&&my===1?(col%2?"the right half":"the left half"):mx===1&&my===2?(row%2?"the bottom half":"the top half"):"a part";
   return `${n}, ${part} of cell ${cell}`}
-function overText(V){const P=prev(),o=$("over");if(!LIVE||!P){o.textContent="";o.classList.remove("warn");return}
+function overText(V){const P=prev(),o=$("over");
+  // A failed preview of the selected scene keeps no preview (previewRun drops it), so the board shows the windows where they are now: say so here (mockup selected-fail-status-only). The status line still announces the failure, so this line is no live region.
+  if(LIVE&&!P&&pfail[selId]){const sc=cfg.scenes.find(x=>x.id===selId)||work[selId]||{};
+    o.classList.add("warn");o.innerHTML=`<b>Preview failed:</b> ${esc(pfail[selId])}. The board shows the windows where they are now, not where ${esc(sc.name||selId)} would put them. Pick the scene again to try once more.`;return}
+  if(!LIVE||!P){o.textContent="";o.classList.remove("warn");return}
   const parts=[];
   if(P.missing.length)parts.push(`<b>Not open:</b> ${esc([...new Set(P.missing.map(m=>appName(m.app)+(m.why!=="no open window"?` (${m.why})`:"")))].join(", "))}.`);
   o.classList.toggle("warn",parts.length>0);o.innerHTML=parts.join(" ")}
@@ -1539,7 +1543,7 @@ function renderInsp(V){
     const mm=LIVE?snap.monitors.filter(q=>mk(q)&&s.grids[mk(q)]):snap.monitors;
     wh+=`<div class="field stack"><label for="moveto">Move to</label><select id="moveto" ${lockd?"disabled":""}><option value="">${mm.some(q=>isFree(gridOf(q)))?"Choose a Space":"Choose a Cell"}</option>${mm.map(q=>{const gg=gridOf(q);return `<optgroup label="${esc(monName(q))}">${isFree(gg)?freeInfo(q).list.map(o=>`<option value="${snap.monitors.indexOf(q)}:s${o.i}">${esc(monName(q))} · Space ${o.no+1}</option>`).join(""):[...Array(GC(gg)*GR(gg)).keys()].map(i=>`<option value="${snap.monitors.indexOf(q)}:${i}">${esc(monName(q))} · Cell ${i+1}</option>`).join("")}</optgroup>`}).join("")}</select></div>`;
     if(pin)wh+=`<button type="button" class="btn" id="unpin" ${lockd?'disabled title="Locked. Unlock it first."':""}>Unpin and Let It Fill</button>`;
-    if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay" ${lockd?'disabled title="Locked. Unlock it first."':""}>Keep Where It Is</button>`;
+    if(LIVE&&!inBay(x))wh+=`<button type="button" class="btn" id="tobay" ${lockd?'disabled title="Locked. Unlock it first."':""}>Stay Put</button>`;
     $("win").innerHTML=wh+"</div>";
     // Behind This Window sits below the Scene and Monitor sections: a newly selected stacked tile brings the Window section to the top.
     // So does a selected narrow pinned tile: its pin mark is hidden (.tile.sel.narrow .pinmark), so the Pinned line is its only pin cue.
@@ -3192,14 +3196,14 @@ async function saveConfig(next,msg){
   const wire=clone(next);for(const x of wire.scenes)delete x.layouts;
   const r=await post("config",wire);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
   cfg=next;status(msg);sceneMsg=msg;render();return true}
-// An explicit Save keeps only list entries that match an open window, by app and exact title: a window handle means nothing in the next session.
+// Stripping drops the window handle (it means nothing in the next session) and keeps the app and exact title. Without all, only entries that match an open window stay.
 // all: an autosave (a layout as the board holds it) keeps every entry, the closed windows' too, and only drops the handles; a layout with an empty list is left as it is.
-// Only a Save the owner presses forgets an entry (main's rule); an edit made for some other window must not cost the layout its Windows That Stay Put or held entries.
-function stripIds(s,all){const open=b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title));
-  if(Array.isArray(s.bay)&&!(all&&!s.bay.length)){s.bay=s.bay.filter(b=>all||open(b)).map(b=>({app:b.app,title:(winById(b.id)||b).title,...(b.why?{why:b.why}:{})}));if(!s.bay.length)delete s.bay}
-  if(s.fill&&Array.isArray(s.fill.held)&&!(all&&!s.fill.held.length)){const L=s.fill.held;s.fill.held=L.map(h=>({h,w:heldWin(h,L)})).filter(e=>all||e.w).map(({h,w})=>({app:h.app,title:w?w.title:h.title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
+// forSave: an explicit Save keeps the closed windows' entries too, so a window that reopens keeps its Stay Put and held entry; an emptied list is dropped, as before. own: an entry keeps its own title unless its handle names an open window of its own app, so a closed window's entry is never retitled from another window (the single-window fallback of heldWin stays for the autosave and live views). Save as new still drops them (stripIds without all).
+function stripIds(s,all,own){const open=b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title));
+  if(Array.isArray(s.bay)&&!(all&&!s.bay.length)){s.bay=s.bay.filter(b=>all||open(b)).map(b=>({app:b.app,title:(own?(winById(b.id)&&winById(b.id).app===b.app?winById(b.id):b):(winById(b.id)||b)).title,...(b.why?{why:b.why}:{})}));if(!s.bay.length)delete s.bay}
+  if(s.fill&&Array.isArray(s.fill.held)&&!(all&&!s.fill.held.length)){const L=s.fill.held;s.fill.held=L.map(h=>({h,w:own&&h.id==null?null:heldWin(h,L)})).filter(e=>all||e.w).map(({h,w})=>({app:h.app,title:w?w.title:h.title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
   return s}
-const forSave=s=>stripIds(clone(s));
+const forSave=s=>{const x=stripIds(clone(s),true,true);if(x.bay&&!x.bay.length)delete x.bay;if(x.fill&&x.fill.held&&!x.fill.held.length)delete x.fill.held;return x};
 const forSaveLayout=L=>stripIds(clone(L),true);
 // The scene as POST /config takes it. In id mode that is the saved copy (its role template and its layouts) with this scene's name, triggers and extras: the board's layout saves apart, by POST /layout.
 function configScene(id){
@@ -3209,7 +3213,7 @@ async function saveScene(){const s=scene(),sv=saved(selId);
   if(s.builtIn&&!(idm()?autoOnly(metaOf(s),sv&&metaOf(sv)):autoOnly(s,sv)))return;
   const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId),out=configScene(selId);
   if(i>=0)next.scenes[i]=out;else next.scenes.push(out);await saveConfig(next,`Saved ${s.name}.`)}
-async function saveAsNew(name){const cur=scene(),s=idm()?Object.assign(clone(saved(selId)||cur),metaOf(cur),{layouts:{}}):forSave(cur),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
+async function saveAsNew(name){const cur=scene(),s=idm()?Object.assign(clone(saved(selId)||cur),metaOf(cur),{layouts:{}}):stripIds(clone(cur)),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
   Object.assign(s,{id,name:base.slice(0,40),builtIn:false});delete s.blurb;
   const next=clone(cfg);next.scenes.push(s);
   // Id mode: the copy takes the layout on the board, and the scene it came from keeps the layout it has (a board change was saved to it already).
@@ -3299,7 +3303,9 @@ document.addEventListener("change",ev=>{const t=ev.target;
   else if(t.name==="trig")edit(s=>{s.trigger.type=t.value});
   else if(t.id==="time"&&t.value)edit(s=>{s.trigger.time=t.value});
   else if(t.id==="back")edit(s=>{s.trigger.back=t.checked});
-  else if(t.dataset.auto){const x=AUTO.find(a=>a[0]===t.dataset.auto),msg=`${x[1]} is ${t.checked?"on":"off"} for ${scene().name}. ${t.checked?"It moves windows without asking once you Save.":"Save to keep it."}`;
+  else if(t.dataset.auto){const x=AUTO.find(a=>a[0]===t.dataset.auto),ic=t.checked?inertCase(x[0],{...scene(),auto:{...scene().auto,[x[0]]:true}}):"",
+    // An inert switch does nothing for this scene, so it gets its reason in place of the move warning.
+    msg=`${x[1]} is ${t.checked?"on":"off"} for ${scene().name}. ${ic?`It is inactive here. ${INERT[ic][1]}`:t.checked?"It moves windows without asking once you Save.":"Save to keep it."}`;
     edit(s=>{(s.auto||(s.auto={}))[t.dataset.auto]=t.checked},msg);sceneMsg=msg;if($("smsg"))$("smsg").textContent=msg}
   else if(t.dataset.xs==="setup")edit(s=>{if(t.value)s.setupKey=t.value;else delete s.setupKey},t.value?`${scene().name} applies on ${setupName(t.value)}. Save to keep it.`:"No setup picked. Save to keep it.");
   else if(t.dataset.xk){const v=clamp(Math.round(+t.value)||1,1,+t.max),f=t.dataset.xf,k=t.dataset.xk,sc=t.dataset.xs;
