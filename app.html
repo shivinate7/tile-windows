@@ -3192,14 +3192,14 @@ async function saveConfig(next,msg){
   const wire=clone(next);for(const x of wire.scenes)delete x.layouts;
   const r=await post("config",wire);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
   cfg=next;status(msg);sceneMsg=msg;render();return true}
-// An explicit Save keeps only list entries that match an open window, by app and exact title: a window handle means nothing in the next session.
+// Stripping drops the window handle (it means nothing in the next session) and keeps the app and exact title. Without all, only entries that match an open window stay.
 // all: an autosave (a layout as the board holds it) keeps every entry, the closed windows' too, and only drops the handles; a layout with an empty list is left as it is.
-// Only a Save the owner presses forgets an entry (main's rule); an edit made for some other window must not cost the layout its Windows That Stay Put or held entries.
+// forSave: an explicit Save keeps the closed windows' entries too, so a window that reopens keeps its Stay Put and held entry; an emptied list is dropped, as before. Save as new still drops them (stripIds without all).
 function stripIds(s,all){const open=b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title));
   if(Array.isArray(s.bay)&&!(all&&!s.bay.length)){s.bay=s.bay.filter(b=>all||open(b)).map(b=>({app:b.app,title:(winById(b.id)||b).title,...(b.why?{why:b.why}:{})}));if(!s.bay.length)delete s.bay}
   if(s.fill&&Array.isArray(s.fill.held)&&!(all&&!s.fill.held.length)){const L=s.fill.held;s.fill.held=L.map(h=>({h,w:heldWin(h,L)})).filter(e=>all||e.w).map(({h,w})=>({app:h.app,title:w?w.title:h.title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
   return s}
-const forSave=s=>stripIds(clone(s));
+const forSave=s=>{const x=stripIds(clone(s),true);if(x.bay&&!x.bay.length)delete x.bay;if(x.fill&&x.fill.held&&!x.fill.held.length)delete x.fill.held;return x};
 const forSaveLayout=L=>stripIds(clone(L),true);
 // The scene as POST /config takes it. In id mode that is the saved copy (its role template and its layouts) with this scene's name, triggers and extras: the board's layout saves apart, by POST /layout.
 function configScene(id){
@@ -3209,7 +3209,7 @@ async function saveScene(){const s=scene(),sv=saved(selId);
   if(s.builtIn&&!(idm()?autoOnly(metaOf(s),sv&&metaOf(sv)):autoOnly(s,sv)))return;
   const next=clone(cfg),i=next.scenes.findIndex(x=>x.id===selId),out=configScene(selId);
   if(i>=0)next.scenes[i]=out;else next.scenes.push(out);await saveConfig(next,`Saved ${s.name}.`)}
-async function saveAsNew(name){const cur=scene(),s=idm()?Object.assign(clone(saved(selId)||cur),metaOf(cur),{layouts:{}}):forSave(cur),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
+async function saveAsNew(name){const cur=scene(),s=idm()?Object.assign(clone(saved(selId)||cur),metaOf(cur),{layouts:{}}):stripIds(clone(cur)),base=(name||"").trim()||s.name+" copy",id=base.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24)+"-"+Date.now().toString(36);
   Object.assign(s,{id,name:base.slice(0,40),builtIn:false});delete s.blurb;
   const next=clone(cfg);next.scenes.push(s);
   // Id mode: the copy takes the layout on the board, and the scene it came from keeps the layout it has (a board change was saved to it already).
