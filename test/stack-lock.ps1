@@ -138,12 +138,12 @@ $root = Split-Path $PSScriptRoot
 $tile = Join-Path $root 'tile.ps1'; $serve = Join-Path $root 'serve.ps1'; $fixture = Join-Path $PSScriptRoot 'fixture.json'
 $utf8 = New-Object Text.UTF8Encoding $false
 $script:fail = 0
-# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (287). Shard 1 runs
+# Shards (test\shard.ps1): each case is one Shard-Take gate, numbered in file order, and the file pins its gate total (290). Shard 1 runs
 # gates 1 to 70 (the cases before the Board feedback section), shard 2 gates 71 to 174 (before the explicit Save section and the stack
 # tweaks ruling section), shard 3 the rest. Each shard starts its own page session.
 $shardCuts = @(70, 174)
 . (Join-Path $PSScriptRoot 'shard.ps1')
-Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 287
+Shard-Init $Shard $Of @($shardCuts | Select-Object -First ($Of - 1)) 290
 function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $script:fail++; "FAIL  $name  $detail" } }
 
 # Run folders (test-temp-standard): one folder per run, <pid>-<UUID>, under one temp root. The first request of a run
@@ -3230,6 +3230,72 @@ try {
   Check 'drag pin, red: after its title changes, Quarterly roadmap is still placed by the pin its drag made (the pin matches the app and the stable part of the title, not the whole title)' (DpOn $dpAfter 1006 $dpChIdx 10) "the pin's match: '$($dpCh.match)'; the window's title is now '$dpNewCh'; $(DpWhy $dpAfter 1006)"
   Check 'drag pin, control: after the title change, no other chrome window is placed by that pin (the pin is not the whole app)' ([bool]($dpAfter -and $dpChIdx -ge 0 -and -not @($dpAfter.placed | ? { $_.pin -eq $dpChIdx -and $_.id -ne 1006 }).Count)) "placed by the chrome pin: $(SlShort @($dpAfter.placed | ? { $_.pin -eq $dpChIdx }))"
   Check 'drag pin, control: Inbox, the only Outlook window, is still placed by its pin after its title changes' (DpOn $dpAfter 1013 $dpOlIdx 9) "the window's title is now '$dpNewOl'; $(DpWhy $dpAfter 1013)"
+  }
+
+  # ---------- Bay pin: a window dropped from Windows That Stay Put makes one pin, not a second beside a saved full-title pin ----------
+  # matchFor gives a pin made by a drop the lead words of the title, but a saved pin can hold the whole title. pinEdit removes a saved
+  # pin only when its app and match equal the new pin's, so the saved one stays beside the new one. The bay claims the window before any
+  # pin (tile.ps1), so no pin places it when it is dropped. The saved pin is on cell 2 and the drop goes to cell 9.
+  if (Shard-Take) {
+  SlViewport 1440 900
+  SlCase (SlSceneJson (SlPins '{"app":"chrome","match":"Quarterly roadmap - Example","mon":"wide","slots":[1]}') '[]' ',"bay":[{"app":"chrome","title":"Quarterly roadmap - Example"}]')
+  $bdPre = SlBayIds
+  $bdHeld = SlPlacedOf 1006
+  $bdSaved = SlList 'work[selId].pins'
+  $bdChip = SlGet "(() => { const e = [...document.querySelectorAll('#bgrps [data-bay]')].find(b => b.dataset.bay === '1006'); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  if ($bdChip) { SlDrag (SlAt $bdChip 0.5 0.5) (SlSlotAt 8) }
+  $bdScene = SlGet 'work[selId]'
+  $bdPins = @($bdScene.pins)
+  $bdNames = SlNamesCount $bdPins 'chrome' 'Quarterly roadmap - Example'
+  $bdS0 = @($bdSaved)[0]
+  Check 'bay pin, scope: before the drop, Windows That Stay Put lists Quarterly roadmap (1006) and no pin places it' ([bool](($bdPre -contains 1006) -and -not $bdHeld)) "bay ids: $($bdPre -join ','); placed: $(SlShort $bdHeld)"
+  Check 'bay pin, scope: the scene holds one saved pin, named with the whole title, on cell 2' ([bool](@($bdSaved).Count -eq 1 -and "$($bdS0.match)" -eq 'Quarterly roadmap - Example' -and (SlCells $bdS0) -eq '1')) "saved pins: $(SlShort $bdSaved)"
+  Check 'bay pin, control: the drop puts a chrome pin on cell 9' ([bool](@($bdPins | ? { $_.app -eq 'chrome' -and (SlCells $_) -eq '8' }).Count -eq 1)) "pins: $(SlShort $bdPins)"
+  Check 'bay pin, red: after the drop, one pin names Quarterly roadmap, not the saved full-title pin beside the new one' ([bool]($bdNames -eq 1)) "pins naming it: $bdNames; pins: $(SlShort $bdPins)"
+  }
+
+  # ---------- Bay pin, put behind: a window put behind a pin from Windows That Stay Put keeps one entry, not a second beside a saved full-title pin ----------
+  # Put Behind (putBehind) removes a saved pin only when its app and match equal the stack entry's, and that entry comes from matchFor. The
+  # front is Refactor on cell 1, the saved full-title pin is on cell 2 and holds nothing, and the drop is on the front's lower band.
+  if (Shard-Take) {
+  SlViewport 1440 900
+  SlCase (SlSceneJson (SlPins '{"app":"claude","match":"Refactor","mon":"wide","slots":[0]}' '{"app":"chrome","match":"Quarterly roadmap - Example","mon":"wide","slots":[1]}') '[]' ',"bay":[{"app":"chrome","title":"Quarterly roadmap - Example"}]')
+  $bpPre = SlBayIds
+  $bpHeld = SlPlacedOf 1006
+  $bpSaved = SlList 'work[selId].pins'
+  $bpChip = SlGet "(() => { const e = [...document.querySelectorAll('#bgrps [data-bay]')].find(b => b.dataset.bay === '1006'); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  SlMarkEngine
+  if ($bpChip -and (SlBox 1001)) { SlDropNoSettle (SlAt $bpChip 0.5 0.5) (SlAt (SlBox 1001) 0.5 0.85) }
+  $bpLanded = SlWaitBehind 1006
+  $bpScene = SlGet 'work[selId]'
+  $bpPins = @($bpScene.pins)
+  $bpNames = SlNamesCount $bpPins 'chrome' 'Quarterly roadmap - Example'
+  Check 'bay pin, put behind, scope: before the drop, Windows That Stay Put lists Quarterly roadmap (1006) and no pin places it' ([bool](($bpPre -contains 1006) -and -not $bpHeld)) "bay ids: $($bpPre -join ','); placed: $(SlShort $bpHeld)"
+  Check 'bay pin, put behind, scope: the scene holds two pins before the drop: Refactor on cell 1 (the front) and the saved full-title pin on cell 2' ([bool](@($bpSaved).Count -eq 2 -and (SlCells (SlPin $bpScene 'Refactor')) -eq '0')) "pins: $(SlShort $bpSaved)"
+  Check 'bay pin, put behind, control: the drop asks the engine for a new answer' ([bool]$bpLanded.fresh) "no new answer from the engine after the drop"
+  Check 'bay pin, put behind, control: the front Refactor lists a stack entry for Quarterly roadmap' ([bool](SlHasBehind (SlPin $bpScene 'Refactor') 'Quarterly')) "pins: $(SlShort $bpPins)"
+  Check 'bay pin, put behind, red: after the put behind, one pin or stack entry names Quarterly roadmap, not the saved full-title pin beside it' ([bool]($bpNames -eq 1)) "entries naming it: $bpNames; pins: $(SlShort $bpPins)"
+  }
+
+  # ---------- Bay pin, lead-words control: a saved pin with the lead words is the same pin, so the drop replaces it ----------
+  # The first bay gate's drop, with the saved pin's match as matchFor now gives it: the lead words. pinEdit removes it, so one pin
+  # names the window after the drop.
+  if (Shard-Take) {
+  SlViewport 1440 900
+  SlCase (SlSceneJson (SlPins '{"app":"chrome","match":"Quarterly roadmap","mon":"wide","slots":[1]}') '[]' ',"bay":[{"app":"chrome","title":"Quarterly roadmap - Example"}]')
+  $lcPre = SlBayIds
+  $lcHeld = SlPlacedOf 1006
+  $lcSaved = SlList 'work[selId].pins'
+  $lcChip = SlGet "(() => { const e = [...document.querySelectorAll('#bgrps [data-bay]')].find(b => b.dataset.bay === '1006'); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()"
+  if ($lcChip) { SlDrag (SlAt $lcChip 0.5 0.5) (SlSlotAt 8) }
+  $lcScene = SlGet 'work[selId]'
+  $lcPins = @($lcScene.pins)
+  $lcNames = SlNamesCount $lcPins 'chrome' 'Quarterly roadmap - Example'
+  $lcS0 = @($lcSaved)[0]
+  Check 'bay pin, lead control, scope: before the drop, Windows That Stay Put lists Quarterly roadmap (1006) and no pin places it' ([bool](($lcPre -contains 1006) -and -not $lcHeld)) "bay ids: $($lcPre -join ','); placed: $(SlShort $lcHeld)"
+  Check 'bay pin, lead control, scope: the scene holds one saved pin, named with the lead words, on cell 2' ([bool](@($lcSaved).Count -eq 1 -and "$($lcS0.match)" -eq 'Quarterly roadmap' -and (SlCells $lcS0) -eq '1')) "saved pins: $(SlShort $lcSaved)"
+  Check 'bay pin, lead control: the drop puts a chrome pin on cell 9' ([bool](@($lcPins | ? { $_.app -eq 'chrome' -and (SlCells $_) -eq '8' }).Count -eq 1)) "pins: $(SlShort $lcPins)"
+  Check 'bay pin, lead control: after the drop, one pin names Quarterly roadmap' ([bool]($lcNames -eq 1)) "pins naming it: $lcNames; pins: $(SlShort $lcPins)"
   }
 
   # ---------- Page load: the first data fetch fails once ----------
