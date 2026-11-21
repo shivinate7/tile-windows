@@ -11,7 +11,7 @@
 #   With -Json, print {placed,missing,left} as JSON, each placed window with its from and to rect.
 #   A scene's zones ({mon, slots, app | cat}) fill their cells with that app's or category's windows in
 #   fill order, after pins (a pin wins its cell). Its bay ([{app, title, why?}]) holds windows that stay put.
-#   left[].why says where a window without a cell came from: 'no free cell', 'zone full' or 'in the bay'. A bay entry's own why
+#   left[].why says where a window without a cell came from: 'no free cell', 'half kept empty' (a kept half would have taken it), 'zone full' or 'in the bay'. A bay entry's own why
 #   (the page sets it, such as when a resize covered the window) is passed through in place of 'in the bay'; the page words it.
 #   A pin's behind ([{app, match}]) stacks windows on its rect: each is placed with behind=true and the pin's index, never filled.
 #   A pin's lock (true): the page reads it, a pin already beats zones and the fill for its cells, and -GapFill reads it too: a locked area never moves and never grows.
@@ -775,7 +775,11 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
   # scene names the other windows, which stay where they are, once every pass has run (see the sweep after the phase loop).
   $fillOff = $scene -and $script:sceneFillOff
   # A kept cell counts as taken for the zones and the fill. The pins and held phases ran first, so a pin or a held window on it already won.
-  if ($phase -in 'zones', 'fill') { foreach ($ks in $keep) { $used[[int]$ks] = 1 } }
+  # The first of these phases records which kept cells were free (no pin, held window or zone on them); the fill reads that to tell a window kept waiting by a kept half from one with no room.
+  if ($phase -in 'zones', 'fill') {
+    if (-not $state.ContainsKey('keptFree')) { $zs = @($zones | % { $_.Slots } | % { [int]$_ }); $state.keptFree = @($keep | % { [int]$_ } | ? { -not $used.ContainsKey($_) -and $zs -notcontains $_ }) }
+    foreach ($ks in $keep) { $used[[int]$ks] = 1 }
+  }
   if ($phase -eq 'zones' -and -not $fillOff) {
     $zkeys = KeysFor { FillIdx $_.App $script:zFill }
     foreach ($z in $zones) {
@@ -795,7 +799,11 @@ function Pass($area, [int]$Cols, [int]$Rows, [int]$Cells, $fill, $pins, $skip, $
     $open = @(Get-OpenUnits $spare)
     $n = [Math]::Min($free.Count, $open.Count)
     for ($i = 0; $i -lt $n; $i++) { Put $free[$i] $open[$i] (-1) }
-    $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = $(if ($phantom) { $script:unpluggedWhy } else { 'no free cell' }) } })
+    # The windows that wait first take the cells a kept half would have given: the cells the fill would open if the kept cells were free, less those it has. Those read 'half kept empty'; the rest have no room.
+    $extra = 0
+    if (-not $phantom -and $state.keptFree.Count -and $free.Count -gt $n) { $spare2 = $spare.Clone(); foreach ($kc in $state.keptFree) { $spare2[$kc] = 1 }; $extra = [Math]::Max(0, @(Get-OpenUnits $spare2).Count - $open.Count) }
+    $wi = 0
+    $script:left += @($free | Select-Object -Skip $n | % { [pscustomobject]@{ id = [int64]$_.H; app = $_.App; title = $_.Title; why = $(if ($phantom) { $script:unpluggedWhy } elseif ($wi++ -lt $extra) { 'half kept empty' } else { 'no free cell' }) } })
     if (-not $Json -and -not $phantom) { "Grid ${Cols}x${Rows} ($subW x $subH per slot): pinned $($state.pinned), tiled $n of $($free.Count) others." }
   }
 }

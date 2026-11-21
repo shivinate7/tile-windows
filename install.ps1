@@ -38,23 +38,27 @@ param([switch]$NoStartup, [switch]$NoLaunch)
       if ($tp.ProcessName -match '^(powershell|pwsh)$') { [void]$tp.WaitForExit(10000) }
     } catch {}
   }
+  # Rename a folder, retrying for about 15 s while a lock holds it. A process with the app folder as its working directory (a board, a terminal or Explorer window)
+  # or a brief antivirus handle on the staged copy makes the rename fail until it lets go.
+  function Rename-Retry($path, $newName, $failMsg, $busyMsg) {
+    $deadline = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+      try { Rename-Item -LiteralPath $path -NewName $newName; return }
+      catch [IO.IOException], [UnauthorizedAccessException] {
+        # Only a lock clears by waiting: sharing violation (Win32 32), lock violation (33) or a refused handle. Any other failure (say, app.old-<pid> already exists) cannot.
+        $hr = $_.Exception.HResult
+        $isLock = $_.Exception -is [UnauthorizedAccessException] -or ((($hr -shr 16) -band 0xFFFF) -eq 0x8007 -and (($hr -band 0xFFFF) -in 32, 33))
+        if (-not $isLock) { throw "${failMsg}: $($_.Exception.Message)" }
+        if ($deadline.ElapsedMilliseconds -ge 15000) { throw "$busyMsg ($($_.Exception.Message))" }
+        Start-Sleep -Milliseconds 250
+      }
+    }
+  }
   # Swap by renames: the old app is put back if any step fails, so a failed install leaves it working.
   $old = Join-Path $home_ "app.old-$PID"
   try {
     if (Test-Path -LiteralPath $app) {
-      # A process with the app folder as its working directory (a board, a terminal or Explorer window) makes the rename fail until it lets go: retry for about 15 s.
-      $deadline = [Diagnostics.Stopwatch]::StartNew()
-      while ($true) {
-        try { Rename-Item -LiteralPath $app -NewName (Split-Path $old -Leaf); break }
-        catch [IO.IOException], [UnauthorizedAccessException] {
-          # Only a lock clears by waiting: sharing violation (Win32 32), lock violation (33) or a refused handle. Any other failure (say, app.old-<pid> already exists) cannot.
-          $hr = $_.Exception.HResult
-          $isLock = $_.Exception -is [UnauthorizedAccessException] -or ((($hr -shr 16) -band 0xFFFF) -eq 0x8007 -and (($hr -band 0xFFFF) -in 32, 33))
-          if (-not $isLock) { throw "Could not move the old app folder aside: $($_.Exception.Message)" }
-          if ($deadline.ElapsedMilliseconds -ge 15000) { throw "The app folder is in use, most likely by a running board or a terminal or Explorer window open in it. Close those and run the install again. ($($_.Exception.Message))" }
-          Start-Sleep -Milliseconds 250
-        }
-      }
+      Rename-Retry $app (Split-Path $old -Leaf) 'Could not move the old app folder aside' "The app folder is in use, most likely by a running board or a terminal or Explorer window open in it. Close those and run the install again."
     }
     # The morning task writes agenda.json in the app folder and the tray reads it there, so carry the old file into the new copy (a byte copy).
     # A copy that fails warns and the install goes on: the morning task writes the file again.
@@ -63,7 +67,7 @@ param([switch]$NoStartup, [switch]$NoLaunch)
       try { Copy-Item -LiteralPath $oldAgenda -Destination (Join-Path $new 'agenda.json') -Force } catch { Write-Warning "agenda.json was not carried over: $($_.Exception.Message)" }
     }
     if ($env:TILE_TEST_SWAP_FAIL) { throw 'Test: the swap failed.' }  # test seam: a failure between the renames
-    Rename-Item -LiteralPath $new -NewName 'app'
+    Rename-Retry $new 'app' 'Could not move the new app folder into place' 'The new app folder is in use, most likely by antivirus or a file indexer. Run the install again.'
   } catch {
     if ((Test-Path -LiteralPath $old) -and -not (Test-Path -LiteralPath $app)) { Rename-Item -LiteralPath $old -NewName 'app' }
     Remove-Item -LiteralPath $new -Recurse -Force -ErrorAction SilentlyContinue; throw
