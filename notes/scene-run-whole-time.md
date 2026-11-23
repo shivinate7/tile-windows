@@ -1,0 +1,1 @@
+- scene-run-whole-time: A whole dry-run scene apply (`default -Json -DryRun`) takes median 3,021 ms (2,774-3,231, n=9). `-Monitors` takes median 2,276 ms (2,177-2,370, n=9). Each is a fresh-process run. The earlier 637-739 ms for `-Monitors` does not reproduce. Where the time goes is unmeasured.
