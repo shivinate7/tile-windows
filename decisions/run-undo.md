@@ -31,7 +31,7 @@ Plan: docs/design/mockups/run-undo-notes.md#notification (windows)
 |---|---|---|---|---|---|
 | 1 | Scene applies: schedule, monitor change, call start and end, desk, window, activity, size, gaps, noext, grid, and the offer's click | `Apply-Scene` (tray.ps1), from the tray tick | windows, scene | Yes for the run toast. No for the balloon, when the Start shortcut lacks the app id or the toast throws | `run-balloon-no-undo` |
 | 2 | Gap fill on a Free Layout monitor, when a tiled window goes away | `Step-GapFill`, `Invoke-GapFill` (tray.ps1) | windows | No: one log line | `gap-fill-no-undo` |
-| 3 | Autosave on each board edit, no Save click | `layoutEdited`, `saveLayout` (app.html) | saved layout | No: the header Undo in the open page only | `autosave-no-undo-notice` |
+| 3 | Autosave on each board edit, no Save click | `layoutEdited`, `saveLayout` (app.html) | saved layout | Not needed: it saves the user's own edits, and the header Undo covers them | none |
 | 4 | Setup added when the page reads the snapshot (load and Refresh) | `Add-SnapshotSetup` (serve.ps1), `Register-TileSetup` (config.ps1) | config: monitors, setups | No | `plug-in-adds-setup-no-undo` |
 | 5 | Setup switch turned off on a config read | `Update-TileSetupSwitch` (config.ps1) | config: a scene's trigger | No: a note only | `setup-switch-off-no-undo` |
 | 6 | Config that does not parse moved aside, starter scenes back | `Get-TileConfigText`, `Set-TileBad` (config.ps1) | config: scenes | No: a note only | `config-bad-file-no-undo` |
@@ -43,9 +43,8 @@ Plan: docs/design/mockups/run-undo-notes.md#notification (windows)
 | 12 | First run, no config.json | `Get-TileConfigText` | config: starter scenes | Not needed: nothing was there to put back | none |
 | 13 | install.ps1 | install.ps1 | app folder, shortcuts, link | Not needed: run by hand. Nothing in the app runs it | none |
 
-Row 3 is the one the owner's words reach most directly. Its header Undo is the only Undo the owner's own edits get, per item 8 of the monitor setups record (`monitor-setups`, owner 2026-11-17 11:38 CST): "Undo is the way back". Whether that meets this ruling is open (see Open).
+Row 3: autosave saves the user's own edits, and the header Undo covers them (coordinator pick, 2026-11-23 13:19 CST, process-only).
 
 **Open.**
-- Autosave: does the header Undo meet this ruling for the owner's own edits? Owner to rule. Until then `autosave-no-undo-notice` covers only the writes the owner did not make, such as a closed entry's title change (the existing debt `autosave-bay-retitle-by-handle`).
 - Config rows 4 to 7: is a notice with Undo wanted, or is a note enough? The four debts assume Undo.
 - Open owner review: the Tile Windows Choices page
