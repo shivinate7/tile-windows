@@ -43,8 +43,7 @@ Plan: docs/design/mockups/run-undo-notes.md#notification (windows)
 | 12 | First run, no config.json | `Get-TileConfigText` | config: starter scenes | Not needed: nothing was there to put back | none |
 | 13 | install.ps1 | install.ps1 | app folder, shortcuts, link | Not needed: run by hand. Nothing in the app runs it | none |
 
-Row 3: autosave saves the user's own edits, and the header Undo covers them (coordinator pick, 2026-11-23 13:19 CST, process-only).
+Row 3: autosave saves the user's own edits, and the header Undo covers them. Basis: item 8 of the monitor setups record (`monitor-setups`, owner 2026-11-17 11:38 CST): "Undo is the way back" (coordinator pick, 2026-11-23 13:19 CST, process-only).
 
 **Open.**
-- Config rows 4 to 7: is a notice with Undo wanted, or is a note enough? The four debts assume Undo.
 - Open owner review: the Tile Windows Choices page
