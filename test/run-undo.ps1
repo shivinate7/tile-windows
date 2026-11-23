@@ -33,9 +33,16 @@
 #     set, the start path writes its command line to that file and starts nothing. Case 4 runs tray.ps1 as a child to check it.
 #   The run toast is shown only when $env:APPDATA\Microsoft\Windows\Start Menu\Programs\Tile Windows.lnk exists and holds $TileAppId
 #     as its AppUserModelID ([TileShortcut]::GetAppId reads it). The check sits in the callers (Apply-Scene and Show-Toast), before
-#     Send-RunToast, so the fake sink cannot hide it. Without it, the run shows the balloon (Note).
+#     Send-RunToast, so the fake sink cannot hide it. A shortcut that is missing entirely shows the balloon (Note).
+#   Repair (run-undo ruling, 2026-11-23 13:07 CST): a shortcut that exists without $TileAppId is repaired in Apply-Scene, before that check.
+#     The id is written with [TileShortcut]::SetAppId, then the toast shows as usual. The repair runs with or without -NoApply.
+#     A missing shortcut is never created, so it keeps the balloon.
 #   A run that moves nothing keeps the older record in $script:runUndo (same id). An older Undo click then puts no window back and says so.
 #   Invoke-Link's undone toast falls back to Note (the balloon) when Send-RunToast throws.
+#   Gap fill (run-undo ruling, 2026-11-23 13:07 CST): Invoke-GapFill($run), $run = {scene, absent}. Each entry of tile.ps1 -GapFill's placed whose
+#     note is 'moved' joins $script:runUndo.moved, with or without -NoApply. A window already in the record keeps its first from and takes the
+#     new x, y, w, h; a new window takes its from. Then Send-RunToast sends the run toast again, under the same tag and with the same Undo link
+#     (the record's id). A gap fill with no moved entry sends nothing. A failed move's entry (its note is the failure text) is not recorded.
 #   Notices are read as text (all fields): "Dense grid: N Claude windows." when the run used the dense grid (choice 4); a partial Undo
 #     is titled "<Scene> partly undone", is not quiet, and names the -Place reason ("no open window") or the window moved since.
 #     A stale Undo after a later run: title "<Scene> can't be undone", text "<Newer> ran after it and moved windows. Undo <Newer> instead.",
@@ -69,13 +76,15 @@ foreach ($fn in $trayFns) { if (-not (Get-Command $fn.Name -CommandType Function
 
 # ---- Fakes: the balloon (Note calls $icon.ShowBalloonTip), the tile (-Scene returns $script:rec.placed; -Place records its JSON),
 # and the toast sink. $NoApply is set, so no state.json or log write runs.
-$script:rec = @{ balloons = New-Object Collections.ArrayList; toasts = New-Object Collections.ArrayList; places = New-Object Collections.ArrayList; placed = @(); tileFail = $false; placeFail = @(); toastThrow = $false }
+$script:rec = @{ balloons = New-Object Collections.ArrayList; toasts = New-Object Collections.ArrayList; places = New-Object Collections.ArrayList; placed = @(); tileFail = $false; placeFail = @(); toastThrow = $false; gapPlaced = @(); gapCalls = 0 }
 $script:offer = $null; $script:runUndo = $null
 $NoApply = $true; $NoIcon = $false
 $icon = [pscustomobject]@{}
 Add-Member -InputObject $icon -MemberType ScriptMethod -Name ShowBalloonTip -Value { param($ms, $title, $text, $tip) [void]$script:rec.balloons.Add([pscustomobject]@{ title = $title; text = $text }) }
 $tile = {
-  param([string]$Scene = '', [string]$Place = '', [string]$PlaceFile = '', [switch]$Json, [switch]$DryRun)
+  param([string]$Scene = '', [string]$Place = '', [string]$PlaceFile = '', [switch]$Json, [switch]$DryRun, [switch]$GapFill, [string[]]$Absent = @(), [string]$Last = '')
+  # -GapFill: the placed entries the test set (note 'moved' for a move that works, the failure text otherwise), as tile.ps1 gives them.
+  if ($GapFill) { $script:rec.gapCalls = [int]$script:rec.gapCalls + 1; return (ConvertTo-Json -Compress -Depth 6 ([pscustomobject]@{ placed = @($script:rec.gapPlaced) })) }
   if ($Place -or $PlaceFile) {
     $placeSpec = if ($PlaceFile) { [IO.File]::ReadAllText($PlaceFile) } else { $Place }
     [void]$script:rec.places.Add([pscustomobject]@{ json = $placeSpec; dryRun = [bool]$DryRun })
@@ -92,7 +101,7 @@ function Send-RunToast($notice) { $script:rec.sinkFake = $true; if ($script:rec.
 $script:logLines = New-Object Collections.ArrayList
 function Add-TileLog([string]$active, [string]$text) { [void]$script:logLines.Add([pscustomobject]@{ active = $active; text = $text }) }
 
-function Reset-Run { $script:rec.balloons.Clear(); $script:rec.toasts.Clear(); $script:rec.places.Clear(); $script:rec.tileFail = $false; $script:offer = $null; $script:runUndo = $null }
+function Reset-Run { $script:rec.balloons.Clear(); $script:rec.toasts.Clear(); $script:rec.places.Clear(); $script:rec.tileFail = $false; $script:rec.gapPlaced = @(); $script:rec.gapCalls = 0; $script:offer = $null; $script:runUndo = $null }
 function Rect($x, $y, $w, $h) { [pscustomobject]@{ x = $x; y = $y; w = $w; h = $h } }
 function Moved($id, $app, $title, $from, $to, [string]$note = 'moved') { [pscustomobject]@{ id = $id; app = $app; title = $title; x = $to.x; y = $to.y; w = $to.w; h = $to.h; from = $from; note = $note; ok = $true } }
 function Win($id, $app, $title, $r) { [pscustomobject]@{ id = $id; app = $app; title = $title; x = $r.x; y = $r.y; w = $r.w; h = $r.h } }
@@ -117,7 +126,7 @@ function Test-CallIn([string]$text, [string]$name) {
 
 # ---- Run-toast setup. The Start shortcut that gates a toast is a real .lnk. Its AppUserModelID comes from TileShortcut, the class that
 # tray.ps1 holds in a here-string and compiles before its -Lib return. install.ps1 uses the same class. $appWithId holds one with the
-# AppUserModelID, $appNoId one without, $appNone none. A tray.ps1 without the class fails its check, and gets no shortcut with an ID.
+# AppUserModelID, $appNone none. Case 12 makes its own shortcut without the ID. A tray.ps1 without the class fails its check, and gets no shortcut with an ID.
 $lnkRel = 'Microsoft\Windows\Start Menu\Programs\Tile Windows.lnk'
 $tsSrc = @($tree.FindAll({ param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -match 'public static class TileShortcut' }, $true))
 $tsOk = ($tsSrc.Count -eq 1)
@@ -134,7 +143,8 @@ function New-StartShortcut([string]$name, [bool]$withId) {
 }
 $appNone = Join-Path $runDir 'appdata-none'; New-Item -ItemType Directory -Force $appNone | Out-Null
 $appWithId = if ($tsOk) { New-StartShortcut 'appdata-id' $true } else { $appNone }
-$appNoId = New-StartShortcut 'appdata-noid' $false
+# The AppUserModelID of a .lnk, '' when it has none (or the class is missing). Reads the file only.
+function Get-LnkAppId([string]$path) { try { [TileShortcut]::GetAppId($path) } catch { '' } }
 $env:APPDATA = $appWithId
 # The tray's script state, which sits after its -Lib return: set here as the tray sets it at start. $linkOk is the link check, read from the file.
 $script:state = New-TrayState; $gridMode = @{}; $linkOk = $null
@@ -516,16 +526,77 @@ Check 'control: the tray names claude as Claude' ([bool]($got11['claude'] -ceq '
 $bad11 = @($want11.Keys | Where-Object { $got11[$_] -cne $want11[$_] } | ForEach-Object { "$_ is '$($got11[$_])', the map says '$($want11[$_])'" })
 Check 'the tray names each app as the shared display-name map does' ($bad11.Count -eq 0) ($bad11 -join '; ')
 
-# 12. A toast only when the Start shortcut with the AppUserModelID exists. Without it, the run shows the balloon.
+# 12. A toast only when the Start shortcut with the AppUserModelID exists. A shortcut that is missing entirely shows the balloon, and a run
+# never creates one.
 $env:APPDATA = $appNone; Reset-Run
 [void](RunMoved $focus 'work' $two 'because a new window opened')
 Check 'with no Start shortcut, a run that moved windows shows a balloon, not a toast' ([bool]((@($script:rec.toasts).Count -eq 0) -and (@($script:rec.balloons).Count -eq 1))) (Shown)
-$env:APPDATA = $appNoId; Reset-Run
-[void](RunMoved $focus 'work' $two 'because a new window opened')
-Check 'a Start shortcut without the AppUserModelID does not allow a toast: a balloon' ([bool]((@($script:rec.toasts).Count -eq 0) -and (@($script:rec.balloons).Count -eq 1))) (Shown)
+Check 'control: the run does not create a missing Start shortcut' (-not (Test-Path -LiteralPath (Join-Path $appNone $lnkRel))) "a shortcut appeared under $appNone"
+
+# A shortcut that exists without the AppUserModelID is repaired by the run (run-undo ruling, 2026-11-23 13:07 CST; debt run-balloon-no-undo).
+# The run then shows its toast with the Undo, and Undo puts the moved window back.
+$appRepair = New-StartShortcut 'appdata-noid-repair' $false; $lnkRepair = Join-Path $appRepair $lnkRel
+$env:APPDATA = $appRepair; Reset-Run
+Check 'setup: the Start shortcut has no AppUserModelID before the run' ((Get-LnkAppId $lnkRepair) -ceq '') "AppUserModelID '$(Get-LnkAppId $lnkRepair)'"
+$tRp = RunMoved $focus 'work' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lRp = LinkOf $tRp
+Check 'the run repairs the Start shortcut AppUserModelID' ((Get-LnkAppId $lnkRepair) -ceq $TileAppId) "AppUserModelID '$(Get-LnkAppId $lnkRepair)'"
+Check 'a run whose Start shortcut lacks the AppUserModelID shows one toast, not a balloon' ((@($script:rec.toasts).Count -eq 1) -and (@($script:rec.balloons).Count -eq 0)) (Shown)
+Check 'that toast has one Undo action that launches the run' ([bool]($tRp -and @($tRp.actions).Count -eq 1 -and @($tRp.actions)[0].label -ceq 'Undo' -and $lRp -match '^tilewindows://undo\?run=.+$')) "$(Shown) | actions $(@($tRp.actions).Count)"
+$cRp = if ($lRp) { ClickLink $lRp @((Win 1001 'claude' 'Draft' $t1)) }
+Check 'Undo puts the moved window back to its place before the run, after the repair' ([bool]($cRp -and @($cRp.sent).Count -eq 1 -and @($cRp.sent)[0].id -eq 1001 -and @($cRp.sent)[0].x -eq $from1.x -and @($cRp.sent)[0].y -eq $from1.y -and @($cRp.sent)[0].w -eq $from1.w -and @($cRp.sent)[0].h -eq $from1.h)) "windows sent back: $(if ($cRp) { @($cRp.sent).Count } else { 0 }), link '$lRp'"
 $env:APPDATA = $appWithId; Reset-Run
 [void](RunMoved $focus 'work' $two 'because a new window opened')
 Check 'control: with the shortcut that carries the AppUserModelID, the run shows a toast' (@($script:rec.toasts).Count -eq 1) (Shown)
+
+# 13. Gap fill (run-undo ruling, 2026-11-23 13:07 CST; debt gap-fill-no-undo). A gap fill that moves windows after a run joins that run's undo
+# record: the same run id, each window's first from kept, its place updated. The run toast is sent again under the same tag with the same Undo
+# link, and Undo puts back the run's windows and the gap-filled one. A move that failed is not recorded.
+$env:APPDATA = $appWithId; Reset-Run
+$gRun = RunMoved $focus 'work' $two 'because a new window opened'
+$gRid = RunIdOf $gRun; $gLink = LinkOf $gRun
+Check 'gap-fill setup: the run gave an Undo link' ([bool]$gRid) "run toast $(Flat $gRun)"
+Scope 'the gap fill' 'Invoke-GapFill'
+if ($script:scopeOk -and $gRid) {
+  $from3 = Rect 200 200 300 300; $t3 = Rect 0 0 480 1040     # 1003: a window the run did not move; the gap fill moves it into place
+  $from4 = Rect 300 300 200 200; $t4 = Rect 500 500 200 200  # 1004: its move fails, so it stays where it is
+  $g1 = Rect 40 40 400 300                                  # 1001: moved by the run, then moved again by a second gap fill
+  $nG = @($script:rec.toasts).Count
+  $script:rec.gapPlaced = @((Moved 1003 'claude' 'Gap' $from3 $t3), [pscustomobject]@{ id = 1004; app = 'chrome'; title = 'Mail'; x = $t4.x; y = $t4.y; w = $t4.w; h = $t4.h; from = $from4; note = 'no open window' })
+  Invoke-GapFill ([pscustomobject]@{ scene = 'work'; absent = @(1009) })
+  Check 'the gap fill reaches tile.ps1 -GapFill once' ([int]$script:rec.gapCalls -eq 1) "calls $($script:rec.gapCalls)"
+  $gB = @($script:rec.toasts | Select-Object -Skip $nG)[0]
+  Check 'a gap fill that moved a window re-sends the run toast' (@($script:rec.toasts).Count -eq ($nG + 1)) (Shown)
+  Check 'the re-sent toast has the run toast''s tag' ([bool]($gB -and $gB.tag -and $gB.tag -ceq $gRun.tag)) "tag '$($gB.tag)', run toast tag '$($gRun.tag)'"
+  Check 'the re-sent toast''s Undo names the same run id' ([bool]((RunIdOf $gB) -ceq $gRid)) "run id '$(RunIdOf $gB)', want '$gRid'"
+  Check 'the gap fill keeps the run id on the record' ([bool]($script:runUndo.id -ceq $gRid)) "record id '$($script:runUndo.id)', want '$gRid'"
+  Check 'the gap-filled window joins the run record' ([bool]@($script:runUndo.moved | ? { $_.id -eq 1003 }).Count) "record: $(Brief $script:runUndo.moved)"
+  Check 'a failed gap-fill move is not recorded' (-not @($script:runUndo.moved | ? { $_.id -eq 1004 }).Count) "record: $(Brief $script:runUndo.moved)"
+
+  # A second gap fill moves 1001, which the run moved from $t1. The record keeps 1001's first from and takes the new place.
+  $script:rec.gapPlaced = @(Moved 1001 'claude' 'Draft' $t1 $g1)
+  Invoke-GapFill ([pscustomobject]@{ scene = 'work'; absent = @(1010) })
+  $r1 = @($script:runUndo.moved | ? { $_.id -eq 1001 })[0]
+  Check 'a gap fill that moves a window the run moved keeps its first from in the record' ([bool]($r1 -and $r1.from.x -eq $from1.x -and $r1.from.y -eq $from1.y -and $r1.from.w -eq $from1.w -and $r1.from.h -eq $from1.h)) "from $(Flat $r1.from)"
+  Check 'a gap fill that moves a window the run moved updates its place in the record' ([bool]($r1 -and $r1.x -eq $g1.x -and $r1.y -eq $g1.y -and $r1.w -eq $g1.w -and $r1.h -eq $g1.h)) "record place $(Brief @($r1))"
+
+  # Undo: the run's windows and the gap-filled one go back to their first places; the window whose gap-fill move failed stays put.
+  $cG = ClickLink $gLink @((Win 1001 'claude' 'Draft' $g1), (Win 1002 'claude' 'Notes' $t2), (Win 1003 'claude' 'Gap' $t3), (Win 1004 'chrome' 'Mail' $from4))
+  $sG = @($cG.sent)
+  Check 'Undo puts the run window 1001 back to its first place, after a second gap fill moved it' (@($sG | ? { $_.id -eq 1001 -and $_.x -eq $from1.x -and $_.y -eq $from1.y -and $_.w -eq $from1.w -and $_.h -eq $from1.h }).Count -eq 1) "sent $(Brief $sG)"
+  Check 'Undo puts the run window 1002 back to its place' (@($sG | ? { $_.id -eq 1002 -and $_.x -eq $from2.x -and $_.y -eq $from2.y -and $_.w -eq $from2.w -and $_.h -eq $from2.h }).Count -eq 1) "sent $(Brief $sG)"
+  Check 'Undo puts the gap-filled window 1003 back to its first place' (@($sG | ? { $_.id -eq 1003 -and $_.x -eq $from3.x -and $_.y -eq $from3.y -and $_.w -eq $from3.w -and $_.h -eq $from3.h }).Count -eq 1) "sent $(Brief $sG)"
+  Check 'Undo leaves the window whose gap-fill move failed where it is' (@($sG | ? { $_.id -eq 1004 }).Count -eq 0) "sent $(Brief $sG)"
+}
+$script:TileHome = $homeNever
+
+# 13b. A gap fill that moves no window changes nothing: no toast, and the run record stays as it was (the empty state).
+$env:APPDATA = $appWithId; Reset-Run
+$eRun = RunMoved $focus 'work' $two 'because a new window opened'; $eRid = RunIdOf $eRun
+$eNow = @($script:rec.toasts).Count
+$script:rec.gapPlaced = @()
+Invoke-GapFill ([pscustomobject]@{ scene = 'work'; absent = @(1009) })
+Check 'a gap fill that moves no window sends no toast' (@($script:rec.toasts).Count -eq $eNow) (Shown)
+Check 'a gap fill that moves no window leaves the run record as it was' ([bool]($script:runUndo.id -ceq $eRid -and @($script:runUndo.moved).Count -eq 2)) "record: $(Brief $script:runUndo.moved)"
 
 # ---- Registration: the protocol keys come from one -Lib function, and install.ps1 and uninstall.ps1 call it. Text is read, not HKCU.
 Scope 'the protocol keys name the tilewindows scheme and its open command' 'Get-UndoProtocolKeys'
