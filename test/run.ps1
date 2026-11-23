@@ -439,7 +439,7 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   Check 'tray: display scenes and the monitor key' ((@(Get-DisplayScenes $tc).id -join ',') -eq 'c' -and (Get-MonitorKey @([pscustomobject]@{ DeviceName = 'B'; Bounds = [Drawing.Rectangle]::new(0, 0, 10, 20) }, [pscustomobject]@{ DeviceName = 'A'; Bounds = [Drawing.Rectangle]::new(-5, 1, 3, 4) })) -eq 'A=3x4@-5,1;B=10x20@0,0')
   $cases = @(ConvertFrom-Json (Get-Content -Raw (Join-Path $PSScriptRoot 'teams-call.json')) | % { $_ })
   $bad = @($cases | ? { (Test-TeamsCall $_.mic $_.wins) -ne $_.call } | % { $_.case })
-  Check 'tray: Teams call detection, every fixture case' ($cases.Count -eq 11 -and $bad.Count -eq 0) ($bad -join '; ')
+  Check 'tray: Teams call detection, every fixture case' ($cases.Count -eq 15 -and $bad.Count -eq 0) ($bad -join '; ')
   # Fill Empty Cells off (scene fill.off) places nothing, so its apps are not scene apps. A pinned app still is.
   $foOn = ConvertFrom-Json '{"pins":[],"fill":{"apps":["*"],"skip":[]}}'
   $foEmpty = ConvertFrom-Json '{"pins":[],"fill":{"apps":["*"],"skip":[],"off":true}}'

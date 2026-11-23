@@ -750,17 +750,21 @@ try {
 
   # Runs the tray's tick $Ticks times, one synthetic second apart, and says what it did. $Display: the ticks before which Windows reports a
   # display change. $Seam: the monitor file for a read, from (tick number, read number); a read is one tile.ps1 -Monitors run.
-  function Invoke-TrayTicks([int]$Ticks, [int[]]$Display, [scriptblock]$Seam) {
+  # $MicAt: the mic store's reading at a tick (Get-MicUsage's result), from the tick number; unset, the store is unreadable. $CfgOverride:
+  # the config the tick reads, in place of $trayCfg. $WinsAt: the windows Get-TeamsWindows returns at a tick, from the tick number; unset, none.
+  # $Active: the scene on screen at the start; Apply-Scene moves it to each scene the tick applies. winTicks: the tick of each Get-TeamsWindows run.
+  function Invoke-TrayTicks([int]$Ticks, [int[]]$Display, [scriptblock]$Seam, [scriptblock]$MicAt = $null, [object]$CfgOverride = $null, [scriptblock]$WinsAt = $null, [string]$Active = '') {
     # The product's functions that sit below -Lib's return, so a helper a fix adds there is defined; the stubs follow and win.
     foreach ($fn in @($trayAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Extent.StartLineNumber -gt $libIf.Extent.EndLineNumber }, $false))) { . ([scriptblock]::Create($fn.Extent.Text)) }
     # Each run starts as a new agent does: a script variable a fix adds to the tick (a retry count) is gone when the run ends.
     $had = @(Get-Variable -Scope Script | % { $_.Name })
-    $script:tk = @{ now = [datetime]'2026-11-20 10:00:00'; tick = 0; reads = 0; applied = New-Object Collections.ArrayList; errors = New-Object Collections.ArrayList }
+    $script:tk = @{ now = [datetime]'2026-11-20 10:00:00'; tick = 0; reads = 0; applied = New-Object Collections.ArrayList; errors = New-Object Collections.ArrayList; active = $Active; winTicks = New-Object Collections.ArrayList }
     function Get-Date { if ($args.Count) { Microsoft.PowerShell.Utility\Get-Date @args } else { $script:tk.now } }
-    function Get-TileConfigText { ConvertTo-Json -Depth 8 -Compress $trayCfg }
-    function Get-MicUsage { $null }
-    function Get-TeamsWindows { @() }
-    function Apply-Scene($s, [string]$why, [string]$prev = '') { [void]$script:tk.applied.Add([string]$s.id) }
+    function Get-TileConfigText { ConvertTo-Json -Depth 8 -Compress $(if ($CfgOverride) { $CfgOverride } else { $trayCfg }) }
+    function Get-MicUsage { if ($MicAt) { & $MicAt $script:tk.tick } else { $null } }
+    function Get-TeamsWindows { [void]$script:tk.winTicks.Add($script:tk.tick); if ($WinsAt) { & $WinsAt $script:tk.tick } }
+    function Get-ActiveId { [string]$script:tk.active }
+    function Apply-Scene($s, [string]$why, [string]$prev = '') { [void]$script:tk.applied.Add([string]$s.id); $script:tk.active = [string]$s.id }
     function Offer-Scene($s, [string]$why) { [void]$script:tk.applied.Add("offer:$($s.id)") }
     $realTile = $tile
     $tile = { param([switch]$Monitors) $script:tk.reads++; $env:TILE_SCREENS_FILE = & $Seam $script:tk.tick $script:tk.reads; & $realTile -Monitors:$Monitors }
@@ -780,7 +784,7 @@ try {
         try { $null = & $trayTick } catch { [void]$script:tk.errors.Add("tick ${i}: $($_.Exception.Message)") }
         [void]$per.Add($script:tk.reads - $before)
       }
-      $out = [pscustomobject]@{ reads = [int]$script:tk.reads; per = @($per); applied = (@($script:tk.applied) -join ','); errors = (@($script:tk.errors) -join '; ') }
+      $out = [pscustomobject]@{ reads = [int]$script:tk.reads; per = @($per); applied = (@($script:tk.applied) -join ','); errors = (@($script:tk.errors) -join '; '); winTicks = @($script:tk.winTicks) }
     } finally {
       foreach ($v in $names) { Set-Variable -Scope Script -Name $v -Value $held[$v] }
       foreach ($v in @(Get-Variable -Scope Script | % { $_.Name } | ? { $had -notcontains $_ -and $names -notcontains $_ })) { Remove-Variable -Scope Script -Name $v -ErrorAction SilentlyContinue }
@@ -826,6 +830,77 @@ try {
       $r = Invoke-TrayTicks 240 @(2, 200) { param($t, $n) if ($n -eq 1) { $screensGood } elseif ($t -lt 200) { $screensGone } else { $screensTwo } }
       Test-TickScope $r 'the late-change run'
       Check 'tray tick: a display change after the retries ended fires its scene (control)' ($r.applied -ceq 'two') "applied: '$($r.applied)' after $($r.reads) runs of tile.ps1 -Monitors in 240 ticks"
+    }
+    # A Teams call that starts reaches its call scene within two ticks. The mic is on from tick 4 and the scene should apply by tick 6.
+    $teamsOnMic = { param($t) if ($t -ge 4) { , @([pscustomobject]@{ name = 'MSTeams_8wekyb3d8bbwe'; stop = 0 }) } else { , @() } }
+    $callCfg = ConvertFrom-Json '{"scenes":[{"id":"call","name":"Call","trigger":{"type":"call"}}]}'
+    Case 'tray tick: a Teams call that starts at tick 4 applies its call scene by tick 6' {
+      $r = Invoke-TrayTicks 6 @() { param($t, $n) $screensGood } $teamsOnMic $callCfg
+      Test-TickScope $r 'the call run'
+      Check 'tray tick: a Teams call that starts at tick 4 applies its call scene by tick 6' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 6 ticks"
+    }
+    # The same start, given more ticks: the scene applies, so the miss above is the delay and not a tick that never applies a call.
+    Case 'tray tick: a Teams call that starts at tick 4 applies its call scene by tick 10 (control)' {
+      $r = Invoke-TrayTicks 10 @() { param($t, $n) $screensGood } $teamsOnMic $callCfg
+      Test-TickScope $r 'the late call run'
+      Check 'tray tick: a Teams call that starts at tick 4 applies its call scene by tick 10 (control)' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 10 ticks"
+    }
+    Case 'tray tick: no Teams call on the mic applies no call scene (control)' {
+      $r = Invoke-TrayTicks 12 @() { param($t, $n) $screensGood } { param($t) , @() } $callCfg
+      Test-TickScope $r 'the quiet call run'
+      Check 'tray tick: no Teams call on the mic applies no call scene (control)' ($r.applied -ceq '') "applied: '$($r.applied)' in 12 ticks"
+    }
+    # A browser call (Edge holds the mic) keeps its call scene while its meeting tab shows another tab for 2 ticks (6 and 7). The call
+    # scene applies once, on tick 3, and nothing applies in between. The call's back scene is 'prev', so on the old code the call ends
+    # at tick 7 (prev applies) and starts again at tick 9 (call applies).
+    $prevCallCfg = ConvertFrom-Json '{"scenes":[{"id":"prev","name":"Prev","trigger":{"type":"manual"}},{"id":"call","name":"Call","trigger":{"type":"call","back":true}}]}'
+    $edgeMicOn = { param($t) if ($t -ge 2) { , @([pscustomobject]@{ name = 'C:#Program Files (x86)#Microsoft#Edge#Application#msedge.exe'; stop = 0 }) } else { , @() } }
+    $edgeTabMeeting = { param($t) , @([pscustomobject]@{ app = 'msedge'; title = 'Meeting with Sample Person | Microsoft Teams - Microsoft Edge' }) }
+    $edgeTabAnother = { param($t) $title = if ($t -ge 6 -and $t -le 7) { 'Quarterly plan - Microsoft Edge' } else { 'Meeting with Sample Person | Microsoft Teams - Microsoft Edge' }; , @([pscustomobject]@{ app = 'msedge'; title = $title }) }
+    Case 'tray tick: a browser call whose meeting tab shows another tab for 2 ticks keeps its call scene, and nothing applies in between' {
+      $r = Invoke-TrayTicks 14 @() { param($t, $n) $screensGood } $edgeMicOn $prevCallCfg $edgeTabAnother 'prev'
+      Test-TickScope $r 'the browser call run'
+      Check 'tray tick: a browser call whose meeting tab shows another tab for 2 ticks keeps its call scene, and nothing applies in between' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 14 ticks"
+    }
+    # The same browser call with its meeting tab open all along: the call scene applies once. The case above is read against this one.
+    Case 'tray tick: a browser call whose meeting tab stays open applies its call scene once (control)' {
+      $r = Invoke-TrayTicks 14 @() { param($t, $n) $screensGood } $edgeMicOn $prevCallCfg $edgeTabMeeting 'prev'
+      Test-TickScope $r 'the steady browser call run'
+      Check 'tray tick: a browser call whose meeting tab stays open applies its call scene once (control)' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 14 ticks"
+    }
+    # Edge's Teams call ends when Edge lets go of the mic (its entry gets a stop time, so the mic reads it as released). Edge then holds the
+    # mic again on a Google Meet title. The release clears the call's browser, so the Meet title decides: no second call scene. A tick that
+    # keeps the browser after the release would keep the call on while Edge holds the mic, and apply call again.
+    $edgeStopped = 133000000000000000
+    $edgeApp = 'C:#Program Files (x86)#Microsoft#Edge#Application#msedge.exe'
+    $edgeReleaseThenMeet = { param($t) $stop = if (($t -ge 2 -and $t -le 5) -or $t -ge 10) { 0 } else { $edgeStopped }; , @([pscustomobject]@{ name = $edgeApp; stop = $stop }) }
+    $edgeTeamsThenMeet = { param($t) $title = if ($t -ge 10) { 'Meet - abc-defg-hij - Microsoft Edge' } else { 'Meeting with Sample Person | Microsoft Teams - Microsoft Edge' }; , @([pscustomobject]@{ app = 'msedge'; title = $title }) }
+    Case 'tray tick: a browser that releases the mic after a Teams call, then holds it on a Meet title, starts no second call scene' {
+      $r = Invoke-TrayTicks 16 @() { param($t, $n) $screensGood } $edgeReleaseThenMeet $prevCallCfg $edgeTeamsThenMeet 'prev'
+      Test-TickScope $r 'the release then Meet run'
+      Check 'tray tick: the Teams call on Edge starts, and its end applies the back scene (scope)' ($r.applied.StartsWith('call,prev')) "applied: '$($r.applied)' in 16 ticks"
+      $calls = @($r.applied -split ',' | ? { $_ -eq 'call' }).Count
+      Check 'tray tick: a browser that releases the mic, then holds it on a Meet title, starts no second call scene' ($calls -eq 1) "call applies: $calls, applied: '$($r.applied)' in 16 ticks"
+    }
+    # The mic store unreadable: the window read (Get-Process) runs at most every 3rd tick, main's cadence, and not on every tick.
+    Case 'tray tick: with the mic store unreadable, the window read runs at most every 3rd tick' {
+      $r = Invoke-TrayTicks 12 @() { param($t, $n) $screensGood } $null $callCfg
+      Test-TickScope $r 'the unreadable-store run'
+      $w = @($r.winTicks); $close = @()
+      for ($i = 1; $i -lt $w.Count; $i++) { if ($w[$i] - $w[$i - 1] -lt 3) { $close += "$($w[$i - 1])-$($w[$i])" } }
+      Check 'tray tick: with the mic store unreadable, the window read runs at most every 3rd tick' ($close.Count -eq 0) "window read on ticks $($w -join ',') in 12 ticks; reads less than 3 ticks apart: $($close -join ' ')"
+    }
+    Case 'tray tick: with the mic store unreadable, the window read still runs (control)' {
+      $r = Invoke-TrayTicks 12 @() { param($t, $n) $screensGood } $null $callCfg
+      Test-TickScope $r 'the unreadable-store control run'
+      Check 'tray tick: with the mic store unreadable, the window read still runs (control)' (@($r.winTicks).Count -ge 1) "window reads in 12 ticks: $(@($r.winTicks).Count)"
+    }
+    # The mic store readable and an app that is no browser holds it: no browser on the mic, so the window read does not run.
+    $otherAppMic = { param($t) , @([pscustomobject]@{ name = 'C:#Tools#Recorder#recorder.exe'; stop = 0 }) }
+    Case 'tray tick: with the mic store readable and no browser on it, the window read does not run (control)' {
+      $r = Invoke-TrayTicks 12 @() { param($t, $n) $screensGood } $otherAppMic $callCfg
+      Test-TickScope $r 'the readable-store run'
+      Check 'tray tick: with the mic store readable and no browser on it, the window read does not run (control)' (@($r.winTicks).Count -eq 0) "window reads in 12 ticks on ticks: $(@($r.winTicks) -join ',')"
     }
   }
 } catch {
