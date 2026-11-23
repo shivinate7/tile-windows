@@ -43,6 +43,8 @@
 #     note is 'moved' joins $script:runUndo.moved, with or without -NoApply. A window already in the record keeps its first from and takes the
 #     new x, y, w, h; a new window takes its from. Then Send-RunToast sends the run toast again, under the same tag and with the same Undo link
 #     (the record's id). A gap fill with no moved entry sends nothing. A failed move's entry (its note is the failure text) is not recorded.
+#     With no current record ($script:runUndo $null), a gap fill that moves windows starts one with its own run id, and the toast carries
+#     the Undo link for that id.
 #   Notices are read as text (all fields): "Dense grid: N Claude windows." when the run used the dense grid (choice 4); a partial Undo
 #     is titled "<Scene> partly undone", is not quiet, and names the -Place reason ("no open window") or the window moved since.
 #     A stale Undo after a later run: title "<Scene> can't be undone", text "<Newer> ran after it and moved windows. Undo <Newer> instead.",
@@ -597,6 +599,22 @@ $script:rec.gapPlaced = @()
 Invoke-GapFill ([pscustomobject]@{ scene = 'work'; absent = @(1009) })
 Check 'a gap fill that moves no window sends no toast' (@($script:rec.toasts).Count -eq $eNow) (Shown)
 Check 'a gap fill that moves no window leaves the run record as it was' ([bool]($script:runUndo.id -ceq $eRid -and @($script:runUndo.moved).Count -eq 2)) "record: $(Brief $script:runUndo.moved)"
+
+# 13c. A gap fill with no current run record (none yet, or lost at a restart) starts a run record of its own: its toast carries an Undo,
+# and Undo puts the gap-filled window back.
+$env:APPDATA = $appWithId; Reset-Run
+$from5 = Rect 200 200 300 300; $t5 = Rect 0 0 480 1040     # 1005: a window no run moved; the gap fill moves it into place
+$script:rec.gapPlaced = @(Moved 1005 'claude' 'Solo' $from5 $t5)
+$nS = @($script:rec.toasts).Count
+Invoke-GapFill ([pscustomobject]@{ scene = 'work'; absent = @(1009) })
+$sT = @($script:rec.toasts | Select-Object -Skip $nS)[0]
+$sRid = RunIdOf $sT
+Check 'a gap fill with no run record sends a toast' (@($script:rec.toasts).Count -eq ($nS + 1)) (Shown)
+Check 'that toast has one Undo action that launches a run' ([bool]$sRid) "toast $(Flat $sT)"
+Check 'the gap fill starts a run record with the toast''s run id, holding the gap-filled window' ([bool]($script:runUndo -and $script:runUndo.id -ceq $sRid -and @($script:runUndo.moved | ? { $_.id -eq 1005 }).Count -eq 1)) "record: $(Brief $script:runUndo.moved)"
+$cS = if ($sRid) { ClickLink (LinkOf $sT) @((Win 1005 'claude' 'Solo' $t5)) }
+Check 'Undo puts the gap-filled window back to its place' ([bool]($cS -and @($cS.sent | ? { $_.id -eq 1005 -and $_.x -eq $from5.x -and $_.y -eq $from5.y -and $_.w -eq $from5.w -and $_.h -eq $from5.h }).Count -eq 1)) "windows sent back: $(if ($cS) { @($cS.sent).Count } else { 0 })"
+$script:TileHome = $homeNever
 
 # ---- Registration: the protocol keys come from one -Lib function, and install.ps1 and uninstall.ps1 call it. Text is read, not HKCU.
 Scope 'the protocol keys name the tilewindows scheme and its open command' 'Get-UndoProtocolKeys'
