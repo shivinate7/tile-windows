@@ -45,8 +45,9 @@
 #     (the record's id). A gap fill with no moved entry sends nothing. A failed move's entry (its note is the failure text) is not recorded.
 #     With no current record ($script:runUndo $null), a gap fill that moves windows starts one with its own run id, and the toast carries
 #     the Undo link for that id. A shortcut that exists without $TileAppId is repaired first (Repair-ToastShortcut), as a run does. With no
-#     toast to show (no Start shortcut with $TileAppId), the gap fill shows Note (the balloon), clears $script:offer, and its log line says
-#     Undo is not offered. A re-sent toast that throws falls back to Note, as Apply-Scene does.
+#     toast to show (no Start shortcut with $TileAppId), the gap fill shows Note (the balloon), and its log line says
+#     Undo is not offered. A re-sent toast that throws falls back to Note, as Apply-Scene does. Toast shown or not, a gap fill leaves
+#     $script:offer as it was (main's gap fill never touched it).
 #   Notices are read as text (all fields): "Dense grid: N Claude windows." when the run used the dense grid (choice 4); a partial Undo
 #     is titled "<Scene> partly undone", is not quiet, and names the -Place reason ("no open window") or the window moved since.
 #     A stale Undo after a later run: title "<Scene> can't be undone", text "<Newer> ran after it and moved windows. Undo <Newer> instead.",
@@ -873,19 +874,22 @@ Check 'a gap fill with no Start shortcut shows a balloon, not silence' ((@($scri
 if (@($script:rec.balloons).Count -eq 1) { Check 'the gap-fill balloon names the gap fill' ([bool](@($script:rec.balloons)[0].text -match '(?i)gap[ -]fill')) "balloon: $(@($script:rec.balloons)[0].text)" }
 Check 'the gap-fill log says Undo is not offered, with no Start shortcut' ([bool]($gapNoneLog -match '(?i)undo\b[^|]*not offered')) "log lines: $gapNoneLog"
 
-# 14c. A pending meeting offer does not outlive a gap fill that moved a window: a late click on it would arrange over the gap fill.
-$env:APPDATA = $appNone; Reset-Run
-$script:offer = [pscustomobject]@{ scene = $work; exp = [datetime]'2026-11-23 15:00:00' }
-$script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
-Invoke-GapFill $gFill
-Check 'a gap fill that moves a window clears a pending meeting offer, so a late click arranges nothing' ($null -eq $script:offer) "offer still armed for '$($script:offer.scene.name)'"
-
-# 14c control: with the toast shown, the same gap fill clears the offer.
+# 14c. A gap fill that moves a window leaves a pending meeting offer as it was, toast shown or not. Main's gap fill never touched the
+# offer, so a click on it still arranges. The check is the same object, not an equal one.
 $env:APPDATA = $appWithId; Reset-Run
-$script:offer = [pscustomobject]@{ scene = $work; exp = [datetime]'2026-11-23 15:00:00' }
+$offerC = [pscustomobject]@{ scene = $work; exp = [datetime]'2026-11-23 15:00:00' }
+$script:offer = $offerC
 $script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
 Invoke-GapFill $gFill
-Check 'control: with the toast shown, a gap fill also clears the pending offer' ($null -eq $script:offer) "offer still armed for '$($script:offer.scene.name)'"
+Check 'a gap fill that moves a window, with the toast shown, leaves the pending meeting offer as it was' ([bool]($null -ne $script:offer -and [object]::ReferenceEquals($script:offer, $offerC))) "offer is $(if ($null -eq $script:offer) { 'cleared' } else { 'replaced' })"
+
+# 14c control: with no toast (no Start shortcut), the same gap fill leaves the pending offer as it was.
+$env:APPDATA = $appNone; Reset-Run
+$offerD = [pscustomobject]@{ scene = $work; exp = [datetime]'2026-11-23 15:00:00' }
+$script:offer = $offerD
+$script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
+Invoke-GapFill $gFill
+Check 'control: with no toast, a gap fill also leaves the pending offer as it was' ([bool]($null -ne $script:offer -and [object]::ReferenceEquals($script:offer, $offerD))) "offer is $(if ($null -eq $script:offer) { 'cleared' } else { 'replaced' })"
 
 # 14d. The re-sent toast throws: the gap fill shows the balloon, as Apply-Scene does, not silence.
 $env:APPDATA = $appWithId; Reset-Run
