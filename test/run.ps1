@@ -182,7 +182,7 @@ try {
     @('install-swap', 'install-swap.ps1'), @('safe-moves', 'safe-moves.ps1'), @('fresh-screens', 'fresh-screens.ps1'), @('setup-plumbing', 'setup-plumbing.ps1'),
     @('suite-kill', 'suite-kill.ps1'), @('direct-run', 'direct-run.ps1'), @('bay', 'bay.ps1'), @('golden-layouts', 'golden-layouts.ps1'),
     @('engine-layouts', 'engine-layouts.ps1'), @('run-undo', 'run-undo.ps1'), @('setup-config', 'setup-config.ps1'), @('serve-empty', 'serve-empty.ps1'),
-    @('place-dryrun', 'place-dryrun.ps1')
+    @('place-dryrun', 'place-dryrun.ps1'), @('teams-call', 'teams-call.ps1')
   )
   foreach ($q in $queueList) { $queue.Enqueue($q) }
   Start-Ready
@@ -437,9 +437,6 @@ while (-not (Test-Path -LiteralPath '$wgo')) { Start-Sleep -Milliseconds 10 }
   Check 'tray: a scheduled scene fires once per minute' (@(Get-DueScenes $tc $mon9 @{ a = '2026-10-19 09:00' }).Count -eq 0)
   # A monitor list with no ids (a Windows screen list) keys by DeviceName and bounds: a move changes the key. Get-MonitorKey's fallback.
   Check 'tray: display scenes and the monitor key' ((@(Get-DisplayScenes $tc).id -join ',') -eq 'c' -and (Get-MonitorKey @([pscustomobject]@{ DeviceName = 'B'; Bounds = [Drawing.Rectangle]::new(0, 0, 10, 20) }, [pscustomobject]@{ DeviceName = 'A'; Bounds = [Drawing.Rectangle]::new(-5, 1, 3, 4) })) -eq 'A=3x4@-5,1;B=10x20@0,0')
-  $cases = @(ConvertFrom-Json (Get-Content -Raw (Join-Path $PSScriptRoot 'teams-call.json')) | % { $_ })
-  $bad = @($cases | ? { (Test-TeamsCall $_.mic $_.wins) -ne $_.call } | % { $_.case })
-  Check 'tray: Teams call detection, every fixture case' ($cases.Count -eq 15 -and $bad.Count -eq 0) ($bad -join '; ')
   # Fill Empty Cells off (scene fill.off) places nothing, so its apps are not scene apps. A pinned app still is.
   $foOn = ConvertFrom-Json '{"pins":[],"fill":{"apps":["*"],"skip":[]}}'
   $foEmpty = ConvertFrom-Json '{"pins":[],"fill":{"apps":["*"],"skip":[],"off":true}}'
