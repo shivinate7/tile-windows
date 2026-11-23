@@ -1,8 +1,8 @@
 # Teams call detection misses some calls
 
-Decision: scene triggers (`triggers`). Found at d2ee88e. Recorded 2026-11-20 16:39 CST. Line numbers are at d2ee88e.
+Decision: scene triggers (`triggers`). Found at d2ee88e. Rewritten 2026-11-23 15:28 CST at d413b9a (PR 116, browser calls; PR 119, calendar gate).
 
-`Test-TeamsCall` reads the microphone privacy store (tray.ps1:38). It falls back to window titles only when the store cannot be read (tray.ps1:39), and then matches only "Meeting with ... | Microsoft Teams" or "Call | Microsoft Teams". It misses: microphone access off for desktop apps; a call joined muted from the start in some builds; Teams in a browser; other call window titles; non-English Teams. A start or end needs two readings 3 s apart, so a scene lags a call by up to 6 s.
+`Test-TeamsCall` reads the microphone privacy store. A Teams call in Edge or Chrome counts when the browser holds the mic on a Teams meeting title, and stays on while that browser holds the mic. When the store cannot be read, a "Call | Microsoft Teams" window counts, and a "Meeting with ... | Microsoft Teams" window counts only during a Teams event on today's agenda (or always, with no agenda for today). It still misses: microphone access off for desktop apps; a call joined muted from the start in some builds; other call window titles; non-English Teams; and, with the store unreadable, a meeting window for a call not on the calendar. Not yet proven on a live call: background tabs, a meeting window that is not Teams' main window.
 
 Harm: a call scene does not fire.
 
