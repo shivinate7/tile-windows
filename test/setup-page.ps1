@@ -438,7 +438,6 @@ function Start-Edge {
   $n = $script:edgeLaunches - 1
   $profDir = Join-Path $runDir $(if ($n -eq 0) { 'edge-profile' } else { "edge-profile-r$n" })
   $logFile = Join-Path $runDir $(if ($n -eq 0) { 'edge.log' } else { "edge-r$n.log" })
-  $script:edgeDropped = $false
   if ($script:ws) { try { $script:ws.Dispose() } catch { } }
   $env:USERPROFILE = [Environment]::GetFolderPath('UserProfile'); $env:APPDATA = [Environment]::GetFolderPath('ApplicationData')
   try { $script:edgeProc = Start-Process $edge -PassThru -WindowStyle Hidden -ArgumentList '--headless', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', "--user-data-dir=$profDir", '--enable-logging', '--v=0', "--log-file=$logFile", '--host-resolver-rules="MAP fonts.googleapis.com 0.0.0.0, MAP fonts.gstatic.com 0.0.0.0"', 'about:blank' } finally { $env:USERPROFILE = $prof; $env:APPDATA = Join-Path $prof 'AppData\Roaming' }
@@ -463,34 +462,42 @@ function Start-Edge {
   # The default viewport, set before the first navigation. The override stays on this page target across every Page.navigate.
   Fix-View $sock
 }
-# Ends every msedge process of this run. The run folder is in each one's command line, and each run has its own.
+# Ends every msedge process of this run, and waits up to 30 s for each to exit, so its logs and Crashpad are closed before Keep-EdgeLogs
+# copies them. The run folder is in each one's command line, and each run has its own. A process that is still there after the wait is no
+# FAIL here: Keep-EdgeLogs prints its own FAIL if it cannot copy a log, and a normal run keeps no logs.
 function Stop-Edge {
-  try { Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*$runDir*" } | % { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+  try {
+    $ids = @(Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*$runDir*" } | % { $_.ProcessId })
+    foreach ($id in $ids) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+    if ($ids) { Wait-Process -Id $ids -Timeout 30 -ErrorAction SilentlyContinue }
+  }
   catch { $script:fail++; "FAIL  Edge processes were not all stopped: $($_.Exception.Message)" }
 }
 # The first drop of a launch prints one FAIL line: the socket's state, and whether Edge is still running, with its exit code once it has
-# exited. The folder for the run's Edge logs is named here, and Keep-EdgeLogs fills it before the run folder is removed.
+# exited. The kept folder for the run's Edge logs is named here, and Keep-EdgeLogs fills it before the run folder is removed.
 function Note-EdgeDrop($sock, [string]$where) {
   if ($script:edgeDropped) { return }
   $script:edgeDropped = $true
   $state = if ($sock) { [string]$sock.State } else { 'no socket' }
   $exited = 'unknown'; $code = 'n/a'
   try { $script:edgeProc.Refresh(); $exited = $script:edgeProc.HasExited; if ($exited) { $code = $script:edgeProc.ExitCode } } catch { }
-  if (-not $script:keepDir) { $script:keepDir = Join-Path $env:TEMP ('tile-windows-edge-drops\' + (Get-Date -Format 'yyyyMMdd-HHmmss') + "-shard$Shard-$PID") }
+  # A sibling of the run folders, named <pid>-<UUID> like one: the sweep removes it by age, and this run's teardown leaves it.
+  if (-not $script:keepDir) { $script:keepDir = Join-Path $runRoot ("$PID-" + [guid]::NewGuid().ToString()) }
   $script:fail++
   $script:edgeNote = "FAIL  Edge DevTools socket not open ($where): socket $state, Edge HasExited $exited, ExitCode $code. Edge logs kept in $($script:keepDir)"
 }
 # Prints the drop's FAIL line, once. Note-EdgeDrop runs inside Cdp, whose output the caller would take instead of printing it, so the line
-# waits here until a case, a relaunch or the outer catch prints it.
+# waits here until a case, a relaunch or the outer finally prints it. The finally is the last stop, so no drop goes unprinted.
 function Show-EdgeNote {
   if ($script:edgeNote) { $script:edgeNote; $script:edgeNote = $null }
 }
-# Keeps the log and the Crashpad folder of every launch, once a drop was seen. It runs after Edge is stopped, so the logs are closed and the
-# crash dumps are written. The folder is outside the run folder, so the run's cleanup does not remove it.
+# Keeps the log and the Crashpad folder of every launch, once a drop was seen. It runs after Stop-Edge has waited for Edge to exit, so the
+# logs are closed and the crash dumps are written. The folder is a sibling of the run folder, so the run's cleanup does not remove it.
 function Keep-EdgeLogs {
   if (-not $script:keepDir) { return }
   try {
     New-Item -ItemType Directory -Force $script:keepDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $script:keepDir 'drop.txt') -Value "shard $Shard of $Of, $(Get-Date -Format s), pid $PID"
     foreach ($f in @(Get-ChildItem -LiteralPath $runDir -Filter 'edge*.log' -File)) { Copy-Item -LiteralPath $f.FullName -Destination $script:keepDir -Force }
     foreach ($d in @(Get-ChildItem -LiteralPath $runDir -Directory -Filter 'edge-profile*')) {
       $cp = Join-Path $d.FullName 'Crashpad'
@@ -510,7 +517,8 @@ function Revive-Edge([string]$name) {
   $script:fail++
   "FAIL  Edge relaunched before '$name', on a new profile and log"
   Stop-Edge
-  try { Start-Edge } catch { $script:reviveFailed = $true; throw }
+  # The drop is cleared only by a launch that works, so a failed relaunch never notes the same drop twice.
+  try { Start-Edge; $script:edgeDropped = $false } catch { $script:reviveFailed = $true; throw }
 }
 
 try {
@@ -5341,9 +5349,11 @@ const q = getComputedStyle(p), c = getComputedStyle(z), out = { ink: q.backgroun
 
 } catch {
   $script:fail++; "FAIL  page cases stopped: $($_.Exception.Message)"
-  if ($edgeLaunches) { Note-EdgeDrop $ws 'outside a case'; Show-EdgeNote }
+  # A throw with the socket still Open is no drop, so only a socket that is not Open is noted here.
+  if ($edgeLaunches -and $ws -and $ws.State -ne [Net.WebSockets.WebSocketState]::Open) { Note-EdgeDrop $ws 'outside a case' }
 } finally {
   try { if ($ws) { $ws.Dispose() } } catch { }
+  Show-EdgeNote
   Stop-Edge
   if ($srv -and -not $srv.HasExited) {
     try { [void](Invoke-WebRequest -UseBasicParsing "$($url)quit" -Method Post -Body 'quit') } catch { }
