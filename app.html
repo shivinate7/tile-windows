@@ -3192,14 +3192,14 @@ async function saveConfig(next,msg){
   const wire=clone(next);for(const x of wire.scenes)delete x.layouts;
   const r=await post("config",wire);if(!r.ok){toast("Save failed: "+await r.text(),"bad",{sticky:true});return false}
   cfg=next;status(msg);sceneMsg=msg;render();return true}
-// An explicit Save keeps only list entries that match an open window, by app and exact title: a window handle means nothing in the next session.
-// all: an autosave (a layout as the board holds it) keeps every entry, the closed windows' too, and only drops the handles; a layout with an empty list is left as it is.
-// Only a Save the owner presses forgets an entry (main's rule); an edit made for some other window must not cost the layout its Windows That Stay Put or held entries.
+// A window handle means nothing in the next session, so a save drops it and keeps the app and exact title.
+// all: keep every entry, the closed windows' too (every save passes it, so a Save never costs a reopened window its Stay Put or held entry); without it only entries that match an open window stay. A layout with an empty list is left as it is.
+// Only a manual removal forgets an entry.
 function stripIds(s,all){const open=b=>snap.windows.some(w=>w.app===b.app&&(w.id===b.id||w.title===b.title));
   if(Array.isArray(s.bay)&&!(all&&!s.bay.length)){s.bay=s.bay.filter(b=>all||open(b)).map(b=>({app:b.app,title:(winById(b.id)||b).title,...(b.why?{why:b.why}:{})}));if(!s.bay.length)delete s.bay}
   if(s.fill&&Array.isArray(s.fill.held)&&!(all&&!s.fill.held.length)){const L=s.fill.held;s.fill.held=L.map(h=>({h,w:heldWin(h,L)})).filter(e=>all||e.w).map(({h,w})=>({app:h.app,title:w?w.title:h.title,mon:h.mon,slots:h.slots}));if(!s.fill.held.length)delete s.fill.held}
   return s}
-const forSave=s=>stripIds(clone(s));
+const forSave=s=>stripIds(clone(s),true);
 const forSaveLayout=L=>stripIds(clone(L),true);
 // The scene as POST /config takes it. In id mode that is the saved copy (its role template and its layouts) with this scene's name, triggers and extras: the board's layout saves apart, by POST /layout.
 function configScene(id){
