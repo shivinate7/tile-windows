@@ -16,7 +16,7 @@ function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $sc
 . (Join-Path $root 'tray.ps1') -Lib
 $now = [datetime]'2026-11-20 10:00:00'
 $cases = @(ConvertFrom-Json (Get-Content -Raw (Join-Path $PSScriptRoot 'teams-call.json')) | % { $_ })
-Check 'tray: Teams call detection reads every fixture row (scope)' ($cases.Count -eq 23) "rows: $($cases.Count)"
+Check 'tray: Teams call detection reads every fixture row (scope)' ($cases.Count -eq 24) "rows: $($cases.Count)"
 # Get-TodayAgenda drops an event that does not parse, so a row whose events are dropped would pass for the wrong reason.
 $unparsed = @($cases | ? { $_.agenda } | ? { @((Get-TodayAgenda $_.agenda $now)).Count -ne @($_.agenda.events).Count } | % { $_.case })
 Check 'tray: every agenda row reads all its events (scope)' ($unparsed.Count -eq 0) ($unparsed -join '; ')
