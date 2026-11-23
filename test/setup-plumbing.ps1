@@ -755,12 +755,13 @@ try {
   # $Active: the scene on screen at the start; Apply-Scene moves it to each scene the tick applies. winTicks: the tick of each Get-TeamsWindows run.
   # $AgendaAt: the agenda the tick reads at a tick (agenda.json's parsed text; unset, none), from the tick number. The tick's own read of
   # agenda.json (its 2nd tick and every 30th) is not this seam: each tick gets this value set before it runs, and no call is decided on tick 2.
-  function Invoke-TrayTicks([int]$Ticks, [int[]]$Display, [scriptblock]$Seam, [scriptblock]$MicAt = $null, [object]$CfgOverride = $null, [scriptblock]$WinsAt = $null, [string]$Active = '', [scriptblock]$AgendaAt = $null) {
+  # $Start: the clock before tick 1 (each tick adds one synthetic second); unset, 10:00:00 on 2026-11-20.
+  function Invoke-TrayTicks([int]$Ticks, [int[]]$Display, [scriptblock]$Seam, [scriptblock]$MicAt = $null, [object]$CfgOverride = $null, [scriptblock]$WinsAt = $null, [string]$Active = '', [scriptblock]$AgendaAt = $null, [datetime]$Start = [datetime]'2026-11-20 10:00:00') {
     # The product's functions that sit below -Lib's return, so a helper a fix adds there is defined; the stubs follow and win.
     foreach ($fn in @($trayAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Extent.StartLineNumber -gt $libIf.Extent.EndLineNumber }, $false))) { . ([scriptblock]::Create($fn.Extent.Text)) }
     # Each run starts as a new agent does: a script variable a fix adds to the tick (a retry count) is gone when the run ends.
     $had = @(Get-Variable -Scope Script | % { $_.Name })
-    $script:tk = @{ now = [datetime]'2026-11-20 10:00:00'; tick = 0; reads = 0; applied = New-Object Collections.ArrayList; errors = New-Object Collections.ArrayList; active = $Active; winTicks = New-Object Collections.ArrayList }
+    $script:tk = @{ now = $Start; tick = 0; reads = 0; applied = New-Object Collections.ArrayList; errors = New-Object Collections.ArrayList; active = $Active; winTicks = New-Object Collections.ArrayList }
     function Get-Date { if ($args.Count) { Microsoft.PowerShell.Utility\Get-Date @args } else { $script:tk.now } }
     function Get-TileConfigText { ConvertTo-Json -Depth 8 -Compress $(if ($CfgOverride) { $CfgOverride } else { $trayCfg }) }
     function Get-MicUsage { if ($MicAt) { & $MicAt $script:tk.tick } else { $null } }
@@ -921,6 +922,21 @@ try {
       Test-TickScope $r 'the no-agenda run'
       Check 'tray tick: with the mic store unreadable, the window read runs (scope)' (@($r.winTicks).Count -ge 1) "window reads in 12 ticks: $(@($r.winTicks).Count)"
       Check 'tray tick: with the mic store unreadable and no agenda file, a Teams meeting window starts the call scene (control)' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 12 ticks"
+    }
+    # A call that starts in a meeting window stays on while that window stays open, even past the event's end: the agenda gates only the start.
+    # The clock starts at 09:59:40. The readings on ticks 6 and 9 see the event (09:30-10:00), so the call starts on tick 9. Tick 21 (10:00:01) is past
+    # its end. The window is open through tick 26 and closes on tick 27. The back scene applies only once the call ends.
+    $overrunAgenda = ConvertFrom-Json '{"date":"2026-11-20","events":[{"start":"2026-11-20T09:30","end":"2026-11-20T10:00","attendees":4,"teams":true,"showAs":"busy"}]}'
+    $windowToTick26 = { param($t) if ($t -ge 4 -and $t -le 26) { , @([pscustomobject]@{ app = 'ms-teams'; title = 'Meeting with Sample Person | Microsoft Teams' }) } else { , @() } }
+    $overrunStart = [datetime]'2026-11-20 09:59:40'
+    Case 'tray tick: with the mic store unreadable, a call started in a meeting window stays on past the event end while the window is open, and its back scene applies once the window closes' {
+      $r = Invoke-TrayTicks -Ticks 26 -Display @() -Seam { param($t, $n) $screensGood } -CfgOverride $prevCallCfg -WinsAt $windowToTick26 -AgendaAt { param($t) $overrunAgenda } -Active 'prev' -Start $overrunStart
+      Test-TickScope $r 'the overrun run'
+      Check 'tray tick: the call starts in the meeting window during the event (scope)' ($r.applied.StartsWith('call')) "applied: '$($r.applied)' in 26 ticks"
+      Check 'tray tick: a call in a meeting window stays on past the event end while the window is open, so no back scene applies' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 26 ticks"
+      $closed = Invoke-TrayTicks -Ticks 33 -Display @() -Seam { param($t, $n) $screensGood } -CfgOverride $prevCallCfg -WinsAt $windowToTick26 -AgendaAt { param($t) $overrunAgenda } -Active 'prev' -Start $overrunStart
+      Test-TickScope $closed 'the window-closes run'
+      Check 'tray tick: when the meeting window closes, the call ends and its back scene applies (control)' ($closed.applied -ceq 'call,prev') "applied: '$($closed.applied)' in 33 ticks"
     }
     # A Teams app on the mic is a call whatever the agenda says. The mic store is readable here, so no window is read.
     Case 'tray tick: a Teams app on the mic starts the call scene with no meeting on the agenda now (control)' {
