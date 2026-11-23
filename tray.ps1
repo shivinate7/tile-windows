@@ -32,11 +32,22 @@ function Get-MonitorKey($screens) {
 function Get-DisplayScenes($config) { @($config.scenes | ? { $_.trigger.type -eq 'display' }) }
 
 # Is a Teams call on? $mic: [{name, stop}] from Windows' microphone privacy store (Get-MicUsage); stop = 0
-# means the app holds the microphone now. $null means the store could not be read: only then do the
-# Teams window titles decide, and only a title in Teams' own meeting-window form counts.
+# means the app holds the microphone now. A Teams app holding it is a call. So is a browser (Edge, Chrome) holding
+# it while that browser has a window titled in Teams' meeting form plus the browser's own suffix: a mic alone
+# is not Teams, and a window alone is not a call. $null means the store could not be read: only then do the
+# Teams app's window titles decide, and only a title in Teams' own meeting-window form counts.
+$TileMeetingTitle = '(meeting|call)( (with|in) [^|]+)? \| Microsoft Teams'
+# Does a browser (or the named exe) hold the microphone now?
+function Test-BrowserMic($mic, [string]$app = '') {
+  $exe = if ($app) { [regex]::Escape($app) } else { '(msedge|chrome)' }
+  [bool]@($mic | ? { $_.name -match "(?i)(^|[#\\])$exe\.exe$" -and [int64]$_.stop -eq 0 }).Count
+}
 function Test-TeamsCall($mic, $wins) {
-  if ($null -ne $mic) { return [bool]@($mic | ? { $_.name -match '(?i)(^|[#\\])(ms-teams|teams)\.exe$|^MSTeams_' -and [int64]$_.stop -eq 0 }).Count }
-  [bool]@($wins | ? { $_.app -match '(?i)^(ms-teams|teams)$' -and $_.title -match '(?i)^(meeting|call)( (with|in) [^|]+)? \| Microsoft Teams$' }).Count
+  if ($null -ne $mic) {
+    if (@($mic | ? { $_.name -match '(?i)(^|[#\\])(ms-teams|teams)\.exe$|^MSTeams_' -and [int64]$_.stop -eq 0 }).Count) { return $true }
+    return [bool]@($wins | ? { $_.app -match '(?i)^(msedge|chrome)$' -and $_.title -match "(?i)^$TileMeetingTitle - (Microsoft Edge|Google Chrome)$" -and (Test-BrowserMic $mic $_.app) }).Count
+  }
+  [bool]@($wins | ? { $_.app -match '(?i)^(ms-teams|teams)$' -and $_.title -match "(?i)^$TileMeetingTitle$" }).Count
 }
 # ---- Triggers beyond the schedule: each one a pure function of its inputs. Win32 signals feed them in the tick below. ----
 # The per-scene switches. Each is off unless the scene's .auto sets it true. The page's trigger editor lists the same names (a test checks).
@@ -303,7 +314,7 @@ function Get-MicUsage {
   , @(Get-ChildItem -LiteralPath $k, "$k\NonPackaged" -ErrorAction SilentlyContinue | ? { $_.PSChildName -ne 'NonPackaged' } |
     % { $p = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue; if ($p -and $null -ne $p.LastUsedTimeStop) { [pscustomobject]@{ name = $_.PSChildName; stop = [int64]$p.LastUsedTimeStop } } })
 }
-function Get-TeamsWindows { @(Get-Process ms-teams, Teams -ErrorAction SilentlyContinue | ? { $_.MainWindowTitle } | % { [pscustomobject]@{ app = $_.Name; title = $_.MainWindowTitle } }) }
+function Get-TeamsWindows { @(Get-Process ms-teams, Teams, msedge, chrome -ErrorAction SilentlyContinue | ? { $_.MainWindowTitle } | % { [pscustomobject]@{ app = $_.Name; title = $_.MainWindowTitle } }) }
 # ---- Run toast and Undo (decision run-undo). A run that moved windows shows one toast with an Undo button; the button opens
 # tilewindows://undo?run=<id>, which signals this agent. The newest run only, until the next run or a restart: no timer.
 # The AppUserModelID the Start shortcut carries (install.ps1), so the toast header says Tile Windows. Tag and group are one pair for every
@@ -825,9 +836,10 @@ $timer.add_Tick({
     # not loop every 2 s. A good read or a new display change starts the count again.
     if ($mons) { $script:plugged = $mons; $script:readFails = 0 } elseif ([int]$script:readFails -lt 5) { $script:readFails = [int]$script:readFails + 1; $script:dirtyAt = Get-Date }
     $key = Get-MonitorKey $mons }
-  # Teams calls: poll every 3 s while any scene applies itself (the in-call guard needs the reading too).
+  # Teams calls: read every tick while any scene applies itself (the in-call guard needs the reading too); the 2-reading debounce in Step-Tray lands a start or end in 2 s.
+  # The mic read is a registry read. The window read (Get-Process) runs only when it can decide: the store is unreadable, or a browser holds the mic.
   $call = $null; $any = Test-AnyAuto $cfg; $n = ++$script:tick
-  if (($n % 3) -eq 0 -and $any) { $call = Test-TeamsCall (Get-MicUsage) (Get-TeamsWindows) }
+  if ($any) { $mic = Get-MicUsage; $call = Test-TeamsCall $mic $(if ($null -eq $mic -or (Test-BrowserMic $mic)) { Get-TeamsWindows } else { @() }) }
   # Windows and the foreground one: every 3 s, only for the triggers that read them. agenda.json: every 30 s.
   $fg = $null; $w = $null
   if (($n % 3) -eq 1 -and @($cfg.scenes | ? { (Test-Auto $_ 'window') -or (Test-Auto $_ 'activity') }).Count) {
