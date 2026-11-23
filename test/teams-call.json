@@ -9,5 +9,9 @@
  {"case":"mic store unreadable, call window open","call":true,"mic":null,"wins":[{"app":"ms-teams","title":"Call | Microsoft Teams"}]},
  {"case":"mic store unreadable, a chat named after meetings is not a call","call":false,"mic":null,"wins":[{"app":"ms-teams","title":"Chat | Meeting with vendors | Microsoft Teams"}]},
  {"case":"mic store unreadable, a chat named after calls is not a call","call":false,"mic":null,"wins":[{"app":"ms-teams","title":"Chat | Call planning | Microsoft Teams"}]},
- {"case":"mic store unreadable, a browser tab about meetings is not a call","call":false,"mic":null,"wins":[{"app":"chrome","title":"Meeting with the team | Microsoft Teams"}]}
+ {"case":"mic store unreadable, a browser tab about meetings is not a call","call":false,"mic":null,"wins":[{"app":"chrome","title":"Meeting with the team | Microsoft Teams"}]},
+ {"case":"Teams in Edge holds the mic, meeting tab open","call":true,"mic":[{"name":"C:#Program Files (x86)#Microsoft#Edge#Application#msedge.exe","stop":0}],"wins":[{"app":"msedge","title":"Meeting with Sample Person | Microsoft Teams - Microsoft Edge"}]},
+ {"case":"Teams in Chrome holds the mic, meeting tab open","call":true,"mic":[{"name":"C:#Program Files#Google#Chrome#Application#chrome.exe","stop":0}],"wins":[{"app":"chrome","title":"Meeting with Sample Person | Microsoft Teams - Google Chrome"}]},
+ {"case":"Teams tab open in Edge, no browser holds the mic: not a call","call":false,"mic":[],"wins":[{"app":"msedge","title":"Meeting with Sample Person | Microsoft Teams - Microsoft Edge"}]},
+ {"case":"Edge holds the mic on a Google Meet tab: not a Teams call","call":false,"mic":[{"name":"C:#Program Files (x86)#Microsoft#Edge#Application#msedge.exe","stop":0}],"wins":[{"app":"msedge","title":"Weekly sync - Google Meet - Microsoft Edge"}]}
 ]
