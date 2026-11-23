@@ -33,7 +33,7 @@ Plan: docs/design/mockups/run-undo-notes.md#notification (windows)
 | 2 | Gap fill on a Free Layout monitor, when a tiled window goes away | `Step-GapFill`, `Invoke-GapFill` (tray.ps1) | windows | Yes when it moves windows (PR 118): a toast with Undo, and its moves join the current run's record or start their own. No for the balloon: when no Start shortcut exists or the toast throws (the log says Undo is not offered) | `balloon-fallback-no-undo` |
 | 3 | Autosave on each board edit, no Save click | `layoutEdited`, `saveLayout` (app.html) | saved layout | Not needed: it saves the user's own edits, and the header Undo covers them | none |
 | 4 | Setup added when the page reads the snapshot (load and Refresh) | `Add-SnapshotSetup` (serve.ps1), `Register-TileSetup` (config.ps1) | config: monitors, setups | No | `plug-in-adds-setup-no-undo` |
-| 5 | Setup switch turned off on a config read | `Update-TileSetupSwitch` (config.ps1) | config: a scene's trigger | No: a note only | `setup-switch-off-no-undo` |
+| 5 | Setup switch turned off on a config read | `Update-TileSetupSwitch` (config.ps1) | config: a scene's trigger | Not needed: owner ruling Q4 A (2026-11-17 09:47 CST, decision `monitor-setups` item 17) retired the switch, and no code acts on it. An Undo would restore a dead field | none |
 | 6 | Config that does not parse moved aside, starter scenes back | `Get-TileConfigText`, `Set-TileBad` (config.ps1) | config: scenes | No: a note only | `config-bad-file-no-undo` |
 | 7 | Config upgrade adds starter scenes and fields | `Update-TileConfig` (config.ps1) | config: scenes | No: silent | `config-upgrade-no-undo` |
 | 8 | Offer before a meeting | `Offer-Scene` (tray.ps1) | nothing until clicked | Not needed: moves nothing, and the owner accepts it by a click. The click is row 1 | none |
@@ -48,4 +48,5 @@ Row 3: autosave saves the user's own edits, and the header Undo covers them. Bas
 **Open.**
 - Built in PR 118: a run whose toast had fallen back to a balloon gets its Start shortcut's app id repaired, so its toast with Undo shows. A gap fill that moves windows gets a toast with Undo. Its moves join the current run's record, or start their own.
 - Not built: a run or gap fill with no Start shortcut, or whose toast throws, still shows a balloon with no Undo (debt `balloon-fallback-no-undo`).
+- Row 5 (setup switch turned off on a config read): needs no Undo. No code acts on the retired switch, so an Undo would restore a dead field (coordinator pick, 2026-11-23 15:11 CST).
 - Open owner review: the Tile Windows Choices page

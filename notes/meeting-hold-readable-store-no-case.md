@@ -1,0 +1,1 @@
+- meeting-hold-readable-store-no-case: tray.ps1 (~870) clears the meeting-window call hold when the mic store becomes readable, and no test covers it; a mutant deleting the line would likely survive. From the PR 119 fix check, by grep. Found at fca57e8. Seen: 2026-11-23 x1

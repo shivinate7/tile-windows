@@ -97,7 +97,7 @@ Guards, for every automatic apply:
 
 ### agenda.json
 
-Meeting size, Focus in gaps and the offer read `agenda.json` in the app folder (`%USERPROFILE%\.tile-windows\app`, or the clone's folder). Without the file, or when its `date` is not today, those three do nothing. A reinstall copies the file into the new app folder, so it survives; the morning task still writes it each day. It is not tracked by git.
+Meeting size, Focus in gaps, the offer and the call trigger read `agenda.json` in the app folder (`%USERPROFILE%\.tile-windows\app`, or the clone's folder). Without the file, or when its `date` is not today, the first three do nothing, and the call trigger counts an open Teams meeting window as a call. With today's file, such a window starts a call only during a Teams event that is not free; once on, the call stays while the window is open. A reinstall copies the file into the new app folder, so it survives; the morning task still writes it each day. It is not tracked by git.
 
 ```json
 { "date": "2026-10-22",
