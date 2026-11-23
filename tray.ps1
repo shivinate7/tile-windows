@@ -670,7 +670,8 @@ $agendaRaw = $null; $offer = $null; $gridMode = @{}; $plugged = $null  # plugged
 $gap = $null  # the gap watch's view of the last applied scene (New-GapState); $null until a scene has run
 
 # Any balloon replaces a pending offer, so a click on it never arranges.
-function Note([string]$text) { $script:offer = $null; if ($icon) { $icon.ShowBalloonTip(4000, 'Tile Windows', $text, 'Info') } }
+function Show-Balloon([string]$text) { if ($icon) { $icon.ShowBalloonTip(4000, 'Tile Windows', $text, 'Info') } }
+function Note([string]$text) { $script:offer = $null; Show-Balloon $text }
 # The offer: a balloon that moves nothing. Clicking it arranges (for up to 3 minutes, or until another balloon shows).
 function Offer-Scene($s, [string]$why) {
   $script:offer = [pscustomobject]@{ scene = $s; exp = (Get-Date).AddMinutes(3) }
@@ -686,7 +687,8 @@ function Read-Windows { try { @((((& $tile -Json 3>$null) -join '') | ConvertFro
 # The gap-fill run: tile.ps1 -GapFill on the scene as the last apply gave it, with the windows that are away and the rect the tray last gave each tiled
 # window. The engine moves only a window that still sits where the tray put it; the rects it moves to become the new last rects. Gap-fill acts only on a
 # monitor whose layout has Free Layout on (free.areas). One log line: a failed run is that line too. -NoApply runs it dry. A run that moved windows joins the
-# current run's Undo record and re-sends its toast; with no live record it starts one (run-undo ruling).
+# current run's Undo record and re-sends its toast; with no live record it starts one (run-undo ruling). With no toast (no Start shortcut with the
+# app's name, or the toast throws) it shows a balloon that leaves a pending meeting offer alone, as main's gap fill did, and its log says Undo is not offered.
 function Invoke-GapFill($run) {
   $g = $script:gap
   try {
@@ -698,7 +700,11 @@ function Invoke-GapFill($run) {
     $line = "Gap-fill: $(@($run.absent).Count) window(s) away. Moved $($moved.Count)."
     # Only a move that worked ('moved') is recorded; a failed one's note is its failure text.
     $done = @($moved | ? { $_.note -eq 'moved' })
-    if ($done.Count -and -not $NoIcon -and (Test-ToastReady)) {
+    if ($done.Count -and -not $NoIcon) {
+      Repair-ToastShortcut
+      $gapLine = "Gap fill moved $($done.Count) $(if ($done.Count -eq 1) { 'window' } else { 'windows' })."
+      if (-not (Test-ToastReady)) { $line += ' Undo is not offered.'; Show-Balloon $gapLine }
+      else {
       $rec = $script:runUndo
       # A record that was undone or ended by a later run has no Undo left to join, so this fill starts its own.
       if (-not ($rec -and -not $rec.done -and -not $rec.endedBy)) {
@@ -706,14 +712,14 @@ function Invoke-GapFill($run) {
         $rec = $script:runUndo = [pscustomobject]@{ id = New-RunId $name; at = Get-Date; scene = [string]$run.scene; name = $name; prev = ''; changed = $false; done = $false; endedBy = ''
           title = "${name}: gap filled"; head = 'A gap opened'; grid = ''; moved = @() }
       }
-      $script:offer = $null
       foreach ($p in $done) {
         $m = @($rec.moved | ? { $_.id -eq $p.id })[0]
         if ($m) { $m.x = $p.x; $m.y = $p.y; $m.w = $p.w; $m.h = $p.h }
         else { $rec.moved = @($rec.moved) + [pscustomobject]@{ id = $p.id; app = $p.app; title = $p.title; x = $p.x; y = $p.y; w = $p.w; h = $p.h; from = $p.from } }
       }
-      $gapLine = "Gap fill moved $($done.Count) $(if ($done.Count -eq 1) { 'window' } else { 'windows' })."
-      try { Send-RunRecordToast $rec ((@($rec.grid, $gapLine) | ? { $_ }) -join ' ') } catch {}
+      try { Send-RunRecordToast $rec ((@($rec.grid, $gapLine) | ? { $_ }) -join ' ') }
+      catch { $line += ' Undo is not offered.'; Show-Balloon $gapLine }
+      }
     }
   } catch { $line = "Gap-fill failed: $($_.Exception.Message)" }
   if (-not $NoApply) { Add-TileLog $run.scene $line }
@@ -745,7 +751,7 @@ function Apply-Scene($s, [string]$why, [string]$prev = '') {
       # A run that moved windows shows the toast (only when the Start shortcut gives it the app's name) and keeps what Undo needs.
       # A run that moved nothing, a failure and the offer keep the balloon.
       Repair-ToastShortcut
-      if (-not (Test-ToastReady)) { Note $msg; return }
+      if (-not (Test-ToastReady)) { if (-not $NoApply) { Add-TileLog $s.id 'Undo is not offered: no Start shortcut gives the toast the app name.' }; Note $msg; return }
       $script:offer = $null
       $head = if ($why) { $why.Substring(0, 1).ToUpper() + $why.Substring(1) } else { 'Done' }
       $script:runUndo = [pscustomobject]@{ id = New-RunId $s.name; at = Get-Date; scene = $s.id; name = $s.name; prev = $prev; changed = [bool]($prev -and $prev -ne $s.id); done = $false; endedBy = ''
