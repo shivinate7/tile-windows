@@ -42,10 +42,17 @@ function Test-BrowserMic($mic, [string]$app = '') {
   $exe = if ($app) { [regex]::Escape($app) } else { '(msedge|chrome)' }
   [bool]@($mic | ? { $_.name -match "(?i)(^|[#\\])$exe\.exe$" -and [int64]$_.stop -eq 0 }).Count
 }
-function Test-TeamsCall($mic, $wins) {
+# The browser exe (msedge, chrome) that holds the mic while its window is titled as a Teams meeting, else ''.
+function Get-BrowserCallApp($mic, $wins) {
+  [string]@($wins | ? { $_.app -match '(?i)^(msedge|chrome)$' -and $_.title -match "(?i)^$TileMeetingTitle - (Microsoft Edge|Google Chrome)$" -and (Test-BrowserMic $mic $_.app) } | % { "$($_.app)".ToLower() })[0]
+}
+# $held: the browser exe whose call is already on (the tray state's callBrowser). That call stays on while the browser holds the mic,
+# whatever tab its window shows, and ends when the browser lets go of the mic.
+function Test-TeamsCall($mic, $wins, [string]$held = '') {
   if ($null -ne $mic) {
     if (@($mic | ? { $_.name -match '(?i)(^|[#\\])(ms-teams|teams)\.exe$|^MSTeams_' -and [int64]$_.stop -eq 0 }).Count) { return $true }
-    return [bool]@($wins | ? { $_.app -match '(?i)^(msedge|chrome)$' -and $_.title -match "(?i)^$TileMeetingTitle - (Microsoft Edge|Google Chrome)$" -and (Test-BrowserMic $mic $_.app) }).Count
+    if ($held -and (Test-BrowserMic $mic $held)) { return $true }
+    return [bool](Get-BrowserCallApp $mic $wins)
   }
   [bool]@($wins | ? { $_.app -match '(?i)^(ms-teams|teams)$' -and $_.title -match "(?i)^$TileMeetingTitle$" }).Count
 }
@@ -205,7 +212,7 @@ function Get-ClaudeGrid($sc, [int]$n, [string]$prev = '') { $m = Get-ClaudeMode 
 
 function New-TrayState { [pscustomobject]@{ fired = @{}; lastKey = $null; inCall = $null; streak = 0; before = ''; callSet = $null
   pend = @(); lastAuto = [datetime]::MinValue; deskDay = ''; idled = $false; known = $null; newSeen = @{}; act = $null; gapKey = $null; offered = @{}; soloSince = $null; soloDone = $false; screensSeen = $false
-  lastManual = [datetime]::MinValue; rects = $null; seenMove = [datetime]::MinValue; skipRead = $false; lastActive = $null; manualApplyAt = [datetime]::MinValue; autoApplied = ''; displayAt = [datetime]::MinValue; callEndAt = [datetime]::MinValue } }
+  lastManual = [datetime]::MinValue; rects = $null; seenMove = [datetime]::MinValue; skipRead = $false; lastActive = $null; manualApplyAt = [datetime]::MinValue; autoApplied = ''; displayAt = [datetime]::MinValue; callEndAt = [datetime]::MinValue; callBrowser = '' } }
 $TileKindRank = @{ call = 0; display = 1; schedule = 2; desk = 3; window = 4; activity = 5; gaps = 6; noext = 7 }
 # One tick of the agent, with no side effects but on $s. Returns the scenes to apply: [{id, why, kind, offer}].
 # $key: the monitor key once the display has settled, else $null. $call: a call reading, or $null (not polled).
@@ -837,9 +844,19 @@ $timer.add_Tick({
     if ($mons) { $script:plugged = $mons; $script:readFails = 0 } elseif ([int]$script:readFails -lt 5) { $script:readFails = [int]$script:readFails + 1; $script:dirtyAt = Get-Date }
     $key = Get-MonitorKey $mons }
   # Teams calls: read every tick while any scene applies itself (the in-call guard needs the reading too); the 2-reading debounce in Step-Tray lands a start or end in 2 s.
-  # The mic read is a registry read. The window read (Get-Process) runs only when it can decide: the store is unreadable, or a browser holds the mic.
+  # The mic read is a registry read. The window read (Get-Process) runs only when it can decide: a browser holds the mic and no browser call is on yet
+  # (state callBrowser: a browser call stays on while that browser holds the mic). With the store unreadable, windows are read every 3rd tick.
   $call = $null; $any = Test-AnyAuto $cfg; $n = ++$script:tick
-  if ($any) { $mic = Get-MicUsage; $call = Test-TeamsCall $mic $(if ($null -eq $mic -or (Test-BrowserMic $mic)) { Get-TeamsWindows } else { @() }) }
+  if ($any) {
+    $mic = Get-MicUsage; $st = $script:state; $ww = @()
+    if ($null -eq $mic) { $st.callBrowser = ''; if (($n % 3) -eq 0) { $call = Test-TeamsCall $null (Get-TeamsWindows) } }
+    else {
+      if ($st.callBrowser -and -not (Test-BrowserMic $mic $st.callBrowser)) { $st.callBrowser = '' }
+      if (-not $st.callBrowser -and (Test-BrowserMic $mic)) { $ww = Get-TeamsWindows }
+      $call = Test-TeamsCall $mic $ww $st.callBrowser
+      if ($call -and -not $st.callBrowser) { $st.callBrowser = Get-BrowserCallApp $mic $ww }
+    }
+  }
   # Windows and the foreground one: every 3 s, only for the triggers that read them. agenda.json: every 30 s.
   $fg = $null; $w = $null
   if (($n % 3) -eq 1 -and @($cfg.scenes | ? { (Test-Auto $_ 'window') -or (Test-Auto $_ 'activity') }).Count) {
