@@ -750,15 +750,17 @@ try {
 
   # Runs the tray's tick $Ticks times, one synthetic second apart, and says what it did. $Display: the ticks before which Windows reports a
   # display change. $Seam: the monitor file for a read, from (tick number, read number); a read is one tile.ps1 -Monitors run.
-  function Invoke-TrayTicks([int]$Ticks, [int[]]$Display, [scriptblock]$Seam) {
+  # $MicAt: the mic store's reading at a tick (Get-MicUsage's result), from the tick number; unset, the store is unreadable. $CfgOverride:
+  # the config the tick reads, in place of $trayCfg.
+  function Invoke-TrayTicks([int]$Ticks, [int[]]$Display, [scriptblock]$Seam, [scriptblock]$MicAt = $null, [object]$CfgOverride = $null) {
     # The product's functions that sit below -Lib's return, so a helper a fix adds there is defined; the stubs follow and win.
     foreach ($fn in @($trayAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Extent.StartLineNumber -gt $libIf.Extent.EndLineNumber }, $false))) { . ([scriptblock]::Create($fn.Extent.Text)) }
     # Each run starts as a new agent does: a script variable a fix adds to the tick (a retry count) is gone when the run ends.
     $had = @(Get-Variable -Scope Script | % { $_.Name })
     $script:tk = @{ now = [datetime]'2026-11-20 10:00:00'; tick = 0; reads = 0; applied = New-Object Collections.ArrayList; errors = New-Object Collections.ArrayList }
     function Get-Date { if ($args.Count) { Microsoft.PowerShell.Utility\Get-Date @args } else { $script:tk.now } }
-    function Get-TileConfigText { ConvertTo-Json -Depth 8 -Compress $trayCfg }
-    function Get-MicUsage { $null }
+    function Get-TileConfigText { ConvertTo-Json -Depth 8 -Compress $(if ($CfgOverride) { $CfgOverride } else { $trayCfg }) }
+    function Get-MicUsage { if ($MicAt) { & $MicAt $script:tk.tick } else { $null } }
     function Get-TeamsWindows { @() }
     function Apply-Scene($s, [string]$why, [string]$prev = '') { [void]$script:tk.applied.Add([string]$s.id) }
     function Offer-Scene($s, [string]$why) { [void]$script:tk.applied.Add("offer:$($s.id)") }
@@ -826,6 +828,25 @@ try {
       $r = Invoke-TrayTicks 240 @(2, 200) { param($t, $n) if ($n -eq 1) { $screensGood } elseif ($t -lt 200) { $screensGone } else { $screensTwo } }
       Test-TickScope $r 'the late-change run'
       Check 'tray tick: a display change after the retries ended fires its scene (control)' ($r.applied -ceq 'two') "applied: '$($r.applied)' after $($r.reads) runs of tile.ps1 -Monitors in 240 ticks"
+    }
+    # A Teams call that starts reaches its call scene within two ticks. The mic is on from tick 4 and the scene should apply by tick 6.
+    $teamsOnMic = { param($t) if ($t -ge 4) { , @([pscustomobject]@{ name = 'MSTeams_8wekyb3d8bbwe'; stop = 0 }) } else { , @() } }
+    $callCfg = ConvertFrom-Json '{"scenes":[{"id":"call","name":"Call","trigger":{"type":"call"}}]}'
+    Case 'tray tick: a Teams call that starts at tick 4 applies its call scene by tick 6' {
+      $r = Invoke-TrayTicks 6 @() { param($t, $n) $screensGood } $teamsOnMic $callCfg
+      Test-TickScope $r 'the call run'
+      Check 'tray tick: a Teams call that starts at tick 4 applies its call scene by tick 6' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 6 ticks"
+    }
+    # The same start, given more ticks: the scene applies, so the miss above is the delay and not a tick that never applies a call.
+    Case 'tray tick: a Teams call that starts at tick 4 applies its call scene by tick 10 (control)' {
+      $r = Invoke-TrayTicks 10 @() { param($t, $n) $screensGood } $teamsOnMic $callCfg
+      Test-TickScope $r 'the late call run'
+      Check 'tray tick: a Teams call that starts at tick 4 applies its call scene by tick 10 (control)' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 10 ticks"
+    }
+    Case 'tray tick: no Teams call on the mic applies no call scene (control)' {
+      $r = Invoke-TrayTicks 12 @() { param($t, $n) $screensGood } { param($t) , @() } $callCfg
+      Test-TickScope $r 'the quiet call run'
+      Check 'tray tick: no Teams call on the mic applies no call scene (control)' ($r.applied -ceq '') "applied: '$($r.applied)' in 12 ticks"
     }
   }
 } catch {
