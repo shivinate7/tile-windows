@@ -1,0 +1,1 @@
+- browser-call-other-mic-tab: once a browser Teams call is on, tray.ps1 keeps the call scene while that browser holds the mic for any tab. A second tab that holds the mic in the same browser keeps the call scene after the Teams call ends. This follows the round 1 tab-switch fix (a tab switch must not drop the call). Found at cecdb46. Seen: 2026-11-23 x1
