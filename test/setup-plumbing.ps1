@@ -753,7 +753,9 @@ try {
   # $MicAt: the mic store's reading at a tick (Get-MicUsage's result), from the tick number; unset, the store is unreadable. $CfgOverride:
   # the config the tick reads, in place of $trayCfg. $WinsAt: the windows Get-TeamsWindows returns at a tick, from the tick number; unset, none.
   # $Active: the scene on screen at the start; Apply-Scene moves it to each scene the tick applies. winTicks: the tick of each Get-TeamsWindows run.
-  function Invoke-TrayTicks([int]$Ticks, [int[]]$Display, [scriptblock]$Seam, [scriptblock]$MicAt = $null, [object]$CfgOverride = $null, [scriptblock]$WinsAt = $null, [string]$Active = '') {
+  # $AgendaAt: the agenda the tick reads at a tick (agenda.json's parsed text; unset, none), from the tick number. The tick's own read of
+  # agenda.json (its 2nd tick and every 30th) is not this seam: each tick gets this value set before it runs, and no call is decided on tick 2.
+  function Invoke-TrayTicks([int]$Ticks, [int[]]$Display, [scriptblock]$Seam, [scriptblock]$MicAt = $null, [object]$CfgOverride = $null, [scriptblock]$WinsAt = $null, [string]$Active = '', [scriptblock]$AgendaAt = $null) {
     # The product's functions that sit below -Lib's return, so a helper a fix adds there is defined; the stubs follow and win.
     foreach ($fn in @($trayAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Extent.StartLineNumber -gt $libIf.Extent.EndLineNumber }, $false))) { . ([scriptblock]::Create($fn.Extent.Text)) }
     # Each run starts as a new agent does: a script variable a fix adds to the tick (a retry count) is gone when the run ends.
@@ -779,6 +781,7 @@ try {
       [TileDisplayWatch]::Dirty = $false
       for ($i = 1; $i -le $Ticks; $i++) {
         $script:tk.tick = $i; $script:tk.now = $script:tk.now.AddSeconds(1)
+        $script:agendaRaw = $(if ($AgendaAt) { & $AgendaAt $i } else { $null })
         if ($Display -contains $i) { [TileDisplayWatch]::Dirty = $true }
         $before = $script:tk.reads
         try { $null = & $trayTick } catch { [void]$script:tk.errors.Add("tick ${i}: $($_.Exception.Message)") }
@@ -894,6 +897,36 @@ try {
       $r = Invoke-TrayTicks 12 @() { param($t, $n) $screensGood } $null $callCfg
       Test-TickScope $r 'the unreadable-store control run'
       Check 'tray tick: with the mic store unreadable, the window read still runs (control)' (@($r.winTicks).Count -ge 1) "window reads in 12 ticks: $(@($r.winTicks).Count)"
+    }
+    # The Teams meeting window with the mic store unreadable counts only while agenda.json shows an event now (Teams row 6, teams-call.json).
+    # The window is read on every 3rd tick: tick 3 seeds the call as off, ticks 6 and 9 read the window, so a call starts on tick 9.
+    # The agenda is the case's own ($AgendaAt). A case with none has no agenda file, so the window counts as it always did.
+    $teamsAgendaNow = ConvertFrom-Json '{"date":"2026-11-20","events":[{"start":"2026-11-20T09:30","end":"2026-11-20T10:30","attendees":4,"teams":true,"showAs":"busy"}]}'
+    $teamsAgendaNone = ConvertFrom-Json '{"date":"2026-11-20","events":[]}'
+    $meetingWindow = { param($t) if ($t -ge 4) { , @([pscustomobject]@{ app = 'ms-teams'; title = 'Meeting with Sample Person | Microsoft Teams' }) } else { , @() } }
+    Case 'tray tick: with the mic store unreadable, a Teams meeting window and a Teams meeting on the agenda now starts the call scene (control)' {
+      $r = Invoke-TrayTicks -Ticks 12 -Display @() -Seam { param($t, $n) $screensGood } -CfgOverride $callCfg -WinsAt $meetingWindow -AgendaAt { param($t) $teamsAgendaNow }
+      Test-TickScope $r 'the agenda-now run'
+      Check 'tray tick: with the mic store unreadable, the window read runs (scope)' (@($r.winTicks).Count -ge 1) "window reads in 12 ticks: $(@($r.winTicks).Count)"
+      Check 'tray tick: with the mic store unreadable, a Teams meeting window and a Teams meeting on the agenda now starts the call scene (control)' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 12 ticks"
+    }
+    Case 'tray tick: with the mic store unreadable, a Teams meeting window and no meeting on the agenda now applies no call scene' {
+      $r = Invoke-TrayTicks -Ticks 12 -Display @() -Seam { param($t, $n) $screensGood } -CfgOverride $callCfg -WinsAt $meetingWindow -AgendaAt { param($t) $teamsAgendaNone }
+      Test-TickScope $r 'the agenda-none run'
+      Check 'tray tick: with the mic store unreadable, the window read runs (scope)' (@($r.winTicks).Count -ge 1) "window reads in 12 ticks: $(@($r.winTicks).Count)"
+      Check 'tray tick: with the mic store unreadable, a Teams meeting window and no meeting on the agenda now applies no call scene' ($r.applied -ceq '') "applied: '$($r.applied)' in 12 ticks"
+    }
+    Case 'tray tick: with the mic store unreadable and no agenda file, a Teams meeting window starts the call scene (control)' {
+      $r = Invoke-TrayTicks -Ticks 12 -Display @() -Seam { param($t, $n) $screensGood } -CfgOverride $callCfg -WinsAt $meetingWindow
+      Test-TickScope $r 'the no-agenda run'
+      Check 'tray tick: with the mic store unreadable, the window read runs (scope)' (@($r.winTicks).Count -ge 1) "window reads in 12 ticks: $(@($r.winTicks).Count)"
+      Check 'tray tick: with the mic store unreadable and no agenda file, a Teams meeting window starts the call scene (control)' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 12 ticks"
+    }
+    # A Teams app on the mic is a call whatever the agenda says. The mic store is readable here, so no window is read.
+    Case 'tray tick: a Teams app on the mic starts the call scene with no meeting on the agenda now (control)' {
+      $r = Invoke-TrayTicks -Ticks 12 -Display @() -Seam { param($t, $n) $screensGood } -MicAt $teamsOnMic -CfgOverride $callCfg -AgendaAt { param($t) $teamsAgendaNone }
+      Test-TickScope $r 'the Teams-mic run'
+      Check 'tray tick: a Teams app on the mic starts the call scene with no meeting on the agenda now (control)' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 12 ticks"
     }
     # The mic store readable and an app that is no browser holds it: no browser on the mic, so the window read does not run.
     $otherAppMic = { param($t) , @([pscustomobject]@{ name = 'C:#Tools#Recorder#recorder.exe'; stop = 0 }) }
