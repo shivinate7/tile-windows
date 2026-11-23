@@ -155,7 +155,7 @@ function Check($name, $ok, $detail = '') { if ($ok) { "PASS  $name" } else { $sc
 # every shard counts the same cases.
 function Case([string]$name, [scriptblock]$body) {
   if (-not (Shard-Take)) { return }
-  try { & $body } catch { $script:fail++; "FAIL  $name  threw: $($_.Exception.Message)" }
+  try { Revive-Edge $name; & $body } catch { Show-EdgeNote; $script:fail++; "FAIL  $name  threw: $($_.Exception.Message)" }
 }
 
 $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ? { Test-Path -LiteralPath $_ } | Select-Object -First 1
@@ -174,7 +174,7 @@ $tileHome = Join-Path $runDir 'tile-home'; New-Item -ItemType Directory $tileHom
 $env:USERPROFILE = $prof; $env:APPDATA = Join-Path $prof 'AppData\Roaming'; $env:TILE_HOME = $null; $env:TILE_SCREENS_FILE = $null
 
 $srv = $null; $ws = $null; $edgeProc = $null
-$edgeProfile = Join-Path $runDir 'edge-profile'
+$edgeLaunches = 0; $edgeDropped = $false; $reviveFailed = $false; $keepDir = $null; $edgeNote = $null
 
 # The plugged-in monitors: the fixture's three screens, with the ids a real snapshot carries. The setup key is the sorted ids.
 $plugKey = 'L1|P1|U1'
@@ -269,17 +269,23 @@ function Start-Child([string]$argLine) {
 $script:cdpId = 0
 function Cdp($sock, [string]$method, $params = @{}) {
   $script:cdpId++; $id = $script:cdpId
-  $bytes = $utf8.GetBytes((ConvertTo-Json -Depth 10 -Compress -InputObject @{ id = $id; method = $method; params = $params }))
-  $sock.SendAsync([ArraySegment[byte]]::new($bytes), [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
-  while ($true) {
-    $ms = New-Object IO.MemoryStream
-    do {
-      $buf = New-Object byte[] 65536
-      $res = $sock.ReceiveAsync([ArraySegment[byte]]::new($buf), [Threading.CancellationToken]::None).GetAwaiter().GetResult()
-      $ms.Write($buf, 0, $res.Count)
-    } while (-not $res.EndOfMessage)
-    $msg = $utf8.GetString($ms.ToArray()) | ConvertFrom-Json
-    if ($msg.id -eq $id) { if ($msg.error) { throw "DevTools $method : $($msg.error.message)" }; return $msg }
+  try {
+    $bytes = $utf8.GetBytes((ConvertTo-Json -Depth 10 -Compress -InputObject @{ id = $id; method = $method; params = $params }))
+    $sock.SendAsync([ArraySegment[byte]]::new($bytes), [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+    while ($true) {
+      $ms = New-Object IO.MemoryStream
+      do {
+        $buf = New-Object byte[] 65536
+        $res = $sock.ReceiveAsync([ArraySegment[byte]]::new($buf), [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+        $ms.Write($buf, 0, $res.Count)
+      } while (-not $res.EndOfMessage)
+      $msg = $utf8.GetString($ms.ToArray()) | ConvertFrom-Json
+      if ($msg.id -eq $id) { if ($msg.error) { throw "DevTools $method : $($msg.error.message)" }; return $msg }
+    }
+  } catch {
+    # A socket that is not Open means Edge dropped. Note-EdgeDrop prints the FAIL line once per launch. A protocol error leaves the socket Open.
+    if ($sock.State -ne [Net.WebSockets.WebSocketState]::Open) { Note-EdgeDrop $sock "during $method" }
+    throw
   }
 }
 # Runs a body in the page and returns its JSON value. The body returns a value; a throw in the page is a throw here.
@@ -422,21 +428,28 @@ $sizeOne = ConvertTo-Json -Depth 10 -Compress -InputObject $sizeOneObj
 # Wraps fetch before the page's own scripts run, so a request made while the page loads is recorded too.
 $recordJs = '(() => { window.__sent = []; const f = window.fetch.bind(window); window.fetch = (u, o) => { window.__sent.push(((o && o.method) || "GET").toUpperCase() + " " + String(u)); return f(u, o); }; })();'
 
-try {
-  $srv = Start-Child "-File `"$serve`" -NoBrowser -From `"$snapPath`""
-  $url = $srv.StandardOutput.ReadLine()
-  # Edge starts with the real user folders, as bay.ps1 and stack-lock.ps1 do: under a temp USERPROFILE it does not reliably open its
-  # DevTools port. Its state lives in the run folder (--user-data-dir); the server child keeps the temp profile and its own TILE_HOME.
+# ---- Edge: one launch, the drop it can have, and the relaunch ----------------------------------------------------------------------
+# Each launch has a profile and a log of its own in the run folder: edge-profile and edge.log, then edge-profile-r1 and edge-r1.log for
+# the first relaunch. So a relaunch never reads a dead Edge's DevToolsActivePort, and never overwrites the log or Crashpad a drop needs.
+# --enable-logging --v=0 --log-file keeps Edge's own log. Edge starts with the real user folders, as bay.ps1 and stack-lock.ps1 do: under
+# a temp USERPROFILE it does not reliably open its DevTools port. The server child keeps the temp profile and its own TILE_HOME.
+function Start-Edge {
+  $script:edgeLaunches++
+  $n = $script:edgeLaunches - 1
+  $profDir = Join-Path $runDir $(if ($n -eq 0) { 'edge-profile' } else { "edge-profile-r$n" })
+  $logFile = Join-Path $runDir $(if ($n -eq 0) { 'edge.log' } else { "edge-r$n.log" })
+  $script:edgeDropped = $false
+  if ($script:ws) { try { $script:ws.Dispose() } catch { } }
   $env:USERPROFILE = [Environment]::GetFolderPath('UserProfile'); $env:APPDATA = [Environment]::GetFolderPath('ApplicationData')
-  try { $edgeProc = Start-Process $edge -PassThru -WindowStyle Hidden -ArgumentList '--headless', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', "--user-data-dir=$edgeProfile", '--host-resolver-rules="MAP fonts.googleapis.com 0.0.0.0, MAP fonts.gstatic.com 0.0.0.0"', 'about:blank' } finally { $env:USERPROFILE = $prof; $env:APPDATA = Join-Path $prof 'AppData\Roaming' }
+  try { $script:edgeProc = Start-Process $edge -PassThru -WindowStyle Hidden -ArgumentList '--headless', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', "--user-data-dir=$profDir", '--enable-logging', '--v=0', "--log-file=$logFile", '--host-resolver-rules="MAP fonts.googleapis.com 0.0.0.0, MAP fonts.gstatic.com 0.0.0.0"', 'about:blank' } finally { $env:USERPROFILE = $prof; $env:APPDATA = Join-Path $prof 'AppData\Roaming' }
+  $null = $script:edgeProc.Handle   # PowerShell 5.1 reads ExitCode after an exit only when the handle was opened while the process ran
   # Port 0: Edge picks a free port and writes it to DevToolsActivePort in its profile. A port picked here and freed before Edge starts
   # can be taken by another file running at the same time, which is how a page used to fail to open. So the port is read from Edge.
-  $dtFile = Join-Path $edgeProfile 'DevToolsActivePort'; $portWait = Get-Date; $port = $null
+  $dtFile = Join-Path $profDir 'DevToolsActivePort'; $portWait = Get-Date; $port = $null
   while (-not $port) {
     if (Test-Path -LiteralPath $dtFile) { $first = @(Get-Content -LiteralPath $dtFile -ErrorAction SilentlyContinue)[0]; if ("$first" -match '^\d+$') { $port = "$first" } }
     if (-not $port) { if (((Get-Date) - $portWait).TotalSeconds -gt 60) { throw 'Edge did not write its DevTools port within 60 s' }; Start-Sleep -Milliseconds 100 }
   }
-
   # The page target: DevTools answers once Edge is up. A wait on that answer, not a sleep.
   $targets = @(); $t0 = Get-Date; $lastErr = ''
   while (-not $targets.Count -and ((Get-Date) - $t0).TotalSeconds -lt 60) {
@@ -444,10 +457,67 @@ try {
     if (-not $targets.Count) { Start-Sleep -Milliseconds 250 }
   }
   if (-not $targets.Count) { throw "DevTools listed no page on port $port within 60 s: $lastErr" }
-  $ws = New-Object Net.WebSockets.ClientWebSocket
-  [void]$ws.ConnectAsync([Uri]$targets[0].webSocketDebuggerUrl, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+  $sock = New-Object Net.WebSockets.ClientWebSocket
+  [void]$sock.ConnectAsync([Uri]$targets[0].webSocketDebuggerUrl, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+  $script:ws = $sock
   # The default viewport, set before the first navigation. The override stays on this page target across every Page.navigate.
-  Fix-View $ws
+  Fix-View $sock
+}
+# Ends every msedge process of this run. The run folder is in each one's command line, and each run has its own.
+function Stop-Edge {
+  try { Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*$runDir*" } | % { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+  catch { $script:fail++; "FAIL  Edge processes were not all stopped: $($_.Exception.Message)" }
+}
+# The first drop of a launch prints one FAIL line: the socket's state, and whether Edge is still running, with its exit code once it has
+# exited. The folder for the run's Edge logs is named here, and Keep-EdgeLogs fills it before the run folder is removed.
+function Note-EdgeDrop($sock, [string]$where) {
+  if ($script:edgeDropped) { return }
+  $script:edgeDropped = $true
+  $state = if ($sock) { [string]$sock.State } else { 'no socket' }
+  $exited = 'unknown'; $code = 'n/a'
+  try { $script:edgeProc.Refresh(); $exited = $script:edgeProc.HasExited; if ($exited) { $code = $script:edgeProc.ExitCode } } catch { }
+  if (-not $script:keepDir) { $script:keepDir = Join-Path $env:TEMP ('tile-windows-edge-drops\' + (Get-Date -Format 'yyyyMMdd-HHmmss') + "-shard$Shard-$PID") }
+  $script:fail++
+  $script:edgeNote = "FAIL  Edge DevTools socket not open ($where): socket $state, Edge HasExited $exited, ExitCode $code. Edge logs kept in $($script:keepDir)"
+}
+# Prints the drop's FAIL line, once. Note-EdgeDrop runs inside Cdp, whose output the caller would take instead of printing it, so the line
+# waits here until a case, a relaunch or the outer catch prints it.
+function Show-EdgeNote {
+  if ($script:edgeNote) { $script:edgeNote; $script:edgeNote = $null }
+}
+# Keeps the log and the Crashpad folder of every launch, once a drop was seen. It runs after Edge is stopped, so the logs are closed and the
+# crash dumps are written. The folder is outside the run folder, so the run's cleanup does not remove it.
+function Keep-EdgeLogs {
+  if (-not $script:keepDir) { return }
+  try {
+    New-Item -ItemType Directory -Force $script:keepDir | Out-Null
+    foreach ($f in @(Get-ChildItem -LiteralPath $runDir -Filter 'edge*.log' -File)) { Copy-Item -LiteralPath $f.FullName -Destination $script:keepDir -Force }
+    foreach ($d in @(Get-ChildItem -LiteralPath $runDir -Directory -Filter 'edge-profile*')) {
+      $cp = Join-Path $d.FullName 'Crashpad'
+      if (Test-Path -LiteralPath $cp) { Copy-Item -LiteralPath $cp -Destination (Join-Path $script:keepDir "$($d.Name)-Crashpad") -Recurse -Force }
+    }
+  } catch { $script:fail++; "FAIL  Edge logs were not all kept in $($script:keepDir): $($_.Exception.Message)" }
+}
+# Bandaid: a case that starts on a socket that is not Open gets one relaunch of Edge, on a new profile and log, so the case that hit the drop
+# fails and the later cases run. Each drop gets one relaunch. The run stays red: the drop and the relaunch each print a FAIL line. After a
+# relaunch that fails, no more are tried, so the later cases fail at once instead of each waiting out the 60 s port wait. Remove it once the
+# cause of the drop is fixed.
+function Revive-Edge([string]$name) {
+  if (-not $script:ws -or $script:ws.State -eq [Net.WebSockets.WebSocketState]::Open) { return }
+  if ($script:reviveFailed) { throw 'Edge did not relaunch after an earlier drop' }
+  Note-EdgeDrop $script:ws "before '$name'"
+  Show-EdgeNote
+  $script:fail++
+  "FAIL  Edge relaunched before '$name', on a new profile and log"
+  Stop-Edge
+  try { Start-Edge } catch { $script:reviveFailed = $true; throw }
+}
+
+try {
+  $srv = Start-Child "-File `"$serve`" -NoBrowser -From `"$snapPath`""
+  $url = $srv.StandardOutput.ReadLine()
+  # Its state lives in the run folder (--user-data-dir); the server child keeps the temp profile and its own TILE_HOME.
+  Start-Edge
 
   Case 'a board edit sends one POST /layout for the plugged-in setup' {
     Put-Config (New-Config)
@@ -5271,14 +5341,16 @@ const q = getComputedStyle(p), c = getComputedStyle(z), out = { ink: q.backgroun
 
 } catch {
   $script:fail++; "FAIL  page cases stopped: $($_.Exception.Message)"
+  if ($edgeLaunches) { Note-EdgeDrop $ws 'outside a case'; Show-EdgeNote }
 } finally {
   try { if ($ws) { $ws.Dispose() } } catch { }
-  if ($edgeProc) { Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ? { $_.CommandLine -like "*$edgeProfile*" } | % { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+  Stop-Edge
   if ($srv -and -not $srv.HasExited) {
     try { [void](Invoke-WebRequest -UseBasicParsing "$($url)quit" -Method Post -Body 'quit') } catch { }
     if (-not $srv.WaitForExit(5000)) { $srv.Kill() }
   }
   foreach ($k in $saved.Keys) { if ($null -eq $saved[$k]) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } else { Set-Item "env:$k" $saved[$k] } }
+  Keep-EdgeLogs
   Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 Shard-Report 'setup-page'
