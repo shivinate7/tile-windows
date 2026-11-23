@@ -48,13 +48,22 @@ function Get-BrowserCallApp($mic, $wins) {
 }
 # $held: the browser exe whose call is already on (the tray state's callBrowser). That call stays on while the browser holds the mic,
 # whatever tab its window shows, and ends when the browser lets go of the mic.
-function Test-TeamsCall($mic, $wins, [string]$held = '') {
+# $Agenda: agenda.json's parsed text ($null: no agenda file). With the store unreadable, a Teams app window in the meeting form
+# ("Meeting with X | Microsoft Teams") counts only while the agenda shows a Teams event now (Get-NowCallEvent). The "Call | ..." window
+# form, and an agenda that is missing or dated another day, keep the plain window rule.
+function Test-TeamsCall($mic, $wins, [string]$held = '', $Agenda = $null, [datetime]$Now = [datetime]::MinValue) {
   if ($null -ne $mic) {
     if (@($mic | ? { $_.name -match '(?i)(^|[#\\])(ms-teams|teams)\.exe$|^MSTeams_' -and [int64]$_.stop -eq 0 }).Count) { return $true }
     if ($held -and (Test-BrowserMic $mic $held)) { return $true }
     return [bool](Get-BrowserCallApp $mic $wins)
   }
-  [bool]@($wins | ? { $_.app -match '(?i)^(ms-teams|teams)$' -and $_.title -match "(?i)^$TileMeetingTitle$" }).Count
+  $tw = @($wins | ? { $_.app -match '(?i)^(ms-teams|teams)$' -and $_.title -match "(?i)^$TileMeetingTitle$" })
+  if (-not $tw.Count) { return $false }
+  if (@($tw | ? { $_.title -notmatch '(?i)^meeting\b' }).Count) { return $true }
+  if ($Now -eq [datetime]::MinValue) { $Now = Get-Date }
+  $ev = Get-TodayAgenda $Agenda $Now
+  if ($null -eq $ev) { return $true }
+  [bool](Get-NowCallEvent $ev $Now)
 }
 # ---- Triggers beyond the schedule: each one a pure function of its inputs. Win32 signals feed them in the tick below. ----
 # The per-scene switches. Each is off unless the scene's .auto sets it true. The page's trigger editor lists the same names (a test checks).
@@ -104,6 +113,8 @@ function Get-SizeId($cfg, [int]$attendees) {
 }
 function Get-SizeScene($cfg, [int]$attendees) { $id = Get-SizeId $cfg $attendees; if (Test-Auto (Get-Scene $cfg $id) 'size') { $id } else { '' } }
 # The Teams meeting on now (up to 10 minutes early); the one that started last wins.
+# A Teams event on now (up to 10 minutes early, as Get-NowMeeting) that is not marked free: what lets a Teams meeting window count as a call.
+function Get-NowCallEvent($ev, [datetime]$now) { @($ev | ? { $_.teams -and $_.showAs -ne 'free' -and $now -ge $_.start.AddMinutes(-10) -and $now -le $_.end })[0] }
 function Get-NowMeeting($ev, [datetime]$now) { @($ev | ? { $_.teams -and (Test-Busy $_) -and $now -ge $_.start.AddMinutes(-10) -and $now -le $_.end } | Sort-Object start)[-1] }
 
 # What a change in call state does. Returns {apply: scene id or '', back: scene id to remember}.
@@ -849,7 +860,7 @@ $timer.add_Tick({
   $call = $null; $any = Test-AnyAuto $cfg; $n = ++$script:tick
   if ($any) {
     $mic = Get-MicUsage; $st = $script:state; $ww = @()
-    if ($null -eq $mic) { $st.callBrowser = ''; if (($n % 3) -eq 0) { $call = Test-TeamsCall $null (Get-TeamsWindows) } }
+    if ($null -eq $mic) { $st.callBrowser = ''; if (($n % 3) -eq 0) { $call = Test-TeamsCall $null (Get-TeamsWindows) -Agenda $script:agendaRaw -Now (Get-Date) } }
     else {
       if ($st.callBrowser -and -not (Test-BrowserMic $mic $st.callBrowser)) { $st.callBrowser = '' }
       if (-not $st.callBrowser -and (Test-BrowserMic $mic)) { $ww = Get-TeamsWindows }
