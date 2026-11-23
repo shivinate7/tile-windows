@@ -51,7 +51,9 @@ function Get-BrowserCallApp($mic, $wins) {
 # $Agenda: agenda.json's parsed text ($null: no agenda file). With the store unreadable, a Teams app window in the meeting form
 # ("Meeting with X | Microsoft Teams") counts only while the agenda shows a Teams event now (Get-NowCallEvent). The "Call | ..." window
 # form, and an agenda that is missing or dated another day, keep the plain window rule.
-function Test-TeamsCall($mic, $wins, [string]$held = '', $Agenda = $null, [datetime]$Now = [datetime]::MinValue) {
+# $HoldMeeting: a call from a meeting window is already on (the tray state's callMeeting). It stays on while a meeting window stays open,
+# past the event's end: the agenda gates only the start.
+function Test-TeamsCall($mic, $wins, [string]$held = '', $Agenda = $null, [datetime]$Now = [datetime]::MinValue, [bool]$HoldMeeting = $false) {
   if ($null -ne $mic) {
     if (@($mic | ? { $_.name -match '(?i)(^|[#\\])(ms-teams|teams)\.exe$|^MSTeams_' -and [int64]$_.stop -eq 0 }).Count) { return $true }
     if ($held -and (Test-BrowserMic $mic $held)) { return $true }
@@ -59,7 +61,7 @@ function Test-TeamsCall($mic, $wins, [string]$held = '', $Agenda = $null, [datet
   }
   $tw = @($wins | ? { $_.app -match '(?i)^(ms-teams|teams)$' -and $_.title -match "(?i)^$TileMeetingTitle$" })
   if (-not $tw.Count) { return $false }
-  if (@($tw | ? { $_.title -notmatch '(?i)^meeting\b' }).Count) { return $true }
+  if ($HoldMeeting -or @($tw | ? { $_.title -notmatch '(?i)^meeting\b' }).Count) { return $true }
   if ($Now -eq [datetime]::MinValue) { $Now = Get-Date }
   $ev = Get-TodayAgenda $Agenda $Now
   if ($null -eq $ev) { return $true }
@@ -112,10 +114,12 @@ function Get-SizeId($cfg, [int]$attendees) {
   if ($attendees -ge $at) { $t.big } else { $t.small }
 }
 function Get-SizeScene($cfg, [int]$attendees) { $id = Get-SizeId $cfg $attendees; if (Test-Auto (Get-Scene $cfg $id) 'size') { $id } else { '' } }
-# The Teams meeting on now (up to 10 minutes early); the one that started last wins.
-# A Teams event on now (up to 10 minutes early, as Get-NowMeeting) that is not marked free: what lets a Teams meeting window count as a call.
-function Get-NowCallEvent($ev, [datetime]$now) { @($ev | ? { $_.teams -and $_.showAs -ne 'free' -and $now -ge $_.start.AddMinutes(-10) -and $now -le $_.end })[0] }
-function Get-NowMeeting($ev, [datetime]$now) { @($ev | ? { $_.teams -and (Test-Busy $_) -and $now -ge $_.start.AddMinutes(-10) -and $now -le $_.end } | Sort-Object start)[-1] }
+# Is the event on now? From 10 minutes before its start to its end. The one home of that lead, for both functions below.
+function Test-EventNow($e, [datetime]$now) { $now -ge $e.start.AddMinutes(-10) -and $now -le $e.end }
+# A Teams event on now that is not marked free (tentative counts): what lets a Teams meeting window count as a call.
+function Get-NowCallEvent($ev, [datetime]$now) { @($ev | ? { $_.teams -and $_.showAs -ne 'free' -and (Test-EventNow $_ $now) })[0] }
+# The Teams meeting on now (busy or out of office only); the one that started last wins.
+function Get-NowMeeting($ev, [datetime]$now) { @($ev | ? { $_.teams -and (Test-Busy $_) -and (Test-EventNow $_ $now) } | Sort-Object start)[-1] }
 
 # What a change in call state does. Returns {apply: scene id or '', back: scene id to remember}.
 # Call starts: apply $pick (the scene for the meeting's size), else the first 'call' scene, and remember the scene on screen.
@@ -223,7 +227,7 @@ function Get-ClaudeGrid($sc, [int]$n, [string]$prev = '') { $m = Get-ClaudeMode 
 
 function New-TrayState { [pscustomobject]@{ fired = @{}; lastKey = $null; inCall = $null; streak = 0; before = ''; callSet = $null
   pend = @(); lastAuto = [datetime]::MinValue; deskDay = ''; idled = $false; known = $null; newSeen = @{}; act = $null; gapKey = $null; offered = @{}; soloSince = $null; soloDone = $false; screensSeen = $false
-  lastManual = [datetime]::MinValue; rects = $null; seenMove = [datetime]::MinValue; skipRead = $false; lastActive = $null; manualApplyAt = [datetime]::MinValue; autoApplied = ''; displayAt = [datetime]::MinValue; callEndAt = [datetime]::MinValue; callBrowser = '' } }
+  lastManual = [datetime]::MinValue; rects = $null; seenMove = [datetime]::MinValue; skipRead = $false; lastActive = $null; manualApplyAt = [datetime]::MinValue; autoApplied = ''; displayAt = [datetime]::MinValue; callEndAt = [datetime]::MinValue; callBrowser = ''; callMeeting = $false } }
 $TileKindRank = @{ call = 0; display = 1; schedule = 2; desk = 3; window = 4; activity = 5; gaps = 6; noext = 7 }
 # One tick of the agent, with no side effects but on $s. Returns the scenes to apply: [{id, why, kind, offer}].
 # $key: the monitor key once the display has settled, else $null. $call: a call reading, or $null (not polled).
@@ -856,12 +860,14 @@ $timer.add_Tick({
     $key = Get-MonitorKey $mons }
   # Teams calls: read every tick while any scene applies itself (the in-call guard needs the reading too); the 2-reading debounce in Step-Tray lands a start or end in 2 s.
   # The mic read is a registry read. The window read (Get-Process) runs only when it can decide: a browser holds the mic and no browser call is on yet
-  # (state callBrowser: a browser call stays on while that browser holds the mic). With the store unreadable, windows are read every 3rd tick.
+  # (state callBrowser: a browser call stays on while that browser holds the mic). With the store unreadable, windows are read every 3rd tick,
+  # and a call started from a Teams meeting window stays on while that window is open (state callMeeting).
   $call = $null; $any = Test-AnyAuto $cfg; $n = ++$script:tick
   if ($any) {
     $mic = Get-MicUsage; $st = $script:state; $ww = @()
-    if ($null -eq $mic) { $st.callBrowser = ''; if (($n % 3) -eq 0) { $call = Test-TeamsCall $null (Get-TeamsWindows) -Agenda $script:agendaRaw -Now (Get-Date) } }
+    if ($null -eq $mic) { $st.callBrowser = ''; if (($n % 3) -eq 0) { $call = Test-TeamsCall $null (Get-TeamsWindows) -Agenda $script:agendaRaw -Now (Get-Date) -HoldMeeting $st.callMeeting; $st.callMeeting = [bool]$call } }
     else {
+      $st.callMeeting = $false
       if ($st.callBrowser -and -not (Test-BrowserMic $mic $st.callBrowser)) { $st.callBrowser = '' }
       if (-not $st.callBrowser -and (Test-BrowserMic $mic)) { $ww = Get-TeamsWindows }
       $call = Test-TeamsCall $mic $ww $st.callBrowser
