@@ -868,6 +868,20 @@ try {
       Test-TickScope $r 'the steady browser call run'
       Check 'tray tick: a browser call whose meeting tab stays open applies its call scene once (control)' ($r.applied -ceq 'call') "applied: '$($r.applied)' in 14 ticks"
     }
+    # Edge's Teams call ends when Edge lets go of the mic (its entry gets a stop time, so the mic reads it as released). Edge then holds the
+    # mic again on a Google Meet title. The release clears the call's browser, so the Meet title decides: no second call scene. A tick that
+    # keeps the browser after the release would keep the call on while Edge holds the mic, and apply call again.
+    $edgeStopped = 133000000000000000
+    $edgeApp = 'C:#Program Files (x86)#Microsoft#Edge#Application#msedge.exe'
+    $edgeReleaseThenMeet = { param($t) $stop = if (($t -ge 2 -and $t -le 5) -or $t -ge 10) { 0 } else { $edgeStopped }; , @([pscustomobject]@{ name = $edgeApp; stop = $stop }) }
+    $edgeTeamsThenMeet = { param($t) $title = if ($t -ge 10) { 'Meet - abc-defg-hij - Microsoft Edge' } else { 'Meeting with Sample Person | Microsoft Teams - Microsoft Edge' }; , @([pscustomobject]@{ app = 'msedge'; title = $title }) }
+    Case 'tray tick: a browser that releases the mic after a Teams call, then holds it on a Meet title, starts no second call scene' {
+      $r = Invoke-TrayTicks 16 @() { param($t, $n) $screensGood } $edgeReleaseThenMeet $prevCallCfg $edgeTeamsThenMeet 'prev'
+      Test-TickScope $r 'the release then Meet run'
+      Check 'tray tick: the Teams call on Edge starts, and its end applies the back scene (scope)' ($r.applied.StartsWith('call,prev')) "applied: '$($r.applied)' in 16 ticks"
+      $calls = @($r.applied -split ',' | ? { $_ -eq 'call' }).Count
+      Check 'tray tick: a browser that releases the mic, then holds it on a Meet title, starts no second call scene' ($calls -eq 1) "call applies: $calls, applied: '$($r.applied)' in 16 ticks"
+    }
     # The mic store unreadable: the window read (Get-Process) runs at most every 3rd tick, main's cadence, and not on every tick.
     Case 'tray tick: with the mic store unreadable, the window read runs at most every 3rd tick' {
       $r = Invoke-TrayTicks 12 @() { param($t, $n) $screensGood } $null $callCfg
