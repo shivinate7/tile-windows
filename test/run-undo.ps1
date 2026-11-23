@@ -44,7 +44,9 @@
 #     new x, y, w, h; a new window takes its from. Then Send-RunToast sends the run toast again, under the same tag and with the same Undo link
 #     (the record's id). A gap fill with no moved entry sends nothing. A failed move's entry (its note is the failure text) is not recorded.
 #     With no current record ($script:runUndo $null), a gap fill that moves windows starts one with its own run id, and the toast carries
-#     the Undo link for that id.
+#     the Undo link for that id. A shortcut that exists without $TileAppId is repaired first (Repair-ToastShortcut), as a run does. With no
+#     toast to show (no Start shortcut with $TileAppId), the gap fill shows Note (the balloon), clears $script:offer, and its log line says
+#     Undo is not offered. A re-sent toast that throws falls back to Note, as Apply-Scene does.
 #   Notices are read as text (all fields): "Dense grid: N Claude windows." when the run used the dense grid (choice 4); a partial Undo
 #     is titled "<Scene> partly undone", is not quiet, and names the -Place reason ("no open window") or the window moved since.
 #     A stale Undo after a later run: title "<Scene> can't be undone", text "<Newer> ran after it and moved windows. Undo <Newer> instead.",
@@ -837,6 +839,93 @@ if ($launchOk) {
   Check '(d) control: with the log on, the restarted Undo launch still shows its note (the restarted toast)' ([bool]($oRs.result.shown -ge 1)) "shown $($oRs.result.shown), error '$($oRs.result.err)'"
   Check-OutcomeLine '(d) launcher, restarted' $oRs.lines $focus.name 'restart|gone|lost' 'quiet'
 }
+$script:TileHome = $homeNever
+
+# 14. Gap fill and run toast without a usable Start shortcut (run-undo ruling, 2026-11-23 13:07 CST; debts run-balloon-no-undo, a balloon
+# run has no Undo, and gap-fill-no-undo, a gap fill has no Undo). A toast shows only when the Start shortcut carries $TileAppId. Without one,
+# a gap fill shows the balloon, and its log says Undo is not offered. A shortcut that exists without the id is repaired first, as a run repairs it.
+$gFrom = Rect 200 200 300 300; $gTo = Rect 0 0 480 1040     # 1003: a window the gap fill moves from $gFrom to $gTo
+$gFill = [pscustomobject]@{ scene = 'work'; absent = @(1009) }
+
+# 14a. A shortcut that exists without the id: the gap fill repairs it, and its toast shows with an Undo.
+$appNoIdGap = New-StartShortcut 'appdata-noid-gap' $false; $lnkNoIdGap = Join-Path $appNoIdGap $lnkRel
+$env:APPDATA = $appNoIdGap; Reset-Run
+Check 'setup: the gap-fill Start shortcut has no AppUserModelID before the fill' ((Get-LnkAppId $lnkNoIdGap) -ceq '') "AppUserModelID '$(Get-LnkAppId $lnkNoIdGap)'"
+$script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
+Invoke-GapFill $gFill
+Check 'a gap fill repairs the Start shortcut AppUserModelID' ((Get-LnkAppId $lnkNoIdGap) -ceq $TileAppId) "AppUserModelID '$(Get-LnkAppId $lnkNoIdGap)'"
+$gapToast = @($script:rec.toasts)[0]
+Check 'a gap fill that repaired the shortcut sends one toast, not a balloon' ((@($script:rec.toasts).Count -eq 1) -and (@($script:rec.balloons).Count -eq 0)) (Shown)
+if ($gapToast) { Check 'that gap-fill toast has one Undo that launches a run' ([bool](RunIdOf $gapToast)) "toast $(Flat $gapToast)" }
+
+# 14a control: a shortcut that carries the id gets the same toast, with no balloon.
+$env:APPDATA = $appWithId; Reset-Run
+$script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
+Invoke-GapFill $gFill
+Check 'control: with the Start shortcut that carries the id, a gap fill sends one toast and no balloon' ((@($script:rec.toasts).Count -eq 1) -and (@($script:rec.balloons).Count -eq 0)) (Shown)
+
+# 14b. No Start shortcut: the gap fill shows the balloon, as a run does, and its log says Undo is not offered.
+$env:APPDATA = $appNone; Reset-Run
+$script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
+$gapNone = RunLogged { Invoke-GapFill $gFill }
+$gapNoneLog = (@($gapNone.lines) | ForEach-Object { [string]$_.text }) -join ' | '
+Check 'a gap fill with no Start shortcut shows a balloon, not silence' ((@($script:rec.toasts).Count -eq 0) -and (@($script:rec.balloons).Count -eq 1)) (Shown)
+if (@($script:rec.balloons).Count -eq 1) { Check 'the gap-fill balloon names the gap fill' ([bool](@($script:rec.balloons)[0].text -match '(?i)gap[ -]fill')) "balloon: $(@($script:rec.balloons)[0].text)" }
+Check 'the gap-fill log says Undo is not offered, with no Start shortcut' ([bool]($gapNoneLog -match '(?i)undo\b[^|]*not offered')) "log lines: $gapNoneLog"
+
+# 14c. A pending meeting offer does not outlive a gap fill that moved a window: a late click on it would arrange over the gap fill.
+$env:APPDATA = $appNone; Reset-Run
+$script:offer = [pscustomobject]@{ scene = $work; exp = [datetime]'2026-11-23 15:00:00' }
+$script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
+Invoke-GapFill $gFill
+Check 'a gap fill that moves a window clears a pending meeting offer, so a late click arranges nothing' ($null -eq $script:offer) "offer still armed for '$($script:offer.scene.name)'"
+
+# 14c control: with the toast shown, the same gap fill clears the offer.
+$env:APPDATA = $appWithId; Reset-Run
+$script:offer = [pscustomobject]@{ scene = $work; exp = [datetime]'2026-11-23 15:00:00' }
+$script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
+Invoke-GapFill $gFill
+Check 'control: with the toast shown, a gap fill also clears the pending offer' ($null -eq $script:offer) "offer still armed for '$($script:offer.scene.name)'"
+
+# 14d. The re-sent toast throws: the gap fill shows the balloon, as Apply-Scene does, not silence.
+$env:APPDATA = $appWithId; Reset-Run
+$script:rec.toastThrow = $true
+$script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
+$gapErr = ''
+try { Invoke-GapFill $gFill } catch { $gapErr = $_.Exception.Message }
+$script:rec.toastThrow = $false
+Check 'a gap fill whose re-sent toast throws shows a balloon, not silence' ((@($script:rec.balloons).Count -eq 1) -and ($gapErr -eq '')) "balloons $(@($script:rec.balloons).Count), error '$gapErr'"
+if (@($script:rec.balloons).Count -eq 1) { Check 'the fallback balloon names the gap fill' ([bool](@($script:rec.balloons)[0].text -match '(?i)gap[ -]fill')) "balloon: $(@($script:rec.balloons)[0].text)" }
+
+# 14e. After an Undo, a gap fill that moves a window starts a run with its own run id and Undo. The undone run's id is not reused.
+$env:APPDATA = $appWithId; Reset-Run
+$tF4 = RunMoved $focus 'work' @((Moved 1001 'claude' 'Draft' $from1 $t1)); $lF4 = LinkOf $tF4; $ridF4 = RunIdOf $tF4
+Check 'case 14e setup: the run gave an Undo link' ([bool]$ridF4) "toast $(Flat $tF4)"
+if ($ridF4) {
+  $cF4 = ClickLink $lF4 @((Win 1001 'claude' 'Draft' $t1))
+  Check 'control: the Undo puts the run window back before the gap fill' (@($cF4.sent).Count -eq 1) "sent $(Brief $cF4.sent)"
+  $script:rec.gapPlaced = @(Moved 1003 'claude' 'Gap' $gFrom $gTo)
+  $nF4 = @($script:rec.toasts).Count
+  Invoke-GapFill $gFill
+  $gF4 = @($script:rec.toasts | Select-Object -Skip $nF4)[0]
+  $ridG4 = RunIdOf $gF4
+  Check 'after an Undo, a gap-fill toast carries a new run id, not the undone run''s' ([bool]($ridG4 -and $ridG4 -cne $ridF4)) "run id '$ridG4', undone run '$ridF4'"
+  $cG4 = if ($ridG4) { ClickLink (LinkOf $gF4) @((Win 1003 'claude' 'Gap' $gTo)) }
+  Check 'the new run''s Undo puts the gap-filled window back to its first place' ([bool]($cG4 -and @($cG4.sent | ? { $_.id -eq 1003 -and $_.x -eq $gFrom.x -and $_.y -eq $gFrom.y -and $_.w -eq $gFrom.w -and $_.h -eq $gFrom.h }).Count -eq 1)) "windows sent back: $(if ($cG4) { Brief $cG4.sent } else { 'none' })"
+}
+
+# 14f. A run with no Start shortcut shows a balloon, and its log says Undo is not offered.
+$env:APPDATA = $appNone; Reset-Run
+$runNone = RunLogged { RunMoved $focus 'work' $two 'because a new window opened' }
+$runNoneLog = (@($runNone.lines) | ForEach-Object { [string]$_.text }) -join ' | '
+Check 'a run with no Start shortcut logs that Undo is not offered' ([bool]($runNoneLog -match '(?i)undo\b[^|]*not offered')) "log lines: $runNoneLog"
+
+# 14f control: a run whose toast offers Undo logs no "not offered" line.
+$env:APPDATA = $appWithId; Reset-Run
+$runToast = RunLogged { RunMoved $focus 'work' $two 'because a new window opened' }
+$runToastLog = (@($runToast.lines) | ForEach-Object { [string]$_.text }) -join ' | '
+Check 'control: a run whose toast offers Undo logs no "not offered" line' ([bool]($runToastLog -notmatch '(?i)undo\b[^|]*not offered')) "log lines: $runToastLog"
+$env:APPDATA = $appWithId; Reset-Run
 $script:TileHome = $homeNever
 
 Check 'the run wrote no profile folder (TILE_HOME was named, never made)' (-not (Test-Path -LiteralPath $homeNever)) $homeNever
