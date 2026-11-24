@@ -37,6 +37,8 @@ button{cursor:pointer}
 
 /* ---------- Mockup shell (not product UI) ---------- */
 .mk{display:grid;gap:12px;padding:16px;max-width:1280px}
+/* Grid tracks may shrink below their content, so a 600 px drawing scrolls in its own frame at phone width, not the page. */
+.mk,.item,.shot{grid-template-columns:minmax(0,1fr)}
 .banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
 .banner b{color:var(--ann-new)}
 .mkhead{display:grid;gap:4px}

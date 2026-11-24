@@ -37,6 +37,8 @@ button{cursor:pointer}
 
 /* ---------- Mockup shell (not product UI) ---------- */
 .mk{display:grid;gap:12px;padding:16px;max-width:1280px}
+/* Grid tracks may shrink below their content, so a 600 px drawing scrolls in its own frame at phone width, not the page. */
+.mk,.item,.shot{grid-template-columns:minmax(0,1fr)}
 .banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
 .banner b{color:var(--ann-new)}
 .mkhead{display:grid;gap:4px}
@@ -202,7 +204,7 @@ const STATES=[
     ()=>desk(centre([ann(toast({id:"undone-clean",title:"Starter scenes removed",body:["Removed Review and Listen."],time:"9:04 AM",flat:true}),"New: same toast, updated in place")]),300,false,"9:04 AM"),true],
   ["partial",3,"","Changed Since","You changed Review on the board before pressing Undo. Your edit wins: Review stays.",
     ()=>desk(ann(toast({id:"undone-partial",title:"Starter scenes partly removed",body:["Removed Listen. You changed Review since, so it stays."]}),"New: partial result"),260,false,"9:40 AM"),true],
-  ["inuse",3,"","On Screen Now","You applied Review by hand, so it is the active scene. Removing it would leave the tray with no scene on screen.",
+  ["inuse",3,"","On Screen Now","You applied Review by hand, so it is the active scene. Removing it would leave the tray's active scene pointing at a scene that is gone.",
     ()=>desk(ann(toast({id:"undone-inuse",title:"Starter scenes partly removed",body:["Removed Listen. Review is on screen now, so it stays."]}),"New: partial, scene in use"),260,false,"9:40 AM"),true],
   ["gone",3,"","Already Gone","You deleted both scenes yourself before pressing Undo. Nothing is left to remove.",
     ()=>desk(ann(toast({id:"undone-gone",title:"Starter scenes already gone",body:["Review and Listen are no longer in your scenes."]}),"New: nothing to remove"),240,false,"10:15 AM"),true],
