@@ -39,9 +39,11 @@ act happens only while you are on the board.
      miss, which is close to today's silence.
 4. **Don't Add This Setup.** Removes the setup and each monitor that this add made (a monitor in
    another setup stays), and adds the setup's key to a declined list, so the next read does not add
-   it again. Leaves every layout alone (the debt's fix line). Gain: one press undoes the act and
-   keeps it undone. Loss: while those monitors are plugged in, the board has no setup to save a
-   layout under until you add it back. Pick: yes (coordinator).
+   it again. Leaves every layout alone (the debt's fix line). Gain: one press undoes the act.
+   Loss: the board autosaves each edit (`run-undo` audit row 3) through `Save-SceneLayout`, which
+   registers the setup. You are on the board when this toast shows, so your next board change on
+   these monitors adds the setup back with no word, and the no is gone (choice 7). Pick: yes
+   (coordinator).
    Departs from: `Forget-Known` (serve.ps1) refuses to forget the setup in use (409). This button
    removes the setup in use, because nothing has been built on it yet (choice 6). Not blocking.
 5. **The answer, and the way back** (rule `ux-no-dead-end`). The toast updates in place.
@@ -55,8 +57,15 @@ act happens only while you are on the board.
 6. **Changed since.** If you changed a scene's layout on the setup, or aimed a scene at it, the
    press does nothing and says so, with Open Tile Windows. Gain: your work wins, as run-undo choice
    9. Loss: to remove it you unplug, then Forget it. Pick: yes.
-7. **A board edit adds a declined setup.** `Save-SceneLayout` registers the setup; a layout you
-   make on it is your own act, so it adds the setup and clears the no. Pick: yes.
+7. **A board edit on a declined setup.** `Save-SceneLayout` registers the setup, and every board
+   change autosaves, so "remembers the no" holds only until your next edit on those monitors.
+   `Owner grant: yes`, since it decides what the coordinator's "remembers the no" means.
+   - Silent Re-Add: the edit adds the setup and clears the no, with no word. Loss: the no seems
+     not to stick.
+   - Strip Says So: while a declined setup is plugged in, the strip reads "Not added. A board
+     change here adds it." Gain: the re-add is your informed act. Pick: yes. Not drawn.
+   - Refuse Edits: board changes on a declined setup are refused until Add It Back. Loss: the
+     board stops working on those monitors.
 8. **Rename button** (option `rename`). Opens the board at Monitors and Setups, on this setup's
    name. A toast button cannot carry typed text (protocol activation). Gain: rename where you meet
    the name. Loss: a second button and a new link verb; a click on the body already opens the

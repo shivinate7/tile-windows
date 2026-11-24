@@ -166,7 +166,7 @@ Not shown for the first setup ever (Desk).
 | Not added | `<setup>` setup not added | Tile Windows won't add it again. | — | Add It Back (quiet update) |
 | Changed since | `<setup>` setup stays | You changed a layout on it since, so it stays. | — | Open Tile Windows |
 | Already gone | `<setup>` setup already gone | It is no longer in your setups. | — | — |
-| Added back | `<setup>` setup added back | Scenes follow `<closest setup>` on it until you change them. | — | Don't Add This Setup (quiet update) |
+| Added back | `<setup>` setup added back | Scenes follow `<closest setup>` on it until you change them. | — | Don't Add This Setup (quiet update; not drawn, the Added toast's shape) |
 
 **A config file that does not parse** (debt `config-bad-file-no-undo`). No Undo: the old file
 does not parse, so putting it back would only be set aside again on the next read. The reason is
@@ -207,8 +207,8 @@ Open wording questions for the owner:
 - A starter config loaded after a bad file has no setups, so the next board read adds Desk. Desk,
   the first setup, gets no toast, so the bad-file toast is not followed by a setup toast.
 - The "no" for a setup: a new config list of declined setup keys. `Add-SnapshotSetup` skips a
-  declined key. `Save-SceneLayout` (a board edit on that setup, the owner's own act) still adds it
-  and clears the no. Monitors and Setups needs a way to clear a no after the toast is gone (choice
+  declined key. `Save-SceneLayout` (a board edit on that setup) still adds it; what the owner sees
+  then is choice 7 in `setup-added-notice-notes.md`, an owner question. Monitors and Setups needs a way to clear a no after the toast is gone (choice
   5 in `setup-added-notice-notes.md`).
 - The debt `config-bad-file-no-undo` names an Undo fix that copies the .bad file back. The
   coordinator's pick replaces it with Show Old File. Rewrite that debt's Fix line.
