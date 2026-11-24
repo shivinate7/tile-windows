@@ -132,3 +132,83 @@ It is not a second copy of the restore.
 - `Note` clears `$script:offer`. The toast path must clear it too, or a late click on the offer
   balloon arranges windows.
 - The Today drawing of the balloon is not measured on this PC; its header text may differ.
+
+## Config notices: wording
+
+Ruling: decision `run-undo` (owner, 2026-11-23 13:07 CST): every automated act that changes what
+the user sees or has ships a notification offering Undo. These three acts happen in `config.ps1`
+and `serve.ps1`, so they reach the tray as a pending record, and the tray shows each through the
+run toast home (`New-RunToast`, `Send-RunToast`). This section is the one home for their words.
+Mockups and their choices: `config-upgrade-notice.html`, `setup-added-notice.html`,
+`config-bad-file-notice.html`, each with its `-notes.md`, beside this file.
+
+Lists read as `Join-Names` (tray.ps1) writes them: "A", "A and B", "A, B and C". Plurals are
+true plurals. `<…>` is filled in by code.
+
+**Config upgrade adds starter scenes** (debt `config-upgrade-no-undo`). Shown only when
+`Update-TileConfig` added at least one scene.
+
+| When | Title | Body | Detail | Buttons |
+|---|---|---|---|---|
+| Added | Starter scenes added | The update added `<names>`. Their triggers are off. ("Its" for one) | — | Undo |
+| Undone | Starter scenes removed | Removed `<names>`. | — | — (quiet update) |
+| Partly, changed | Starter scenes partly removed | Removed `<names>`. You changed `<names>` since, so it stays. ("they stay" for two or more) | — | — |
+| Partly, on screen | Starter scenes partly removed | Removed `<names>`. `<name>` is on screen now, so it stays. | — | — |
+| Already gone | Starter scenes already gone | `<names>` are no longer in your scenes. ("is" for one) | — | — |
+
+**A new setup is added when the board reads the windows** (debt `plug-in-adds-setup-no-undo`).
+Not shown for the first setup ever (Desk).
+
+| When | Title | Body | Detail | Buttons |
+|---|---|---|---|---|
+| Added | `<setup>` setup added | Scenes follow `<closest setup>` on it until you change them. | New monitor: `<names>`. ("New monitors:" for two or more; no line when none is new) | Don't Add This Setup |
+| Added, nothing to follow | `<setup>` setup added | Scenes start from their starter layouts on it. | as above | Don't Add This Setup |
+| Not added | `<setup>` setup not added | Tile Windows won't add it again. | — | Add It Back (quiet update) |
+| Changed since | `<setup>` setup stays | You changed a layout on it since, so it stays. | — | Open Tile Windows |
+| Already gone | `<setup>` setup already gone | It is no longer in your setups. | — | — |
+| Added back | `<setup>` setup added back | Scenes follow `<closest setup>` on it until you change them. | — | Don't Add This Setup (quiet update; not drawn, the Added toast's shape) |
+
+**A config file that does not parse** (debt `config-bad-file-no-undo`). No Undo: the old file
+does not parse, so putting it back would only be set aside again on the next read. The reason is
+in `config-bad-file-notice-notes.md`, not on the toast.
+
+| When | Title | Body | Buttons |
+|---|---|---|---|
+| Set aside | Starter scenes are back | Your scenes file could not be read, so it was set aside. Your old scenes are still in it. | Show Old File |
+| Old file gone at the press | Old file not found | It was moved or deleted since. | Open Folder |
+
+The board's note for the bad file keeps today's words from `Set-TileBad`: "config.json could not
+be read, so the starter scenes are back. The old file is config.json.bad." The upgrade and the new
+setup write no board note.
+
+Open wording questions for the owner:
+- Button case: the brief wrote "Show old file" and "Don't add this setup". The run toast and the
+  board use title case ("Undo Anyway", "Open Tile Windows", "Follow Desk Again"), so the mockups
+  draw "Show Old File" and "Don't Add This Setup".
+- "Don't Add This Setup" names an act that has already happened. "Remove This Setup" is plainer,
+  but it loses the "and don't add it again" half. Drawn as the coordinator's pick.
+
+## For the builder: config notices (outside the design folder)
+
+- One pending record per notice, written under the lock by the process that made the change, and
+  read by the tray on its next tick. The record holds what Undo needs, so it survives a tray
+  restart: the added scenes as they were added, or the setup key and the monitors it added, or the
+  .bad file's full path. The link carries only the record's id, never a path or a name.
+- `$linkOk` (tray.ps1) accepts only `open` and `undo?run=`. Each new button needs its own verb, and
+  the pattern must accept Windows' slash before `?`.
+- Give `New-RunToast` a tag parameter instead of writing a second toast function. Tags: `tw-run`
+  (runs, as today), `tw-upgrade`, `tw-setup-<key hash>`, `tw-bad`, all in group `tile-windows`.
+- `Clear-RunToasts` clears every Tile Windows toast at tray start and Quit. Clear only `tw-run`
+  there, since a config notice's record is on disk and its button still works after a restart.
+  At start, show pending records after that clear, or the bad-file toast from the start read is
+  wiped at once.
+- `Set-TileBad` keeps one home for the note and the toast text. A state.json that does not parse
+  keeps today's note and balloon, with no toast: it loses only the recent log.
+- A starter config loaded after a bad file has no setups, so the next board read adds Desk. Desk,
+  the first setup, gets no toast, so the bad-file toast is not followed by a setup toast.
+- The "no" for a setup: a new config list of declined setup keys. `Add-SnapshotSetup` skips a
+  declined key. `Save-SceneLayout` (a board edit on that setup) still adds it; what the owner sees
+  then is choice 7 in `setup-added-notice-notes.md`, an owner question. Monitors and Setups needs a way to clear a no after the toast is gone (choice
+  5 in `setup-added-notice-notes.md`).
+- The debt `config-bad-file-no-undo` names an Undo fix that copies the .bad file back. The
+  coordinator's pick replaces it with Show Old File. Rewrite that debt's Fix line.

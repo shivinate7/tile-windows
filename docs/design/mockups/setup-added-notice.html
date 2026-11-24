@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setup Added Notice</title>
+<style>
+/* Page shell: tokens copied from app.html :root, as run-undo.html does. No web fonts: the page opens from disk with no network.
+   The --win-* tokens draw Windows 11's own notification chrome. Windows owns those colours; the app sets only text, buttons and attribution. */
+:root{
+  --f:"Sora","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; --f-disp:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
+  --f-win:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --canvas:#ECEEE9; --panel:#FFFFFF; --ink:#1C211D; --muted:#4F574F; --line:#D2D6CD; --select:#1F6BFF; --hi:#E3A008; --hi-ink:#1C211D;
+  --ann-new:#C0267A; --ann-today:#4F574F;
+  --win-desk:#C7D3E3; --win-bar:#EEF0F3; --win-bar-line:rgba(0,0,0,.08); --win-surface:#F9F9F9; --win-panel:#EEEEEE; --win-card:#FBFBFB;
+  --win-text:#1A1A1A; --win-sub:#5C5C5C; --win-line:rgba(0,0,0,.09); --win-btn:#FFFFFF; --win-btn-line:rgba(0,0,0,.10); --win-btn-edge:rgba(0,0,0,.18);
+  --win-shadow:0 8px 24px -6px rgba(0,0,0,.28); --win-glyph:#1F6BFF;
+  color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --canvas:#141715; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --hi:#F2C14E; --hi-ink:#141715;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9;
+  --win-desk:#1D2430; --win-bar:#1C1C1C; --win-bar-line:rgba(255,255,255,.08); --win-surface:#2C2C2C; --win-panel:#242424; --win-card:#2E2E2E;
+  --win-text:#FFFFFF; --win-sub:#C8C8C8; --win-line:rgba(255,255,255,.10); --win-btn:#3A3A3A; --win-btn-line:rgba(255,255,255,.09); --win-btn-edge:rgba(255,255,255,.06);
+  --win-shadow:0 8px 24px -6px rgba(0,0,0,.7); --win-glyph:#5B93FF; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --canvas:#141715; --panel:#1C201D; --ink:#E8ECE6; --muted:#A9B1A9; --line:#363D37; --select:#5B93FF; --hi:#F2C14E; --hi-ink:#141715;
+  --ann-new:#F58AC0; --ann-today:#A9B1A9;
+  --win-desk:#1D2430; --win-bar:#1C1C1C; --win-bar-line:rgba(255,255,255,.08); --win-surface:#2C2C2C; --win-panel:#242424; --win-card:#2E2E2E;
+  --win-text:#FFFFFF; --win-sub:#C8C8C8; --win-line:rgba(255,255,255,.10); --win-btn:#3A3A3A; --win-btn-line:rgba(255,255,255,.09); --win-btn-edge:rgba(255,255,255,.06);
+  --win-shadow:0 8px 24px -6px rgba(0,0,0,.7); --win-glyph:#5B93FF; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--canvas);color:var(--ink);font:13px/1.45 var(--f)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--select);outline-offset:2px}
+
+/* ---------- Mockup shell (not product UI) ---------- */
+.mk{display:grid;gap:12px;padding:16px;max-width:1280px}
+/* Grid tracks may shrink below their content, so a 600 px drawing scrolls in its own frame at phone width, not the page. */
+.mk,.item,.shot{grid-template-columns:minmax(0,1fr)}
+.banner{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin:0;padding:8px 12px;border:2px dashed var(--ann-new);border-radius:8px;background:var(--panel)}
+.banner b{color:var(--ann-new)}
+.mkhead{display:grid;gap:4px}
+.mkhead h1{margin:0;font:700 20px var(--f-disp);letter-spacing:-.01em}
+.mkhead p{margin:0;color:var(--muted);max-width:80ch}
+.mkbar{display:grid;gap:8px}
+.mkgrp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mkgrp>span{color:var(--muted);font-size:12px;min-width:44px}
+.mkseg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.mkseg button{min-height:32px;border:0;background:transparent;padding:5px 10px;font-size:12.5px;white-space:nowrap}
+.mkseg button+button{border-left:1px solid var(--line)}
+.mkseg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.mkopts{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:center;font-size:12.5px}
+.mkopts label{display:inline-flex;gap:6px;align-items:center;min-height:32px;cursor:pointer}
+.mkopts input{accent-color:var(--ink);width:15px;height:15px;margin:0}
+.mkopts .sep{color:var(--muted);font-size:12px}
+.item{display:grid;gap:10px;padding-top:6px}
+.item>h2{margin:12px 0 0;font:700 18px var(--f-disp);letter-spacing:-.01em}
+.item>p{margin:0;color:var(--muted);max-width:90ch}
+.shots{display:flex;flex-wrap:wrap;gap:20px 24px;align-items:flex-start}
+.shot{display:grid;gap:6px;min-width:0;max-width:100%}
+.shot.wide{flex-basis:100%}
+.shot h3.cap{margin:0;font:700 15px var(--f-disp);letter-spacing:-.01em}
+.shot .capn{margin:0;color:var(--muted);max-width:66ch}
+.kind{font:600 11px var(--f);padding:1px 6px;border-radius:3px;border:1px dashed var(--ann-new);color:var(--ann-new);margin-left:6px;vertical-align:2px}
+.kind.today{border-color:var(--ann-today);color:var(--ann-today)}
+.kind.pick{border-style:solid}
+.scroll{overflow-x:auto;max-width:100%;border:1px solid var(--line);border-radius:8px}
+
+/* Today / New labels */
+.abox{position:relative;outline:1.5px dashed var(--ann-new);outline-offset:3px;border-radius:8px}
+.abox.today{outline-color:var(--ann-today)}
+.abox>em{position:absolute;top:-22px;left:-4px;font:600 10.5px/1 var(--f);font-style:normal;white-space:nowrap;padding:2px 5px;border-radius:3px;background:var(--panel);color:var(--ann-new);border:1px dashed var(--ann-new);z-index:2}
+.abox.today>em{color:var(--ann-today);border-color:var(--ann-today)}
+.nolabels .abox{outline:0}.nolabels .abox>em{display:none}
+
+/* ---------- Windows 11 desk corner: wallpaper, taskbar, tray ---------- */
+.desk{position:relative;width:600px;background:var(--win-desk);font:14px/1.4 var(--f-win);color:var(--win-text);overflow:hidden}
+.desk .stack{position:absolute;right:12px;bottom:60px;display:grid;gap:30px;justify-items:end}
+.bar{position:absolute;left:0;right:0;bottom:0;height:48px;background:var(--win-bar);border-top:1px solid var(--win-bar-line);display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:0 10px;font-size:12px}
+.bar .ti{display:grid;place-items:center;width:28px;height:28px;border-radius:4px;color:var(--win-text)}
+.bar .ti svg{width:16px;height:16px}
+.bar .clock{display:grid;justify-items:end;line-height:1.3;padding:0 6px;font-variant-numeric:tabular-nums}
+.bar .bell{position:relative}
+.bar .bell.on::after{content:"";position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--win-glyph)}
+
+/* ---------- Windows 11 toast ---------- */
+.toast{width:364px;background:var(--win-surface);border:1px solid var(--win-line);border-radius:8px;box-shadow:var(--win-shadow);font:14px/1.4 var(--f-win);color:var(--win-text);text-align:left}
+.toast.flat{box-shadow:none;background:var(--win-card)}
+.th{display:flex;align-items:center;gap:8px;padding:10px 8px 0 16px;font-size:12px;color:var(--win-sub)}
+.th svg.app{width:16px;height:16px;flex:none}
+.th .nm{flex:1;min-width:0}
+.th .ic{display:grid;place-items:center;width:28px;height:24px;border-radius:4px;color:var(--win-sub)}
+.th .ic svg{width:12px;height:12px}
+.tb{padding:10px 16px 16px;display:grid;gap:2px}
+.tb b{font-weight:600}
+.tb span{color:var(--win-sub)}
+.tbtn{display:flex;gap:8px;padding:0 16px 16px}
+.tbtn button{flex:1;min-height:32px;border-radius:4px;border:1px solid var(--win-btn-line);border-bottom-color:var(--win-btn-edge);background:var(--win-btn);font-size:14px;color:var(--win-text);padding:4px 10px}
+/* Notification centre */
+.nc{width:380px;background:var(--win-panel);border:1px solid var(--win-line);border-radius:8px;box-shadow:var(--win-shadow);padding:12px;display:grid;gap:10px;font:14px/1.4 var(--f-win);color:var(--win-text)}
+.nc .nh{display:flex;justify-content:space-between;align-items:center;padding:2px 4px}
+.nc .nh b{font-weight:600}
+.nc .nh button{border:0;background:transparent;font-size:12px;color:var(--win-text);padding:4px 6px;border-radius:4px}
+.nc .toast{width:100%}
+.nc>.abox{margin-top:22px}
+.nc .empty{padding:20px 4px;text-align:center;color:var(--win-sub);font-size:13px}
+
+/* Wording gallery */
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(364px,1fr));gap:30px 24px;padding:28px 16px 16px;background:var(--win-desk)}
+.gal figure{margin:0;display:grid;gap:8px;justify-items:start}
+.gal figcaption{font:12px/1.4 var(--f);color:var(--ink);background:var(--panel);padding:4px 8px;border-radius:4px;max-width:364px}
+.gal figcaption code{font:11.5px ui-monospace,Consolas,monospace;color:var(--muted)}
+
+/* ---------- The board (app.html), drawn from its own tokens: header, strip, scene list and its toast ---------- */
+.board{position:relative;width:600px;background:var(--canvas);font:13px/1.45 var(--f);color:var(--ink);padding-bottom:16px}
+.board .bh{display:flex;align-items:center;gap:8px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);font:700 15px var(--f-disp)}
+.board .bh svg{width:16px;height:16px}
+.board .strip{display:grid;gap:2px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.board .strip span{color:var(--muted)}
+.board .list{display:grid;gap:4px;padding:12px 16px 0;max-width:240px}
+.board .list div{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.board .list .sel{border-color:var(--select);box-shadow:inset 0 0 0 1px var(--select)}
+.board .note{position:absolute;right:16px;left:112px;top:56px;z-index:3;display:flex;justify-content:flex-end}
+.shot>.abox{margin-top:20px}
+.ptoast{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;max-width:460px;padding:9px 10px 9px 14px;border-radius:8px;background:var(--hi);color:var(--hi-ink);box-shadow:0 12px 30px -12px rgba(0,0,0,.55);font-weight:500}
+.ptoast .btn{display:inline-flex;align-items:center;justify-content:center;min-height:28px;border:1px solid color-mix(in srgb,currentColor 40%,transparent);background:transparent;color:inherit;padding:5px 12px;border-radius:6px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+@media (max-width:760px){.mk{padding:12px 16px}.gal{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="mk">
+  <p class="banner" role="note"><b>Sample.</b><span>Every setup name, monitor, time and count on this page is invented. No figure here is real.</span></p>
+  <header class="mkhead">
+    <h1>Setup Added Notice</h1>
+    <p>When the board reads your windows and finds monitors plugged in together for the first time, it adds them as a setup. A Windows toast names the new setup, with Don't Add This Setup, which removes it and remembers the no. It is the run toast's frame and voice (decision run-undo). Dashed pink labels mark what is new; dashed grey labels mark what exists today. Each option has a switch below that hides it.</p>
+  </header>
+  <nav class="mkbar" aria-label="Mockup controls">
+    <div class="mkgrp"><span id="lblState">State</span><div class="mkseg" id="segState" role="group" aria-labelledby="lblState"></div></div>
+    <div class="mkgrp"><span id="lblT">Theme</span><div class="mkseg" id="segT" role="group" aria-labelledby="lblT"></div></div>
+    <div class="mkopts" id="opts" role="group" aria-label="Show options"></div>
+  </nav>
+  <div id="frames"></div>
+</div>
+<script>
+/* Icons: the tray glyph as tray.ps1 draws it (three panes), and Windows' own small icons. */
+const GLYPH=`<svg class="app" viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="2" width="6" height="5" fill="var(--win-glyph)"/><rect x="9" y="2" width="6" height="5" fill="var(--win-glyph)"/><rect x="1" y="9" width="14" height="5" fill="var(--win-glyph)"/></svg>`;
+const MORE=`<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="2" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="10" cy="6" r="1" fill="currentColor"/></svg>`;
+const X=`<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2"/></svg>`;
+const ICON={wifi:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6.5a9 9 0 0 1 12 0M4.2 9a6 6 0 0 1 7.6 0M6.4 11.4a3 3 0 0 1 3.2 0" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>`,
+  vol:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6h2l3-3v10l-3-3H3z" fill="currentColor"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>`,
+  bell:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 11V7a4 4 0 0 1 8 0v4l1 1H3zM6.5 13.5a1.5 1.5 0 0 0 3 0" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>`,
+  up:`<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>`};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* One toast, as Get-RunToastXml (tray.ps1) builds it: title, body, optional detail line, buttons. o: {id, title, body:[lines], btns, time, flat} */
+function toast(o){
+  const head=o.time?`<span class="ic" style="width:auto;padding:0 4px">${o.time}</span>`:`<span class="ic">${MORE}</span><span class="ic">${X}</span>`;
+  const btns=(o.btns||[]).length?`<div class="tbtn">${o.btns.map(b=>`<button type="button">${esc(b)}</button>`).join("")}</div>`:"";
+  return `<div class="toast${o.flat?" flat":""}"${o.id?` id="${o.id}"`:""} role="group" aria-label="Notification: ${esc(o.title)}">
+    <div class="th">${GLYPH}<span class="nm">Tile Windows</span>${head}</div>
+    <div class="tb"><b>${esc(o.title)}</b>${o.body.map(l=>`<span>${esc(l)}</span>`).join("")}</div>${btns}</div>`}
+const ann=(html,label,today)=>`<div class="abox${today?" today":""}"><em>${label}</em>${html}</div>`;
+function bar(dot,time){return `<div class="bar"><span class="ti">${ICON.up}</span><span class="ti" title="Tile Windows tray icon">${GLYPH}</span><span class="ti">${ICON.wifi}</span><span class="ti">${ICON.vol}</span><span class="clock"><span>${time}</span><span>11/23/2026</span></span><span class="ti bell${dot?" on":""}">${ICON.bell}</span></div>`}
+const desk=(inner,h,dot,time="9:02 AM")=>`<div class="scroll"><div class="desk" style="height:${h}px"><div class="stack">${inner}</div>${bar(dot,time)}</div></div>`;
+const MAIL=`<svg class="app" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5" fill="none" stroke="currentColor"/><path d="M2 4.5l6 4.5 6-4.5" fill="none" stroke="currentColor"/></svg>`;
+function centre(entries,opts={}){
+  const other=opts.other?`<div class="toast flat"><div class="th">${MAIL}<span class="nm">Mail</span><span class="ic" style="width:auto;padding:0 4px">8:58 AM</span></div><div class="tb"><b>Weekly sync moved</b><span>Now at 11:30 AM.</span></div></div>`:"";
+  const list=entries.length||other?entries.join("")+other:`<p class="empty">No new notifications</p>`;
+  return `<div class="nc"${opts.id?` id="${opts.id}"`:""}><div class="nh"><b>Notifications</b>${entries.length||other?'<button type="button">Clear all</button>':""}</div>${list}</div>`}
+/* The board: header, scene list, and the page's own toast (app.html .toast.warn) where a note shows. */
+function board(o){
+  const note=o.note?`<div class="note">${o.note}</div>`:"";
+  return `<div class="scroll"><div class="board"${o.id?` id="${o.id}"`:""} style="min-height:${o.h||230}px"><div class="bh">${GLYPH.replace('class="app"','')}Tile Windows</div>${o.strip?`<div class="strip">${o.strip}</div>`:""}${o.list?`<div class="list">${o.list}</div>`:""}${note}</div></div>`}
+const ptoast=(text,btns)=>`<div class="ptoast" role="status"><span>${esc(text)}</span>${btns.map(b=>`<button type="button" class="btn"${b==="✕"?' aria-label="Dismiss"':""}>${esc(b)}</button>`).join("")}</div>`;
+
+/* ---------- This page's content ---------- */
+const OPTS=[["popup","Pop-Up"],["quietadd","Centre Only"],["rename","Rename Button"],["addback","Add It Back Button"],["nobutton","No Button After"],["boardquiet","Toast Only"],["boardnote","Board Note Too"]];
+const STRIP=(sub,name="Laptop + Portrait")=>`<b>${esc(name)}</b><span>${sub}</span>`;
+const LIST=`<div class="sel">Focus</div><div>Default</div><div>Meetings</div>`;
+const T_ADD={title:"Laptop + Portrait setup added",body:["Scenes follow Desk on it until you change them.","New monitor: Portrait."]};
+const CASES=[
+  ["Known monitors, new together","no detail line: every monitor was seen before",{title:"Laptop + Portrait setup added",body:["Scenes follow Desk on it until you change them."]}],
+  ["A new monitor in it","detail line: the monitors Register-TileSetup added",{title:"Laptop + Portrait setup added",body:["Scenes follow Desk on it until you change them.","New monitor: Portrait."]}],
+  ["No setup to follow","Get-SetupFollows gave '': no known setup shares a monitor",{title:"Ultrawide setup added",body:["Scenes start from their starter layouts on it.","New monitor: Ultrawide."]}],
+  ["Longest name drawn","three monitors, two new; Join-Names",{title:"Laptop + Ultrawide + Portrait 2 setup added",body:["Scenes follow Desk on it until you change them.","New monitors: Ultrawide and Portrait 2."]}]];
+
+const ITEMS={
+  1:["The notice","Today the board's strip is the only sign: the selected scene 'follows' another setup. New: a toast that names the new setup, with Don't Add This Setup. It shows when the board reads your windows (load or Refresh) with monitors plugged in together for the first time. The first setup ever (Desk) gets no toast."],
+  2:["Wording cases","With and without a new monitor, with no setup to follow, and the longest name. The detail line shows only when a monitor is new."],
+  3:["After the press","Don't Add This Setup removes the setup and each monitor it added, and remembers the no, so the next read does not add it again. The answer shows in the same toast (rule ux-answer-at-press)."],
+  4:["The board","You are on the board when this happens, since its read adds the setup. Whether the board's note (X-Tile-Note) says it too."]};
+const STATES=[
+  ["today",1,"today","Strip Only","Add-SnapshotSetup (serve.ps1) adds the setup and saves config.json with no note. The strip names the setup and says what the selected scene follows.",
+    ()=>ann(board({id:"today-strip",strip:STRIP("Focus follows Desk until you change it."),list:LIST,h:210}),"Today: the strip is the only sign",true)],
+  ["toast",1,"popup","Pop-Up","Pops up over the board for about 5 seconds, then rests in the notification centre.",
+    ()=>desk(ann(toast({id:"setup-toast",...T_ADD,btns:["Don't Add This Setup"]}),"New: setup toast"),300),true],
+  ["toast-quiet",1,"quietadd","Centre Only","No pop-up (SuppressPopup): it goes straight to the notification centre, since you are on the board already. The bell shows a dot.",
+    ()=>desk(centre([ann(toast({id:"setup-quiet",...T_ADD,btns:["Don't Add This Setup"],time:"9:02 AM",flat:true}),"New: in the centre, no pop-up")]),380,true)],
+  ["toast-rename",1,"rename","Rename Button","A second button opens the board with Monitors and Setups open at this setup's name. A toast button cannot carry typed text, so the name is typed there.",
+    ()=>desk(ann(toast({id:"setup-rename",...T_ADD,btns:["Don't Add This Setup","Rename"]}),"New: Rename button"),300)],
+  ["cases",2,"","Wording Cases","The line under each says which rule writes it.",
+    ()=>`<div class="scroll"><div class="gal" id="cases">${CASES.map(([n,src,t])=>`<figure>${toast({...t,btns:["Don't Add This Setup"]})}<figcaption>${esc(n)}<br><code>${esc(src)}</code></figcaption></figure>`).join("")}</div></div>`,true],
+  ["declined",3,"addback","Add It Back Button","The toast changes in place with no pop-up. One press reverses the no while the toast is there.",
+    ()=>desk(centre([ann(toast({id:"declined-addback",title:"Laptop + Portrait setup not added",body:["Tile Windows won't add it again."],btns:["Add It Back"],time:"9:03 AM",flat:true}),"New: same toast, updated in place")]),330,false,"9:03 AM"),true],
+  ["declined-plain",3,"nobutton","No Button After","The toast changes in place and says where to add it later. Prose that names a place is not a control (rule ux-no-dead-end).",
+    ()=>desk(centre([ann(toast({id:"declined-plain",title:"Laptop + Portrait setup not added",body:["Tile Windows won't add it again. You can add it in Monitors and Setups."],time:"9:03 AM",flat:true}),"New: same toast, no button")]),300,false,"9:03 AM")],
+  ["stale-layout",3,"","Changed Since","You changed a scene's layout on this setup, or aimed a scene at it, before pressing the button. Your edit wins: the setup stays.",
+    ()=>desk(ann(toast({id:"stale-layout",title:"Laptop + Portrait setup stays",body:["You changed a layout on it since, so it stays."],btns:["Open Tile Windows"]}),"New: refusal with a way on"),280,false,"9:40 AM"),true],
+  ["stale-gone",3,"","Already Gone","You forgot the setup in Monitors and Setups before pressing the button.",
+    ()=>desk(ann(toast({id:"stale-gone",title:"Laptop + Portrait setup already gone",body:["It is no longer in your setups."]}),"New: nothing to remove"),240,false,"9:40 AM"),true],
+  ["board-none",4,"boardquiet","Toast Only","The board writes no note. The strip already names the setup and what the scene follows, as today.",
+    ()=>ann(board({id:"board-none",strip:STRIP("Focus follows Desk until you change it."),list:LIST,h:210}),"Unchanged: no board note",true),true],
+  ["board-note",4,"boardnote","Board Note Too","The read writes a note (Add-TileNote), so the board says it where you are looking, with the same button, until dismissed.",
+    ()=>board({id:"board-note",strip:STRIP("Focus follows Desk until you change it."),list:LIST,h:230,note:ann(ptoast("Laptop + Portrait is a new setup. Scenes follow Desk on it until you change them.",["Don't Add This Setup","✕"]),"New: board note")})]];
+
+/* ---------- State, hash, render (as run-undo.html) ---------- */
+const V={s:"all",t:"",off:new Set(),labels:true};
+function readHash(){const h=new URLSearchParams(location.hash.slice(1));V.s=h.get("s")||"all";V.t=h.get("t")||"";V.labels=h.get("labels")!=="0";V.off=new Set((h.get("hide")||"").split(",").filter(Boolean))}
+function writeHash(){const p=[`s=${V.s}`];if(V.t)p.push(`t=${V.t}`);if(!V.labels)p.push("labels=0");if(V.off.size)p.push(`hide=${[...V.off].join(",")}`);history.replaceState(null,"","#"+p.join("&"))}
+function visible(){return STATES.filter(s=>!s[2]||s[2]==="today"||!V.off.has(s[2]))}
+document.getElementById("opts").innerHTML=`<span class="sep">Options:</span>${OPTS.map(([k,l])=>`<label><input type="checkbox" data-o="${k}" checked>${l}</label>`).join("")}<span class="sep">Overlays:</span><label><input type="checkbox" id="oLabels" checked>Today and New Labels</label>`;
+function render(){
+  if(V.t)document.documentElement.dataset.theme=V.t;else delete document.documentElement.dataset.theme;
+  document.body.classList.toggle("nolabels",!V.labels);
+  const vis=visible();if(V.s!=="all"&&!vis.some(s=>s[0]===V.s))V.s="all";
+  const segs=[["segState",[...vis.map(s=>[s[0],s[3]]),["all","All"]],"s"],["segT",[["","Match Windows"],["light","Light"],["dark","Dark"]],"t"]];
+  for(const [id,opts,k] of segs)document.getElementById(id).innerHTML=opts.map(([v,l])=>`<button type="button" data-k="${k}" data-v="${v}" aria-pressed="${V[k]===v}">${l}</button>`).join("");
+  for(const cb of document.querySelectorAll("[data-o]"))cb.checked=!V.off.has(cb.dataset.o);
+  document.getElementById("oLabels").checked=V.labels;
+  const list=V.s==="all"?vis:vis.filter(s=>s[0]===V.s);
+  let html="",cur=0;
+  for(const [k,item,o,name,cap,draw,pick] of list){
+    if(item!==cur){if(cur)html+="</div></section>";cur=item;html+=`<section class="item" aria-labelledby="i-${item}"><h2 id="i-${item}">${ITEMS[item][0]}</h2><p>${ITEMS[item][1]}</p><div class="shots">`}
+    const tag=o==="today"?`<span class="kind today">Today</span>`:o?`<span class="kind${pick?" pick":""}">${pick?"Option, picked":"Option"}</span>`:`<span class="kind pick">New</span>`;
+    html+=`<section class="shot${k==="cases"?" wide":""}" id="f-${k}" aria-labelledby="h-${k}"><h3 class="cap" id="h-${k}">${name}${tag}</h3><p class="capn">${cap}</p>${draw()}</section>`}
+  if(cur)html+="</div></section>";
+  const fr=document.getElementById("frames");fr.innerHTML=html;
+  for(const f of fr.querySelectorAll("figure[data-opt]"))f.hidden=V.off.has(f.dataset.opt);
+  writeHash()}
+document.addEventListener("click",e=>{const b=e.target.closest(".mkseg button");if(!b)return;V[b.dataset.k]=b.dataset.v;render()});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.dataset.o){if(t.checked)V.off.delete(t.dataset.o);else V.off.add(t.dataset.o);render();return}
+  if(t.id==="oLabels"){V.labels=t.checked;render()}});
+addEventListener("hashchange",()=>{readHash();render()});
+readHash();render();
+</script>
+</body>
+</html>
